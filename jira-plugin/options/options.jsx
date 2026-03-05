@@ -9,11 +9,41 @@ import 'options/options.scss';
 const errorText = document.createElement('div');
 document.body.appendChild(errorText);
 window.onerror = function (msg, file, line, column, error) {
-  errorText.innerHTML = error.stack;
+  errorText.textContent = (error && error.stack) ? error.stack : String(msg || 'Unknown error');
 };
+
+const FIELD_OPTIONS = [
+  {key: 'issueType', label: 'Issue Type'},
+  {key: 'status', label: 'Status'},
+  {key: 'priority', label: 'Priority'},
+  {key: 'sprint', label: 'Sprint'},
+  {key: 'fixVersions', label: 'Fix Version'},
+  {key: 'affects', label: 'Affects Version'},
+  {key: 'labels', label: 'Labels'},
+  {key: 'account', label: 'Account'},
+  {key: 'epicParent', label: 'Epic/Parent'},
+  {key: 'attachments', label: 'Attachments'},
+  {key: 'comments', label: 'Comments'},
+  {key: 'description', label: 'Description'},
+  {key: 'reporter', label: 'Reporter'},
+  {key: 'assignee', label: 'Assignee'},
+  {key: 'pullRequests', label: 'Related Pull Requests'}
+];
+
+function getDisplayFieldValuesFromForm() {
+  const values = {};
+  FIELD_OPTIONS.forEach(({key}) => {
+    const node = document.getElementById(`displayField_${key}`);
+    values[key] = !!(node && node.checked);
+  });
+  return values;
+}
 
 async function saveOptions() {
   const status = document.getElementById('status');
+  const setStatus = (message) => {
+    status.textContent = message;
+  };
   const domains = document.getElementById('domains')
     .value
     .split(',')
@@ -22,7 +52,7 @@ async function saveOptions() {
   let instanceUrl = document.getElementById('instanceUrl').value.trim();
 
   if (!instanceUrl) {
-    status.innerHTML = '<br /><strong>You must provide your jira instance url.</strong>';
+    setStatus('You must provide your Jira instance URL.');
     return;
   }
   if (!hasPathSlash.test(instanceUrl)) {
@@ -42,19 +72,24 @@ async function saveOptions() {
   try {
     granted = await permissionsRequest({'origins': permissionDomains.map(toMatchUrl)});
   } catch (ex) {
-    status.innerHTML = `<br /><strong>${ex.message}</strong>`;
+    setStatus(ex.message);
     return;
   }
 
   if (granted) {
-    await storageSet({instanceUrl, domains, v15upgrade: true});
+    await storageSet({
+      instanceUrl,
+      domains,
+      v15upgrade: true,
+      displayFields: getDisplayFieldValuesFromForm()
+    });
     resetDeclarativeMapping();
-    status.innerHTML = '<br />Options <strong>saved.</strong>';
+    setStatus('Options saved.');
     setTimeout(function () {
       status.textContent = '';
     }, 2000);
   } else {
-    status.innerHTML = '<br /> Options <strong>Not</strong> saved.';
+    setStatus('Options not saved.');
     return;
   }
   document.getElementById('domains').value = domains && domains.join(', ');
@@ -68,6 +103,10 @@ async function main() {
 }
 
 function ConfigPage(props) {
+  const displayFields = {
+    ...defaultConfig.displayFields,
+    ...(props.displayFields || {})
+  };
   return (
     <div>
       {(() => {
@@ -99,6 +138,22 @@ function ConfigPage(props) {
         You can also add new domains at any time by clicking on the extension icon !
       </label>
       <div id='status'></div>
+      <br/>
+      <label>
+        Tooltip fields to show:
+      </label>
+      <div className='displayFields'>
+        {FIELD_OPTIONS.map(({key, label}) => (
+          <label key={key} className='displayFieldOption'>
+            <input
+              id={`displayField_${key}`}
+              type='checkbox'
+              defaultChecked={!!displayFields[key]}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
       <br/>
       <button onClick={saveOptions} id="save">Save</button>
     </div>

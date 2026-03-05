@@ -32,9 +32,13 @@
   "action": {
     "default_title": "Click to always search for tickets on this page"
   },
-  "content_security_policy": {},
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self'"
+  },
   "host_permissions": [
-    "https://github.com/",
+    "https://github.com/*"
+  ],
+  "optional_host_permissions": [
     "*://*/*"
   ]
 }

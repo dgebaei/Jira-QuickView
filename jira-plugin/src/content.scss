@@ -14,14 +14,27 @@ body ._JX {
     border: 1px solid #dde4e6;
     display: flex;
 
+    &_users {
+      display: inline-flex;
+      margin-left: -3px;
+      margin-right: 6px;
+      min-width: 20px;
+    }
+
     &_user {
       width: 20px;
       height: 20px;
-      margin-right: 6px;
-      margin-left: -3px;
+      margin-right: -6px;
       align-self: center;
       min-width: 20px;
       margin-top: -2px;
+      border: 1px solid #dfe1e6;
+      border-radius: 50%;
+      background: #fff;
+    }
+
+    &_user_assignee {
+      margin-right: 0;
     }
 
     &_copy {
@@ -42,6 +55,11 @@ body ._JX {
       font-size: 14px;
       line-height: 1.3;
     }
+  }
+
+  &_subtitle {
+    border-top: none;
+    padding-left: 36px;
   }
 
   &_status {
@@ -185,6 +203,7 @@ body ._JX {
     word-break: break-word;
 
     a {
+      font-size: 11px;
       text-decoration: underline;
     }
 

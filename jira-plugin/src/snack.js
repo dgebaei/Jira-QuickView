@@ -10,9 +10,10 @@ export function snackBar(message, timeout = 6000) {
           <div class="_JX_snack_icon">
             <img src="${chrome.runtime.getURL('resources/jiralink128.png')}" class="_JX_snack_icon_img" />
           </div>
-          <div class="_JX_snack_message">${message}</div>
+          <div class="_JX_snack_message"></div>
       </div>
   `);
+  content.find('._JX_snack_message').text(message || '');
   $('._JX_snack').removeClass('_JX_snack_show');
   $(document.body).append(content);
   content.addClass('_JX_snack_show');

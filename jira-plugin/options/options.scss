@@ -22,3 +22,23 @@ label {
 .upgradeWarning {
   color: #dd445c;
 }
+
+.displayFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 6px 18px;
+  max-width: 640px;
+  margin-top: 8px;
+}
+
+.displayFieldOption {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  width: auto;
+}
+
+.displayFieldOption input {
+  margin: 0;
+  width: auto;
+}

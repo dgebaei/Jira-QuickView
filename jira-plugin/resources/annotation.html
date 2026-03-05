@@ -1,27 +1,53 @@
 <div class="_JX_annotation">
     <div class="_JX_title">
-        <img class="_JX_title_user" title="{{reporter.displayName}}" src="{{reporter.avatarUrls.48x48}}">
-        <a id="_JX_title_link" data-ticket="{{ticketKey}}" data-title="{{ticketTitle}}" href="{{url}}">{{urlTitle}}</a>
-        <button class="_JX_title_copy">
+        <div class="_JX_title_users">
+            {{#reporter}}
+            <img class="_JX_title_user" title="Reporter: {{displayName}}" src="{{avatarUrls.48x48}}">
+            {{/reporter}}
+            {{#assignee}}
+            <img class="_JX_title_user _JX_title_user_assignee" title="Assignee: {{displayName}}" src="{{avatarUrls.48x48}}">
+            {{/assignee}}
+        </div>
+        <a class="_JX_copyable_link" id="_JX_title_link" data-ticket="{{ticketKey}}" data-title="{{ticketTitle}}" href="{{url}}" target="_blank" rel="noopener noreferrer">{{urlTitle}}</a>
+        <button class="_JX_title_copy _JX_copy_link" data-url="{{copyUrl}}" data-ticket="{{copyTicket}}" data-title="{{copyTitle}}">
             <svg width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><path d="M10 19h8V8h-8v11zM8 7.992C8 6.892 8.902 6 10.009 6h7.982C19.101 6 20 6.893 20 7.992v11.016c0 1.1-.902 1.992-2.009 1.992H10.01A2.001 2.001 0 0 1 8 19.008V7.992z"></path><path d="M5 16V4.992C5 3.892 5.902 3 7.009 3H15v13H5zm2 0h8V5H7v11z"></path></g></svg>
         </button>
     </div>
     <div class="_JX_status">
-        <span class="_JX_field_chip">
-            {{#issuetype.iconUrl}}<img class="_JX_status_icon" src="{{issuetype.iconUrl}}">{{/issuetype.iconUrl}}{{issueTypeText}}
-        </span>
-        <span class="_JX_field_chip">
-            {{#status.iconUrl}}<img class="_JX_status_icon" src="{{status.iconUrl}}">{{/status.iconUrl}}{{statusText}}
-        </span>
-        <span class="_JX_field_chip">{{sprintText}}</span>
-        <span class="_JX_field_chip">{{fixVersionText}}</span>
+        {{#statusChips}}
+        <span class="_JX_field_chip">{{text}}</span>
+        {{/statusChips}}
+        {{#epicParentChips}}
+        <span class="_JX_field_chip">{{text}}</span>
+        {{/epicParentChips}}
+        {{#affectsText}}
+        <span class="_JX_field_chip">{{affectsText}}</span>
+        {{/affectsText}}
+        {{#sprintChips}}
+        <a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{url}}">{{text}}</a>
+        {{/sprintChips}}
+        {{#sprintFallbackText}}
+        <span class="_JX_field_chip">{{sprintFallbackText}}</span>
+        {{/sprintFallbackText}}
+        {{#fixVersionChips}}
+        <a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{url}}">{{text}}</a>
+        {{/fixVersionChips}}
+        {{#fixVersionFallbackText}}
+        <span class="_JX_field_chip">{{fixVersionFallbackText}}</span>
+        {{/fixVersionFallbackText}}
+        {{#labelChips}}
+        <a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{url}}">{{text}}</a>
+        {{/labelChips}}
+        {{#accountChips}}
+        <span class="_JX_field_chip">{{text}}</span>
+        {{/accountChips}}
         {{#attachmentChips}}
         <span class="_JX_field_chip">{{icon}} {{count}}</span>
         {{/attachmentChips}}
         {{#hasComments}}
-        <a class="_JX_field_chip _JX_field_chip_link" target="_blank" href="{{commentUrl}}">
+        <span class="_JX_field_chip">
             💬 {{commentsTotal}}
-        </a>
+        </span>
         {{/hasComments}}
     </div>
 

@@ -7,6 +7,77 @@ const executeScript = promisifyChrome(chrome.scripting, 'executeScript');
 const sendMessage = promisifyChrome(chrome.tabs, 'sendMessage');
 
 var SEND_RESPONSE_IS_ASYNC = true;
+const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
+
+async function getInstanceOrigin() {
+  const {instanceUrl} = await storageGet(defaultConfig);
+  if (!instanceUrl) {
+    return null;
+  }
+  try {
+    return new URL(instanceUrl).origin;
+  } catch (ex) {
+    return null;
+  }
+}
+
+async function assertAllowedRequestUrl(rawUrl, {allowExtension = false} = {}) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (ex) {
+    throw new Error('Invalid request URL');
+  }
+
+  if (allowExtension && parsed.origin === EXTENSION_ORIGIN) {
+    return parsed.toString();
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('Unsupported URL protocol');
+  }
+
+  const instanceOrigin = await getInstanceOrigin();
+  if (!instanceOrigin || parsed.origin !== instanceOrigin) {
+    throw new Error('URL is outside configured Jira instance');
+  }
+
+  return parsed.toString();
+}
+
+function validateMessageSender(sender) {
+  if (!sender || sender.id !== chrome.runtime.id) {
+    throw new Error('Rejected sender');
+  }
+}
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function ensureContentScriptReady(tabId) {
+  await executeScript({
+    target: {tabId},
+    files: [contentScript]
+  });
+}
+
+async function notifyTab(tabId, message) {
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      if (attempt > 0) {
+        await ensureContentScriptReady(tabId);
+      }
+      await sendMessage(tabId, {
+        action: 'message',
+        message
+      });
+      return true;
+    } catch (ex) {
+      await delay(80);
+    }
+  }
+  return false;
+}
 
 async function fetchWithCredentials(url) {
   const response = await fetch(url, {credentials: 'include'});
@@ -27,8 +98,16 @@ async function blobToDataUrl(blob) {
 }
 
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+  try {
+    validateMessageSender(sender);
+  } catch (error) {
+    sendResponse({error: error.message});
+    return false;
+  }
+
   if (request.action === 'get') {
-    fetchWithCredentials(request.url)
+    assertAllowedRequestUrl(request.url, {allowExtension: true})
+      .then(fetchWithCredentials)
       .then(async response => {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status} – ${response.statusText}`);
@@ -49,7 +128,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   }
 
   if (request.action === 'getImageDataUrl') {
-    fetchWithCredentials(request.url)
+    assertAllowedRequestUrl(request.url)
+      .then(fetchWithCredentials)
       .then(async response => {
         const contentType = response.headers.get('Content-Type') || '';
         if (!contentType.startsWith('image/')) {
@@ -63,9 +143,14 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       });
     return SEND_RESPONSE_IS_ASYNC;
   }
+
+  return false;
 });
 
 async function browserOnClicked (tab) {
+  if (!tab || !tab.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
+    return;
+  }
   const config = await storageGet(defaultConfig);
   if (!config.instanceUrl || !config.v15upgrade) {
     chrome.runtime.openOptionsPage();
@@ -76,35 +161,14 @@ async function browserOnClicked (tab) {
   if (granted) {
     const config = await storageGet(defaultConfig);
     if (config.domains.indexOf(origin) !== -1) {
-      try {
-        await sendMessage(tab.id, {
-          action: 'message',
-          message: origin + ' is already added.'
-        });
-      } catch (ex) {
-        // extension was just installed and not injected on this tab yet
-        await executeScript({
-          target: {tabId: tab.id},
-          files: [contentScript]
-        });
-        await sendMessage(tab.id, {
-          action: 'message',
-          message: 'Jira HotLinker enabled successfully !'
-        });
-      }
+      await notifyTab(tab.id, origin + ' is already added.');
       return;
     }
     config.domains.push(origin);
     await storageSet(config);
     await resetDeclarativeMapping();
-    await executeScript({
-      target: {tabId: tab.id},
-      files: [contentScript]
-    });
-    await sendMessage(tab.id, {
-      action: 'message',
-      message: origin + ' added successfully !'
-    });
+    await ensureContentScriptReady(tab.id);
+    await notifyTab(tab.id, origin + ' added successfully !');
   }
 }
 
