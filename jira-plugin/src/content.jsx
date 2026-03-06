@@ -208,8 +208,19 @@ async function mainAsyncLocal() {
   const cacheTtlMs = 60 * 1000;
   const issueCache = new Map();
   const pullRequestCache = new Map();
+  const emptyCommentMentionState = () => ({
+    error: '',
+    loading: false,
+    query: '',
+    range: null,
+    selectedIndex: 0,
+    suggestions: [],
+    visible: false
+  });
   let currentUserPromise;
   let activeCommentContext = null;
+  let commentMentionState = emptyCommentMentionState();
+  let commentMentionRequestId = 0;
 
   function toAbsoluteJiraUrl(url) {
     if (!url) {
@@ -290,13 +301,30 @@ async function mainAsyncLocal() {
     return node.innerHTML;
   }
 
+  function getMentionDisplayText(rawValue) {
+    const normalized = String(rawValue || '')
+      .trim()
+      .replace(/^accountid:/i, '');
+    return normalized ? `@${normalized}` : '@mention';
+  }
+
   function textToLinkedHtml(input) {
-    const escaped = escapeHtml(input || '');
+    const mentionHtml = [];
+    const inputWithMentions = String(input || '').replace(/\[~([^[\]\r\n]+?)\]/g, function (match, mentionValue) {
+      const placeholderIndex = mentionHtml.length;
+      mentionHtml.push(`<span class="_JX_mention">${escapeHtml(getMentionDisplayText(mentionValue))}</span>`);
+      return `__JX_COMMENT_MENTION_${placeholderIndex}__`;
+    });
+    const escaped = escapeHtml(inputWithMentions);
     const withLinks = escaped.replace(
       /(https?:\/\/[^\s<]+)/g,
       '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
     );
-    return withLinks.replace(/\n/g, '<br/>');
+    return withLinks
+      .replace(/__JX_COMMENT_MENTION_(\d+)__/g, function (match, index) {
+        return mentionHtml[Number(index)] || '';
+      })
+      .replace(/\n/g, '<br/>');
   }
 
   function formatRelativeDate(created) {
@@ -461,14 +489,227 @@ async function mainAsyncLocal() {
     return currentUserPromise;
   }
 
+  function getCommentMentionMarkup(candidate) {
+    const username = candidate?.name || candidate?.username || '';
+    if (username) {
+      return `[~${username}]`;
+    }
+    const accountId = candidate?.accountId || '';
+    if (accountId) {
+      return `[~accountid:${accountId}]`;
+    }
+    return '';
+  }
+
+  async function searchCommentMentionCandidates(query) {
+    const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(query)}`);
+    const rawCandidates = Array.isArray(response)
+      ? response
+      : response?.users || response?.items || [];
+    const seen = new Set();
+    return rawCandidates
+      .map(candidate => {
+        const mentionMarkup = getCommentMentionMarkup(candidate);
+        if (!mentionMarkup || seen.has(mentionMarkup)) {
+          return null;
+        }
+        seen.add(mentionMarkup);
+        const displayName = candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || 'Unknown user';
+        const username = candidate?.name || candidate?.username || '';
+        const secondaryText = (username && username !== displayName)
+          ? `@${username}`
+          : ((candidate?.emailAddress && candidate.emailAddress !== displayName) ? candidate.emailAddress : '');
+        return {
+          displayName,
+          mentionMarkup,
+          secondaryText
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
   function getCommentComposerElements() {
     return {
       root: container.find('._JX_comment_compose'),
       input: container.find('._JX_comment_input'),
+      mentions: container.find('._JX_comment_mentions'),
       save: container.find('._JX_comment_save'),
       discard: container.find('._JX_comment_discard'),
       error: container.find('._JX_comment_error')
     };
+  }
+
+  function renderCommentMentionSuggestions() {
+    const {mentions} = getCommentComposerElements();
+    if (!mentions.length) {
+      return;
+    }
+
+    if (!commentMentionState.visible) {
+      mentions.attr('hidden', 'hidden').empty();
+      return;
+    }
+
+    if (commentMentionState.loading) {
+      mentions.removeAttr('hidden').html('<div class="_JX_comment_mentions_status">Searching people...</div>');
+      return;
+    }
+
+    if (commentMentionState.error) {
+      mentions.removeAttr('hidden').html(`<div class="_JX_comment_mentions_status">${escapeHtml(commentMentionState.error)}</div>`);
+      return;
+    }
+
+    if (!commentMentionState.suggestions.length) {
+      mentions.removeAttr('hidden').html('<div class="_JX_comment_mentions_status">No people found.</div>');
+      return;
+    }
+
+    mentions.removeAttr('hidden').html(commentMentionState.suggestions.map(function (candidate, index) {
+      const selectedClass = index === commentMentionState.selectedIndex ? ' is-selected' : '';
+      const secondary = candidate.secondaryText
+        ? `<span class="_JX_comment_mention_secondary">${escapeHtml(candidate.secondaryText)}</span>`
+        : '';
+      return `
+        <button class="_JX_comment_mention_option${selectedClass}" type="button" data-mention-index="${index}">
+          <span>
+            <span class="_JX_comment_mention_primary">${escapeHtml(candidate.displayName)}</span>
+            ${secondary}
+          </span>
+        </button>
+      `;
+    }).join(''));
+  }
+
+  function resetCommentMentionState() {
+    commentMentionRequestId += 1;
+    debouncedLoadCommentMentionSuggestions.cancel();
+    commentMentionState = emptyCommentMentionState();
+    renderCommentMentionSuggestions();
+  }
+
+  function getActiveCommentMention(inputElement) {
+    if (!inputElement) {
+      return null;
+    }
+
+    const value = inputElement.value || '';
+    const caretStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
+    const caretEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : caretStart;
+    if (caretStart !== caretEnd) {
+      return null;
+    }
+
+    const beforeCaret = value.slice(0, caretStart);
+    const mentionMatch = beforeCaret.match(/(^|[\s(])@([^\s@]{1,50})$/);
+    if (!mentionMatch) {
+      return null;
+    }
+
+    let end = caretEnd;
+    while (end < value.length && !/\s/.test(value.charAt(end))) {
+      end += 1;
+    }
+
+    return {
+      end,
+      query: mentionMatch[2],
+      start: caretStart - mentionMatch[2].length - 1
+    };
+  }
+
+  async function loadCommentMentionSuggestions(mention) {
+    const requestId = ++commentMentionRequestId;
+    try {
+      const suggestions = await searchCommentMentionCandidates(mention.query);
+      if (requestId !== commentMentionRequestId) {
+        return;
+      }
+
+      commentMentionState = {
+        error: '',
+        loading: false,
+        query: mention.query,
+        range: mention,
+        selectedIndex: 0,
+        suggestions,
+        visible: true
+      };
+    } catch (error) {
+      if (requestId !== commentMentionRequestId) {
+        return;
+      }
+
+      commentMentionState = {
+        error: 'Could not load people.',
+        loading: false,
+        query: mention.query,
+        range: mention,
+        selectedIndex: 0,
+        suggestions: [],
+        visible: true
+      };
+    }
+
+    renderCommentMentionSuggestions();
+  }
+
+  const debouncedLoadCommentMentionSuggestions = debounce(function (mention) {
+    loadCommentMentionSuggestions(mention).catch(() => {});
+  }, 150);
+
+  function syncCommentMentionSuggestions(inputElement) {
+    const mention = getActiveCommentMention(inputElement);
+    if (!mention) {
+      resetCommentMentionState();
+      return;
+    }
+
+    commentMentionState = {
+      error: '',
+      loading: true,
+      query: mention.query,
+      range: mention,
+      selectedIndex: 0,
+      suggestions: [],
+      visible: true
+    };
+    renderCommentMentionSuggestions();
+    debouncedLoadCommentMentionSuggestions(mention);
+  }
+
+  function moveCommentMentionSelection(delta) {
+    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
+      return;
+    }
+    const suggestionsTotal = commentMentionState.suggestions.length;
+    const nextIndex = (commentMentionState.selectedIndex + delta + suggestionsTotal) % suggestionsTotal;
+    commentMentionState = {
+      ...commentMentionState,
+      selectedIndex: nextIndex
+    };
+    renderCommentMentionSuggestions();
+  }
+
+  function applyCommentMentionSelection(index) {
+    const {input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    const candidate = commentMentionState.suggestions[index];
+    const mentionRange = commentMentionState.range;
+    if (!inputElement || !candidate || !mentionRange) {
+      return;
+    }
+
+    const nextValue = inputElement.value.slice(0, mentionRange.start) +
+      `${candidate.mentionMarkup} ` +
+      inputElement.value.slice(mentionRange.end);
+    input.val(nextValue);
+    inputElement.focus();
+    const caretPosition = mentionRange.start + candidate.mentionMarkup.length + 1;
+    inputElement.setSelectionRange(caretPosition, caretPosition);
+    resetCommentMentionState();
+    syncCommentComposerState();
   }
 
   function syncCommentComposerState() {
@@ -536,6 +777,7 @@ async function mainAsyncLocal() {
       return;
     }
 
+    resetCommentMentionState();
     const elements = getCommentComposerElements();
     const commentText = elements.input.val().trim();
     if (!commentText) {
@@ -568,6 +810,7 @@ async function mainAsyncLocal() {
     if (!elements.root.length || elements.root.attr('data-saving') === 'true') {
       return;
     }
+    resetCommentMentionState();
     elements.input.val('');
     setCommentComposerError('');
     syncCommentComposerState();
@@ -1139,6 +1382,63 @@ async function mainAsyncLocal() {
 
   $(document.body).on('input', '._JX_comment_input', function () {
     syncCommentComposerState();
+    syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('click', '._JX_comment_input', function () {
+    syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('keyup', '._JX_comment_input', function (e) {
+    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
+      return;
+    }
+    syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('keydown', '._JX_comment_input', function (e) {
+    if (e.key === 'Escape' && commentMentionState.visible) {
+      e.preventDefault();
+      resetCommentMentionState();
+      return;
+    }
+
+    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveCommentMentionSelection(1);
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveCommentMentionSelection(-1);
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      applyCommentMentionSelection(commentMentionState.selectedIndex);
+    }
+  });
+
+  $(document.body).on('click', '._JX_comment_mention_option', function (e) {
+    e.preventDefault();
+    const index = Number(e.currentTarget.getAttribute('data-mention-index'));
+    if (Number.isNaN(index)) {
+      return;
+    }
+    applyCommentMentionSelection(index);
+  });
+
+  $(document.body).on('mousedown', function (e) {
+    if ($(e.target).closest('._JX_comment_compose').length) {
+      return;
+    }
+    resetCommentMentionState();
   });
 
   $(document.body).on('click', '._JX_comment_save', function (e) {
@@ -1190,6 +1490,7 @@ async function mainAsyncLocal() {
   function hideContainer() {
     lastHoveredKey = '';
     activeCommentContext = null;
+    resetCommentMentionState();
     containerPinned = false;
     container.css({
       left: -5000,
@@ -1457,4 +1758,6 @@ if (!window.__JX__script_injected__) {
 }
 
 window.__JX__script_injected__ = true;
+
+
 

@@ -113,7 +113,10 @@
             {{/commentsForDisplay.length}}
             {{#showCommentComposer}}
             <div class="_JX_comment_compose" data-saving="false">
-                <textarea class="_JX_comment_input" rows="3" placeholder="Add a comment"></textarea>
+                <div class="_JX_comment_input_wrap">
+                    <textarea class="_JX_comment_input" rows="3" placeholder="Add a comment. Type @ to mention someone"></textarea>
+                    <div class="_JX_comment_mentions" hidden></div>
+                </div>
                 <div class="_JX_comment_error"></div>
                 <div class="_JX_comment_actions">
                     <button class="_JX_comment_discard" type="button" disabled>Discard</button>
@@ -128,4 +131,5 @@
         {{/emptyBodyText}}
     </div>
 </div>
+
 
