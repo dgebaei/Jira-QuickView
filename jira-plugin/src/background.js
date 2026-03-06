@@ -8,6 +8,7 @@ const sendMessage = promisifyChrome(chrome.tabs, 'sendMessage');
 
 var SEND_RESPONSE_IS_ASYNC = true;
 const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
+const FETCH_TIMEOUT_MS = 1000;
 
 async function getInstanceOrigin() {
   const {instanceUrl} = await storageGet(defaultConfig);
@@ -80,11 +81,26 @@ async function notifyTab(tabId, message) {
 }
 
 async function fetchWithCredentials(url) {
-  const response = await fetch(url, {credentials: 'include'});
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      credentials: 'include',
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+    }
+    return response;
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${FETCH_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response;
 }
 
 async function blobToDataUrl(blob) {
@@ -188,3 +204,4 @@ async function browserOnClicked (tab) {
     });
   });
 })();
+

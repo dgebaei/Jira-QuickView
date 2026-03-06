@@ -69,6 +69,22 @@ function buildJiraKeyMatcher(projectKeys) {
   };
 }
 
+function buildFallbackJiraKeyMatcher() {
+  const jiraTicketRegex = /\b[A-Z][A-Z0-9]{1,14}[- ]\d+\b/g;
+
+  return function (text) {
+    let matches;
+    const result = [];
+    const input = text || '';
+
+    while ((matches = jiraTicketRegex.exec(input)) !== null) {
+      result.push(matches[0]);
+    }
+    jiraTicketRegex.lastIndex = 0;
+    return result;
+  };
+}
+
 chrome.runtime.onMessage.addListener(function (msg) {
   if (msg.action === 'message') {
     snackBar(msg.message);
@@ -76,6 +92,7 @@ chrome.runtime.onMessage.addListener(function (msg) {
 });
 
 let ui_tips_shown_local = [];
+const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
 
 async function showTip(tipName, tipMessage) {
   if (ui_tips_shown_local.indexOf(tipName) !== -1) {
@@ -116,6 +133,27 @@ async function getImageDataUrl(url) {
   }
 }
 
+function isJiraConnectionFailure(error) {
+  const message = String(error?.message || error?.inner || error || '');
+  return CONNECTION_ERROR_PATTERN.test(message);
+}
+
+function notifyJiraConnectionFailure(instanceUrl, error) {
+  if (!isJiraConnectionFailure(error)) {
+    return false;
+  }
+
+  let host = '';
+  try {
+    host = new URL(instanceUrl).hostname;
+  } catch (ex) {
+    host = '';
+  }
+
+  snackBar(`Could not reach Jira${host ? ` at ${host}` : ''}. Check your VPN or network connection.`, 1500);
+  return true;
+}
+
 async function mainAsyncLocal() {
   const $ = require('jquery');
   const draggable = require('jquery-ui/ui/widgets/draggable');
@@ -140,15 +178,21 @@ async function mainAsyncLocal() {
     pullRequests: true,
     ...(config.displayFields || {})
   };
-  const jiraProjects = await get(await getInstanceUrl() + 'rest/api/2/project');
-
-  if (!size(jiraProjects)) {
-    console.log('Couldn\'t find any jira projects...');
-    return;
+  let jiraProjects = [];
+  let getJiraKeys = buildFallbackJiraKeyMatcher();
+  try {
+    jiraProjects = await get(await getInstanceUrl() + 'rest/api/2/project');
+  } catch (ex) {
+    // Keep hover support alive offline; only notify on explicit hover fetch failures.
   }
-  const getJiraKeys = buildJiraKeyMatcher(jiraProjects.map(function (project) {
-    return project.key;
-  }));
+
+  if (size(jiraProjects)) {
+    getJiraKeys = buildJiraKeyMatcher(jiraProjects.map(function (project) {
+      return project.key;
+    }));
+  } else {
+    console.log("Couldn't load Jira projects, using fallback issue-key matcher.");
+  }
   const annotationTemplate = await fetch(chrome.runtime.getURL('resources/annotation.html')).then(response => response.text());
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
   const imageProxyCache = {};
@@ -979,9 +1023,10 @@ async function mainAsyncLocal() {
             }),
             prs: [],
             description: displayFields.description ? normalizedDescription : '',
-            hasBodyContent: (displayFields.description && !!normalizedDescription) ||
-              (displayFields.attachments && previewAttachments.length > 0) ||
-              (displayFields.comments && commentsForDisplay.length > 0),
+            hasBodyContent: true,
+            emptyBodyText: (!normalizedDescription && previewAttachments.length === 0 && commentsForDisplay.length === 0)
+              ? 'No description, attachments or comments.'
+              : '',
             attachments,
             previewAttachments: displayFields.attachments ? previewAttachments : [],
             commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
@@ -1039,7 +1084,8 @@ async function mainAsyncLocal() {
           if (!containerPinned) {
             container.css(computeVisibleContainerPosition(pointerX, pointerY));
           }
-        })(cancelToken).catch(() => {
+        })(cancelToken).catch((error) => {
+          notifyJiraConnectionFailure(INSTANCE_URL, error);
           lastHoveredKey = '';
         });
       } else if (!containerPinned) {
@@ -1055,3 +1101,5 @@ if (!window.__JX__script_injected__) {
 }
 
 window.__JX__script_injected__ = true;
+
+

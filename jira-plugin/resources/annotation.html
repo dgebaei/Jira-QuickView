@@ -51,7 +51,6 @@
         {{/hasComments}}
     </div>
 
-    {{#hasBodyContent}}
     <div class="_JX_description">
         {{#description}}
         <div class="_JX_description_text">
@@ -83,8 +82,10 @@
             {{/commentsForDisplay}}
         </div>
         {{/commentsForDisplay.length}}
+        {{#emptyBodyText}}
+        <div class="_JX_empty_body">{{emptyBodyText}}</div>
+        {{/emptyBodyText}}
     </div>
-    {{/hasBodyContent}}
 
     {{#prs.length}}
     <div class="_JX_related_pr">

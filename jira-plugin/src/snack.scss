@@ -6,8 +6,7 @@ body ._JX {
     left: 50%;
     min-height: 30px;
     min-width: 50px;
-    transform: translateX(-50%) translateY(100%) translateY(20px) !important;
-    transition: transform 300ms !important;
+    transform: translateX(-50%) !important;
     background-color: #444444;
     padding: 14px 20px;
     border-radius: 50px;
@@ -15,10 +14,10 @@ body ._JX {
     border: 2px solid white;
     font-size: 16px;
     line-height: 22px;
+    display: none;
 
     &_show {
-      transition: transform 150ms !important;
-      transform: translateX(-50%) !important;
+      display: block;
     }
 
     &_icon {
@@ -32,6 +31,7 @@ body ._JX {
       border-radius: 30px;
       width: 39px;
       height: 39px;
+
       &_img {
         width: 27px;
         background-color: white;
@@ -40,6 +40,7 @@ body ._JX {
         left: 6px;
       }
     }
+
     &_message {
       margin-left: 40px;
       color: white;
