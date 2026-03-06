@@ -673,23 +673,21 @@ async function mainAsyncLocal() {
     }
     if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
       const textValue = String(entry);
-      const looksLikeUrl = /^https?:\/\//i.test(textValue);
       return {
-        text: looksLikeUrl ? (fieldName || textValue) : (fieldName ? `${fieldName}: ${textValue}` : textValue),
-        url: looksLikeUrl ? textValue : ''
+        text: fieldName ? `${fieldName}: ${textValue}` : textValue,
+        linkUrl: ''
       };
     }
     const primaryText = entry.name || entry.value || entry.displayName || entry.id || entry.key;
-    const rawUrl = [entry.self, entry.url, entry.href].find(value => typeof value === 'string' && value.trim());
-    if (!primaryText && !rawUrl) {
+    if (!primaryText) {
       return null;
     }
     const formattedValue = entry.key && (entry.name || entry.value)
       ? `[${entry.key}] ${entry.name || entry.value}`
-      : primaryText ? String(primaryText) : rawUrl;
+      : String(primaryText);
     return {
       text: fieldName ? `${fieldName}: ${formattedValue}` : formattedValue,
-      url: rawUrl ? toAbsoluteJiraUrl(rawUrl) : ''
+      linkUrl: ''
     };
   }
   function buildCustomFieldChips(issueData, customFields) {
@@ -775,6 +773,21 @@ async function mainAsyncLocal() {
 
   function buildJqlUrl(jql) {
     return `${INSTANCE_URL}issues/?jql=${encodeURIComponent(jql)}`;
+  }
+
+  function scopeJqlToProject(projectKey, clause) {
+    if (!projectKey || !clause) {
+      return clause || '';
+    }
+    return `project = ${encodeJqlValue(projectKey)} AND ${clause}`;
+  }
+
+  function buildFilterChip(text, jql, extra = {}) {
+    return {
+      text,
+      linkUrl: jql ? buildJqlUrl(jql) : '',
+      ...extra
+    };
   }
 
   function buildAttachmentChips(attachments) {
@@ -1131,39 +1144,57 @@ async function mainAsyncLocal() {
           const issueTypeName = issueData.fields.issuetype?.name;
           const statusName = issueData.fields.status?.name;
           const priorityName = issueData.fields.priority?.name;
+          const projectKey = key.split('-')[0];
 
           const row1Chips = [
-            displayFields.issueType ? {
-              text: issueTypeName || 'No type',
-              iconUrl: issueData.fields.issuetype?.iconUrl || ''
-            } : null,
-            displayFields.status ? {
-              text: statusName || 'No status',
-              iconUrl: issueData.fields.status?.iconUrl || ''
-            } : null,
-            displayFields.priority ? {
-              text: priorityName || 'No priority',
-              iconUrl: issueData.fields.priority?.iconUrl || ''
-            } : null,
+            displayFields.issueType ? buildFilterChip(
+              issueTypeName || 'No type',
+              issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
+              {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
+            ) : null,
+            displayFields.status ? buildFilterChip(
+              statusName || 'No status',
+              statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
+              {iconUrl: issueData.fields.status?.iconUrl || ''}
+            ) : null,
+            displayFields.priority ? buildFilterChip(
+              priorityName || 'No priority',
+              priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
+              {iconUrl: issueData.fields.priority?.iconUrl || ''}
+            ) : null,
             displayFields.epicParent ? {
               text: epicOrParent
                 ? `Parent: [${epicOrParent.key}] ${epicOrParent.summary}`
-                : 'Parent: --'
+                : 'Parent: --',
+              linkUrl: epicOrParent?.url || ''
             } : null,
             ...customFieldChips[1]
           ].filter(Boolean);
 
+          const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
+          const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
           const row2Chips = [
-            displayFields.sprint ? {text: `Sprint: ${formatSprintText(sprints) || '--'}`} : null,
-            displayFields.affects ? {
-              text: `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`
-            } : null,
-            displayFields.fixVersions ? {text: `Fix version: ${formatFixVersionText(fixVersions) || '--'}`} : null,
+            displayFields.sprint ? buildFilterChip(
+              `Sprint: ${formatSprintText(sprints) || '--'}`,
+              ''
+            ) : null,
+            displayFields.affects ? buildFilterChip(
+              `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`,
+              singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+            ) : null,
+            displayFields.fixVersions ? buildFilterChip(
+              `Fix version: ${formatFixVersionText(fixVersions) || '--'}`,
+              singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
+            ) : null,
             ...customFieldChips[2]
           ].filter(Boolean);
 
+          const singleLabel = labels.length === 1 ? labels[0] : '';
           const row3Chips = [
-            displayFields.labels ? {text: `Labels: ${labels.filter(Boolean).join(', ') || '--'}`} : null,
+            displayFields.labels ? buildFilterChip(
+              `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
+              singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : ''
+            ) : null,
             ...customFieldChips[3]
           ].filter(Boolean);
 
@@ -1225,6 +1256,7 @@ async function mainAsyncLocal() {
               return {
                 id: pr.id,
                 url: pr.url,
+                linkUrl: pr.url,
                 title: formatPullRequestTitle(pr),
                 status: pr.status,
                 authorName: formatPullRequestAuthor(pr),

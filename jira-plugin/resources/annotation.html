@@ -18,8 +18,8 @@
         <div class="_JX_status_row _JX_status_row_primary">
             <div class="_JX_status_row_main">
                 {{#row1Chips}}
-                {{#url}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{url}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/url}}
-                {{^url}}<span class="_JX_field_chip">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/url}}
+                {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
                 {{/row1Chips}}
             </div>
             {{#activityIndicators.length}}
@@ -34,16 +34,16 @@
         {{#row2Chips.length}}
         <div class="_JX_status_row">
             {{#row2Chips}}
-            {{#url}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{url}}">{{text}}</a>{{/url}}
-            {{^url}}<span class="_JX_field_chip">{{text}}</span>{{/url}}
+            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}">{{text}}</a>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
             {{/row2Chips}}
         </div>
         {{/row2Chips.length}}
         {{#row3Chips.length}}
         <div class="_JX_status_row">
             {{#row3Chips}}
-            {{#url}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{url}}">{{text}}</a>{{/url}}
-            {{^url}}<span class="_JX_field_chip">{{text}}</span>{{/url}}
+            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}">{{text}}</a>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
             {{/row3Chips}}
         </div>
         {{/row3Chips.length}}
