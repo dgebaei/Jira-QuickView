@@ -143,6 +143,23 @@ async function requestJson(method, url, body) {
   throw err;
 }
 
+async function uploadAttachment(url, file) {
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  const response = await sendMessage({
+    action: 'uploadAttachment',
+    bytes,
+    contentType: file.type,
+    fileName: file.name,
+    url
+  });
+  if (Object.prototype.hasOwnProperty.call(response, 'result')) {
+    return response.result;
+  }
+  const err = new Error(response.error || 'Attachment upload failed');
+  err.inner = response.error;
+  throw err;
+}
+
 function isJiraConnectionFailure(error) {
   const message = String(error?.message || error?.inner || error || '');
   return CONNECTION_ERROR_PATTERN.test(message);
@@ -217,10 +234,16 @@ async function mainAsyncLocal() {
     suggestions: [],
     visible: false
   });
+  const emptyCommentUploadState = () => ({
+    items: []
+  });
   let currentUserPromise;
   let activeCommentContext = null;
   let commentMentionState = emptyCommentMentionState();
   let commentMentionRequestId = 0;
+  let commentUploadState = emptyCommentUploadState();
+  let commentUploadSessionId = 0;
+  let commentUploadSequence = 0;
 
   function toAbsoluteJiraUrl(url) {
     if (!url) {
@@ -308,19 +331,34 @@ async function mainAsyncLocal() {
     return normalized ? `@${normalized}` : '@mention';
   }
 
-  function textToLinkedHtml(input) {
+  function textToLinkedHtml(input, options = {}) {
+    const {attachmentImagesByName = {}} = options;
     const mentionHtml = [];
     const inputWithMentions = String(input || '').replace(/\[~([^[\]\r\n]+?)\]/g, function (match, mentionValue) {
       const placeholderIndex = mentionHtml.length;
       mentionHtml.push(`<span class="_JX_mention">${escapeHtml(getMentionDisplayText(mentionValue))}</span>`);
       return `__JX_COMMENT_MENTION_${placeholderIndex}__`;
     });
-    const escaped = escapeHtml(inputWithMentions);
+    const imageHtml = [];
+    const inputWithImages = inputWithMentions.replace(/!([^!\r\n]+)!/g, function (match, imageName) {
+      const normalizedName = String(imageName || '').trim();
+      const imageMarkup = attachmentImagesByName[normalizedName];
+      if (!imageMarkup) {
+        return match;
+      }
+      const placeholderIndex = imageHtml.length;
+      imageHtml.push(imageMarkup);
+      return `__JX_COMMENT_IMAGE_${placeholderIndex}__`;
+    });
+    const escaped = escapeHtml(inputWithImages);
     const withLinks = escaped.replace(
       /(https?:\/\/[^\s<]+)/g,
       '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
     );
     return withLinks
+      .replace(/__JX_COMMENT_IMAGE_(\d+)__/g, function (match, index) {
+        return imageHtml[Number(index)] || '';
+      })
       .replace(/__JX_COMMENT_MENTION_(\d+)__/g, function (match, index) {
         return mentionHtml[Number(index)] || '';
       })
@@ -534,10 +572,270 @@ async function mainAsyncLocal() {
       root: container.find('._JX_comment_compose'),
       input: container.find('._JX_comment_input'),
       mentions: container.find('._JX_comment_mentions'),
+      uploads: container.find('._JX_comment_uploads'),
       save: container.find('._JX_comment_save'),
       discard: container.find('._JX_comment_discard'),
       error: container.find('._JX_comment_error')
     };
+  }
+
+  function hasCommentUploadInFlight() {
+    return commentUploadState.items.some(item => item.status === 'uploading');
+  }
+
+  function getUploadedCommentAttachments() {
+    return commentUploadState.items.filter(item => item.status === 'uploaded' && item.attachmentId);
+  }
+
+  function renderCommentUploads() {
+    const {uploads} = getCommentComposerElements();
+    if (!uploads.length) {
+      return;
+    }
+
+    if (!commentUploadState.items.length) {
+      uploads.attr('hidden', 'hidden').empty();
+      keepContainerVisible();
+      return;
+    }
+
+    uploads.removeAttr('hidden').html(commentUploadState.items.map(item => {
+      const stateClass = item.status === 'error' ? ' is-error' : '';
+      const statusText = item.status === 'uploading'
+        ? 'Uploading to Jira...'
+        : (item.status === 'uploaded' ? 'Attached to issue' : (item.errorMessage || 'Upload failed'));
+      const previewHtml = item.previewUrl
+        ? `<img class="_JX_comment_upload_preview" src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.fileName)}" />`
+        : '<span class="_JX_comment_upload_preview"></span>';
+      return `
+        <div class="_JX_comment_upload${stateClass}">
+          ${previewHtml}
+          <span>
+            <span class="_JX_comment_upload_name">${escapeHtml(item.fileName)}</span>
+            <span class="_JX_comment_upload_status">${escapeHtml(statusText)}</span>
+          </span>
+        </div>
+      `;
+    }).join(''));
+    keepContainerVisible();
+  }
+
+  function updateCommentUploadItem(localId, updater) {
+    const nextItems = commentUploadState.items.map(item => {
+      if (item.localId !== localId) {
+        return item;
+      }
+      return typeof updater === 'function' ? updater(item) : {...item, ...updater};
+    });
+    commentUploadState = {items: nextItems};
+    renderCommentUploads();
+    syncCommentComposerState();
+  }
+
+  function buildPastedImageFileName(file) {
+    const mimeType = String(file?.type || '').toLowerCase();
+    const extensionByMimeType = {
+      'image/bmp': 'bmp',
+      'image/gif': 'gif',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp'
+    };
+    const extension = extensionByMimeType[mimeType] || 'png';
+    commentUploadSequence += 1;
+    const timestamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 14);
+    return `pasted-image-${timestamp}-${commentUploadSequence}.${extension}`;
+  }
+
+  function buildCommentImageMarkup(fileName) {
+    return `!${fileName}!`;
+  }
+
+  function replaceCommentInputText(searchValue, replaceValue = '') {
+    const {input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    if (!inputElement || !searchValue) {
+      return false;
+    }
+    const currentValue = inputElement.value || '';
+    const nextValue = currentValue.replace(searchValue, replaceValue).replace(/\n{3,}/g, '\n\n');
+    if (nextValue === currentValue) {
+      return false;
+    }
+    input.val(nextValue);
+    const caretPosition = Math.min(nextValue.length, (typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : nextValue.length));
+    inputElement.setSelectionRange(caretPosition, caretPosition);
+    return true;
+  }
+
+  function insertCommentInputText(text) {
+    const {input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    if (!inputElement) {
+      return false;
+    }
+    const value = inputElement.value || '';
+    const selectionStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
+    const selectionEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : selectionStart;
+    const prefix = selectionStart > 0 && value.charAt(selectionStart - 1) !== '\n' ? '\n' : '';
+    const suffix = selectionEnd < value.length
+      ? (value.charAt(selectionEnd) !== '\n' ? '\n' : '')
+      : '\n';
+    const insertedText = `${prefix}${text}${suffix}`;
+    const nextValue = value.slice(0, selectionStart) + insertedText + value.slice(selectionEnd);
+    input.val(nextValue);
+    inputElement.focus();
+    const caretPosition = selectionStart + insertedText.length;
+    inputElement.setSelectionRange(caretPosition, caretPosition);
+    return true;
+  }
+
+  function revokeCommentUploadPreview(item) {
+    if (item?.previewUrl && item.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+  }
+
+  async function deleteCommentDraftAttachment(attachmentId) {
+    if (!attachmentId) {
+      return;
+    }
+    try {
+      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/attachment/${attachmentId}`);
+    } catch (error) {
+      console.warn('[Jira HotLinker] Could not delete draft attachment', {
+        attachmentId,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
+  async function clearCommentUploads(options = {}) {
+    const {deleteUploaded = false} = options;
+    const previousItems = commentUploadState.items;
+    commentUploadSessionId += 1;
+    commentUploadState = emptyCommentUploadState();
+    renderCommentUploads();
+    syncCommentComposerState();
+    previousItems.forEach(revokeCommentUploadPreview);
+    if (deleteUploaded) {
+      await Promise.all(previousItems.map(item => deleteCommentDraftAttachment(item.attachmentId)));
+    }
+  }
+
+  async function discardCommentComposerDraft(options = {}) {
+    const {deleteUploaded = true} = options;
+    resetCommentMentionState();
+    const {input} = getCommentComposerElements();
+    if (input.length) {
+      input.val('');
+    }
+    setCommentComposerError('');
+    await clearCommentUploads({deleteUploaded});
+    syncCommentComposerState();
+  }
+
+  async function buildOptimisticCommentBodyHtml(commentText, uploadedAttachments = []) {
+    const attachmentImagesByName = {};
+    for (const attachment of uploadedAttachments) {
+      if (!attachment?.fileName) {
+        continue;
+      }
+      const imageUrl = attachment.thumbnailUrl || attachment.contentUrl;
+      if (!imageUrl) {
+        continue;
+      }
+      const displaySrc = await getDisplayImageUrl(imageUrl).catch(() => imageUrl);
+      const previewSrc = attachment.contentUrl || imageUrl;
+      attachmentImagesByName[attachment.fileName] = `<img class="_JX_previewable" src="${escapeHtml(displaySrc || imageUrl)}" data-jx-preview-src="${escapeHtml(previewSrc)}" alt="${escapeHtml(attachment.fileName)}" style="max-height: 100px;" />`;
+    }
+    return textToLinkedHtml(commentText || '', {attachmentImagesByName});
+  }
+
+  async function uploadPastedImage(file) {
+    if (!activeCommentContext?.issueKey) {
+      return;
+    }
+
+    const issueKey = activeCommentContext.issueKey;
+    const fileName = buildPastedImageFileName(file);
+    const markup = buildCommentImageMarkup(fileName);
+    const localId = `upload-${Date.now()}-${commentUploadSequence}`;
+    const previewUrl = URL.createObjectURL(file);
+    const sessionId = commentUploadSessionId;
+    commentUploadState = {
+      items: [...commentUploadState.items, {
+        attachmentId: '',
+        contentUrl: '',
+        errorMessage: '',
+        fileName,
+        localId,
+        markup,
+        previewUrl,
+        status: 'uploading',
+        thumbnailUrl: ''
+      }]
+    };
+    renderCommentUploads();
+    insertCommentInputText(markup);
+    setCommentComposerError('');
+    syncCommentComposerState();
+
+    try {
+      const uploadResult = await uploadAttachment(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/attachments`, new File([file], fileName, {type: file.type || 'image/png'}));
+      const uploadedAttachment = (Array.isArray(uploadResult) ? uploadResult : [uploadResult]).find(item => item && item.id);
+      if (!uploadedAttachment) {
+        throw new Error('Attachment upload failed');
+      }
+
+      if (sessionId !== commentUploadSessionId || activeCommentContext?.issueKey !== issueKey) {
+        await deleteCommentDraftAttachment(uploadedAttachment.id);
+        return;
+      }
+
+      const nextFileName = uploadedAttachment.filename || fileName;
+      const nextMarkup = buildCommentImageMarkup(nextFileName);
+      if (nextMarkup !== markup) {
+        replaceCommentInputText(markup, nextMarkup);
+      }
+      updateCommentUploadItem(localId, {
+        attachmentId: uploadedAttachment.id,
+        contentUrl: toAbsoluteJiraUrl(uploadedAttachment.content),
+        errorMessage: '',
+        fileName: nextFileName,
+        markup: nextMarkup,
+        status: 'uploaded',
+        thumbnailUrl: toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content)
+      });
+    } catch (error) {
+      if (sessionId !== commentUploadSessionId) {
+        return;
+      }
+      replaceCommentInputText(markup, '');
+      updateCommentUploadItem(localId, {
+        errorMessage: error?.message || error?.inner || 'Upload failed',
+        status: 'error'
+      });
+      setCommentComposerError(error?.message || error?.inner || 'Could not upload pasted image');
+    }
+  }
+
+  function getClipboardImageFiles(event) {
+    const clipboardData = event?.originalEvent?.clipboardData || event?.clipboardData;
+    if (!clipboardData) {
+      return [];
+    }
+
+    const items = Array.from(clipboardData.items || []);
+    const itemFiles = items
+      .filter(item => item && item.kind === 'file' && String(item.type || '').toLowerCase().startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean);
+    if (itemFiles.length) {
+      return itemFiles;
+    }
+    return Array.from(clipboardData.files || []).filter(file => String(file?.type || '').toLowerCase().startsWith('image/'));
   }
 
   function renderCommentMentionSuggestions() {
@@ -548,21 +846,25 @@ async function mainAsyncLocal() {
 
     if (!commentMentionState.visible) {
       mentions.attr('hidden', 'hidden').empty();
+      keepContainerVisible();
       return;
     }
 
     if (commentMentionState.loading) {
       mentions.removeAttr('hidden').html('<div class="_JX_comment_mentions_status">Searching people...</div>');
+      keepContainerVisible();
       return;
     }
 
     if (commentMentionState.error) {
       mentions.removeAttr('hidden').html(`<div class="_JX_comment_mentions_status">${escapeHtml(commentMentionState.error)}</div>`);
+      keepContainerVisible();
       return;
     }
 
     if (!commentMentionState.suggestions.length) {
       mentions.removeAttr('hidden').html('<div class="_JX_comment_mentions_status">No people found.</div>');
+      keepContainerVisible();
       return;
     }
 
@@ -580,6 +882,7 @@ async function mainAsyncLocal() {
         </button>
       `;
     }).join(''));
+    keepContainerVisible();
   }
 
   function resetCommentMentionState() {
@@ -718,10 +1021,12 @@ async function mainAsyncLocal() {
       return;
     }
     const isSaving = elements.root.attr('data-saving') === 'true';
+    const hasUploadsInFlight = hasCommentUploadInFlight();
     const hasText = !!elements.input.val().trim();
+    const hasDraftUploads = commentUploadState.items.length > 0;
     elements.input.prop('disabled', isSaving);
-    elements.save.prop('disabled', !hasText || isSaving).text(isSaving ? 'Saving...' : 'Save');
-    elements.discard.prop('disabled', !hasText || isSaving);
+    elements.save.prop('disabled', !hasText || isSaving || hasUploadsInFlight).text(isSaving ? 'Saving...' : (hasUploadsInFlight ? 'Uploading...' : 'Save'));
+    elements.discard.prop('disabled', (!hasText && !hasDraftUploads) || isSaving);
   }
 
   function setCommentComposerError(message) {
@@ -744,7 +1049,7 @@ async function mainAsyncLocal() {
     activityItem.attr('title', `${nextCount} comments`);
   }
 
-  async function appendCommentToPopup(commentText) {
+  async function appendCommentToPopup(commentText, uploadedAttachments = []) {
     const commentsRoot = container.find('._JX_comments');
     if (!commentsRoot.length) {
       return;
@@ -753,7 +1058,7 @@ async function mainAsyncLocal() {
     commentsRoot.find('._JX_comments_empty').remove();
     container.find('._JX_empty_body').remove();
     const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
-    const bodyHtml = textToLinkedHtml(commentText || '');
+    const bodyHtml = await buildOptimisticCommentBodyHtml(commentText || '', uploadedAttachments);
     const commentHtml = `
       <div class="_JX_comment">
         <div class="_JX_comment_meta">
@@ -784,17 +1089,24 @@ async function mainAsyncLocal() {
       syncCommentComposerState();
       return;
     }
+    if (hasCommentUploadInFlight()) {
+      setCommentComposerError('Wait for image uploads to finish.');
+      syncCommentComposerState();
+      return;
+    }
 
     elements.root.attr('data-saving', 'true');
     setCommentComposerError('');
     syncCommentComposerState();
 
     try {
+      const uploadedAttachments = getUploadedCommentAttachments();
       await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
         body: commentText
       });
-      await appendCommentToPopup(commentText);
+      await appendCommentToPopup(commentText, uploadedAttachments);
       elements.input.val('');
+      await clearCommentUploads({deleteUploaded: false});
       elements.root.attr('data-saving', 'false');
       setCommentComposerError('');
       syncCommentComposerState();
@@ -805,15 +1117,12 @@ async function mainAsyncLocal() {
     }
   }
 
-  function handleCommentDiscard() {
+  async function handleCommentDiscard() {
     const elements = getCommentComposerElements();
     if (!elements.root.length || elements.root.attr('data-saving') === 'true') {
       return;
     }
-    resetCommentMentionState();
-    elements.input.val('');
-    setCommentComposerError('');
-    syncCommentComposerState();
+    await discardCommentComposerDraft();
   }
   /***
    * Retrieve only the text that is directly owned by the node
@@ -1270,16 +1579,44 @@ async function mainAsyncLocal() {
     return href;
   }
 
-  function computeVisibleContainerPosition(pointerX, pointerY) {
+  function clampContainerPosition(left, top) {
     const margin = 8;
-    const preferredLeft = pointerX + 20;
-    const preferredTop = pointerY + 25;
-    const width = container.outerWidth();
-    const height = container.outerHeight();
+    const width = container.outerWidth() || 0;
+    const height = container.outerHeight() || 0;
     const viewportLeft = window.scrollX + margin;
     const viewportTop = window.scrollY + margin;
     const viewportRight = window.scrollX + window.innerWidth - margin;
     const viewportBottom = window.scrollY + window.innerHeight - margin;
+    const maxLeft = Math.max(viewportLeft, viewportRight - width);
+    const maxTop = Math.max(viewportTop, viewportBottom - height);
+
+    return {
+      left: Math.min(Math.max(left, viewportLeft), maxLeft),
+      top: Math.min(Math.max(top, viewportTop), maxTop)
+    };
+  }
+
+  function keepContainerVisible() {
+    if (containerPinned || !container.html()) {
+      return;
+    }
+    const currentLeft = Number.parseFloat(container.css('left'));
+    const currentTop = Number.parseFloat(container.css('top'));
+    const fallbackLeft = window.scrollX + 8;
+    const fallbackTop = window.scrollY + 8;
+    container.css(clampContainerPosition(
+      Number.isFinite(currentLeft) ? currentLeft : fallbackLeft,
+      Number.isFinite(currentTop) ? currentTop : fallbackTop
+    ));
+  }
+
+  function computeVisibleContainerPosition(pointerX, pointerY) {
+    const preferredLeft = pointerX + 20;
+    const preferredTop = pointerY + 25;
+    const width = container.outerWidth() || 0;
+    const height = container.outerHeight() || 0;
+    const viewportRight = window.scrollX + window.innerWidth - 8;
+    const viewportBottom = window.scrollY + window.innerHeight - 8;
 
     let left = preferredLeft;
     let top = preferredTop;
@@ -1287,18 +1624,12 @@ async function mainAsyncLocal() {
     if (left + width > viewportRight) {
       left = pointerX - width - 15;
     }
-    if (left < viewportLeft) {
-      left = viewportLeft;
-    }
 
     if (top + height > viewportBottom) {
       top = pointerY - height - 15;
     }
-    if (top < viewportTop) {
-      top = viewportTop;
-    }
 
-    return {left, top};
+    return clampContainerPosition(left, top);
   }
 
   const container = $('<div class="_JX_container">');
@@ -1385,6 +1716,17 @@ async function mainAsyncLocal() {
     syncCommentMentionSuggestions(this);
   });
 
+  $(document.body).on('paste', '._JX_comment_input', function (e) {
+    const imageFiles = getClipboardImageFiles(e);
+    if (!imageFiles.length || !activeCommentContext?.issueKey) {
+      return;
+    }
+    e.preventDefault();
+    imageFiles.forEach(file => {
+      uploadPastedImage(file).catch(() => {});
+    });
+  });
+
   $(document.body).on('click', '._JX_comment_input', function () {
     syncCommentMentionSuggestions(this);
   });
@@ -1448,7 +1790,7 @@ async function mainAsyncLocal() {
 
   $(document.body).on('click', '._JX_comment_discard', function (e) {
     e.preventDefault();
-    handleCommentDiscard();
+    handleCommentDiscard().catch(() => {});
   });
   function closePreviewOverlay() {
     previewOverlay.removeClass('is-open');
@@ -1489,6 +1831,7 @@ async function mainAsyncLocal() {
 
   function hideContainer() {
     lastHoveredKey = '';
+    discardCommentComposerDraft().catch(() => {});
     activeCommentContext = null;
     resetCommentMentionState();
     containerPinned = false;
@@ -1682,9 +2025,6 @@ async function mainAsyncLocal() {
             prs: [],
             description: displayFields.description ? normalizedDescription : '',
             hasBodyContent: true,
-            emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
-              ? 'No description, attachments or comments.'
-              : '',
             attachments,
             previewAttachments: visibleAttachments,
             commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
@@ -1735,6 +2075,9 @@ async function mainAsyncLocal() {
             displayData.prs.length
           );
           // TODO: fix scrolling in google docs
+          if (activeCommentContext?.issueKey && activeCommentContext.issueKey !== key) {
+            discardCommentComposerDraft().catch(() => {});
+          }
           container.html(Mustache.render(annotationTemplate, displayData));
           activeCommentContext = displayFields.comments ? { issueKey: key, issueId: issueData.id } : null;
           syncCommentComposerState();

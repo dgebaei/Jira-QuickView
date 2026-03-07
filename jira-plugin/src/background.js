@@ -114,6 +114,19 @@ async function blobToDataUrl(blob) {
   return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
 }
 
+function attachmentBytesToBlob(bytes, type = 'application/octet-stream') {
+  if (Array.isArray(bytes)) {
+    return new Blob([Uint8Array.from(bytes)], {type});
+  }
+  if (ArrayBuffer.isView(bytes)) {
+    return new Blob([bytes], {type});
+  }
+  if (bytes instanceof ArrayBuffer) {
+    return new Blob([bytes], {type});
+  }
+  throw new Error('Attachment payload must be a byte array');
+}
+
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   try {
     validateMessageSender(sender);
@@ -154,6 +167,43 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         }
         const dataUrl = await blobToDataUrl(await response.blob());
         sendResponse({ result: dataUrl });
+      })
+      .catch(error => {
+        sendResponse({ error: error.message });
+      });
+    return SEND_RESPONSE_IS_ASYNC;
+  }
+
+  if (request.action === 'uploadAttachment') {
+    assertAllowedRequestUrl(request.url)
+      .then(url => {
+        const formData = new FormData();
+        formData.append(
+          'file',
+          attachmentBytesToBlob(request.bytes, request.contentType || 'application/octet-stream'),
+          request.fileName || 'pasted-image.png'
+        );
+        return fetchWithCredentials(url, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'X-Atlassian-Token': 'no-check'
+          },
+          body: formData
+        });
+      })
+      .then(async response => {
+        const raw = await response.text();
+        if (!raw) {
+          sendResponse({ result: null });
+          return;
+        }
+
+        try {
+          sendResponse({ result: JSON.parse(raw) });
+        } catch (ex) {
+          sendResponse({ result: raw });
+        }
       })
       .catch(error => {
         sendResponse({ error: error.message });
@@ -239,4 +289,5 @@ async function browserOnClicked (tab) {
     browserOnClicked(tab).catch(() => {});
   });
 })();
+
 
