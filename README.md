@@ -97,27 +97,6 @@ Installation steps:
 - Click `Load unpacked`
 - Select the unzipped `jira-plugin/` folder
 
-### Local development setup 🛠️
-
-```bash
-npm install
-npx webpack-cli
-```
-
-Then load the unpacked extension from `jira-plugin/` in Chrome.
-
-For active development:
-
-```bash
-npm run dev
-```
-
-Useful commands:
-
-- `npm run dev` - rebuilds on file changes
-- `npx webpack-cli` - creates a production build in `jira-plugin/`
-- `make build` - builds and creates a zip archive
-
 ## Configuration highlights ⚙️
 
 - `Jira instance URL` points the extension at the Jira site used for issue metadata
@@ -125,7 +104,7 @@ Useful commands:
 - `Tooltip Layout` lets you choose which built-in fields appear in the hover card
 - `Custom Fields` lets you add Jira field IDs such as `customfield_12345` and place them in summary rows
 
-## Finding custom field IDs 🔎
+### Finding custom field IDs 🔎
 
 Want to surface a Jira custom field in the hover card? You will need the field ID, which usually looks like `customfield_12345`.
 
@@ -138,17 +117,6 @@ Here are the easiest ways to find it in your Jira instance:
 - Paste that value into the extension options page under `Custom Fields`
 
 If the field ID is valid, the options page will try to resolve and display the field name for you.
-
-## For developers 👩‍💻
-
-- `jira-plugin/src/` - content script, background logic, and UI behavior
-- `jira-plugin/options/` - options page UI and configuration flow
-- `jira-plugin/manifest.json` - Chrome extension manifest
-- `webpack.config.js` - build pipeline for the extension bundles
-
-## In one sentence 🎉
-
-Jira HotLinker makes every Jira key on the web feel alive, actionable, and useful.
 
 ## Thank you 🙌
 
