@@ -134,6 +134,16 @@ async function getImageDataUrl(url) {
   }
 }
 
+async function requestJson(method, url, body) {
+  const response = await sendMessage({action: 'requestJson', method, url, body});
+  if (Object.prototype.hasOwnProperty.call(response, 'result')) {
+    return response.result;
+  }
+  const err = new Error(response.error || 'Request failed');
+  err.inner = response.error;
+  throw err;
+}
+
 function isJiraConnectionFailure(error) {
   const message = String(error?.message || error?.inner || error || '');
   return CONNECTION_ERROR_PATTERN.test(message);
@@ -199,6 +209,8 @@ async function mainAsyncLocal() {
   const cacheTtlMs = 60 * 1000;
   const issueCache = new Map();
   const pullRequestCache = new Map();
+  const fieldOptionsCache = new Map();
+  let popupState = null;
 
   function toAbsoluteJiraUrl(url) {
     if (!url) {
@@ -728,16 +740,20 @@ async function mainAsyncLocal() {
     const seen = {};
     const sprints = [];
 
-    const pushSprint = (name, state) => {
+    const pushSprint = (name, state, id) => {
       if (!name) {
         return;
       }
-      const key = `${name}__${state || ''}`;
+      const key = id ? `id:${id}` : `${name}__${state || ''}`;
       if (seen[key]) {
         return;
       }
       seen[key] = true;
-      sprints.push({name, state: state || ''});
+      sprints.push({
+        id: id ? String(id) : '',
+        name,
+        state: state || ''
+      });
     };
 
     sprintValues.forEach(value => {
@@ -747,12 +763,17 @@ async function mainAsyncLocal() {
           return;
         }
         if (typeof entry === 'string') {
+          const idMatch = entry.match(/id=([^,\]]+)/i);
           const nameMatch = entry.match(/name=([^,\]]+)/i);
           const stateMatch = entry.match(/state=([^,\]]+)/i);
-          pushSprint(nameMatch && nameMatch[1] ? nameMatch[1] : entry, stateMatch && stateMatch[1]);
+          pushSprint(
+            nameMatch && nameMatch[1] ? nameMatch[1] : entry,
+            stateMatch && stateMatch[1],
+            idMatch && idMatch[1] ? idMatch[1] : ''
+          );
           return;
         }
-        pushSprint(entry.name || entry.goal || entry.id, entry.state);
+        pushSprint(entry.name || entry.goal || entry.id, entry.state, entry.id);
       });
     });
     return sprints;
@@ -890,6 +911,211 @@ async function mainAsyncLocal() {
       }));
   }
 
+  function buildEditFieldError(error) {
+    return error?.message || error?.inner || 'Update failed';
+  }
+
+  function pickSprintFieldId(issueData, sprintFieldIds) {
+    const populatedFieldId = (sprintFieldIds || []).find(fieldId => {
+      const value = issueData?.fields?.[fieldId];
+      return Array.isArray(value) ? value.length > 0 : !!value;
+    });
+    return populatedFieldId || sprintFieldIds?.[0] || '';
+  }
+
+  function buildEditOption(id, label, extra = {}) {
+    return {
+      id: id === '' ? '' : String(id || ''),
+      label: String(label || ''),
+      searchText: String(label || '').toLowerCase(),
+      ...extra
+    };
+  }
+
+  function formatSprintOptionLabel(sprint) {
+    if (!sprint) {
+      return '';
+    }
+    return sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name;
+  }
+
+  function normalizeFixVersionSortName(name) {
+    return String(name || '').trim().replace(/^v(?=\d)/i, '');
+  }
+
+  function compareFixVersionOptions(left, right) {
+    return normalizeFixVersionSortName(right?.name).localeCompare(normalizeFixVersionSortName(left?.name), undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    });
+  }
+
+  async function getFixVersionOptions(issueData) {
+    const projectKey = String(issueData?.key || '').split('-')[0];
+    if (!projectKey) {
+      return [];
+    }
+    return getCachedValue(fieldOptionsCache, `fixVersions__${projectKey}`, async () => {
+      const versions = await get(`${INSTANCE_URL}rest/api/2/project/${encodeURIComponent(projectKey)}/versions`);
+      const options = (Array.isArray(versions) ? versions : [])
+        .filter(version => version?.name && !version?.archived)
+        .sort(compareFixVersionOptions)
+        .map(version => buildEditOption(version.id, version.name, {rawValue: version}));
+      return [buildEditOption('', 'No fix version'), ...options];
+    });
+  }
+
+  function compareSprintState(left, right) {
+    const order = {
+      active: 0,
+      future: 1,
+      closed: 2
+    };
+    return (order[String(left || '').toLowerCase()] ?? 99) - (order[String(right || '').toLowerCase()] ?? 99);
+  }
+
+  async function getSprintOptions(issueData) {
+    const projectKey = String(issueData?.key || '').split('-')[0];
+    if (!projectKey) {
+      return [];
+    }
+    const sprintFieldIds = await getSprintFieldIds(INSTANCE_URL);
+    if (!sprintFieldIds.length) {
+      return [];
+    }
+    return getCachedValue(fieldOptionsCache, `sprint__${projectKey}`, async () => {
+      const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`);
+      const boards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
+      const sprintMap = new Map();
+      const sprintResponses = await Promise.allSettled(boards.map(board => {
+        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`);
+      }));
+
+      sprintResponses.forEach(result => {
+        if (result.status !== 'fulfilled') {
+          return;
+        }
+        const sprints = Array.isArray(result.value?.values) ? result.value.values : [];
+        sprints.forEach(sprint => {
+          if (sprint?.id && sprint?.name) {
+            sprintMap.set(String(sprint.id), sprint);
+          }
+        });
+      });
+
+      readSprintsFromIssue(issueData).forEach(sprint => {
+        if (sprint?.id && sprint?.name && !sprintMap.has(String(sprint.id))) {
+          sprintMap.set(String(sprint.id), sprint);
+        }
+      });
+
+      const options = [...sprintMap.values()]
+        .sort((left, right) => {
+          const stateOrder = compareSprintState(left?.state, right?.state);
+          if (stateOrder !== 0) {
+            return stateOrder;
+          }
+          return String(left?.name || '').localeCompare(String(right?.name || ''));
+        })
+        .map(sprint => buildEditOption(sprint.id, formatSprintOptionLabel(sprint), {rawValue: sprint}));
+
+      return [buildEditOption('', 'No sprint'), ...options];
+    });
+  }
+
+  function getEditableFieldDefinition(fieldKey, issueData) {
+    if (fieldKey === 'fixVersions') {
+      const currentFixVersions = issueData?.fields?.fixVersions || [];
+      return {
+        fieldKey,
+        label: 'Fix version',
+        currentText: formatFixVersionText(currentFixVersions),
+        currentOptionId: currentFixVersions.length === 1 ? String(currentFixVersions[0]?.id || '') : null,
+        loadOptions: () => getFixVersionOptions(issueData),
+        save: option => {
+          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+            fields: {
+              fixVersions: option.id ? [{id: option.id}] : []
+            }
+          });
+        },
+        successMessage: option => option.id ? `Fix version set to ${option.label}` : 'Fix version cleared'
+      };
+    }
+
+    if (fieldKey === 'sprint') {
+      const currentSprints = readSprintsFromIssue(issueData);
+      return {
+        fieldKey,
+        label: 'Sprint',
+        currentText: formatSprintText(currentSprints),
+        currentOptionId: currentSprints.length === 1 ? String(currentSprints[0]?.id || '') : null,
+        loadOptions: () => getSprintOptions(issueData),
+        save: async option => {
+          const sprintFieldId = pickSprintFieldId(issueData, await getSprintFieldIds(INSTANCE_URL));
+          if (!sprintFieldId) {
+            throw new Error('Could not resolve the Sprint field');
+          }
+          await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+            fields: {
+              [sprintFieldId]: option.id ? (Number(option.id) || option.id) : []
+            }
+          });
+        },
+        successMessage: option => option.id ? `Sprint set to ${option.label}` : 'Sprint cleared'
+      };
+    }
+
+    return null;
+  }
+
+  function filterEditOptions(options, inputValue) {
+    const normalizedInput = String(inputValue || '').trim().toLowerCase();
+    const list = Array.isArray(options) ? options : [];
+    const filtered = normalizedInput
+      ? list.filter(option => option.searchText.includes(normalizedInput))
+      : list;
+    return filtered;
+  }
+
+  function buildEditableFieldChip(fieldKey, baseChip, state) {
+    const editState = state?.editState;
+    if (editState?.fieldKey === fieldKey) {
+      const options = filterEditOptions(editState.options, editState.inputValue).map(option => ({
+        ...option,
+        fieldKey,
+        isSelected: editState.selectedOptionId === option.id,
+        title: option.label
+      }));
+      return {
+        ...baseChip,
+        isEditable: true,
+        isEditing: true,
+        isRightAligned: fieldKey === 'fixVersions',
+        fieldKey,
+        editLabel: editState.label,
+        inputValue: editState.inputValue,
+        inputPlaceholder: `Type to filter ${editState.label.toLowerCase()} values`,
+        inputDisabled: !!(editState.loadingOptions || editState.saving),
+        loadingText: editState.loadingOptions
+          ? `Loading ${editState.label.toLowerCase()} values...`
+          : editState.saving
+            ? `Saving ${editState.label.toLowerCase()}...`
+            : '',
+        options,
+        hasOptions: options.length > 0,
+        editEmptyText: editState.loadingOptions ? 'Loading values...' : 'No matching values',
+        editError: editState.errorMessage || ''
+      };
+    }
+    return {
+      ...baseChip,
+      isEditable: true,
+      fieldKey,
+      editTitle: `Edit ${baseChip.text}`
+    };
+  }
+
   function getRelativeHref(href) {
     const documentHref = document.location.href.split('#')[0];
     if (href.startsWith(documentHref)) {
@@ -937,6 +1163,429 @@ async function mainAsyncLocal() {
   `);
   $(document.body).append(container);
   $(document.body).append(previewOverlay);
+
+  async function resolvePullRequestsForIssue(issueData) {
+    if (!displayFields.pullRequests) {
+      return [];
+    }
+    try {
+      const pullRequestResponse = await getPullRequestDataCached(issueData.id);
+      return normalizePullRequests(pullRequestResponse);
+    } catch (ex) {
+      console.log('[Jira HotLinker] Pull request fetch failed', {
+        issueKey: issueData?.key,
+        issueId: issueData?.id,
+        error: ex?.message || String(ex)
+      });
+      return [];
+    }
+  }
+
+  async function buildPopupDisplayData(state) {
+    const {key, issueData, pullRequests} = state;
+    const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
+      imageMaxHeight: 180
+    });
+    const commentsForDisplay = await buildCommentsForDisplay(issueData);
+    const fixVersions = issueData.fields.fixVersions || [];
+    const affectsVersions = issueData.fields.versions || [];
+    const sprints = readSprintsFromIssue(issueData);
+    const commentsTotal = commentsForDisplay.length;
+    const attachments = issueData.fields.attachment || [];
+    const previewAttachments = buildPreviewAttachments(attachments);
+    const labels = issueData.fields.labels || [];
+    const customFieldChips = buildCustomFieldChips(issueData, customFields);
+    const epicOrParent = await readEpicOrParent(issueData);
+    const issueTypeName = issueData.fields.issuetype?.name;
+    const statusName = issueData.fields.status?.name;
+    const priorityName = issueData.fields.priority?.name;
+    const projectKey = key.split('-')[0];
+
+    const row1Chips = [
+      displayFields.issueType ? buildFilterChip(
+        issueTypeName || 'No type',
+        issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
+        {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
+      ) : null,
+      displayFields.status ? buildFilterChip(
+        statusName || 'No status',
+        statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
+        {iconUrl: issueData.fields.status?.iconUrl || ''}
+      ) : null,
+      displayFields.priority ? buildFilterChip(
+        priorityName || 'No priority',
+        priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
+        {iconUrl: issueData.fields.priority?.iconUrl || ''}
+      ) : null,
+      displayFields.epicParent ? {
+        text: epicOrParent
+          ? `Parent: [${epicOrParent.key}] ${epicOrParent.summary}`
+          : 'Parent: --',
+        linkUrl: epicOrParent?.url || '',
+        linkTitle: epicOrParent ? buildLinkHoverTitle('Open parent issue', epicOrParent.key, epicOrParent.url) : ''
+      } : null,
+      ...customFieldChips[1]
+    ].filter(Boolean);
+
+    const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
+    const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
+    const row2Chips = [
+      displayFields.sprint ? buildEditableFieldChip('sprint', buildFilterChip(
+        `Sprint: ${formatSprintText(sprints) || '--'}`,
+        ''
+      ), state) : null,
+      displayFields.affects ? buildFilterChip(
+        `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`,
+        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+      ) : null,
+      displayFields.fixVersions ? buildEditableFieldChip('fixVersions', buildFilterChip(
+        `Fix version: ${formatFixVersionText(fixVersions) || '--'}`,
+        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
+      ), state) : null,
+      ...customFieldChips[2]
+    ].filter(Boolean);
+
+    const singleLabel = labels.length === 1 ? labels[0] : '';
+    const row3Chips = [
+      displayFields.labels ? buildFilterChip(
+        `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
+        singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : ''
+      ) : null,
+      ...customFieldChips[3]
+    ].filter(Boolean);
+
+    const copyTicketMeta = ticket => ({
+      copyUrl: ticket.url,
+      copyTicket: ticket.key,
+      copyTitle: ticket.summary
+    });
+    const issueUrl = INSTANCE_URL + 'browse/' + key;
+
+    const visibleCommentsTotal = displayFields.comments ? commentsTotal : 0;
+    const visibleAttachments = displayFields.attachments ? previewAttachments : [];
+    const displayData = {
+      urlTitle: `[${key}] ${issueData.fields.summary}`,
+      ticketKey: key,
+      ticketTitle: issueData.fields.summary,
+      url: issueUrl,
+      urlHoverTitle: buildLinkHoverTitle('Open issue in Jira', `[${key}] ${issueData.fields.summary}`, issueUrl),
+      ...copyTicketMeta({
+        key,
+        summary: issueData.fields.summary,
+        url: issueUrl
+      }),
+      prs: [],
+      description: displayFields.description ? normalizedDescription : '',
+      hasBodyContent: true,
+      emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
+        ? 'No description, attachments or comments.'
+        : '',
+      attachments,
+      previewAttachments: visibleAttachments,
+      commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
+      issuetype: issueData.fields.issuetype,
+      status: issueData.fields.status,
+      priority: issueData.fields.priority,
+      issueTypeText: displayFields.issueType ? (issueTypeName || 'No type') : '',
+      statusText: displayFields.status ? (statusName || 'No status') : '',
+      sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
+      fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
+      row1Chips,
+      row2Chips,
+      row3Chips,
+      hasComments: visibleCommentsTotal > 0,
+      commentsTotal: visibleCommentsTotal,
+      attachmentChips: displayFields.attachments ? buildAttachmentChips(attachments) : [],
+      reporter: displayFields.reporter ? issueData.fields.reporter : null,
+      assignee: displayFields.assignee ? issueData.fields.assignee : null,
+      commentUrl: issueUrl,
+      hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
+      activityIndicators: [],
+      loaderGifUrl,
+    };
+    if (issueData.fields.comment?.comments?.[0]?.id) {
+      displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
+    }
+    if (displayFields.pullRequests && size(pullRequests)) {
+      const filteredPullRequests = pullRequests.filter(pr => {
+        return pr && pr.url !== location.href;
+      });
+      displayData.prs = filteredPullRequests.map(pr => {
+        return {
+          id: pr.id,
+          url: pr.url,
+          linkUrl: pr.url,
+          linkTitle: buildLinkHoverTitle('Open pull request', formatPullRequestTitle(pr), pr.url),
+          title: formatPullRequestTitle(pr),
+          status: pr.status,
+          authorName: formatPullRequestAuthor(pr),
+          branchText: formatPullRequestBranch(pr)
+        };
+      });
+    }
+    displayData.activityIndicators = buildActivityIndicators(
+      displayFields.attachments ? attachments : [],
+      visibleCommentsTotal,
+      displayData.prs.length
+    );
+    return displayData;
+  }
+
+  async function renderIssuePopup(state) {
+    if (!state?.issueData) {
+      return;
+    }
+    const displayData = await buildPopupDisplayData(state);
+    if (state !== popupState) {
+      return;
+    }
+    container.html(Mustache.render(annotationTemplate, displayData));
+    if (!containerPinned) {
+      container.css(computeVisibleContainerPosition(state.pointerX, state.pointerY));
+    }
+    if (state.editState?.fieldKey) {
+      const input = container.find('._JX_edit_input')[0];
+      if (input) {
+        input.focus();
+        const maxIndex = input.value.length;
+        const selectionStart = Math.min(maxIndex, Number.isInteger(state.editState.selectionStart) ? state.editState.selectionStart : maxIndex);
+        const selectionEnd = Math.min(maxIndex, Number.isInteger(state.editState.selectionEnd) ? state.editState.selectionEnd : maxIndex);
+        input.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
+  }
+
+  function invalidatePopupCaches() {
+    if (!popupState?.key) {
+      return;
+    }
+    issueCache.delete(popupState.key);
+    if (popupState.issueData?.id) {
+      const issueId = String(popupState.issueData.id);
+      [...pullRequestCache.keys()].forEach(cacheKey => {
+        if (String(cacheKey).includes(issueId)) {
+          pullRequestCache.delete(cacheKey);
+        }
+      });
+    }
+  }
+
+  async function refreshPopupIssueState(successMessage = '') {
+    if (!popupState?.key) {
+      return;
+    }
+    const popupKey = popupState.key;
+    invalidatePopupCaches();
+    const refreshedIssueData = await getIssueMetaData(popupKey);
+    await normalizeIssueImages(refreshedIssueData);
+    const refreshedPullRequests = await resolvePullRequestsForIssue(refreshedIssueData);
+    if (!popupState || popupState.key !== popupKey) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      issueData: refreshedIssueData,
+      pullRequests: refreshedPullRequests,
+      editState: null
+    };
+    await renderIssuePopup(popupState);
+    if (successMessage) {
+      snackBar(successMessage);
+    }
+  }
+
+  async function startFieldEdit(fieldKey) {
+    if (!popupState?.issueData) {
+      return;
+    }
+    if (popupState.editState?.fieldKey === fieldKey) {
+      return;
+    }
+    const definition = getEditableFieldDefinition(fieldKey, popupState.issueData);
+    if (!definition) {
+      return;
+    }
+    const initialValue = definition.currentText || '';
+    popupState = {
+      ...popupState,
+      editState: {
+        fieldKey,
+        label: definition.label,
+        inputValue: initialValue,
+        options: [],
+        selectedOptionId: definition.currentOptionId,
+        loadingOptions: true,
+        saving: false,
+        errorMessage: '',
+        selectionStart: initialValue.length,
+        selectionEnd: initialValue.length
+      }
+    };
+    await renderIssuePopup(popupState);
+
+    try {
+      const options = await definition.loadOptions();
+      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
+        return;
+      }
+      const selectedOption = (Array.isArray(options) ? options : []).find(option => option.id === popupState.editState.selectedOptionId);
+      const nextInputValue = selectedOption ? selectedOption.label : popupState.editState.inputValue;
+      popupState = {
+        ...popupState,
+        editState: {
+          ...popupState.editState,
+          inputValue: nextInputValue,
+          options,
+          loadingOptions: false,
+          selectionStart: nextInputValue.length,
+          selectionEnd: nextInputValue.length
+        }
+      };
+      await renderIssuePopup(popupState);
+    } catch (error) {
+      const errorMessage = buildEditFieldError(error);
+      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
+        return;
+      }
+      popupState = {
+        ...popupState,
+        editState: {
+          ...popupState.editState,
+          loadingOptions: false,
+          errorMessage
+        }
+      };
+      await renderIssuePopup(popupState);
+      snackBar(errorMessage);
+    }
+  }
+
+  function cancelFieldEdit() {
+    if (!popupState?.editState) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      editState: null
+    };
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function updateFieldEditInput(nextValue, selectionStart, selectionEnd) {
+    if (!popupState?.editState) {
+      return;
+    }
+    const normalizedValue = String(nextValue || '');
+    const exactOption = (popupState.editState.options || []).find(option => {
+      return option.label.toLowerCase() === normalizedValue.trim().toLowerCase();
+    });
+    popupState = {
+      ...popupState,
+      editState: {
+        ...popupState.editState,
+        inputValue: normalizedValue,
+        selectedOptionId: exactOption ? exactOption.id : null,
+        errorMessage: '',
+        selectionStart,
+        selectionEnd
+      }
+    };
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function selectFieldEditOption(optionId) {
+    if (!popupState?.editState) {
+      return;
+    }
+    const option = (popupState.editState.options || []).find(candidate => candidate.id === optionId);
+    if (!option) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      editState: {
+        ...popupState.editState,
+        inputValue: option.label,
+        selectedOptionId: option.id,
+        errorMessage: '',
+        selectionStart: option.label.length,
+        selectionEnd: option.label.length
+      }
+    };
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function resolveSelectedEditOption(editState) {
+    if (!editState) {
+      return null;
+    }
+    if (editState.selectedOptionId !== null && typeof editState.selectedOptionId !== 'undefined') {
+      const selectedOption = (editState.options || []).find(option => option.id === editState.selectedOptionId);
+      if (selectedOption) {
+        return selectedOption;
+      }
+    }
+    const normalizedInput = String(editState.inputValue || '').trim().toLowerCase();
+    if (!normalizedInput) {
+      return null;
+    }
+    return (editState.options || []).find(option => option.label.toLowerCase() === normalizedInput) || null;
+  }
+
+  async function submitFieldEdit(fieldKey) {
+    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.loadingOptions || popupState.editState.saving) {
+      return;
+    }
+    const definition = getEditableFieldDefinition(fieldKey, popupState.issueData);
+    if (!definition) {
+      return;
+    }
+    const selectedOption = resolveSelectedEditOption(popupState.editState);
+    if (!selectedOption) {
+      const errorMessage = 'Pick an existing value from the dropdown before pressing Enter';
+      popupState = {
+        ...popupState,
+        editState: {
+          ...popupState.editState,
+          errorMessage
+        }
+      };
+      await renderIssuePopup(popupState);
+      snackBar(errorMessage);
+      return;
+    }
+
+    popupState = {
+      ...popupState,
+      editState: {
+        ...popupState.editState,
+        saving: true,
+        errorMessage: ''
+      }
+    };
+    await renderIssuePopup(popupState);
+
+    try {
+      await definition.save(selectedOption);
+      await refreshPopupIssueState(definition.successMessage(selectedOption));
+    } catch (error) {
+      const errorMessage = buildEditFieldError(error);
+      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
+        return;
+      }
+      popupState = {
+        ...popupState,
+        editState: {
+          ...popupState.editState,
+          saving: false,
+          errorMessage
+        }
+      };
+      await renderIssuePopup(popupState);
+      snackBar(errorMessage);
+    }
+  }
+
   new draggable({
     handle: '._JX_title, ._JX_status',
     cancel: 'a, button, input, textarea, img, ._JX_description, ._JX_comments, ._JX_comment_body, ._JX_description_text, ._JX_related_pr'
@@ -1008,6 +1657,60 @@ async function mainAsyncLocal() {
     copyPrettyLink(e.currentTarget).catch(() => snackBar('There was an error!'));
   });
 
+  $(document.body).on('click', '._JX_field_chip_edit', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    startFieldEdit(fieldKey).catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_edit_cancel', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelFieldEdit();
+  });
+
+  $(document.body).on('click', '._JX_edit_option', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectFieldEditOption(e.currentTarget.getAttribute('data-option-id'));
+  });
+
+  $(document.body).on('input', '._JX_edit_input', function (e) {
+    e.stopPropagation();
+    updateFieldEditInput(e.currentTarget.value, e.currentTarget.selectionStart, e.currentTarget.selectionEnd);
+  });
+
+  $(document.body).on('keydown', '._JX_edit_input', function (e) {
+    e.stopPropagation();
+    const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitFieldEdit(fieldKey).catch(() => {});
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelFieldEdit();
+    }
+  });
+
+  $(document.body).on('mousedown', function (e) {
+    if (!popupState?.editState) {
+      return;
+    }
+    if ($(e.target).closest('._JX_edit_popover, ._JX_field_chip_edit').length) {
+      return;
+    }
+    if ($(e.target).closest('._JX_container').length === 0) {
+      cancelFieldEdit();
+      return;
+    }
+    if ($(e.target).closest('._JX_field_chip_editable_group').length === 0 && $(e.target).closest('._JX_edit_popover').length === 0) {
+      cancelFieldEdit();
+    }
+  });
+
   function closePreviewOverlay() {
     previewOverlay.removeClass('is-open');
     previewOverlay.find('img').attr('src', '');
@@ -1047,6 +1750,7 @@ async function mainAsyncLocal() {
 
   function hideContainer() {
     lastHoveredKey = '';
+    popupState = null;
     containerPinned = false;
     container.css({
       left: -5000,
@@ -1119,6 +1823,13 @@ async function mainAsyncLocal() {
         clearTimeout(hideTimeOut);
         const key = keys[0].replace(' ', '-');
         if (lastHoveredKey === key && container.html()) {
+          if (popupState) {
+            popupState = {
+              ...popupState,
+              pointerX: e.pageX,
+              pointerY: e.pageY
+            };
+          }
           if (!containerPinned) {
             container.css(computeVisibleContainerPosition(e.pageX, e.pageY));
           }
@@ -1147,156 +1858,15 @@ async function mainAsyncLocal() {
           if (cancelToken.cancel) {
             return;
           }
-          const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
-            imageMaxHeight: 180
-          });
-          const commentsForDisplay = await buildCommentsForDisplay(issueData);
-          const fixVersions = issueData.fields.fixVersions || [];
-          const affectsVersions = issueData.fields.versions || [];
-          const sprints = readSprintsFromIssue(issueData);
-          const commentsTotal = commentsForDisplay.length;
-          const attachments = issueData.fields.attachment || [];
-          const previewAttachments = buildPreviewAttachments(attachments);
-          const labels = issueData.fields.labels || [];
-          const customFieldChips = buildCustomFieldChips(issueData, customFields);
-          const epicOrParent = await readEpicOrParent(issueData);
-          const issueTypeName = issueData.fields.issuetype?.name;
-          const statusName = issueData.fields.status?.name;
-          const priorityName = issueData.fields.priority?.name;
-          const projectKey = key.split('-')[0];
-
-          const row1Chips = [
-            displayFields.issueType ? buildFilterChip(
-              issueTypeName || 'No type',
-              issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
-              {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
-            ) : null,
-            displayFields.status ? buildFilterChip(
-              statusName || 'No status',
-              statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
-              {iconUrl: issueData.fields.status?.iconUrl || ''}
-            ) : null,
-            displayFields.priority ? buildFilterChip(
-              priorityName || 'No priority',
-              priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
-              {iconUrl: issueData.fields.priority?.iconUrl || ''}
-            ) : null,
-            displayFields.epicParent ? {
-              text: epicOrParent
-                ? `Parent: [${epicOrParent.key}] ${epicOrParent.summary}`
-                : 'Parent: --',
-              linkUrl: epicOrParent?.url || '',
-              linkTitle: epicOrParent ? buildLinkHoverTitle('Open parent issue', epicOrParent.key, epicOrParent.url) : ''
-            } : null,
-            ...customFieldChips[1]
-          ].filter(Boolean);
-
-          const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
-          const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
-          const row2Chips = [
-            displayFields.sprint ? buildFilterChip(
-              `Sprint: ${formatSprintText(sprints) || '--'}`,
-              ''
-            ) : null,
-            displayFields.affects ? buildFilterChip(
-              `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`,
-              singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
-            ) : null,
-            displayFields.fixVersions ? buildFilterChip(
-              `Fix version: ${formatFixVersionText(fixVersions) || '--'}`,
-              singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
-            ) : null,
-            ...customFieldChips[2]
-          ].filter(Boolean);
-
-          const singleLabel = labels.length === 1 ? labels[0] : '';
-          const row3Chips = [
-            displayFields.labels ? buildFilterChip(
-              `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
-              singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : ''
-            ) : null,
-            ...customFieldChips[3]
-          ].filter(Boolean);
-
-          const copyTicketMeta = (ticket) => ({
-            copyUrl: ticket.url,
-            copyTicket: ticket.key,
-            copyTitle: ticket.summary
-          });
-          const issueUrl = INSTANCE_URL + 'browse/' + key;
-
-          const visibleCommentsTotal = displayFields.comments ? commentsTotal : 0;
-          const visibleAttachments = displayFields.attachments ? previewAttachments : [];
-          const displayData = {
-            urlTitle: `[${key}] ${issueData.fields.summary}`,
-            ticketKey: key,
-            ticketTitle: issueData.fields.summary,
-            url: issueUrl,
-            urlHoverTitle: buildLinkHoverTitle('Open issue in Jira', `[${key}] ${issueData.fields.summary}`, issueUrl),
-            ...copyTicketMeta({
-              key,
-              summary: issueData.fields.summary,
-              url: issueUrl
-            }),
-            prs: [],
-            description: displayFields.description ? normalizedDescription : '',
-            hasBodyContent: true,
-            emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
-              ? 'No description, attachments or comments.'
-              : '',
-            attachments,
-            previewAttachments: visibleAttachments,
-            commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
-            issuetype: issueData.fields.issuetype,
-            status: issueData.fields.status,
-            priority: issueData.fields.priority,
-            issueTypeText: displayFields.issueType ? (issueTypeName || 'No type') : '',
-            statusText: displayFields.status ? (statusName || 'No status') : '',
-            sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
-            fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
-            row1Chips,
-            row2Chips,
-            row3Chips,
-            hasComments: visibleCommentsTotal > 0,
-            commentsTotal: visibleCommentsTotal,
-            attachmentChips: displayFields.attachments ? buildAttachmentChips(attachments) : [],
-            reporter: displayFields.reporter ? issueData.fields.reporter : null,
-            assignee: displayFields.assignee ? issueData.fields.assignee : null,
-            commentUrl: issueUrl,
-            hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
-            activityIndicators: [],
-            loaderGifUrl,
+          popupState = {
+            key,
+            issueData,
+            pullRequests,
+            pointerX,
+            pointerY,
+            editState: null
           };
-          if (issueData.fields.comment?.comments?.[0]?.id) {
-            displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
-          }
-          if (displayFields.pullRequests && size(pullRequests)) {
-            const filteredPullRequests = pullRequests.filter(function (pr) {
-              return pr && pr.url !== location.href;
-            });
-            displayData.prs = filteredPullRequests.map(function (pr) {
-              return {
-                id: pr.id,
-                url: pr.url,
-                linkUrl: pr.url,
-                linkTitle: buildLinkHoverTitle('Open pull request', formatPullRequestTitle(pr), pr.url),
-                title: formatPullRequestTitle(pr),
-                status: pr.status,
-                authorName: formatPullRequestAuthor(pr),
-                branchText: formatPullRequestBranch(pr)
-              };
-            });
-          }
-          displayData.activityIndicators = buildActivityIndicators(
-            displayFields.attachments ? attachments : [],
-            visibleCommentsTotal,
-            displayData.prs.length
-          );
-          // TODO: fix scrolling in google docs
-          container.html(Mustache.render(annotationTemplate, displayData));
-          if (!containerPinned) {
-            container.css(computeVisibleContainerPosition(pointerX, pointerY));
-          }
+          await renderIssuePopup(popupState);
         })(cancelToken).catch((error) => {
           notifyJiraConnectionFailure(INSTANCE_URL, error);
           lastHoveredKey = '';
@@ -1314,6 +1884,22 @@ if (!window.__JX__script_injected__) {
 }
 
 window.__JX__script_injected__ = true;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

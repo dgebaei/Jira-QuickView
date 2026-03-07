@@ -15,6 +15,7 @@ body ._JX {
     display: flex;
     align-items: center;
     min-width: 0;
+    overflow: visible;
     user-select: none;
     -webkit-user-select: none;
 
@@ -83,6 +84,7 @@ body ._JX {
     flex-direction: column;
     gap: 6px;
     padding: 8px;
+    overflow: visible;
     user-select: none;
     -webkit-user-select: none;
 
@@ -91,6 +93,7 @@ body ._JX {
       flex-wrap: wrap;
       gap: 6px;
       min-width: 0;
+      overflow: visible;
     }
 
     &_row_primary {
@@ -106,6 +109,7 @@ body ._JX {
       flex-wrap: wrap;
       gap: 6px;
       min-width: 0;
+      overflow: visible;
     }
 
     ._JX_status_icon {
@@ -119,7 +123,7 @@ body ._JX {
   &_annotation {
     max-width: 600px;
     width: min(600px, calc(100vw - 24px));
-    overflow-x: hidden;
+    overflow: visible;
     user-select: text;
     -webkit-user-select: text;
     color: #24292f;
@@ -180,7 +184,7 @@ body ._JX {
   &_description {
     max-height: 400px;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow: visible;
     border-bottom: 1px solid #dde4e6;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -398,6 +402,7 @@ body ._JX {
     display: inline-flex;
     align-items: center;
     font-size: 12px;
+    gap: 4px;
     line-height: 18px;
     padding: 2px 10px;
     max-width: 100%;
@@ -413,6 +418,181 @@ body ._JX {
     color: #172b4d !important;
   }
 
+  &_field_chip_content {
+    min-width: 0;
+  }
+
+  &_field_chip_editable_group {
+    overflow: visible;
+    padding-right: 4px;
+    position: relative;
+  }
+
+  &_field_chip_editable_group.is-editing {
+    z-index: 20;
+  }
+
+  &_field_chip_edit {
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    color: #52657a;
+    cursor: pointer;
+    display: inline-flex;
+    flex: 0 0 auto;
+    height: 20px;
+    justify-content: center;
+    margin-left: 2px;
+    opacity: 0;
+    padding: 0;
+    transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+    width: 20px;
+  }
+
+  &_field_chip_editable_group:hover ._JX_field_chip_edit,
+  &_field_chip_editable_group.is-editing ._JX_field_chip_edit,
+  &_field_chip_edit:focus-visible {
+    opacity: 1;
+  }
+
+  &_field_chip_edit:hover {
+    background: #dfe1e6;
+    color: #172b4d;
+  }
+
+  &_edit_popover {
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 10px;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
+    color: #172b4d;
+    left: 0;
+    min-width: 320px;
+    max-width: min(360px, calc(100vw - 48px));
+    padding: 10px;
+    position: absolute;
+    top: calc(100% + 8px);
+    width: 320px;
+    z-index: 40;
+  }
+
+  &_edit_popover_right {
+    left: auto;
+    right: 0;
+  }
+
+  &_edit_field_label {
+    color: #5e6c84;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  &_edit_input_shell {
+    align-items: stretch;
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &_edit_input {
+    background: #fff;
+    border: 1px solid #7a869a;
+    border-radius: 6px;
+    color: #172b4d;
+    flex: 1 1 auto;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 16px;
+    min-width: 0;
+    padding: 7px 9px;
+  }
+
+  &_edit_input::placeholder {
+    color: #6b778c;
+    opacity: 1;
+  }
+
+  &_edit_input:focus {
+    border-color: #0c66e4;
+    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.18);
+    outline: none;
+  }
+
+  &_edit_cancel {
+    background: #f7f8f9;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    color: #344563;
+    cursor: pointer;
+    flex: 0 0 auto;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    padding: 7px 10px;
+  }
+
+  &_edit_cancel:hover {
+    background: #ebecf0;
+  }
+
+  &_edit_dropdown {
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(9, 30, 66, 0.04);
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  &_edit_option {
+    background: transparent;
+    border: none;
+    color: #172b4d;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 16px;
+    padding: 9px 10px;
+    text-align: left;
+  }
+
+  &_edit_option:hover,
+  &_edit_option.is-selected {
+    background: #e9f2ff;
+  }
+
+  &_edit_empty,
+  &_edit_hint,
+  &_edit_error {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  &_edit_hint,
+  &_edit_error {
+    margin-top: 6px;
+  }
+
+  &_edit_empty,
+  &_edit_hint {
+    color: #5e6c84;
+  }
+
+  &_edit_empty {
+    padding: 9px 10px;
+  }
+
+  &_edit_error {
+    color: #c9372c;
+  }
   &_PR_STATUS {
     border: 1px solid #a5b3c2;
     border-radius: 3px;
@@ -564,3 +744,5 @@ body ._JX {
     }
   }
 }
+
+

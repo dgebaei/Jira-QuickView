@@ -80,13 +80,14 @@ async function notifyTab(tabId, message) {
   return false;
 }
 
-async function fetchWithCredentials(url) {
+async function fetchWithCredentials(url, init = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, {
       credentials: 'include',
+      ...init,
       signal: controller.signal
     });
     if (!response.ok) {
@@ -160,6 +161,42 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return SEND_RESPONSE_IS_ASYNC;
   }
 
+  if (request.action === 'requestJson') {
+    const method = String(request.method || 'POST').toUpperCase();
+    const allowedMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    if (allowedMethods.indexOf(method) === -1) {
+      sendResponse({error: 'Unsupported request method'});
+      return false;
+    }
+
+    assertAllowedRequestUrl(request.url)
+      .then(url => fetchWithCredentials(url, {
+        method,
+        headers: {
+          'Accept': 'application/json, text/plain, */*',
+          'Content-Type': 'application/json'
+        },
+        body: typeof request.body === 'undefined' ? undefined : JSON.stringify(request.body)
+      }))
+      .then(async response => {
+        const raw = await response.text();
+        if (!raw) {
+          sendResponse({ result: null });
+          return;
+        }
+
+        try {
+          sendResponse({ result: JSON.parse(raw) });
+        } catch (ex) {
+          sendResponse({ result: raw });
+        }
+      })
+      .catch(error => {
+        sendResponse({ error: error.message });
+      });
+    return SEND_RESPONSE_IS_ASYNC;
+  }
+
   return false;
 });
 
@@ -202,6 +239,4 @@ async function browserOnClicked (tab) {
     browserOnClicked(tab).catch(() => {});
   });
 })();
-
-
 

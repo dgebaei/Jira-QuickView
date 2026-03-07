@@ -34,8 +34,43 @@
         {{#row2Chips.length}}
         <div class="_JX_status_row">
             {{#row2Chips}}
+            {{#isEditable}}
+            <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
+                {{#linkUrl}}
+                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/isEditing}}
+                {{#isEditing}}<span class="_JX_field_chip_content">{{text}}</span>{{/isEditing}}
+                {{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
+                <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
+                </button>
+                {{#isEditing}}
+                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
+                    <div class="_JX_edit_field_label">{{editLabel}}</div>
+                    <div class="_JX_edit_input_shell">
+                        <input class="_JX_edit_input" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>
+                        <button class="_JX_edit_cancel" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>
+                    </div>
+                    {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
+                    <div class="_JX_edit_dropdown">
+                        {{#hasOptions}}
+                        {{#options}}
+                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">{{label}}</button>
+                        {{/options}}
+                        {{/hasOptions}}
+                        {{^hasOptions}}
+                        <div class="_JX_edit_empty">{{editEmptyText}}</div>
+                        {{/hasOptions}}
+                    </div>
+                    {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
+                </div>
+                {{/isEditing}}
+            </div>
+            {{/isEditable}}
+            {{^isEditable}}
             {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
             {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
+            {{/isEditable}}
             {{/row2Chips}}
         </div>
         {{/row2Chips.length}}
@@ -113,4 +148,3 @@
         {{/emptyBodyText}}
     </div>
 </div>
-
