@@ -1804,8 +1804,64 @@ async function mainAsyncLocal() {
     return `${fieldName}: ${primitive || '--'}`;
   }
 
-  function buildCustomFieldSaveValue(rawValue) {
+  function getCustomFieldSupportDescriptor(fieldMeta) {
+    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
+    const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
+    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
+
+    if (schemaCustom.includes('cascadingselect')) {
+      return null;
+    }
+
+    if (schemaType === 'option') {
+      return {
+        selectionMode: 'single',
+        valueKind: 'option'
+      };
+    }
+
+    if (schemaType === 'string') {
+      return {
+        selectionMode: 'single',
+        valueKind: 'primitive'
+      };
+    }
+
+    if (schemaType === 'array' && itemType === 'option') {
+      return {
+        selectionMode: 'multi',
+        valueKind: 'option'
+      };
+    }
+
+    if (schemaType === 'array' && itemType === 'string') {
+      return {
+        selectionMode: 'multi',
+        valueKind: 'primitive'
+      };
+    }
+
+    return null;
+  }
+
+  function isSupportedCustomFieldAllowedValue(entry, supportDescriptor) {
+    if (!supportDescriptor) {
+      return false;
+    }
+    if (supportDescriptor.valueKind === 'primitive') {
+      return typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean';
+    }
+    if (!entry || typeof entry !== 'object') {
+      return false;
+    }
+    return !!(entry.id || entry.value || entry.name);
+  }
+
+  function buildCustomFieldSaveValue(rawValue, supportDescriptor) {
     if (rawValue === undefined || rawValue === null) {
+      return rawValue;
+    }
+    if (supportDescriptor?.valueKind === 'primitive') {
       return rawValue;
     }
     if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
@@ -1851,9 +1907,13 @@ async function mainAsyncLocal() {
       return null;
     }
 
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
+    const supportDescriptor = getCustomFieldSupportDescriptor(fieldMeta);
+    if (!supportDescriptor) {
+      return null;
+    }
+
     const operations = capability.operations || [];
-    const isMultiValue = schemaType === 'array';
+    const isMultiValue = supportDescriptor.selectionMode === 'multi';
     const currentValue = issueData?.fields?.[fieldId];
     const currentEntries = isMultiValue
       ? (Array.isArray(currentValue) ? currentValue : [])
@@ -1862,9 +1922,14 @@ async function mainAsyncLocal() {
       .map(entry => buildCustomFieldOption(fieldName, entry))
       .filter(Boolean);
     const allowedOptions = capability.allowedValues
+      .filter(entry => isSupportedCustomFieldAllowedValue(entry, supportDescriptor))
       .map(entry => buildCustomFieldOption(fieldName, entry))
       .filter(Boolean);
     const allOptions = mergeEditOptions(currentSelections, allowedOptions);
+
+    if (!allOptions.length) {
+      return null;
+    }
 
     if (isMultiValue && !operations.includes('set')) {
       return null;
@@ -1885,8 +1950,8 @@ async function mainAsyncLocal() {
       loadOptions: async () => allOptions,
       save: selectedOptions => {
         const fieldValue = isMultiValue
-          ? selectedOptions.map(option => buildCustomFieldSaveValue(option.rawValue))
-          : buildCustomFieldSaveValue(selectedOptions[0]?.rawValue);
+          ? selectedOptions.map(option => buildCustomFieldSaveValue(option.rawValue, supportDescriptor))
+          : buildCustomFieldSaveValue(selectedOptions[0]?.rawValue, supportDescriptor);
         return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
           fields: {
             [fieldId]: isMultiValue ? fieldValue : (fieldValue ?? null)
