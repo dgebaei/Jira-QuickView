@@ -779,8 +779,8 @@ async function mainAsyncLocal() {
     return sprints;
   }
 
-  function formatFixVersionText(fixVersions) {
-    return (fixVersions || [])
+  function formatVersionText(versions) {
+    return (versions || [])
       .map(version => version.name)
       .filter(Boolean)
       .join(', ');
@@ -950,19 +950,27 @@ async function mainAsyncLocal() {
     });
   }
 
-  async function getFixVersionOptions(issueData) {
+  async function getProjectVersionOptions(issueData, cacheKey, emptyLabel) {
     const projectKey = String(issueData?.key || '').split('-')[0];
     if (!projectKey) {
       return [];
     }
-    return getCachedValue(fieldOptionsCache, `fixVersions__${projectKey}`, async () => {
+    return getCachedValue(fieldOptionsCache, `${cacheKey}__${projectKey}`, async () => {
       const versions = await get(`${INSTANCE_URL}rest/api/2/project/${encodeURIComponent(projectKey)}/versions`);
       const options = (Array.isArray(versions) ? versions : [])
         .filter(version => version?.name && !version?.archived)
         .sort(compareFixVersionOptions)
         .map(version => buildEditOption(version.id, version.name, {rawValue: version}));
-      return [buildEditOption('', 'No fix version'), ...options];
+      return [buildEditOption('', emptyLabel), ...options];
     });
+  }
+
+  async function getFixVersionOptions(issueData) {
+    return getProjectVersionOptions(issueData, 'fixVersions', 'No fix version');
+  }
+
+  async function getAffectsVersionOptions(issueData) {
+    return getProjectVersionOptions(issueData, 'versions', 'No affects version');
   }
 
   function compareSprintState(left, right) {
@@ -1024,12 +1032,31 @@ async function mainAsyncLocal() {
   }
 
   function getEditableFieldDefinition(fieldKey, issueData) {
+    if (fieldKey === 'versions') {
+      const currentVersions = issueData?.fields?.versions || [];
+      return {
+        fieldKey,
+        label: 'Affects version',
+        currentText: formatVersionText(currentVersions),
+        currentOptionId: currentVersions.length === 1 ? String(currentVersions[0]?.id || '') : null,
+        loadOptions: () => getAffectsVersionOptions(issueData),
+        save: option => {
+          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+            fields: {
+              versions: option.id ? [{id: option.id}] : []
+            }
+          });
+        },
+        successMessage: option => option.id ? `Affects version set to ${option.label}` : 'Affects version cleared'
+      };
+    }
+
     if (fieldKey === 'fixVersions') {
       const currentFixVersions = issueData?.fields?.fixVersions || [];
       return {
         fieldKey,
         label: 'Fix version',
-        currentText: formatFixVersionText(currentFixVersions),
+        currentText: formatVersionText(currentFixVersions),
         currentOptionId: currentFixVersions.length === 1 ? String(currentFixVersions[0]?.id || '') : null,
         loadOptions: () => getFixVersionOptions(issueData),
         save: option => {
@@ -1091,7 +1118,7 @@ async function mainAsyncLocal() {
         ...baseChip,
         isEditable: true,
         isEditing: true,
-        isRightAligned: fieldKey === 'fixVersions',
+        isRightAligned: fieldKey === 'fixVersions' || fieldKey === 'versions',
         fieldKey,
         editLabel: editState.label,
         inputValue: editState.inputValue,
@@ -1229,19 +1256,35 @@ async function mainAsyncLocal() {
 
     const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
     const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
+    const canEditAffectsVersions = affectsVersions.length <= 1;
+    const canEditFixVersions = fixVersions.length <= 1;
     const row2Chips = [
       displayFields.sprint ? buildEditableFieldChip('sprint', buildFilterChip(
         `Sprint: ${formatSprintText(sprints) || '--'}`,
         ''
       ), state) : null,
-      displayFields.affects ? buildFilterChip(
-        `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`,
-        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+      displayFields.affects ? (
+        canEditAffectsVersions
+          ? buildEditableFieldChip('versions', buildFilterChip(
+            `Affects: ${formatVersionText(affectsVersions) || '--'}`,
+            singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+          ), state)
+          : buildFilterChip(
+            `Affects: ${formatVersionText(affectsVersions) || '--'}`,
+            ''
+          )
       ) : null,
-      displayFields.fixVersions ? buildEditableFieldChip('fixVersions', buildFilterChip(
-        `Fix version: ${formatFixVersionText(fixVersions) || '--'}`,
-        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
-      ), state) : null,
+      displayFields.fixVersions ? (
+        canEditFixVersions
+          ? buildEditableFieldChip('fixVersions', buildFilterChip(
+            `Fix version: ${formatVersionText(fixVersions) || '--'}`,
+            singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
+          ), state)
+          : buildFilterChip(
+            `Fix version: ${formatVersionText(fixVersions) || '--'}`,
+            ''
+          )
+      ) : null,
       ...customFieldChips[2]
     ].filter(Boolean);
 
@@ -1289,7 +1332,7 @@ async function mainAsyncLocal() {
       issueTypeText: displayFields.issueType ? (issueTypeName || 'No type') : '',
       statusText: displayFields.status ? (statusName || 'No status') : '',
       sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
-      fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
+      fixVersionText: displayFields.fixVersions ? (formatVersionText(fixVersions) || 'No fix version') : '',
       row1Chips,
       row2Chips,
       row3Chips,
