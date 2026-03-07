@@ -284,7 +284,7 @@ body ._JX {
     max-height: calc(100vh - 16px);
     max-width: 600px;
     width: min(600px, calc(100vw - 24px));
-    overflow: hidden;
+    overflow: visible;
     user-select: text;
     -webkit-user-select: text;
     color: #24292f;
@@ -569,15 +569,35 @@ body ._JX {
   }
 
   &_comment_input {
+    background: #fff;
     border: 1px solid #c7d1db;
     box-sizing: border-box;
     border-radius: 6px;
-    font: inherit;
+    color: #172b4d;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
     min-height: 78px;
     max-width: 100%;
     padding: 8px 10px;
     resize: vertical;
     width: 100%;
+  }
+
+  &_comment_input::placeholder {
+    color: #6b778c;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    opacity: 1;
+  }
+
+  &_comment_input:focus {
+    border-color: #0c66e4;
+    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
+    outline: none;
   }
 
   &_comment_mentions {
@@ -715,9 +735,10 @@ body ._JX {
     border: 1px solid #c7d1db;
     border-radius: 999px;
     cursor: pointer;
-    font-size: 12px;
+    font-family: inherit;
+    font-size: 13px;
     font-weight: 700;
-    line-height: 1;
+    line-height: 1.2;
     padding: 8px 12px;
   }
 
@@ -853,12 +874,12 @@ body ._JX {
     box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
     color: #172b4d;
     left: 0;
-    min-width: 320px;
+    min-width: 260px;
     max-width: min(360px, calc(100vw - 48px));
     padding: 10px;
     position: absolute;
     top: calc(100% + 8px);
-    width: 320px;
+    width: min(320px, calc(100vw - 48px));
     z-index: 40;
   }
 

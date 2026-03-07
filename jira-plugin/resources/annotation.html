@@ -19,7 +19,8 @@
                 {{/avatarUrl}}
                 {{#isEditable}}
                 <button class="_JX_field_chip_edit _JX_assignee_edit_button" type="button" data-field-key="assignee" title="{{editTitle}}" aria-label="{{editTitle}}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
+                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{/isEditable}}
                 {{#isEditing}}
@@ -69,7 +70,7 @@
         </div>
         <a class="_JX_copyable_link" id="_JX_title_link" data-ticket="{{ticketKey}}" data-title="{{ticketTitle}}" href="{{url}}" target="_blank" rel="noopener noreferrer" title="{{urlHoverTitle}}">{{urlTitle}}</a>
         <div class="_JX_title_controls">
-            <button class="_JX_control_button _JX_title_copy _JX_copy_link" type="button" title="Copy pretty link" aria-label="Copy pretty link" data-url="{{copyUrl}}" data-ticket="{{copyTicket}}" data-title="{{copyTitle}}">
+            <button class="_JX_control_button _JX_title_copy _JX_copy_link" type="button" title="Copy issue link" aria-label="Copy issue link" data-url="{{copyUrl}}" data-ticket="{{copyTicket}}" data-title="{{copyTitle}}">
                 <svg width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><path d="M10 19h8V8h-8v11zM8 7.992C8 6.892 8.902 6 10.009 6h7.982C19.101 6 20 6.893 20 7.992v11.016c0 1.1-.902 1.992-2.009 1.992H10.01A2.001 2.001 0 0 1 8 19.008V7.992z"></path><path d="M5 16V4.992C5 3.892 5.902 3 7.009 3H15v13H5zm2 0h8V5H7v11z"></path></g></svg>
             </button>
             {{#hasQuickActions}}
@@ -104,7 +105,8 @@
                     {{^linkUrl}}<span class="_JX_field_chip_content">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
                     {{^hideInlineEditButton}}
                     <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                        <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
+                        {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                        {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                     </button>
                     {{/hideInlineEditButton}}
                     {{#isEditing}}
@@ -153,7 +155,7 @@
                 {{/isEditable}}
                 {{^isEditable}}
                 {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
                 {{/isEditable}}
                 {{/row1Chips}}
             </div>
@@ -177,7 +179,8 @@
                 {{/linkUrl}}
                 {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
                 <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
+                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{#isEditing}}
                 <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
@@ -225,7 +228,7 @@
             {{/isEditable}}
             {{^isEditable}}
             {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
             {{/isEditable}}
             {{/row2Chips}}
         </div>
@@ -241,7 +244,8 @@
                 {{/linkUrl}}
                 {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
                 <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
+                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{#isEditing}}
                 <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
@@ -289,7 +293,7 @@
             {{/isEditable}}
             {{^isEditable}}
             {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
             {{/isEditable}}
             {{/row3Chips}}
         </div>

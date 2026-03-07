@@ -206,7 +206,6 @@ function notifyJiraConnectionFailure(instanceUrl, error) {
 async function mainAsyncLocal() {
   const $ = require('jquery');
   const draggable = require('jquery-ui/ui/widgets/draggable');
-  const DEBUG_CUSTOM_FIELD_ID = 'customfield_11200';
 
   const config = await getConfig();
   const INSTANCE_URL = config.instanceUrl;
@@ -271,6 +270,7 @@ async function mainAsyncLocal() {
   const issueSearchRecentCache = new Map();
   const labelSuggestionCache = new Map();
   const labelLocalOptionsCache = new Map();
+  const tempoAccountSearchCache = new Map();
   let labelSuggestionSupportPromise = null;
   let preferredAssigneeIdentifier = '';
   let editSearchRequestCounter = 0;
@@ -1247,6 +1247,7 @@ async function mainAsyncLocal() {
       const fields = [
         'description',
         'id',
+        'project',
         'reporter',
         'assignee',
         'summary',
@@ -1310,21 +1311,13 @@ async function mainAsyncLocal() {
         allowedValues: []
       };
     }
-    const result = {
+    return {
       editable: true,
       fieldKey: resolvedFieldKey,
       fieldMeta: editMetaField,
       operations: Array.isArray(editMetaField.operations) ? editMetaField.operations : [],
       allowedValues: Array.isArray(editMetaField.allowedValues) ? editMetaField.allowedValues : []
     };
-    if (resolvedFieldKey === DEBUG_CUSTOM_FIELD_ID) {
-      console.log('[JiraHotLinker][customfield_11200] getEditableFieldCapability', {
-        issueKey: issueData.key,
-        resolvedFieldKey,
-        result
-      });
-    }
-    return result;
   }
 
   async function getTransitionOptions(issueKey) {
@@ -1813,6 +1806,106 @@ async function mainAsyncLocal() {
     return `${fieldName}: ${primitive || '--'}`;
   }
 
+  function buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta) {
+    if (value === undefined || value === null || value === '') {
+      return '';
+    }
+    if (isTempoAccountField(fieldMeta)) {
+      const accountId = value?.id || value;
+      return String(accountId || '').trim();
+    }
+    if (supportDescriptor?.valueKind === 'primitive') {
+      return encodeJqlValue(String(value));
+    }
+    const comparableValue = value?.value || value?.name || value?.displayName || value?.key || value?.id;
+    return comparableValue ? encodeJqlValue(String(comparableValue)) : '';
+  }
+
+  function buildCustomFieldChipData(fieldId, fieldName, rawValue, fieldMeta, supportDescriptor) {
+    const currentValues = Array.isArray(rawValue) ? rawValue.filter(value => value !== undefined && value !== null && value !== '') : [rawValue].filter(value => value !== undefined && value !== null && value !== '');
+    const jqlValues = currentValues
+      .map(value => buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta))
+      .filter(Boolean);
+    const jqlClause = !jqlValues.length
+      ? ''
+      : jqlValues.length === 1
+        ? `${fieldName} = ${jqlValues[0]}`
+        : `${fieldName} in (${jqlValues.join(', ')})`;
+    const linkLabel = Array.isArray(rawValue)
+      ? currentValues.map(entry => getCustomFieldPrimitive(entry)).filter(Boolean).join(', ')
+      : getCustomFieldPrimitive(rawValue);
+    return buildFilterChip(buildCustomFieldValueText(fieldName, rawValue), jqlClause, {
+      linkLabel
+    });
+  }
+
+  function isTempoAccountField(fieldMeta) {
+    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
+    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
+    return schemaType === 'account' || schemaCustom.includes('tempo-accounts');
+  }
+
+  function buildTempoAccountOption(account) {
+    const id = account?.id;
+    const key = String(account?.key || '').trim();
+    const name = String(account?.name || key || '').trim();
+    if (!id || !name) {
+      return null;
+    }
+    const customerName = String(account?.customer?.name || '').trim();
+    const categoryName = String(account?.category?.name || '').trim();
+    const metaText = [key, customerName, categoryName].filter(Boolean).join(' | ');
+    return buildEditOption(String(id), name, {
+      metaText,
+      searchText: `${name} ${key} ${customerName} ${categoryName}`,
+      rawValue: account
+    });
+  }
+
+  async function searchTempoAccounts(queryText, issueData) {
+    const projectId = String(issueData?.fields?.project?.id || '').trim();
+    if (!projectId) {
+      return [];
+    }
+    const normalizedQuery = String(queryText || '').trim();
+    const cacheKey = `${projectId}__${normalizedQuery.toLowerCase()}`;
+    return getCachedValue(tempoAccountSearchCache, cacheKey, async () => {
+      const tqlQuery = `status=OPEN AND (project=${projectId} OR project=GLOBAL)`;
+      const url = `${INSTANCE_URL}rest/tempo-accounts/1/account/search?tqlQuery=${encodeURIComponent(tqlQuery)}&query=${encodeURIComponent(normalizedQuery)}&limit=15&offset=0`;
+      const response = await get(url);
+      const accounts = Array.isArray(response?.accounts) ? response.accounts : [];
+      return accounts
+        .map(buildTempoAccountOption)
+        .filter(Boolean);
+    });
+  }
+
+  async function saveTempoAccountSelection(issueData, fieldId, selectedOptions) {
+    const selectedOption = selectedOptions[0];
+    if (!selectedOption?.id) {
+      throw new Error('Pick an account before saving');
+    }
+    const accountId = Number(selectedOption.id);
+    const accountKey = String(selectedOption?.rawValue?.key || '').trim();
+    const payloadCandidates = [
+      {fields: {[fieldId]: {id: accountId}}},
+      {fields: {[fieldId]: accountId}},
+      {fields: {[fieldId]: {id: String(selectedOption.id)}}},
+      ...(accountKey ? [{fields: {[fieldId]: {key: accountKey}}}] : [])
+    ];
+
+    let lastError;
+    for (const payload of payloadCandidates) {
+      try {
+        await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, payload);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Could not update account');
+  }
+
   function getCustomFieldSupportDescriptor(fieldMeta) {
     const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
     const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
@@ -1908,38 +2001,53 @@ async function mainAsyncLocal() {
       }));
   }
 
+  async function getCustomFieldEditorDefinition(fieldId, issueData) {
+    const capability = await getEditableFieldCapability(issueData, fieldId);
+    const fieldMeta = capability.fieldMeta;
+    const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
+
+    if (capability.editable && fieldMeta && isTempoAccountField(fieldMeta)) {
+      const currentAccount = issueData?.fields?.[fieldId];
+      const currentOption = currentAccount
+        ? buildTempoAccountOption(currentAccount)
+        : null;
+      return {
+        fieldKey: fieldId,
+        editorType: 'tempo-account-search',
+        label: fieldName,
+        fieldMeta,
+        supportDescriptor: {selectionMode: 'single', valueKind: 'tempo-account'},
+        selectionMode: 'single',
+        currentText: currentAccount ? buildCustomFieldValueText(fieldName, currentAccount) : `${fieldName}: --`,
+        currentOptionId: currentOption?.id || null,
+        currentSelections: currentOption ? [currentOption] : [],
+        initialInputValue: '',
+        inputPlaceholder: 'Search accounts',
+        loadOptions: async () => mergeEditOptions(currentOption ? [currentOption] : [], await searchTempoAccounts('', issueData)),
+        searchOptions: query => searchTempoAccounts(query, issueData),
+        save: selectedOptions => saveTempoAccountSelection(issueData, fieldId, selectedOptions),
+        successMessage: selectedOptions => {
+          const selectedOption = selectedOptions[0];
+          return selectedOption?.label
+            ? `${fieldName} set to ${selectedOption.label}`
+            : `${fieldName} updated`;
+        }
+      };
+    }
+
+    return getSupportedCustomFieldDefinition(fieldId, issueData);
+  }
+
   async function getSupportedCustomFieldDefinition(fieldId, issueData) {
     const capability = await getEditableFieldCapability(issueData, fieldId);
     const fieldMeta = capability.fieldMeta;
     const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-      console.log('[JiraHotLinker][customfield_11200] precheck', {
-        issueKey: issueData?.key,
-        fieldId,
-        fieldName,
-        capability,
-        fieldMeta
-      });
-    }
     if (!capability.editable || !fieldMeta || !Array.isArray(capability.allowedValues) || !capability.allowedValues.length) {
-      if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-        console.log('[JiraHotLinker][customfield_11200] rejected-before-support-descriptor', {
-          editable: capability.editable,
-          hasFieldMeta: !!fieldMeta,
-          hasAllowedValuesArray: Array.isArray(capability.allowedValues),
-          allowedValuesLength: Array.isArray(capability.allowedValues) ? capability.allowedValues.length : null
-        });
-      }
       return null;
     }
 
     const supportDescriptor = getCustomFieldSupportDescriptor(fieldMeta);
     if (!supportDescriptor) {
-      if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-        console.log('[JiraHotLinker][customfield_11200] rejected-support-descriptor', {
-          schema: fieldMeta?.schema
-        });
-      }
       return null;
     }
 
@@ -1957,35 +2065,15 @@ async function mainAsyncLocal() {
       .map(entry => buildCustomFieldOption(fieldName, entry))
       .filter(Boolean);
     const allOptions = mergeEditOptions(currentSelections, allowedOptions);
-    if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-      console.log('[JiraHotLinker][customfield_11200] normalized-options', {
-        supportDescriptor,
-        operations,
-        currentValue,
-        currentSelections,
-        allowedValues: capability.allowedValues,
-        allowedOptions,
-        allOptions
-      });
-    }
 
     if (!allOptions.length) {
-      if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-        console.log('[JiraHotLinker][customfield_11200] rejected-empty-options');
-      }
       return null;
     }
 
     if (isMultiValue && !operations.includes('set')) {
-      if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-        console.log('[JiraHotLinker][customfield_11200] rejected-no-set-operation', {operations});
-      }
       return null;
     }
     if (!isMultiValue && !operations.includes('set')) {
-      if (fieldId === DEBUG_CUSTOM_FIELD_ID) {
-        console.log('[JiraHotLinker][customfield_11200] rejected-no-set-operation', {operations});
-      }
       return null;
     }
 
@@ -1993,6 +2081,8 @@ async function mainAsyncLocal() {
       fieldKey: fieldId,
       editorType: isMultiValue ? 'multi-select' : 'single-select',
       label: fieldName,
+      fieldMeta,
+      supportDescriptor,
       selectionMode: isMultiValue ? 'multi' : 'single',
       currentText: buildCustomFieldValueText(fieldName, currentValue),
       currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
@@ -2039,10 +2129,9 @@ async function mainAsyncLocal() {
     }
     if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
       const textValue = String(entry);
-      return {
-        text: fieldName ? `${fieldName}: ${textValue}` : textValue,
-        linkUrl: ''
-      };
+      return buildFilterChip(fieldName ? `${fieldName}: ${textValue}` : textValue, `${fieldName} = ${encodeJqlValue(textValue)}`, {
+        linkLabel: textValue
+      });
     }
     const primaryText = entry.name || entry.value || entry.displayName || entry.id || entry.key;
     if (!primaryText) {
@@ -2051,10 +2140,9 @@ async function mainAsyncLocal() {
     const formattedValue = entry.key && (entry.name || entry.value)
       ? `[${entry.key}] ${entry.name || entry.value}`
       : String(primaryText);
-    return {
-      text: fieldName ? `${fieldName}: ${formattedValue}` : formattedValue,
-      linkUrl: ''
-    };
+    return buildFilterChip(fieldName ? `${fieldName}: ${formattedValue}` : formattedValue, `${fieldName} = ${encodeJqlValue(String(primaryText))}`, {
+      linkLabel: String(primaryText)
+    });
   }
   async function buildCustomFieldChips(issueData, customFields, state) {
     const names = issueData.names || {};
@@ -2066,12 +2154,15 @@ async function mainAsyncLocal() {
         continue;
       }
       const fieldName = String(names[fieldId] || fieldId);
-      const supportedDefinition = await getSupportedCustomFieldDefinition(fieldId, issueData).catch(() => null);
+      const supportedDefinition = await getCustomFieldEditorDefinition(fieldId, issueData).catch(() => null);
       if (supportedDefinition) {
-        chipsByRow[row].push(buildEditableFieldChip(fieldId, {
-          text: buildCustomFieldValueText(fieldName, rawValue),
-          linkUrl: ''
-        }, state, {
+        chipsByRow[row].push(buildEditableFieldChip(fieldId, buildCustomFieldChipData(
+          fieldId,
+          fieldName,
+          rawValue,
+          supportedDefinition.fieldMeta,
+          supportedDefinition.supportDescriptor
+        ), state, {
           canEdit: true,
           editTitle: `Edit ${fieldName}`
         }));
@@ -2081,7 +2172,12 @@ async function mainAsyncLocal() {
       entries.forEach(entry => {
         const chip = formatCustomFieldChip(fieldName, entry);
         if (chip && chip.text) {
-          chipsByRow[row].push(chip);
+          const nonEditableReason = getNonEditableFieldReason();
+          chipsByRow[row].push({
+            ...chip,
+            chipTitle: appendTooltipText(chip.chipTitle || chip.linkTitle || '', nonEditableReason),
+            linkTitle: appendTooltipText(chip.linkTitle || '', nonEditableReason)
+          });
         }
       });
     }
@@ -2199,8 +2295,19 @@ async function mainAsyncLocal() {
     return formatFixVersionText(versions);
   }
 
+  function getVisibleSprintsForDisplay(sprints) {
+    const sprintList = Array.isArray(sprints) ? sprints : [];
+    const activeSprints = sprintList.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
+    return activeSprints.length
+      ? activeSprints
+      : (sprintList.every(sprint => String(sprint?.state || '').toLowerCase() === 'closed')
+          ? sprintList.slice(-1)
+          : sprintList);
+  }
+
   function formatSprintText(sprints) {
-    return (sprints || [])
+    const visibleSprints = getVisibleSprintsForDisplay(sprints);
+    return visibleSprints
       .map(sprint => sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name)
       .filter(Boolean)
       .join(', ');
@@ -2214,11 +2321,78 @@ async function mainAsyncLocal() {
     return `${INSTANCE_URL}issues/?jql=${encodeURIComponent(jql)}`;
   }
 
+  function buildViewAllIssuesTitle(valueText) {
+    const normalizedValueText = String(valueText || '').trim();
+    return normalizedValueText
+      ? `View all "${normalizedValueText}" issues`
+      : 'View matching issues';
+  }
+
+  function ensureTooltipSentence(text) {
+    const normalizedText = String(text || '').trim();
+    if (!normalizedText) {
+      return '';
+    }
+    return /[.!?]$/.test(normalizedText)
+      ? normalizedText
+      : `${normalizedText}.`;
+  }
+
   function buildLinkHoverTitle(actionText, detailText, url) {
-    return [actionText, detailText, url]
-      .map(part => String(part || '').trim())
+    return [actionText, detailText]
+      .map(part => ensureTooltipSentence(part))
       .filter(Boolean)
       .join('\n');
+  }
+
+  function appendTooltipText(baseText, extraText) {
+    const parts = [ensureTooltipSentence(baseText), ensureTooltipSentence(extraText)].filter(Boolean);
+    return parts.join('\n\n');
+  }
+
+  function getNonEditableFieldReason() {
+    return 'Jira doesn\'t allow changing this field in the current issue state';
+  }
+
+  function constrainEditPopoversToViewport() {
+    const viewportPadding = 8;
+    container.find('._JX_edit_popover').each(function () {
+      const popover = this;
+      const anchor = popover.parentElement;
+      if (!anchor) {
+        return;
+      }
+
+      popover.style.position = '';
+      popover.style.left = '';
+      popover.style.right = '';
+      popover.style.top = '';
+      popover.style.width = '';
+      popover.style.maxWidth = '';
+
+      const maxWidth = Math.max(260, window.innerWidth - (viewportPadding * 2));
+      const popoverWidth = Math.min(320, maxWidth);
+      popover.style.maxWidth = `${maxWidth}px`;
+      popover.style.width = `${popoverWidth}px`;
+
+      const anchorRect = anchor.getBoundingClientRect();
+      const fitsRight = anchorRect.left + popoverWidth <= window.innerWidth - viewportPadding;
+      if (fitsRight) {
+        popover.style.left = '0';
+        popover.style.right = 'auto';
+        return;
+      }
+
+      const fitsLeft = anchorRect.right - popoverWidth >= viewportPadding;
+      if (fitsLeft) {
+        popover.style.left = 'auto';
+        popover.style.right = '0';
+        return;
+      }
+
+      popover.style.left = `${Math.max(viewportPadding - anchorRect.left, 0)}px`;
+      popover.style.right = 'auto';
+    });
   }
 
   function scopeJqlToProject(projectKey, clause) {
@@ -2233,7 +2407,7 @@ async function mainAsyncLocal() {
     return {
       text,
       linkUrl,
-      linkTitle: linkUrl ? buildLinkHoverTitle(extra.linkAction || 'Search Jira', text, linkUrl) : '',
+      linkTitle: linkUrl ? buildLinkHoverTitle(extra.linkAction || buildViewAllIssuesTitle(extra.linkLabel || text), extra.linkDetail || '') : '',
       ...extra
     };
   }
@@ -3106,7 +3280,7 @@ async function mainAsyncLocal() {
     }
 
     if (String(fieldKey || '').startsWith('customfield_')) {
-      const customFieldDefinition = await getSupportedCustomFieldDefinition(fieldKey, issueData);
+      const customFieldDefinition = await getCustomFieldEditorDefinition(fieldKey, issueData);
       if (customFieldDefinition) {
         return customFieldDefinition;
       }
@@ -3164,7 +3338,7 @@ async function mainAsyncLocal() {
           title: option.label
         }))
       : [];
-    const isSearchEditor = editState.editorType === 'user-search' || editState.editorType === 'issue-search' || editState.editorType === 'label-search';
+    const isSearchEditor = editState.editorType === 'user-search' || editState.editorType === 'issue-search' || editState.editorType === 'label-search' || editState.editorType === 'tempo-account-search';
     const inputDisabled = !!(editState.saving || (editState.loadingOptions && !isSearchEditor));
     const loadingText = editState.loadingOptions
       ? (isSearchEditor ? `Searching ${editState.label.toLowerCase()}...` : `Loading ${editState.label.toLowerCase()} values...`)
@@ -3196,7 +3370,12 @@ async function mainAsyncLocal() {
 
   function buildEditableFieldChip(fieldKey, baseChip, state, options = {}) {
     if (options.canEdit === false) {
-      return baseChip;
+      const nonEditableReason = options.nonEditableReason || getNonEditableFieldReason();
+      return {
+        ...baseChip,
+        chipTitle: appendTooltipText(baseChip.chipTitle || baseChip.linkTitle || '', nonEditableReason),
+        linkTitle: appendTooltipText(baseChip.linkTitle || '', nonEditableReason)
+      };
     }
     const activeEdit = buildActiveEditPresentation(fieldKey, state, {
       isRightAligned: options.isRightAligned
@@ -3206,7 +3385,8 @@ async function mainAsyncLocal() {
         ...baseChip,
         ...activeEdit,
         isEditable: true,
-        hideInlineEditButton: !!options.hideInlineEditButton
+        hideInlineEditButton: !!options.hideInlineEditButton,
+        editTitle: 'Discard'
       };
     }
     return {
@@ -3275,7 +3455,7 @@ async function mainAsyncLocal() {
       displayName,
       placeholderText: assignee ? '' : 'Unassigned',
       isEditable: !!canEditAssignee,
-      editTitle: assignee ? 'Edit assignee' : 'Assign issue',
+      editTitle: activeEdit ? 'Discard' : (assignee ? 'Edit assignee' : 'Assign issue'),
       ...(activeEdit || {})
     };
   }
@@ -3565,7 +3745,7 @@ async function mainAsyncLocal() {
       displayFields.issueType ? buildEditableFieldChip('issuetype', buildFilterChip(
         issueTypeName || 'No type',
         issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
-        {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
+        {iconUrl: issueData.fields.issuetype?.iconUrl || '', linkLabel: issueTypeName}
       ), state, {
         canEdit: issueTypeEditable,
         editTitle: 'Edit issue type'
@@ -3573,15 +3753,15 @@ async function mainAsyncLocal() {
       displayFields.status ? buildEditableFieldChip('status', buildFilterChip(
         statusName || 'No status',
         statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
-        {iconUrl: issueData.fields.status?.iconUrl || ''}
+        {iconUrl: issueData.fields.status?.iconUrl || '', linkLabel: statusName}
       ), state, {
         canEdit: statusEditable,
-        editTitle: 'Change status via transition'
+        editTitle: 'Change status'
       }) : null,
       displayFields.priority ? buildEditableFieldChip('priority', buildFilterChip(
         priorityName || 'No priority',
         priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
-        {iconUrl: issueData.fields.priority?.iconUrl || ''}
+        {iconUrl: issueData.fields.priority?.iconUrl || '', linkLabel: priorityName}
       ), state, {
         canEdit: priorityEditable,
         editTitle: 'Edit priority'
@@ -3593,9 +3773,8 @@ async function mainAsyncLocal() {
         linkUrl: linkageData?.currentLink?.url || '',
         linkTitle: linkageData?.currentLink
           ? buildLinkHoverTitle(
-              `Open ${String(linkageData.label || 'linked').toLowerCase()} issue`,
-              linkageData.currentLink.key,
-              linkageData.currentLink.url
+              linkageData.mode === 'epicLink' ? 'View epic issue' : 'View parent issue',
+              `[${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
             )
           : ''
       }, state, {
@@ -3607,23 +3786,38 @@ async function mainAsyncLocal() {
 
     const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
     const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
+    const visibleSprints = getVisibleSprintsForDisplay(sprints);
+    const sprintClauses = visibleSprints
+      .map(sprint => sprint?.id
+        ? `sprint = ${sprint.id}`
+        : (sprint?.name ? `sprint = ${encodeJqlValue(sprint.name)}` : ''))
+      .filter(Boolean);
+    const sprintJql = sprintClauses.length
+      ? scopeJqlToProject(
+          projectKey,
+          sprintClauses.length === 1 ? sprintClauses[0] : `(${sprintClauses.join(' OR ')})`
+        )
+      : '';
     const row2Chips = [
       displayFields.sprint ? buildEditableFieldChip('sprint', buildFilterChip(
         `Sprint: ${formatSprintText(sprints) || '--'}`,
-        ''
+        sprintJql,
+        {linkLabel: visibleSprints.length > 1 ? 'listed sprints' : (formatSprintText(sprints) || '')}
       ), state, {
         canEdit: !!sprintCapability?.editable
       }) : null,
       displayFields.affects ? buildEditableFieldChip('versions', buildFilterChip(
         `Affects: ${formatVersionText(affectsVersions) || '--'}`,
-        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : '',
+        {linkLabel: singleAffectsVersion}
       ), state, {
         canEdit: !!affectsCapability?.editable,
         isRightAligned: true
       }) : null,
       displayFields.fixVersions ? buildEditableFieldChip('fixVersions', buildFilterChip(
         `Fix version: ${formatVersionText(fixVersions) || '--'}`,
-        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
+        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : '',
+        {linkLabel: singleFixVersion}
       ), state, {
         canEdit: !!fixVersionsCapability?.editable,
         isRightAligned: true
@@ -3635,7 +3829,8 @@ async function mainAsyncLocal() {
     const row3Chips = [
       displayFields.labels ? buildEditableFieldChip('labels', buildFilterChip(
         `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
-        singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : ''
+        singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : '',
+        {linkLabel: singleLabel}
       ), state, {
         canEdit: labelsEditable,
         editTitle: 'Edit labels'
@@ -3832,6 +4027,7 @@ async function mainAsyncLocal() {
         input.setSelectionRange(selectionStart, selectionEnd);
       }
     }
+    constrainEditPopoversToViewport();
   }
   function invalidatePopupCaches() {
     if (!popupState?.key) {
@@ -3842,6 +4038,7 @@ async function mainAsyncLocal() {
     transitionOptionsCache.delete(popupState.key);
     assigneeLocalOptionsCache.delete(popupState.key);
     labelLocalOptionsCache.delete(popupState.key);
+    tempoAccountSearchCache.clear();
     issueSearchCache.clear();
     [...assigneeSearchCache.keys()].forEach(cacheKey => {
       if (String(cacheKey).startsWith(`${popupState.key}__`)) {
@@ -3948,7 +4145,7 @@ async function mainAsyncLocal() {
       if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.searchRequestId !== requestId) {
         return;
       }
-      const mergedOptions = popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search'
+      const mergedOptions = popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search'
         ? mergeEditOptions(options, popupState.editState.options)
         : options;
       popupState = {
@@ -4060,7 +4257,7 @@ async function mainAsyncLocal() {
       }
       await renderIssuePopup(popupState);
 
-      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search')) {
+      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search' || popupState.editState.editorType === 'tempo-account-search')) {
         const searchRequestId = ++editSearchRequestCounter;
         popupState = {
           ...popupState,
@@ -4071,7 +4268,9 @@ async function mainAsyncLocal() {
           }
         };
         await renderIssuePopup(popupState);
-        triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
+        if (popupState.editState.editorType !== 'label-search') {
+          triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
+        }
       }
     } catch (error) {
       const errorMessage = buildEditFieldError(error);
@@ -4150,6 +4349,7 @@ async function mainAsyncLocal() {
     const canAutoComplete = popupState.editState.editorType !== 'user-search' &&
       popupState.editState.editorType !== 'issue-search' &&
       popupState.editState.editorType !== 'label-search' &&
+      popupState.editState.editorType !== 'tempo-account-search' &&
       popupState.editState.editorType !== 'multi-select' &&
       typeof selectionStart === 'number' &&
       typeof selectionEnd === 'number' &&
@@ -4182,7 +4382,7 @@ async function mainAsyncLocal() {
     };
     renderIssuePopup(popupState).catch(() => {});
 
-    if (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search') {
+    if (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search' || popupState.editState.editorType === 'tempo-account-search') {
       const searchRequestId = ++editSearchRequestCounter;
       popupState = {
         ...popupState,
@@ -4453,6 +4653,10 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    if (popupState?.editState?.fieldKey === fieldKey) {
+      cancelFieldEdit();
+      return;
+    }
     startFieldEdit(fieldKey).catch(() => {});
   });
 
