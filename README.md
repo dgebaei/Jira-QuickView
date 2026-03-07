@@ -6,10 +6,6 @@
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge)
 ![MIT License](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge)
 
-## See it in action ✨
-
-Hover a Jira key and the extension brings the issue into view with context, actions, and linked development details right where you are already working.
-
 ## The pitch 🚀
 
 Jira keys are everywhere, but the context usually is not. You see `PROJ-1842` in a pull request, an email, a doc, or a comment thread, and then the tab-hopping begins.
@@ -20,54 +16,16 @@ And it does not stop at reading. The extension also lets you update issues direc
 
 It is the kind of extension that feels small until you use it for a day - then you do not want to work without it.
 
-Another important detail: Jira HotLinker does not ask you to hand over Jira credentials to a separate service. It works through your existing browser session, sending requests from the browser with the Jira access you already have.
-
-## Why it feels great 🎯
-
-- ✨ Instant context exactly where the Jira key appears
-- ⚡ Fewer tabs, fewer context switches, less waiting
-- ✍️ Fast issue updates without losing your place
-- 🌍 Works across the real tools teams use all day
-- ✅ Honors Jira workflows instead of fighting them
-- 🔐 Does not rely on storing your Jira username or password in the extension
-
 ## Why people install it 💡
 
-- 💬 Stay in the conversation instead of bouncing between browser tabs
-- 👀 Understand a ticket before opening Jira
-- ✍️ Make quick Jira updates in place instead of breaking focus to open the full issue page
-- 🔎 Review code and product discussions with live Jira context nearby
-- 🔗 Make Git providers, mail, docs, Jira, and Confluence all feel connected
-- 🎯 Give your team fast access to the fields that actually matter
-
-## Without it / With it 🔄
-
-**Without Jira HotLinker**
-
-- You spot `PROJ-1842` in a PR, email, or doc
-- You open Jira in another tab
-- You wait for the issue to load
-- You hunt for status, priority, comments, and related work
-- You jump back to where you started and repeat the cycle again
-
-**With Jira HotLinker**
-
-- You hover `PROJ-1842`
-- The ticket comes to you instantly
-- You see the important context right on the page
-- You keep reading, reviewing, replying, or shipping
-- You stay in flow
+- ✨ See Jira context exactly where the issue key appears
+- ⚡ Reduce tab switching and stay in flow
+- ✍️ Make quick updates without opening the full Jira issue
+- 🔎 Review work with more context before you click away
+- 🔗 Connect Git, docs, email, Jira, and Confluence more naturally
+- 🎯 Give each team the fields and workflow cues they actually need
 
 ## Where it shines 🌍
-
-- Reviewing pull requests across GitHub, GitLab, Bitbucket, and other Git providers
-- Checking ticket status and priority during code review
-- Looking up descriptions, comments, and attachments without leaving the page you are on
-- Reading Jira references inside Gmail, Outlook, Google Docs, Jira, or Confluence
-- Following linked pull requests and related development activity faster
-- Surfacing custom Jira fields that matter to your team
-
-## Built for the messy real world 🧩
 
 - Git platforms: GitHub, GitLab, Bitbucket, and similar review or repo tools
 - Email and communication: Gmail, Outlook, and any web app where Jira keys appear in text
@@ -76,74 +34,33 @@ Another important detail: Jira HotLinker does not ask you to hand over Jira cred
 
 ## What it can do ⚡
 
-- ✨ Detect Jira issue keys on the pages you use most and turn them into rich hover cards
-- 🌐 Work across Git providers, email tools, docs, and collaboration apps through configurable domain matching
-- 🧾 Display ticket title, type, status, priority, labels, sprint, versions, epic/parent, reporter, and assignee
-- 💬 Render the issue description, comments, and attachment previews
-- 🔗 Show related pull requests and development signals
-- ✍️ Edit supported issue fields directly from the popup and trigger Jira-backed actions like assign-to-me, sprint updates, and workflow transitions
-- ✅ Respect Jira-side options, workflows, and validation behavior instead of inventing its own rules
-- 📌 Let you drag and pin the ticket card while you work
-- 📋 Copy the issue key and title to the clipboard
-- ⚙️ Configure which domains are scanned and which Jira fields are visible
-- 🧩 Add Jira custom fields to the top summary rows
+- ✨ Detect Jira issue keys and turn them into rich hover cards
+- 🧾 Show core issue metadata like title, type, status, priority, labels, sprint, versions, epic/parent, reporter, and assignee
+- 💬 Render descriptions, comments, attachments, and related pull requests in the popup
+- ✍️ Support in-place editing, quick actions, and Jira-backed workflow transitions
+- 📌 Let you pin the popup while you keep working on the page
+- 📋 Copy issue details quickly when you need to share them
+- ⚙️ Control supported pages, visible fields, and custom field placement
+
+## Direct issue editing ✍️
+
+Jira HotLinker is not just a viewer. It helps you act on issues right from the preview, while still respecting how Jira is configured.
+
+- 🛠️ Edit supported fields such as sprint, versions, status, priority, assignee, labels, issue type, epic/parent, and supported custom fields
+- ⚡ Run quick actions like assigning the issue to yourself or moving it into progress when Jira allows it
+- 🔄 Use Jira-provided values and transitions instead of hardcoded shortcuts
+- ✅ Stay aligned with workflow restrictions, field constraints, and validation behavior already defined in Jira
 
 ## Feature tour 🎬
 
 Imagine the moment a Jira key appears on screen:
 
 1. You hover the issue key.
-2. A polished preview opens with the ticket title and triage details.
-3. Status, priority, labels, sprint, versions, and ownership are immediately visible.
-4. Description, comments, and attachments are right there when you need deeper context.
-5. When action is needed, you can update supported fields directly from the popup and use quick issue actions without losing your place.
-6. Those edits follow Jira's available options and workflow validation, so the extension fits the process your team already uses.
-7. Related pull requests and development signals help you connect discussion to delivery.
-8. If the ticket matters, you can pin the card, keep it nearby, and continue working.
-
-## Install in minutes 📦
-
-### Install from the Chrome Web Store 🛍️
-
-Chrome Web Store listing: `TBD`
-
-Install it, point it at your Jira instance, and you can start hovering issue keys almost immediately.
-
-After installing:
-
-1. Open the extension options page.
-2. Enter your Jira instance URL, for example `https://your-company.atlassian.net/`.
-3. Save the configuration and grant the requested permissions.
-4. Visit any allowed page that contains Jira issue keys.
-
-By default, GitHub is enabled, but that is only the starting point. You can add other Git providers and everyday tools such as Gmail, Outlook, Google Docs, Jira, and Confluence from the options page or directly from the extension action.
-
-### Install from GitHub for now 📥
-
-Until the Chrome Web Store listing is ready, the simplest distribution path is a GitHub release with a packaged build.
-
-Download the current packaged build here:
-
-`https://github.com/dgebaei/Jira-Hot-Linker/releases/latest/download/jira-plugin-build.zip`
-
-Release page:
-
-`https://github.com/dgebaei/Jira-Hot-Linker/releases/latest`
-
-Installation steps:
-
-- Users download and unzip it locally
-- In Chrome or other Chromium browsers, open `chrome://extensions`
-- Enable `Developer mode`
-- Click `Load unpacked`
-- Select the unzipped `jira-plugin/` folder
-
-Why this is the best short-term option:
-
-- A plain zip is easy to distribute through GitHub Releases
-- Users can inspect exactly what they are installing
-- Chrome generally does not offer a smooth direct install flow for extensions outside the Web Store
-- `Load unpacked` is the most reliable option until store publishing is in place
+2. The popup opens with the ticket summary and current status.
+3. You scan the important context without leaving the page.
+4. If needed, you open comments, attachments, or related pull requests.
+5. If action is needed, you edit the issue or trigger a quick Jira workflow action.
+6. You keep reading, reviewing, replying, or shipping without breaking focus.
 
 ## Privacy and authentication 🔐
 
@@ -153,6 +70,32 @@ Jira HotLinker uses your existing Jira login session in the browser. In plain te
 - 🚫 No extra credential vault or external account link is required
 - 🌐 Requests are made from your browser to your Jira instance using the access you already have
 - ✅ What you can view or update still depends on your Jira permissions, workflow rules, and field validation
+
+## Install 📦
+
+### Install from the Chrome Web Store 🛍️
+
+Chrome Web Store listing: `TBD`
+
+### Install from GitHub for now 📥
+
+Until the Chrome Web Store listing is ready, the simplest distribution path is a GitHub release with a packaged build.
+
+Download the current packaged build here:
+
+- [Download latest build](https://github.com/dgebaei/Jira-Hot-Linker/releases/latest/download/jira-plugin-build.zip)
+
+Release page:
+
+- [View latest release](https://github.com/dgebaei/Jira-Hot-Linker/releases/latest)
+
+Installation steps:
+
+- Users download and unzip it locally
+- In Chrome or other Chromium browsers, open `chrome://extensions`
+- Enable `Developer mode`
+- Click `Load unpacked`
+- Select the unzipped `jira-plugin/` folder
 
 ### Local development setup 🛠️
 
@@ -196,25 +139,16 @@ Here are the easiest ways to find it in your Jira instance:
 
 If the field ID is valid, the options page will try to resolve and display the field name for you.
 
-## Direct issue editing ✍️
-
-Jira HotLinker is not just a viewer. It can help you act on issues right from the preview.
-
-- 🛠️ Update supported fields such as sprint and versions from inline controls
-- ⚡ Run quick actions like assigning the issue to yourself or moving it into progress when Jira allows it
-- 🔄 Use Jira-provided values and transitions instead of hardcoded shortcuts
-- ✅ Stay aligned with workflow restrictions, field constraints, and validation behavior already defined in Jira
-
-## In one sentence 🎉
-
-Jira HotLinker makes every Jira key on the web feel alive, actionable, and useful.
-
 ## For developers 👩‍💻
 
 - `jira-plugin/src/` - content script, background logic, and UI behavior
 - `jira-plugin/options/` - options page UI and configuration flow
 - `jira-plugin/manifest.json` - Chrome extension manifest
 - `webpack.config.js` - build pipeline for the extension bundles
+
+## In one sentence 🎉
+
+Jira HotLinker makes every Jira key on the web feel alive, actionable, and useful.
 
 ## Thank you 🙌
 
