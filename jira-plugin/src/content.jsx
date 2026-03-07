@@ -133,6 +133,15 @@ async function getImageDataUrl(url) {
     throw err;
   }
 }
+async function requestJson(method, url, body) {
+  const response = await sendMessage({action: 'requestJson', method, url, body});
+  if (Object.prototype.hasOwnProperty.call(response, 'result')) {
+    return response.result;
+  }
+  const err = new Error(response.error || 'Request failed');
+  err.inner = response.error;
+  throw err;
+}
 
 function isJiraConnectionFailure(error) {
   const message = String(error?.message || error?.inner || error || '');
@@ -199,6 +208,9 @@ async function mainAsyncLocal() {
   const cacheTtlMs = 60 * 1000;
   const issueCache = new Map();
   const pullRequestCache = new Map();
+  let currentUserPromise;
+  const projectSprintOptionsPromises = new Map();
+  let popupState = null;
 
   function toAbsoluteJiraUrl(url) {
     if (!url) {
@@ -728,16 +740,17 @@ async function mainAsyncLocal() {
     const seen = {};
     const sprints = [];
 
-    const pushSprint = (name, state) => {
+    const pushSprint = (id, name, state) => {
       if (!name) {
         return;
       }
-      const key = `${name}__${state || ''}`;
+      const sprintId = id ? String(id) : '';
+      const key = sprintId || `${name}__${state || ''}`;
       if (seen[key]) {
         return;
       }
       seen[key] = true;
-      sprints.push({name, state: state || ''});
+      sprints.push({id: sprintId, name, state: state || ''});
     };
 
     sprintValues.forEach(value => {
@@ -747,12 +760,17 @@ async function mainAsyncLocal() {
           return;
         }
         if (typeof entry === 'string') {
+          const idMatch = entry.match(/id=([^,\]]+)/i);
           const nameMatch = entry.match(/name=([^,\]]+)/i);
           const stateMatch = entry.match(/state=([^,\]]+)/i);
-          pushSprint(nameMatch && nameMatch[1] ? nameMatch[1] : entry, stateMatch && stateMatch[1]);
+          pushSprint(
+            idMatch && idMatch[1] ? idMatch[1] : '',
+            nameMatch && nameMatch[1] ? nameMatch[1] : entry,
+            stateMatch && stateMatch[1]
+          );
           return;
         }
-        pushSprint(entry.name || entry.goal || entry.id, entry.state);
+        pushSprint(entry.id || '', entry.name || entry.goal || entry.id, entry.state);
       });
     });
     return sprints;
@@ -890,6 +908,508 @@ async function mainAsyncLocal() {
       }));
   }
 
+  function buildQuickActionError(error) {
+    return error?.message || error?.inner || 'Action failed';
+  }
+
+  function areSameJiraUser(left, right) {
+    if (!left || !right) {
+      return false;
+    }
+    const leftIds = [left.accountId, left.name, left.username, left.key].filter(Boolean);
+    const rightIds = [right.accountId, right.name, right.username, right.key].filter(Boolean);
+    return leftIds.some(value => rightIds.includes(value));
+  }
+
+  async function getCurrentUserInfo() {
+    if (currentUserPromise) {
+      return currentUserPromise;
+    }
+
+    currentUserPromise = (async () => {
+      try {
+        const myself = await get(INSTANCE_URL + 'rest/api/2/myself');
+        return {
+          accountId: myself?.accountId || '',
+          name: myself?.name || myself?.username || myself?.key || '',
+          username: myself?.username || myself?.name || '',
+          key: myself?.key || '',
+          displayName: myself?.displayName || myself?.name || myself?.username || 'You'
+        };
+      } catch (primaryError) {
+        const session = await get(INSTANCE_URL + 'rest/auth/1/session');
+        const user = session?.user || {};
+        return {
+          accountId: '',
+          name: user.name || user.username || user.key || '',
+          username: user.username || user.name || '',
+          key: user.key || '',
+          displayName: user.displayName || user.name || user.username || 'You'
+        };
+      }
+    })().catch(error => {
+      currentUserPromise = null;
+      throw error;
+    });
+
+    return currentUserPromise;
+  }
+
+  function buildAssignPayload(user) {
+    if (user?.accountId) {
+      return {accountId: user.accountId};
+    }
+    if (user?.name) {
+      return {name: user.name};
+    }
+    if (user?.key) {
+      return {key: user.key};
+    }
+    throw new Error('Could not resolve the current Jira user');
+  }
+
+  async function getAvailableTransitions(issueKey) {
+    const response = await get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/transitions`);
+    return Array.isArray(response?.transitions) ? response.transitions : [];
+  }
+
+  function isInProgressStatusCategory(statusCategory) {
+    const key = String(statusCategory?.key || '').toLowerCase();
+    const name = String(statusCategory?.name || '').toLowerCase();
+    return key === 'indeterminate' || name.includes('in progress');
+  }
+
+  function buildTransitionActionLabel(transition) {
+    const transitionName = String(transition?.name || '').trim();
+    const targetName = String(transition?.to?.name || '').trim();
+    const normalizedTransitionName = transitionName.toLowerCase();
+
+    if (
+      normalizedTransitionName.includes('start') ||
+      normalizedTransitionName.includes('progress') ||
+      normalizedTransitionName.includes('begin') ||
+      normalizedTransitionName.includes('resume')
+    ) {
+      return transitionName || 'Start progress';
+    }
+
+    if (targetName) {
+      return `Move to ${targetName}`;
+    }
+
+    return transitionName || 'Start progress';
+  }
+
+  function findStartProgressTransition(transitions) {
+    const candidates = Array.isArray(transitions) ? transitions.filter(Boolean) : [];
+    return candidates.find(transition => {
+      const transitionName = String(transition?.name || '').toLowerCase();
+      const targetName = String(transition?.to?.name || '').toLowerCase();
+      return isInProgressStatusCategory(transition?.to?.statusCategory) ||
+        targetName.includes('in progress') ||
+        transitionName.includes('start progress') ||
+        transitionName.includes('start work') ||
+        transitionName.includes('begin progress') ||
+        transitionName.includes('begin work') ||
+        transitionName.includes('resume progress');
+    }) || null;
+  }
+
+  function compareSprintState(left, right) {
+    const order = {
+      active: 0,
+      future: 1,
+      closed: 2
+    };
+    return (order[String(left || '').toLowerCase()] ?? 99) - (order[String(right || '').toLowerCase()] ?? 99);
+  }
+
+  function formatSprintActionLabel(sprint) {
+    const sprintName = String(sprint?.name || '').trim();
+    const sprintState = String(sprint?.state || '').toLowerCase();
+    const stateSuffix = sprintState === 'active'
+      ? ' (ACTIVE)'
+      : (sprintState === 'future' ? ' (NEXT)' : '');
+    return `Move to Sprint ${sprintName}${stateSuffix}`.trim();
+  }
+
+  async function getProjectSprintOptions(issueData) {
+    const projectKey = String(issueData?.key || '').split('-')[0];
+    if (!projectKey) {
+      return {
+        activeSprints: [],
+        upcomingSprint: null
+      };
+    }
+    if (projectSprintOptionsPromises.has(projectKey)) {
+      return projectSprintOptionsPromises.get(projectKey);
+    }
+
+    const sprintPromise = (async () => {
+      const sprintFieldIds = await getSprintFieldIds(INSTANCE_URL);
+      if (!sprintFieldIds.length) {
+        return {
+          activeSprints: [],
+          upcomingSprint: null
+        };
+      }
+
+      const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`);
+      const boards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
+      if (!boards.length) {
+        return {
+          activeSprints: [],
+          upcomingSprint: null
+        };
+      }
+
+      const sprintMap = new Map();
+      const sprintResponses = await Promise.allSettled(boards.map(board => {
+        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`)
+          .then(response => ({board, response}));
+      }));
+
+      sprintResponses.forEach(result => {
+        if (result.status !== 'fulfilled') {
+          return;
+        }
+        const board = result.value?.board || {};
+        const sprints = Array.isArray(result.value?.response?.values) ? result.value.response.values : [];
+        sprints.forEach(sprint => {
+          if (!sprint?.id || !sprint?.name) {
+            return;
+          }
+          const sprintId = String(sprint.id);
+          const existingSprint = sprintMap.get(sprintId);
+          const boardRefs = Array.isArray(existingSprint?.boardRefs) ? existingSprint.boardRefs.slice() : [];
+          const boardRefKey = String(board.id || '');
+          if (boardRefKey && !boardRefs.some(ref => String(ref.id) === boardRefKey)) {
+            boardRefs.push({
+              id: board.id,
+              name: board.name || '',
+              projectKey
+            });
+          }
+          sprintMap.set(sprintId, {
+            ...(existingSprint || {}),
+            ...sprint,
+            boardRefs
+          });
+        });
+      });
+
+      readSprintsFromIssue(issueData).forEach(sprint => {
+        if (!sprint?.id || !sprint?.name) {
+          return;
+        }
+        const sprintId = String(sprint.id);
+        if (sprintMap.has(sprintId)) {
+          return;
+        }
+        sprintMap.set(sprintId, {
+          ...sprint,
+          boardRefs: []
+        });
+      });
+
+      const sortedSprints = [...sprintMap.values()].sort((left, right) => {
+        const stateOrder = compareSprintState(left?.state, right?.state);
+        if (stateOrder !== 0) {
+          return stateOrder;
+        }
+        return String(left?.name || '').localeCompare(String(right?.name || ''));
+      });
+
+      const activeSprints = sortedSprints.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
+      const upcomingSprint = sortedSprints.find(sprint => String(sprint?.state || '').toLowerCase() === 'future') || null;
+
+      return {
+        activeSprints,
+        upcomingSprint
+      };
+    })().catch(error => {
+      projectSprintOptionsPromises.delete(projectKey);
+      return {
+        activeSprints: [],
+        upcomingSprint: null
+      };
+    });
+
+    projectSprintOptionsPromises.set(projectKey, sprintPromise);
+    return sprintPromise;
+  }
+
+  function pickSprintFieldId(issueData, sprintFieldIds) {
+    const populatedFieldId = (sprintFieldIds || []).find(fieldId => {
+      const value = issueData?.fields?.[fieldId];
+      return Array.isArray(value) ? value.length > 0 : !!value;
+    });
+    return populatedFieldId || sprintFieldIds?.[0] || '';
+  }
+
+  async function resolveQuickActions(issueData) {
+
+    const actionResults = await Promise.allSettled([
+      getCurrentUserInfo(),
+      getAvailableTransitions(issueData.key),
+      getProjectSprintOptions(issueData),
+      getSprintFieldIds(INSTANCE_URL)
+    ]);
+
+    const currentUser = actionResults[0].status === 'fulfilled' ? actionResults[0].value : null;
+    const transitions = actionResults[1].status === 'fulfilled' ? actionResults[1].value : [];
+    const sprintOptions = actionResults[2].status === 'fulfilled' ? actionResults[2].value : {activeSprints: [], upcomingSprint: null};
+    const sprintFieldIds = actionResults[3].status === 'fulfilled' ? actionResults[3].value : [];
+    const actions = [];
+
+    if (currentUser && !areSameJiraUser(issueData.fields.assignee, currentUser)) {
+      actions.push({
+        key: 'assign-to-me',
+        label: 'Assign to me',
+        successMessage: 'Assigned to you',
+        payload: buildAssignPayload(currentUser)
+      });
+    }
+
+    const startProgressTransition = findStartProgressTransition(transitions);
+    if (startProgressTransition) {
+      actions.push({
+        key: 'start-progress',
+        label: buildTransitionActionLabel(startProgressTransition),
+        successMessage: `Moved to ${startProgressTransition.to?.name || startProgressTransition.name}`,
+        transitionId: startProgressTransition.id
+      });
+    }
+
+    const sprintFieldId = pickSprintFieldId(issueData, sprintFieldIds);
+    const existingSprints = readSprintsFromIssue(issueData)
+      .map(sprint => String(sprint.id || ''))
+      .filter(Boolean);
+    const sprintCandidates = [
+      ...(Array.isArray(sprintOptions.activeSprints) ? sprintOptions.activeSprints : []),
+      ...(sprintOptions.upcomingSprint ? [sprintOptions.upcomingSprint] : [])
+    ].filter(sprint => sprint?.id && !existingSprints.includes(String(sprint.id)));
+    const seenSprintIds = new Set();
+    sprintCandidates.forEach(sprint => {
+      const sprintId = String(sprint.id);
+      if (seenSprintIds.has(sprintId) || !sprintFieldId) {
+        return;
+      }
+      seenSprintIds.add(sprintId);
+      actions.push({
+        key: `move-to-sprint-${sprintId}`,
+        kind: 'move-to-sprint',
+        label: formatSprintActionLabel(sprint),
+        successMessage: `Moved to Sprint ${sprint.name}`,
+        sprintId,
+        sprintFieldId
+      });
+    });
+
+    return actions;
+  }
+
+  async function executeQuickAction(action, issueData) {
+    if (!action) {
+      throw new Error('Action is unavailable');
+    }
+
+    if (action.key === 'assign-to-me') {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}/assignee`, action.payload);
+      return action.successMessage;
+    }
+
+    if (action.key === 'start-progress') {
+      await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}/transitions`, {
+        transition: {id: action.transitionId}
+      });
+      return action.successMessage;
+    }
+
+    if (action.kind === 'move-to-sprint') {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+        fields: {
+          [action.sprintFieldId]: action.sprintId
+        }
+      });
+      return action.successMessage;
+    }
+
+    throw new Error('Unknown action');
+  }
+
+  function buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions) {
+    const sourceActions = Array.isArray(quickActions) ? quickActions : [];
+    const firstSprintActionIndex = sourceActions.findIndex(action => action?.kind === 'move-to-sprint');
+    const actions = sourceActions.map((action, index) => ({
+      ...action,
+      showDividerBefore: firstSprintActionIndex > 0 && index === firstSprintActionIndex,
+      disabled: actionLoadingKey && actionLoadingKey !== action.key,
+      disabledAttr: actionLoadingKey && actionLoadingKey !== action.key ? 'disabled' : '',
+      isLoading: actionLoadingKey === action.key,
+      labelText: actionLoadingKey === action.key ? `${action.label}...` : action.label
+    }));
+    return {
+      hasQuickActions: actions.length > 0,
+      actionsOpen: actionsOpen && actions.length > 0,
+      quickActions: actions
+    };
+  }
+
+  async function buildPopupDisplayData(state) {
+    const {key, issueData, pullRequests, actionLoadingKey, actionError, lastActionSuccess, actionsOpen, quickActions} = state;
+    const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
+      imageMaxHeight: 180
+    });
+    const commentsForDisplay = await buildCommentsForDisplay(issueData);
+    const fixVersions = issueData.fields.fixVersions || [];
+    const affectsVersions = issueData.fields.versions || [];
+    const sprints = readSprintsFromIssue(issueData);
+    const commentsTotal = commentsForDisplay.length;
+    const attachments = issueData.fields.attachment || [];
+    const previewAttachments = buildPreviewAttachments(attachments);
+    const labels = issueData.fields.labels || [];
+    const customFieldChips = buildCustomFieldChips(issueData, customFields);
+    const epicOrParent = await readEpicOrParent(issueData);
+    const issueTypeName = issueData.fields.issuetype?.name;
+    const statusName = issueData.fields.status?.name;
+    const priorityName = issueData.fields.priority?.name;
+    const projectKey = key.split('-')[0];
+
+    const row1Chips = [
+      displayFields.issueType ? buildFilterChip(
+        issueTypeName || 'No type',
+        issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
+        {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
+      ) : null,
+      displayFields.status ? buildFilterChip(
+        statusName || 'No status',
+        statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
+        {iconUrl: issueData.fields.status?.iconUrl || ''}
+      ) : null,
+      displayFields.priority ? buildFilterChip(
+        priorityName || 'No priority',
+        priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
+        {iconUrl: issueData.fields.priority?.iconUrl || ''}
+      ) : null,
+      displayFields.epicParent ? {
+        text: epicOrParent
+          ? `Parent: [${epicOrParent.key}] ${epicOrParent.summary}`
+          : 'Parent: --',
+        linkUrl: epicOrParent?.url || '',
+        linkTitle: epicOrParent ? buildLinkHoverTitle('Open parent issue', epicOrParent.key, epicOrParent.url) : ''
+      } : null,
+      ...customFieldChips[1]
+    ].filter(Boolean);
+
+    const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
+    const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
+    const row2Chips = [
+      displayFields.sprint ? buildFilterChip(
+        `Sprint: ${formatSprintText(sprints) || '--'}`,
+        ''
+      ) : null,
+      displayFields.affects ? buildFilterChip(
+        `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`,
+        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+      ) : null,
+      displayFields.fixVersions ? buildFilterChip(
+        `Fix version: ${formatFixVersionText(fixVersions) || '--'}`,
+        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
+      ) : null,
+      ...customFieldChips[2]
+    ].filter(Boolean);
+
+    const singleLabel = labels.length === 1 ? labels[0] : '';
+    const row3Chips = [
+      displayFields.labels ? buildFilterChip(
+        `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
+        singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : ''
+      ) : null,
+      ...customFieldChips[3]
+    ].filter(Boolean);
+
+    const copyTicketMeta = ticket => ({
+      copyUrl: ticket.url,
+      copyTicket: ticket.key,
+      copyTitle: ticket.summary
+    });
+
+    const issueUrl = INSTANCE_URL + 'browse/' + key;
+    const visibleCommentsTotal = displayFields.comments ? commentsTotal : 0;
+    const visibleAttachments = displayFields.attachments ? previewAttachments : [];
+    const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
+    const displayData = {
+      urlTitle: `[${key}] ${issueData.fields.summary}`,
+      ticketKey: key,
+      ticketTitle: issueData.fields.summary,
+      url: issueUrl,
+      urlHoverTitle: buildLinkHoverTitle('Open issue in Jira', `[${key}] ${issueData.fields.summary}`, issueUrl),
+      ...copyTicketMeta({
+        key,
+        summary: issueData.fields.summary,
+        url: issueUrl
+      }),
+      prs: [],
+      description: displayFields.description ? normalizedDescription : '',
+      hasBodyContent: true,
+      emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
+        ? 'No description, attachments or comments.'
+        : '',
+      attachments,
+      previewAttachments: visibleAttachments,
+      commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
+      issuetype: issueData.fields.issuetype,
+      status: issueData.fields.status,
+      priority: issueData.fields.priority,
+      issueTypeText: displayFields.issueType ? (issueTypeName || 'No type') : '',
+      statusText: displayFields.status ? (statusName || 'No status') : '',
+      sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
+      fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
+      row1Chips,
+      row2Chips,
+      row3Chips,
+      hasComments: visibleCommentsTotal > 0,
+      commentsTotal: visibleCommentsTotal,
+      attachmentChips: displayFields.attachments ? buildAttachmentChips(attachments) : [],
+      reporter: displayFields.reporter ? issueData.fields.reporter : null,
+      assignee: displayFields.assignee ? issueData.fields.assignee : null,
+      commentUrl: issueUrl,
+      hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
+      activityIndicators: [],
+      loaderGifUrl,
+      actionNoticeText: actionError || lastActionSuccess,
+      actionNoticeClass: actionError ? '_JX_action_notice_error' : '_JX_action_notice_success',
+      hasActionNotice: !!(actionError || lastActionSuccess),
+      ...quickActionData
+    };
+    if (issueData.fields.comment?.comments?.[0]?.id) {
+      displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
+    }
+    if (displayFields.pullRequests && size(pullRequests)) {
+      const filteredPullRequests = pullRequests.filter(pr => {
+        return pr && pr.url !== location.href;
+      });
+      displayData.prs = filteredPullRequests.map(pr => {
+        return {
+          id: pr.id,
+          url: pr.url,
+          linkUrl: pr.url,
+          linkTitle: buildLinkHoverTitle('Open pull request', formatPullRequestTitle(pr), pr.url),
+          title: formatPullRequestTitle(pr),
+          status: pr.status,
+          authorName: formatPullRequestAuthor(pr),
+          branchText: formatPullRequestBranch(pr)
+        };
+      });
+    }
+    displayData.activityIndicators = buildActivityIndicators(
+      displayFields.attachments ? attachments : [],
+      visibleCommentsTotal,
+      displayData.prs.length
+    );
+    return displayData;
+  }
   function getRelativeHref(href) {
     const documentHref = document.location.href.split('#')[0];
     if (href.startsWith(documentHref)) {
@@ -937,6 +1457,100 @@ async function mainAsyncLocal() {
   `);
   $(document.body).append(container);
   $(document.body).append(previewOverlay);
+  async function renderIssuePopup(state) {
+    if (!state?.issueData) {
+      return;
+    }
+    const displayData = await buildPopupDisplayData(state);
+    container.html(Mustache.render(annotationTemplate, displayData));
+    if (!containerPinned) {
+      container.css(computeVisibleContainerPosition(state.pointerX, state.pointerY));
+    }
+  }
+
+  function invalidatePopupCaches() {
+    if (!popupState?.key) {
+      return;
+    }
+    issueCache.delete(popupState.key);
+    if (popupState.issueData?.id) {
+      const issueId = String(popupState.issueData.id);
+      [...pullRequestCache.keys()].forEach(cacheKey => {
+        if (String(cacheKey).includes(issueId)) {
+          pullRequestCache.delete(cacheKey);
+        }
+      });
+    }
+  }
+  async function refreshPopupIssueState(successMessage = '') {
+    if (!popupState?.key) {
+      return;
+    }
+    invalidatePopupCaches();
+    const refreshedIssueData = await getIssueMetaData(popupState.key);
+    await normalizeIssueImages(refreshedIssueData);
+
+    let refreshedPullRequests = [];
+    if (displayFields.pullRequests) {
+      try {
+        const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
+        refreshedPullRequests = normalizePullRequests(pullRequestResponse);
+      } catch (ex) {
+        refreshedPullRequests = [];
+      }
+    }
+
+    let quickActions = [];
+    try {
+      quickActions = await resolveQuickActions(refreshedIssueData);
+    } catch (ex) {
+      quickActions = [];
+    }
+
+    popupState = {
+      ...popupState,
+      issueData: refreshedIssueData,
+      pullRequests: refreshedPullRequests,
+      quickActions,
+      actionLoadingKey: '',
+      actionError: '',
+      lastActionSuccess: successMessage,
+      actionsOpen: false
+    };
+    await renderIssuePopup(popupState);
+  }
+
+  async function handleQuickAction(actionKey) {
+    if (!popupState?.issueData || popupState.actionLoadingKey) {
+      return;
+    }
+    const action = (popupState.quickActions || []).find(candidate => candidate.key === actionKey);
+    if (!action) {
+      return;
+    }
+
+    popupState = {
+      ...popupState,
+      actionsOpen: false,
+      actionLoadingKey: action.key,
+      actionError: '',
+      lastActionSuccess: ''
+    };
+    await renderIssuePopup(popupState);
+
+    try {
+      const successMessage = await executeQuickAction(action, popupState.issueData);
+      await refreshPopupIssueState(successMessage);
+    } catch (error) {
+      popupState = {
+        ...popupState,
+        actionLoadingKey: '',
+        actionError: buildQuickActionError(error),
+        lastActionSuccess: ''
+      };
+      await renderIssuePopup(popupState);
+    }
+  }
   new draggable({
     handle: '._JX_title, ._JX_status',
     cancel: 'a, button, input, textarea, img, ._JX_description, ._JX_comments, ._JX_comment_body, ._JX_description_text, ._JX_related_pr'
@@ -1008,6 +1622,39 @@ async function mainAsyncLocal() {
     copyPrettyLink(e.currentTarget).catch(() => snackBar('There was an error!'));
   });
 
+  $(document.body).on('click', '._JX_actions_toggle', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!popupState) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      actionsOpen: !popupState.actionsOpen
+    };
+    renderIssuePopup(popupState).catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_action_item', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const actionKey = e.currentTarget.getAttribute('data-action-key');
+    handleQuickAction(actionKey).catch(() => {});
+  });
+
+  $(document.body).on('click', function (e) {
+    if (!popupState?.actionsOpen) {
+      return;
+    }
+    if ($(e.target).closest('._JX_actions').length) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      actionsOpen: false
+    };
+    renderIssuePopup(popupState).catch(() => {});
+  });
   function closePreviewOverlay() {
     previewOverlay.removeClass('is-open');
     previewOverlay.find('img').attr('src', '');
@@ -1047,6 +1694,7 @@ async function mainAsyncLocal() {
 
   function hideContainer() {
     lastHoveredKey = '';
+    popupState = null;
     containerPinned = false;
     container.css({
       left: -5000,
@@ -1119,6 +1767,13 @@ async function mainAsyncLocal() {
         clearTimeout(hideTimeOut);
         const key = keys[0].replace(' ', '-');
         if (lastHoveredKey === key && container.html()) {
+          if (popupState) {
+            popupState = {
+              ...popupState,
+              pointerX: e.pageX,
+              pointerY: e.pageY
+            };
+          }
           if (!containerPinned) {
             container.css(computeVisibleContainerPosition(e.pageX, e.pageY));
           }
@@ -1147,156 +1802,26 @@ async function mainAsyncLocal() {
           if (cancelToken.cancel) {
             return;
           }
-          const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
-            imageMaxHeight: 180
-          });
-          const commentsForDisplay = await buildCommentsForDisplay(issueData);
-          const fixVersions = issueData.fields.fixVersions || [];
-          const affectsVersions = issueData.fields.versions || [];
-          const sprints = readSprintsFromIssue(issueData);
-          const commentsTotal = commentsForDisplay.length;
-          const attachments = issueData.fields.attachment || [];
-          const previewAttachments = buildPreviewAttachments(attachments);
-          const labels = issueData.fields.labels || [];
-          const customFieldChips = buildCustomFieldChips(issueData, customFields);
-          const epicOrParent = await readEpicOrParent(issueData);
-          const issueTypeName = issueData.fields.issuetype?.name;
-          const statusName = issueData.fields.status?.name;
-          const priorityName = issueData.fields.priority?.name;
-          const projectKey = key.split('-')[0];
+          let quickActions = [];
+          try {
+            quickActions = await resolveQuickActions(issueData);
+          } catch (ex) {
+            quickActions = [];
+          }
 
-          const row1Chips = [
-            displayFields.issueType ? buildFilterChip(
-              issueTypeName || 'No type',
-              issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
-              {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
-            ) : null,
-            displayFields.status ? buildFilterChip(
-              statusName || 'No status',
-              statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
-              {iconUrl: issueData.fields.status?.iconUrl || ''}
-            ) : null,
-            displayFields.priority ? buildFilterChip(
-              priorityName || 'No priority',
-              priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
-              {iconUrl: issueData.fields.priority?.iconUrl || ''}
-            ) : null,
-            displayFields.epicParent ? {
-              text: epicOrParent
-                ? `Parent: [${epicOrParent.key}] ${epicOrParent.summary}`
-                : 'Parent: --',
-              linkUrl: epicOrParent?.url || '',
-              linkTitle: epicOrParent ? buildLinkHoverTitle('Open parent issue', epicOrParent.key, epicOrParent.url) : ''
-            } : null,
-            ...customFieldChips[1]
-          ].filter(Boolean);
-
-          const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
-          const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
-          const row2Chips = [
-            displayFields.sprint ? buildFilterChip(
-              `Sprint: ${formatSprintText(sprints) || '--'}`,
-              ''
-            ) : null,
-            displayFields.affects ? buildFilterChip(
-              `Affects: ${affectsVersions.map(version => version.name).filter(Boolean).join(', ') || '--'}`,
-              singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
-            ) : null,
-            displayFields.fixVersions ? buildFilterChip(
-              `Fix version: ${formatFixVersionText(fixVersions) || '--'}`,
-              singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
-            ) : null,
-            ...customFieldChips[2]
-          ].filter(Boolean);
-
-          const singleLabel = labels.length === 1 ? labels[0] : '';
-          const row3Chips = [
-            displayFields.labels ? buildFilterChip(
-              `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
-              singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : ''
-            ) : null,
-            ...customFieldChips[3]
-          ].filter(Boolean);
-
-          const copyTicketMeta = (ticket) => ({
-            copyUrl: ticket.url,
-            copyTicket: ticket.key,
-            copyTitle: ticket.summary
-          });
-          const issueUrl = INSTANCE_URL + 'browse/' + key;
-
-          const visibleCommentsTotal = displayFields.comments ? commentsTotal : 0;
-          const visibleAttachments = displayFields.attachments ? previewAttachments : [];
-          const displayData = {
-            urlTitle: `[${key}] ${issueData.fields.summary}`,
-            ticketKey: key,
-            ticketTitle: issueData.fields.summary,
-            url: issueUrl,
-            urlHoverTitle: buildLinkHoverTitle('Open issue in Jira', `[${key}] ${issueData.fields.summary}`, issueUrl),
-            ...copyTicketMeta({
-              key,
-              summary: issueData.fields.summary,
-              url: issueUrl
-            }),
-            prs: [],
-            description: displayFields.description ? normalizedDescription : '',
-            hasBodyContent: true,
-            emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
-              ? 'No description, attachments or comments.'
-              : '',
-            attachments,
-            previewAttachments: visibleAttachments,
-            commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
-            issuetype: issueData.fields.issuetype,
-            status: issueData.fields.status,
-            priority: issueData.fields.priority,
-            issueTypeText: displayFields.issueType ? (issueTypeName || 'No type') : '',
-            statusText: displayFields.status ? (statusName || 'No status') : '',
-            sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
-            fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
-            row1Chips,
-            row2Chips,
-            row3Chips,
-            hasComments: visibleCommentsTotal > 0,
-            commentsTotal: visibleCommentsTotal,
-            attachmentChips: displayFields.attachments ? buildAttachmentChips(attachments) : [],
-            reporter: displayFields.reporter ? issueData.fields.reporter : null,
-            assignee: displayFields.assignee ? issueData.fields.assignee : null,
-            commentUrl: issueUrl,
-            hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
-            activityIndicators: [],
-            loaderGifUrl,
+          popupState = {
+            key,
+            issueData,
+            pullRequests,
+            pointerX,
+            pointerY,
+            quickActions,
+            actionsOpen: false,
+            actionLoadingKey: '',
+            actionError: '',
+            lastActionSuccess: ''
           };
-          if (issueData.fields.comment?.comments?.[0]?.id) {
-            displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
-          }
-          if (displayFields.pullRequests && size(pullRequests)) {
-            const filteredPullRequests = pullRequests.filter(function (pr) {
-              return pr && pr.url !== location.href;
-            });
-            displayData.prs = filteredPullRequests.map(function (pr) {
-              return {
-                id: pr.id,
-                url: pr.url,
-                linkUrl: pr.url,
-                linkTitle: buildLinkHoverTitle('Open pull request', formatPullRequestTitle(pr), pr.url),
-                title: formatPullRequestTitle(pr),
-                status: pr.status,
-                authorName: formatPullRequestAuthor(pr),
-                branchText: formatPullRequestBranch(pr)
-              };
-            });
-          }
-          displayData.activityIndicators = buildActivityIndicators(
-            displayFields.attachments ? attachments : [],
-            visibleCommentsTotal,
-            displayData.prs.length
-          );
-          // TODO: fix scrolling in google docs
-          container.html(Mustache.render(annotationTemplate, displayData));
-          if (!containerPinned) {
-            container.css(computeVisibleContainerPosition(pointerX, pointerY));
-          }
+          await renderIssuePopup(popupState);
         })(cancelToken).catch((error) => {
           notifyJiraConnectionFailure(INSTANCE_URL, error);
           lastHoveredKey = '';
@@ -1314,18 +1839,3 @@ if (!window.__JX__script_injected__) {
 }
 
 window.__JX__script_injected__ = true;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
