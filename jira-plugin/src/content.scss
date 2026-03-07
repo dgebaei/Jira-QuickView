@@ -56,6 +56,43 @@ body ._JX {
       margin-left: 8px;
     }
 
+    &_user_placeholder {
+      align-items: center;
+      color: #5e6c84;
+      display: inline-flex;
+      font-size: 11px;
+      font-weight: 700;
+      justify-content: center;
+    }
+
+    &_assignee_slot {
+      align-items: center;
+      display: inline-flex;
+      position: relative;
+    }
+
+    &_assignee_slot.is-editing {
+      z-index: 30;
+    }
+
+    &_assignee_slot ._JX_assignee_edit_button {
+      margin-left: 2px;
+    }
+
+    &_copy {
+      color: #172b4d;
+      background-color: transparent;
+      border: none;
+      cursor: pointer;
+      vertical-align: middle;
+      position: relative;
+      top: 2px;
+
+      &:hover {
+        color: #8993a4;
+      }
+    }
+
     &_copy {
       padding: 0;
     }
@@ -247,7 +284,7 @@ body ._JX {
     max-height: calc(100vh - 16px);
     max-width: 600px;
     width: min(600px, calc(100vw - 24px));
-    overflow: hidden;
+    overflow: visible;
     user-select: text;
     -webkit-user-select: text;
     color: #24292f;
@@ -532,15 +569,35 @@ body ._JX {
   }
 
   &_comment_input {
+    background: #fff;
     border: 1px solid #c7d1db;
     box-sizing: border-box;
     border-radius: 6px;
-    font: inherit;
+    color: #172b4d;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
     min-height: 78px;
     max-width: 100%;
     padding: 8px 10px;
     resize: vertical;
     width: 100%;
+  }
+
+  &_comment_input::placeholder {
+    color: #6b778c;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    opacity: 1;
+  }
+
+  &_comment_input:focus {
+    border-color: #0c66e4;
+    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
+    outline: none;
   }
 
   &_comment_mentions {
@@ -678,9 +735,10 @@ body ._JX {
     border: 1px solid #c7d1db;
     border-radius: 999px;
     cursor: pointer;
-    font-size: 12px;
+    font-family: inherit;
+    font-size: 13px;
     font-weight: 700;
-    line-height: 1;
+    line-height: 1.2;
     padding: 8px 12px;
   }
 
@@ -798,6 +856,8 @@ body ._JX {
 
   &_field_chip_editable_group:hover ._JX_field_chip_edit,
   &_field_chip_editable_group.is-editing ._JX_field_chip_edit,
+  &_title_assignee_slot:hover ._JX_field_chip_edit,
+  &_title_assignee_slot.is-editing ._JX_field_chip_edit,
   &_field_chip_edit:focus-visible {
     opacity: 1;
   }
@@ -814,13 +874,18 @@ body ._JX {
     box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
     color: #172b4d;
     left: 0;
-    min-width: 320px;
+    min-width: 260px;
     max-width: min(360px, calc(100vw - 48px));
     padding: 10px;
     position: absolute;
     top: calc(100% + 8px);
-    width: 320px;
+    width: min(320px, calc(100vw - 48px));
     z-index: 40;
+  }
+
+  &_assignee_edit_popover {
+    left: 0;
+    top: calc(100% + 6px);
   }
 
   &_edit_popover_right {
@@ -868,7 +933,8 @@ body ._JX {
     outline: none;
   }
 
-  &_edit_cancel {
+  &_edit_cancel,
+  &_edit_discard {
     background: #f7f8f9;
     border: 1px solid #d0d7de;
     border-radius: 6px;
@@ -882,8 +948,37 @@ body ._JX {
     padding: 7px 10px;
   }
 
-  &_edit_cancel:hover {
+  &_edit_cancel:hover,
+  &_edit_discard:hover {
     background: #ebecf0;
+  }
+
+  &_edit_cancel:disabled,
+  &_edit_discard:disabled,
+  &_edit_save:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  &_edit_selected_values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  &_edit_selected_chip {
+    background: #e9f2ff;
+    border: 1px solid #bcd6f7;
+    border-radius: 999px;
+    color: #12315b;
+    font-size: 12px;
+    line-height: 16px;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 4px 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &_edit_dropdown {
@@ -899,12 +994,15 @@ body ._JX {
   }
 
   &_edit_option {
+    align-items: center;
     background: transparent;
     border: none;
     color: #172b4d;
     cursor: pointer;
+    display: flex;
     font-family: inherit;
     font-size: 12px;
+    gap: 8px;
     line-height: 16px;
     padding: 9px 10px;
     text-align: left;
@@ -913,6 +1011,72 @@ body ._JX {
   &_edit_option:hover,
   &_edit_option.is-selected {
     background: #e9f2ff;
+  }
+
+  &_edit_option_icon,
+  &_edit_option_avatar {
+    border-radius: 50%;
+    flex: 0 0 auto;
+    height: 16px;
+    object-fit: cover;
+    width: 16px;
+  }
+
+  &_edit_option_text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &_edit_option_check {
+    color: #0c66e4;
+    display: inline-flex;
+    flex: 0 0 14px;
+    font-size: 12px;
+    font-weight: 700;
+    justify-content: center;
+  }
+
+  &_edit_option_label {
+    line-height: 1.2;
+    min-width: 0;
+  }
+
+  &_edit_option_meta {
+    color: #6b778c;
+    font-size: 11px;
+    line-height: 1.2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &_edit_actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+
+  &_edit_save {
+    background: #0c66e4;
+    border: 1px solid #0c66e4;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    padding: 7px 12px;
+  }
+
+  &_edit_save:hover {
+    background: #0055cc;
+    border-color: #0055cc;
   }
 
   &_edit_empty,

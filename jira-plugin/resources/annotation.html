@@ -1,16 +1,76 @@
 <div class="_JX_annotation">
     <div class="_JX_title">
         <div class="_JX_title_users">
-            {{#reporter}}
-            <img class="_JX_title_user" title="Reporter: {{displayName}}" src="{{avatarUrls.48x48}}">
-            {{/reporter}}
-            {{#assignee}}
-            <img class="_JX_title_user _JX_title_user_assignee" title="Assignee: {{displayName}}" src="{{avatarUrls.48x48}}">
-            {{/assignee}}
+            {{#reporterView}}
+            {{#avatarUrl}}
+            <img class="_JX_title_user" title="{{titleText}}" src="{{avatarUrl}}">
+            {{/avatarUrl}}
+            {{^avatarUrl}}
+            <span class="_JX_title_user _JX_title_user_placeholder" title="{{titleText}}">{{initials}}</span>
+            {{/avatarUrl}}
+            {{/reporterView}}
+            {{#assigneeView}}
+            <div class="_JX_title_assignee_slot{{#isEditable}} is-editable{{/isEditable}}{{#isEditing}} is-editing{{/isEditing}}">
+                {{#avatarUrl}}
+                <img class="_JX_title_user _JX_title_user_assignee" title="{{titleText}}" src="{{avatarUrl}}">
+                {{/avatarUrl}}
+                {{^avatarUrl}}
+                <span class="_JX_title_user _JX_title_user_assignee _JX_title_user_placeholder" title="{{titleText}}">{{initials}}</span>
+                {{/avatarUrl}}
+                {{#isEditable}}
+                <button class="_JX_field_chip_edit _JX_assignee_edit_button" type="button" data-field-key="assignee" title="{{editTitle}}" aria-label="{{editTitle}}">
+                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
+                </button>
+                {{/isEditable}}
+                {{#isEditing}}
+                <div class="_JX_edit_popover _JX_assignee_edit_popover" data-field-key="assignee">
+                    <div class="_JX_edit_field_label">{{editLabel}}</div>
+                    <div class="_JX_edit_input_shell">
+                        <input class="_JX_edit_input" data-field-key="assignee" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>
+                        {{^showActionButtons}}<button class="_JX_edit_cancel" type="button" data-field-key="assignee" title="Cancel edit">Cancel</button>{{/showActionButtons}}
+                    </div>
+                    {{#showSelectedValues}}
+                    <div class="_JX_edit_selected_values">
+                        {{#selectedValues}}
+                        <span class="_JX_edit_selected_chip" title="{{title}}">{{label}}</span>
+                        {{/selectedValues}}
+                    </div>
+                    {{/showSelectedValues}}
+                    {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
+                    <div class="_JX_edit_dropdown">
+                        {{#hasOptions}}
+                        {{#options}}
+                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="assignee" data-option-id="{{id}}" title="{{title}}">
+                            {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
+                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                            {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
+                            <span class="_JX_edit_option_text">
+                                <span class="_JX_edit_option_label">{{label}}</span>
+                                {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
+                            </span>
+                        </button>
+                        {{/options}}
+                        {{/hasOptions}}
+                        {{^hasOptions}}
+                        <div class="_JX_edit_empty">{{editEmptyText}}</div>
+                        {{/hasOptions}}
+                    </div>
+                    {{#showActionButtons}}
+                    <div class="_JX_edit_actions">
+                        <button class="_JX_edit_discard" type="button" data-field-key="assignee" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
+                        <button class="_JX_edit_save" type="button" data-field-key="assignee" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
+                    </div>
+                    {{/showActionButtons}}
+                    {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
+                </div>
+                {{/isEditing}}
+            </div>
+            {{/assigneeView}}
         </div>
         <a class="_JX_copyable_link" id="_JX_title_link" data-ticket="{{ticketKey}}" data-title="{{ticketTitle}}" href="{{url}}" target="_blank" rel="noopener noreferrer" title="{{urlHoverTitle}}">{{urlTitle}}</a>
         <div class="_JX_title_controls">
-            <button class="_JX_control_button _JX_title_copy _JX_copy_link" type="button" title="Copy pretty link" aria-label="Copy pretty link" data-url="{{copyUrl}}" data-ticket="{{copyTicket}}" data-title="{{copyTitle}}">
+            <button class="_JX_control_button _JX_title_copy _JX_copy_link" type="button" title="Copy issue link" aria-label="Copy issue link" data-url="{{copyUrl}}" data-ticket="{{copyTicket}}" data-title="{{copyTitle}}">
                 <svg width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><path d="M10 19h8V8h-8v11zM8 7.992C8 6.892 8.902 6 10.009 6h7.982C19.101 6 20 6.893 20 7.992v11.016c0 1.1-.902 1.992-2.009 1.992H10.01A2.001 2.001 0 0 1 8 19.008V7.992z"></path><path d="M5 16V4.992C5 3.892 5.902 3 7.009 3H15v13H5zm2 0h8V5H7v11z"></path></g></svg>
             </button>
             {{#hasQuickActions}}
@@ -33,11 +93,70 @@
     </div>
     <div class="_JX_status">
         {{#row1Chips.length}}
-        <div class="_JX_status_row _JX_status_row_primary">
+            <div class="_JX_status_row _JX_status_row_primary">
             <div class="_JX_status_row_main">
                 {{#row1Chips}}
+                {{#isEditable}}
+                <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
+                    {{#linkUrl}}
+                    {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/isEditing}}
+                    {{#isEditing}}<span class="_JX_field_chip_content">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/isEditing}}
+                    {{/linkUrl}}
+                    {{^linkUrl}}<span class="_JX_field_chip_content">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
+                    {{^hideInlineEditButton}}
+                    <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
+                        {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                        {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
+                    </button>
+                    {{/hideInlineEditButton}}
+                    {{#isEditing}}
+                    <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
+                        <div class="_JX_edit_field_label">{{editLabel}}</div>
+                        <div class="_JX_edit_input_shell">
+                            <input class="_JX_edit_input" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>
+                            {{^showActionButtons}}<button class="_JX_edit_cancel" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
+                        </div>
+                        {{#showSelectedValues}}
+                        <div class="_JX_edit_selected_values">
+                            {{#selectedValues}}
+                            <span class="_JX_edit_selected_chip" title="{{title}}">{{label}}</span>
+                            {{/selectedValues}}
+                        </div>
+                        {{/showSelectedValues}}
+                        {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
+                        <div class="_JX_edit_dropdown">
+                            {{#hasOptions}}
+                            {{#options}}
+                            <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
+                                {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
+                                {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                                {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
+                                <span class="_JX_edit_option_text">
+                                    <span class="_JX_edit_option_label">{{label}}</span>
+                                    {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
+                                </span>
+                            </button>
+                            {{/options}}
+                            {{/hasOptions}}
+                            {{^hasOptions}}
+                            <div class="_JX_edit_empty">{{editEmptyText}}</div>
+                            {{/hasOptions}}
+                        </div>
+                        {{#showActionButtons}}
+                        <div class="_JX_edit_actions">
+                            <button class="_JX_edit_discard" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
+                            <button class="_JX_edit_save" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
+                        </div>
+                        {{/showActionButtons}}
+                        {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
+                    </div>
+                    {{/isEditing}}
+                </div>
+                {{/isEditable}}
+                {{^isEditable}}
                 {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
+                {{/isEditable}}
                 {{/row1Chips}}
             </div>
             {{#activityIndicators.length}}
@@ -60,26 +179,48 @@
                 {{/linkUrl}}
                 {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
                 <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
+                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{#isEditing}}
                 <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
                     <div class="_JX_edit_field_label">{{editLabel}}</div>
                     <div class="_JX_edit_input_shell">
                         <input class="_JX_edit_input" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>
-                        <button class="_JX_edit_cancel" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>
+                        {{^showActionButtons}}<button class="_JX_edit_cancel" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
                     </div>
+                    {{#showSelectedValues}}
+                    <div class="_JX_edit_selected_values">
+                        {{#selectedValues}}
+                        <span class="_JX_edit_selected_chip" title="{{title}}">{{label}}</span>
+                        {{/selectedValues}}
+                    </div>
+                    {{/showSelectedValues}}
                     {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
                     <div class="_JX_edit_dropdown">
                         {{#hasOptions}}
                         {{#options}}
-                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">{{label}}</button>
+                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
+                            {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
+                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                            {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
+                            <span class="_JX_edit_option_text">
+                                <span class="_JX_edit_option_label">{{label}}</span>
+                                {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
+                            </span>
+                        </button>
                         {{/options}}
                         {{/hasOptions}}
                         {{^hasOptions}}
                         <div class="_JX_edit_empty">{{editEmptyText}}</div>
                         {{/hasOptions}}
                     </div>
+                    {{#showActionButtons}}
+                    <div class="_JX_edit_actions">
+                        <button class="_JX_edit_discard" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
+                        <button class="_JX_edit_save" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
+                    </div>
+                    {{/showActionButtons}}
                     {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
                 </div>
                 {{/isEditing}}
@@ -87,7 +228,7 @@
             {{/isEditable}}
             {{^isEditable}}
             {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
             {{/isEditable}}
             {{/row2Chips}}
         </div>
@@ -95,8 +236,65 @@
         {{#row3Chips.length}}
         <div class="_JX_status_row">
             {{#row3Chips}}
+            {{#isEditable}}
+            <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
+                {{#linkUrl}}
+                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/isEditing}}
+                {{#isEditing}}<span class="_JX_field_chip_content">{{text}}</span>{{/isEditing}}
+                {{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
+                <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
+                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
+                </button>
+                {{#isEditing}}
+                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
+                    <div class="_JX_edit_field_label">{{editLabel}}</div>
+                    <div class="_JX_edit_input_shell">
+                        <input class="_JX_edit_input" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>
+                        {{^showActionButtons}}<button class="_JX_edit_cancel" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
+                    </div>
+                    {{#showSelectedValues}}
+                    <div class="_JX_edit_selected_values">
+                        {{#selectedValues}}
+                        <span class="_JX_edit_selected_chip" title="{{title}}">{{label}}</span>
+                        {{/selectedValues}}
+                    </div>
+                    {{/showSelectedValues}}
+                    {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
+                    <div class="_JX_edit_dropdown">
+                        {{#hasOptions}}
+                        {{#options}}
+                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
+                            {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
+                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                            {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
+                            <span class="_JX_edit_option_text">
+                                <span class="_JX_edit_option_label">{{label}}</span>
+                                {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
+                            </span>
+                        </button>
+                        {{/options}}
+                        {{/hasOptions}}
+                        {{^hasOptions}}
+                        <div class="_JX_edit_empty">{{editEmptyText}}</div>
+                        {{/hasOptions}}
+                    </div>
+                    {{#showActionButtons}}
+                    <div class="_JX_edit_actions">
+                        <button class="_JX_edit_discard" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
+                        <button class="_JX_edit_save" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
+                    </div>
+                    {{/showActionButtons}}
+                    {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
+                </div>
+                {{/isEditing}}
+            </div>
+            {{/isEditable}}
+            {{^isEditable}}
             {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip">{{text}}</span>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
+            {{/isEditable}}
             {{/row3Chips}}
         </div>
         {{/row3Chips.length}}
