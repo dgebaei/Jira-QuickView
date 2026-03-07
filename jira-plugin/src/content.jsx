@@ -142,6 +142,23 @@ async function requestJson(method, url, body) {
   err.inner = response.error;
   throw err;
 }
+async function uploadAttachment(url, file) {
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+  const response = await sendMessage({
+    action: 'uploadAttachment',
+    bytes,
+    contentType: file.type,
+    fileName: file.name,
+    url
+  });
+  if (Object.prototype.hasOwnProperty.call(response, 'result')) {
+    return response.result;
+  }
+  const err = new Error(response.error || 'Attachment upload failed');
+  err.inner = response.error;
+  throw err;
+}
+
 
 function isJiraConnectionFailure(error) {
   const message = String(error?.message || error?.inner || error || '');
@@ -209,9 +226,28 @@ async function mainAsyncLocal() {
   const issueCache = new Map();
   const pullRequestCache = new Map();
   const fieldOptionsCache = new Map();
+  const emptyCommentMentionState = () => ({
+    error: '',
+    loading: false,
+    query: '',
+    range: null,
+    selectedIndex: 0,
+    suggestions: [],
+    visible: false
+  });
+  const emptyCommentUploadState = () => ({
+    items: []
+  });
   let currentUserPromise;
   const projectSprintOptionsPromises = new Map();
   let popupState = null;
+  let activeCommentContext = null;
+  let commentMentionState = emptyCommentMentionState();
+  let commentMentionRequestId = 0;
+  let commentUploadState = emptyCommentUploadState();
+  let commentUploadSessionId = 0;
+  let commentUploadSequence = 0;
+
 
   function toAbsoluteJiraUrl(url) {
     if (!url) {
@@ -292,13 +328,45 @@ async function mainAsyncLocal() {
     return node.innerHTML;
   }
 
-  function textToLinkedHtml(input) {
-    const escaped = escapeHtml(input || '');
+  function getMentionDisplayText(rawValue) {
+    const normalized = String(rawValue || '')
+      .trim()
+      .replace(/^accountid:/i, '');
+    return normalized ? `@${normalized}` : '@mention';
+  }
+
+  function textToLinkedHtml(input, options = {}) {
+    const {attachmentImagesByName = {}} = options;
+    const mentionHtml = [];
+    const inputWithMentions = String(input || '').replace(/\[~([^[\]\r\n]+?)\]/g, function (match, mentionValue) {
+      const placeholderIndex = mentionHtml.length;
+      mentionHtml.push(`<span class="_JX_mention">${escapeHtml(getMentionDisplayText(mentionValue))}</span>`);
+      return `__JX_COMMENT_MENTION_${placeholderIndex}__`;
+    });
+    const imageHtml = [];
+    const inputWithImages = inputWithMentions.replace(/!([^!\r\n]+)!/g, function (match, imageName) {
+      const normalizedName = String(imageName || '').trim();
+      const imageMarkup = attachmentImagesByName[normalizedName];
+      if (!imageMarkup) {
+        return match;
+      }
+      const placeholderIndex = imageHtml.length;
+      imageHtml.push(imageMarkup);
+      return `__JX_COMMENT_IMAGE_${placeholderIndex}__`;
+    });
+    const escaped = escapeHtml(inputWithImages);
     const withLinks = escaped.replace(
       /(https?:\/\/[^\s<]+)/g,
       '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
     );
-    return withLinks.replace(/\n/g, '<br/>');
+    return withLinks
+      .replace(/__JX_COMMENT_IMAGE_(\d+)__/g, function (match, index) {
+        return imageHtml[Number(index)] || '';
+      })
+      .replace(/__JX_COMMENT_MENTION_(\d+)__/g, function (match, index) {
+        return mentionHtml[Number(index)] || '';
+      })
+      .replace(/\n/g, '<br/>');
   }
 
   function formatRelativeDate(created) {
@@ -442,6 +510,629 @@ async function mainAsyncLocal() {
     return result;
   }
 
+  async function getCurrentUserInfo() {
+    if (currentUserPromise) {
+      return currentUserPromise;
+    }
+
+    currentUserPromise = (async () => {
+      try {
+        const myself = await get(INSTANCE_URL + 'rest/api/2/myself');
+        return {
+          displayName: myself?.displayName || myself?.name || myself?.username || 'You'
+        };
+      } catch (primaryError) {
+        const session = await get(INSTANCE_URL + 'rest/auth/1/session');
+        const user = session?.user || {};
+        return {
+          displayName: user.displayName || user.name || user.username || 'You'
+        };
+      }
+    })().catch(error => {
+      currentUserPromise = null;
+      throw error;
+    });
+
+    return currentUserPromise;
+  }
+
+  function getCommentMentionMarkup(candidate) {
+    const username = candidate?.name || candidate?.username || '';
+    if (username) {
+      return `[~${username}]`;
+    }
+    const accountId = candidate?.accountId || '';
+    if (accountId) {
+      return `[~accountid:${accountId}]`;
+    }
+    return '';
+  }
+
+  async function searchCommentMentionCandidates(query) {
+    const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(query)}`);
+    const rawCandidates = Array.isArray(response)
+      ? response
+      : response?.users || response?.items || [];
+    const seen = new Set();
+    return rawCandidates
+      .map(candidate => {
+        const mentionMarkup = getCommentMentionMarkup(candidate);
+        if (!mentionMarkup || seen.has(mentionMarkup)) {
+          return null;
+        }
+        seen.add(mentionMarkup);
+        const displayName = candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || 'Unknown user';
+        const username = candidate?.name || candidate?.username || '';
+        const secondaryText = (username && username !== displayName)
+          ? `@${username}`
+          : ((candidate?.emailAddress && candidate.emailAddress !== displayName) ? candidate.emailAddress : '');
+        return {
+          displayName,
+          mentionMarkup,
+          secondaryText
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
+  function getCommentComposerElements() {
+    return {
+      root: container.find('._JX_comment_compose'),
+      input: container.find('._JX_comment_input'),
+      mentions: container.find('._JX_comment_mentions'),
+      uploads: container.find('._JX_comment_uploads'),
+      save: container.find('._JX_comment_save'),
+      discard: container.find('._JX_comment_discard'),
+      error: container.find('._JX_comment_error')
+    };
+  }
+
+  function hasCommentUploadInFlight() {
+    return commentUploadState.items.some(item => item.status === 'uploading');
+  }
+
+  function getUploadedCommentAttachments() {
+    return commentUploadState.items.filter(item => item.status === 'uploaded' && item.attachmentId);
+  }
+
+  function renderCommentUploads() {
+    const {uploads} = getCommentComposerElements();
+    if (!uploads.length) {
+      return;
+    }
+
+    if (!commentUploadState.items.length) {
+      uploads.attr('hidden', 'hidden').empty();
+      keepContainerVisible();
+      return;
+    }
+
+    uploads.removeAttr('hidden').html(commentUploadState.items.map(item => {
+      const stateClass = item.status === 'error' ? ' is-error' : '';
+      const statusText = item.status === 'uploading'
+        ? 'Uploading to Jira...'
+        : (item.status === 'uploaded' ? 'Attached to issue' : (item.errorMessage || 'Upload failed'));
+      const previewHtml = item.previewUrl
+        ? `<img class="_JX_comment_upload_preview" src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.fileName)}" />`
+        : '<span class="_JX_comment_upload_preview"></span>';
+      return `
+        <div class="_JX_comment_upload${stateClass}">
+          ${previewHtml}
+          <span>
+            <span class="_JX_comment_upload_name">${escapeHtml(item.fileName)}</span>
+            <span class="_JX_comment_upload_status">${escapeHtml(statusText)}</span>
+          </span>
+        </div>
+      `;
+    }).join(''));
+    keepContainerVisible();
+  }
+
+  function updateCommentUploadItem(localId, updater) {
+    const nextItems = commentUploadState.items.map(item => {
+      if (item.localId !== localId) {
+        return item;
+      }
+      return typeof updater === 'function' ? updater(item) : {...item, ...updater};
+    });
+    commentUploadState = {items: nextItems};
+    renderCommentUploads();
+    syncCommentComposerState();
+  }
+
+  function buildPastedImageFileName(file) {
+    const mimeType = String(file?.type || '').toLowerCase();
+    const extensionByMimeType = {
+      'image/bmp': 'bmp',
+      'image/gif': 'gif',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp'
+    };
+    const extension = extensionByMimeType[mimeType] || 'png';
+    commentUploadSequence += 1;
+    const timestamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 14);
+    return `pasted-image-${timestamp}-${commentUploadSequence}.${extension}`;
+  }
+
+  function buildCommentImageMarkup(fileName) {
+    return `!${fileName}!`;
+  }
+
+  function replaceCommentInputText(searchValue, replaceValue = '') {
+    const {input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    if (!inputElement || !searchValue) {
+      return false;
+    }
+    const currentValue = inputElement.value || '';
+    const nextValue = currentValue.replace(searchValue, replaceValue).replace(/\n{3,}/g, '\n\n');
+    if (nextValue === currentValue) {
+      return false;
+    }
+    input.val(nextValue);
+    const caretPosition = Math.min(nextValue.length, (typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : nextValue.length));
+    inputElement.setSelectionRange(caretPosition, caretPosition);
+    return true;
+  }
+
+  function insertCommentInputText(text) {
+    const {input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    if (!inputElement) {
+      return false;
+    }
+    const value = inputElement.value || '';
+    const selectionStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
+    const selectionEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : selectionStart;
+    const prefix = selectionStart > 0 && value.charAt(selectionStart - 1) !== '\n' ? '\n' : '';
+    const suffix = selectionEnd < value.length
+      ? (value.charAt(selectionEnd) !== '\n' ? '\n' : '')
+      : '\n';
+    const insertedText = `${prefix}${text}${suffix}`;
+    const nextValue = value.slice(0, selectionStart) + insertedText + value.slice(selectionEnd);
+    input.val(nextValue);
+    inputElement.focus();
+    const caretPosition = selectionStart + insertedText.length;
+    inputElement.setSelectionRange(caretPosition, caretPosition);
+    return true;
+  }
+
+  function revokeCommentUploadPreview(item) {
+    if (item?.previewUrl && item.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+  }
+
+  async function deleteCommentDraftAttachment(attachmentId) {
+    if (!attachmentId) {
+      return;
+    }
+    try {
+      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/attachment/${attachmentId}`);
+    } catch (error) {
+      console.warn('[Jira HotLinker] Could not delete draft attachment', {
+        attachmentId,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
+  async function clearCommentUploads(options = {}) {
+    const {deleteUploaded = false} = options;
+    const previousItems = commentUploadState.items;
+    commentUploadSessionId += 1;
+    commentUploadState = emptyCommentUploadState();
+    renderCommentUploads();
+    syncCommentComposerState();
+    previousItems.forEach(revokeCommentUploadPreview);
+    if (deleteUploaded) {
+      await Promise.all(previousItems.map(item => deleteCommentDraftAttachment(item.attachmentId)));
+    }
+  }
+
+  async function discardCommentComposerDraft(options = {}) {
+    const {deleteUploaded = true} = options;
+    resetCommentMentionState();
+    const {input} = getCommentComposerElements();
+    if (input.length) {
+      input.val('');
+    }
+    setCommentComposerError('');
+    await clearCommentUploads({deleteUploaded});
+    syncCommentComposerState();
+  }
+
+  async function buildOptimisticCommentBodyHtml(commentText, uploadedAttachments = []) {
+    const attachmentImagesByName = {};
+    for (const attachment of uploadedAttachments) {
+      if (!attachment?.fileName) {
+        continue;
+      }
+      const imageUrl = attachment.thumbnailUrl || attachment.contentUrl;
+      if (!imageUrl) {
+        continue;
+      }
+      const displaySrc = await getDisplayImageUrl(imageUrl).catch(() => imageUrl);
+      const previewSrc = attachment.contentUrl || imageUrl;
+      attachmentImagesByName[attachment.fileName] = `<img class="_JX_previewable" src="${escapeHtml(displaySrc || imageUrl)}" data-jx-preview-src="${escapeHtml(previewSrc)}" alt="${escapeHtml(attachment.fileName)}" style="max-height: 100px;" />`;
+    }
+    return textToLinkedHtml(commentText || '', {attachmentImagesByName});
+  }
+
+  async function uploadPastedImage(file) {
+    if (!activeCommentContext?.issueKey) {
+      return;
+    }
+
+    const issueKey = activeCommentContext.issueKey;
+    const fileName = buildPastedImageFileName(file);
+    const markup = buildCommentImageMarkup(fileName);
+    const localId = `upload-${Date.now()}-${commentUploadSequence}`;
+    const previewUrl = URL.createObjectURL(file);
+    const sessionId = commentUploadSessionId;
+    commentUploadState = {
+      items: [...commentUploadState.items, {
+        attachmentId: '',
+        contentUrl: '',
+        errorMessage: '',
+        fileName,
+        localId,
+        markup,
+        previewUrl,
+        status: 'uploading',
+        thumbnailUrl: ''
+      }]
+    };
+    renderCommentUploads();
+    insertCommentInputText(markup);
+    setCommentComposerError('');
+    syncCommentComposerState();
+
+    try {
+      const uploadResult = await uploadAttachment(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/attachments`, new File([file], fileName, {type: file.type || 'image/png'}));
+      const uploadedAttachment = (Array.isArray(uploadResult) ? uploadResult : [uploadResult]).find(item => item && item.id);
+      if (!uploadedAttachment) {
+        throw new Error('Attachment upload failed');
+      }
+
+      if (sessionId !== commentUploadSessionId || activeCommentContext?.issueKey !== issueKey) {
+        await deleteCommentDraftAttachment(uploadedAttachment.id);
+        return;
+      }
+
+      const nextFileName = uploadedAttachment.filename || fileName;
+      const nextMarkup = buildCommentImageMarkup(nextFileName);
+      if (nextMarkup !== markup) {
+        replaceCommentInputText(markup, nextMarkup);
+      }
+      updateCommentUploadItem(localId, {
+        attachmentId: uploadedAttachment.id,
+        contentUrl: toAbsoluteJiraUrl(uploadedAttachment.content),
+        errorMessage: '',
+        fileName: nextFileName,
+        markup: nextMarkup,
+        status: 'uploaded',
+        thumbnailUrl: toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content)
+      });
+    } catch (error) {
+      if (sessionId !== commentUploadSessionId) {
+        return;
+      }
+      replaceCommentInputText(markup, '');
+      updateCommentUploadItem(localId, {
+        errorMessage: error?.message || error?.inner || 'Upload failed',
+        status: 'error'
+      });
+      setCommentComposerError(error?.message || error?.inner || 'Could not upload pasted image');
+    }
+  }
+
+  function getClipboardImageFiles(event) {
+    const clipboardData = event?.originalEvent?.clipboardData || event?.clipboardData;
+    if (!clipboardData) {
+      return [];
+    }
+
+    const items = Array.from(clipboardData.items || []);
+    const itemFiles = items
+      .filter(item => item && item.kind === 'file' && String(item.type || '').toLowerCase().startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean);
+    if (itemFiles.length) {
+      return itemFiles;
+    }
+    return Array.from(clipboardData.files || []).filter(file => String(file?.type || '').toLowerCase().startsWith('image/'));
+  }
+
+  function renderCommentMentionSuggestions() {
+    const {mentions} = getCommentComposerElements();
+    if (!mentions.length) {
+      return;
+    }
+
+    if (!commentMentionState.visible) {
+      mentions.attr('hidden', 'hidden').empty();
+      keepContainerVisible();
+      return;
+    }
+
+    if (commentMentionState.loading) {
+      mentions.removeAttr('hidden').html('<div class="_JX_comment_mentions_status">Searching people...</div>');
+      keepContainerVisible();
+      return;
+    }
+
+    if (commentMentionState.error) {
+      mentions.removeAttr('hidden').html(`<div class="_JX_comment_mentions_status">${escapeHtml(commentMentionState.error)}</div>`);
+      keepContainerVisible();
+      return;
+    }
+
+    if (!commentMentionState.suggestions.length) {
+      mentions.removeAttr('hidden').html('<div class="_JX_comment_mentions_status">No people found.</div>');
+      keepContainerVisible();
+      return;
+    }
+
+    mentions.removeAttr('hidden').html(commentMentionState.suggestions.map(function (candidate, index) {
+      const selectedClass = index === commentMentionState.selectedIndex ? ' is-selected' : '';
+      const secondary = candidate.secondaryText
+        ? `<span class="_JX_comment_mention_secondary">${escapeHtml(candidate.secondaryText)}</span>`
+        : '';
+      return `
+        <button class="_JX_comment_mention_option${selectedClass}" type="button" data-mention-index="${index}">
+          <span>
+            <span class="_JX_comment_mention_primary">${escapeHtml(candidate.displayName)}</span>
+            ${secondary}
+          </span>
+        </button>
+      `;
+    }).join(''));
+    keepContainerVisible();
+  }
+
+  function resetCommentMentionState() {
+    commentMentionRequestId += 1;
+    debouncedLoadCommentMentionSuggestions.cancel();
+    commentMentionState = emptyCommentMentionState();
+    renderCommentMentionSuggestions();
+  }
+
+  function getActiveCommentMention(inputElement) {
+    if (!inputElement) {
+      return null;
+    }
+
+    const value = inputElement.value || '';
+    const caretStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
+    const caretEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : caretStart;
+    if (caretStart !== caretEnd) {
+      return null;
+    }
+
+    const beforeCaret = value.slice(0, caretStart);
+    const mentionMatch = beforeCaret.match(/(^|[\s(])@([^\s@]{1,50})$/);
+    if (!mentionMatch) {
+      return null;
+    }
+
+    let end = caretEnd;
+    while (end < value.length && !/\s/.test(value.charAt(end))) {
+      end += 1;
+    }
+
+    return {
+      end,
+      query: mentionMatch[2],
+      start: caretStart - mentionMatch[2].length - 1
+    };
+  }
+
+  async function loadCommentMentionSuggestions(mention) {
+    const requestId = ++commentMentionRequestId;
+    try {
+      const suggestions = await searchCommentMentionCandidates(mention.query);
+      if (requestId !== commentMentionRequestId) {
+        return;
+      }
+
+      commentMentionState = {
+        error: '',
+        loading: false,
+        query: mention.query,
+        range: mention,
+        selectedIndex: 0,
+        suggestions,
+        visible: true
+      };
+    } catch (error) {
+      if (requestId !== commentMentionRequestId) {
+        return;
+      }
+
+      commentMentionState = {
+        error: 'Could not load people.',
+        loading: false,
+        query: mention.query,
+        range: mention,
+        selectedIndex: 0,
+        suggestions: [],
+        visible: true
+      };
+    }
+
+    renderCommentMentionSuggestions();
+  }
+
+  const debouncedLoadCommentMentionSuggestions = debounce(function (mention) {
+    loadCommentMentionSuggestions(mention).catch(() => {});
+  }, 150);
+
+  function syncCommentMentionSuggestions(inputElement) {
+    const mention = getActiveCommentMention(inputElement);
+    if (!mention) {
+      resetCommentMentionState();
+      return;
+    }
+
+    commentMentionState = {
+      error: '',
+      loading: true,
+      query: mention.query,
+      range: mention,
+      selectedIndex: 0,
+      suggestions: [],
+      visible: true
+    };
+    renderCommentMentionSuggestions();
+    debouncedLoadCommentMentionSuggestions(mention);
+  }
+
+  function moveCommentMentionSelection(delta) {
+    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
+      return;
+    }
+    const suggestionsTotal = commentMentionState.suggestions.length;
+    const nextIndex = (commentMentionState.selectedIndex + delta + suggestionsTotal) % suggestionsTotal;
+    commentMentionState = {
+      ...commentMentionState,
+      selectedIndex: nextIndex
+    };
+    renderCommentMentionSuggestions();
+  }
+
+  function applyCommentMentionSelection(index) {
+    const {input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    const candidate = commentMentionState.suggestions[index];
+    const mentionRange = commentMentionState.range;
+    if (!inputElement || !candidate || !mentionRange) {
+      return;
+    }
+
+    const nextValue = inputElement.value.slice(0, mentionRange.start) +
+      `${candidate.mentionMarkup} ` +
+      inputElement.value.slice(mentionRange.end);
+    input.val(nextValue);
+    inputElement.focus();
+    const caretPosition = mentionRange.start + candidate.mentionMarkup.length + 1;
+    inputElement.setSelectionRange(caretPosition, caretPosition);
+    resetCommentMentionState();
+    syncCommentComposerState();
+  }
+
+  function syncCommentComposerState() {
+    const elements = getCommentComposerElements();
+    if (!elements.root.length) {
+      return;
+    }
+    const isSaving = elements.root.attr('data-saving') === 'true';
+    const hasUploadsInFlight = hasCommentUploadInFlight();
+    const hasText = !!elements.input.val().trim();
+    const hasDraftUploads = commentUploadState.items.length > 0;
+    elements.input.prop('disabled', isSaving);
+    elements.save.prop('disabled', !hasText || isSaving || hasUploadsInFlight).text(isSaving ? 'Saving...' : (hasUploadsInFlight ? 'Uploading...' : 'Save'));
+    elements.discard.prop('disabled', (!hasText && !hasDraftUploads) || isSaving);
+  }
+
+  function setCommentComposerError(message) {
+    const {error} = getCommentComposerElements();
+    if (!error.length) {
+      return;
+    }
+    error.text(message || '');
+  }
+
+  function updateCommentActivityCount(delta) {
+    const activityItem = container.find('._JX_activity_item').eq(1);
+    if (!activityItem.length) {
+      return;
+    }
+    const countNode = activityItem.find('strong');
+    const currentCount = Number(countNode.text()) || 0;
+    const nextCount = Math.max(0, currentCount + delta);
+    countNode.text(String(nextCount));
+    activityItem.attr('title', `${nextCount} comments`);
+  }
+
+  async function appendCommentToPopup(commentText, uploadedAttachments = []) {
+    const commentsRoot = container.find('._JX_comments');
+    if (!commentsRoot.length) {
+      return;
+    }
+
+    commentsRoot.find('._JX_comments_empty').remove();
+    container.find('._JX_empty_body').remove();
+    const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
+    const bodyHtml = await buildOptimisticCommentBodyHtml(commentText || '', uploadedAttachments);
+    const commentHtml = `
+      <div class="_JX_comment">
+        <div class="_JX_comment_meta">
+          <span class="_JX_comment_author">${escapeHtml(currentUser.displayName || 'You')}</span> | <span class="_JX_comment_time">Just now</span>
+        </div>
+        <div class="_JX_comment_body">${bodyHtml}</div>
+      </div>
+    `;
+
+    const commentList = commentsRoot.find('._JX_comment_list');
+    if (commentList.length) {
+      commentList.append(commentHtml);
+    } else {
+      commentsRoot.append(`<div class="_JX_comment_list">${commentHtml}</div>`);
+    }
+    updateCommentActivityCount(1);
+  }
+
+  async function handleCommentSave() {
+    if (!activeCommentContext?.issueKey) {
+      return;
+    }
+
+    resetCommentMentionState();
+    const elements = getCommentComposerElements();
+    const commentText = elements.input.val().trim();
+    if (!commentText) {
+      syncCommentComposerState();
+      return;
+    }
+    if (hasCommentUploadInFlight()) {
+      setCommentComposerError('Wait for image uploads to finish.');
+      syncCommentComposerState();
+      return;
+    }
+
+    elements.root.attr('data-saving', 'true');
+    setCommentComposerError('');
+    syncCommentComposerState();
+
+    try {
+      const uploadedAttachments = getUploadedCommentAttachments();
+      await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
+        body: commentText
+      });
+      await appendCommentToPopup(commentText, uploadedAttachments);
+      elements.input.val('');
+      await clearCommentUploads({deleteUploaded: false});
+      elements.root.attr('data-saving', 'false');
+      setCommentComposerError('');
+      syncCommentComposerState();
+    } catch (error) {
+      elements.root.attr('data-saving', 'false');
+      setCommentComposerError(error?.message || error?.inner || 'Could not save comment');
+      syncCommentComposerState();
+    }
+  }
+
+  async function handleCommentDiscard() {
+    const elements = getCommentComposerElements();
+    if (!elements.root.length || elements.root.attr('data-saving') === 'true') {
+      return;
+    }
+    await discardCommentComposerDraft();
+  }
   /***
    * Retrieve only the text that is directly owned by the node
    * @param node
@@ -1594,6 +2285,8 @@ async function mainAsyncLocal() {
       attachments,
       previewAttachments: visibleAttachments,
       commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
+      showCommentsSection: displayFields.comments || commentsForDisplay.length > 0,
+      showCommentComposer: displayFields.comments,
       issuetype: issueData.fields.issuetype,
       status: issueData.fields.status,
       priority: issueData.fields.priority,
@@ -1653,16 +2346,44 @@ async function mainAsyncLocal() {
     return href;
   }
 
-  function computeVisibleContainerPosition(pointerX, pointerY) {
+  function clampContainerPosition(left, top) {
     const margin = 8;
-    const preferredLeft = pointerX + 20;
-    const preferredTop = pointerY + 25;
-    const width = container.outerWidth();
-    const height = container.outerHeight();
+    const width = container.outerWidth() || 0;
+    const height = container.outerHeight() || 0;
     const viewportLeft = window.scrollX + margin;
     const viewportTop = window.scrollY + margin;
     const viewportRight = window.scrollX + window.innerWidth - margin;
     const viewportBottom = window.scrollY + window.innerHeight - margin;
+    const maxLeft = Math.max(viewportLeft, viewportRight - width);
+    const maxTop = Math.max(viewportTop, viewportBottom - height);
+
+    return {
+      left: Math.min(Math.max(left, viewportLeft), maxLeft),
+      top: Math.min(Math.max(top, viewportTop), maxTop)
+    };
+  }
+
+  function keepContainerVisible() {
+    if (containerPinned || !container.html()) {
+      return;
+    }
+    const currentLeft = Number.parseFloat(container.css('left'));
+    const currentTop = Number.parseFloat(container.css('top'));
+    const fallbackLeft = window.scrollX + 8;
+    const fallbackTop = window.scrollY + 8;
+    container.css(clampContainerPosition(
+      Number.isFinite(currentLeft) ? currentLeft : fallbackLeft,
+      Number.isFinite(currentTop) ? currentTop : fallbackTop
+    ));
+  }
+
+  function computeVisibleContainerPosition(pointerX, pointerY) {
+    const preferredLeft = pointerX + 20;
+    const preferredTop = pointerY + 25;
+    const width = container.outerWidth() || 0;
+    const height = container.outerHeight() || 0;
+    const viewportRight = window.scrollX + window.innerWidth - 8;
+    const viewportBottom = window.scrollY + window.innerHeight - 8;
 
     let left = preferredLeft;
     let top = preferredTop;
@@ -1670,18 +2391,12 @@ async function mainAsyncLocal() {
     if (left + width > viewportRight) {
       left = pointerX - width - 15;
     }
-    if (left < viewportLeft) {
-      left = viewportLeft;
-    }
 
     if (top + height > viewportBottom) {
       top = pointerY - height - 15;
     }
-    if (top < viewportTop) {
-      top = viewportTop;
-    }
 
-    return {left, top};
+    return clampContainerPosition(left, top);
   }
 
   const container = $('<div class="_JX_container">');
@@ -1700,7 +2415,14 @@ async function mainAsyncLocal() {
     if (state !== popupState) {
       return;
     }
+    if (activeCommentContext?.issueKey && activeCommentContext.issueKey !== state.key) {
+      discardCommentComposerDraft().catch(() => {});
+    }
     container.html(Mustache.render(annotationTemplate, displayData));
+    activeCommentContext = displayFields.comments ? {issueKey: state.key, issueId: state.issueData.id} : null;
+    renderCommentUploads();
+    renderCommentMentionSuggestions();
+    syncCommentComposerState();
     if (!containerPinned) {
       container.css(computeVisibleContainerPosition(state.pointerX, state.pointerY));
     }
@@ -2102,6 +2824,7 @@ async function mainAsyncLocal() {
     };
     renderIssuePopup(popupState).catch(() => {});
   });
+
   $(document.body).on('click', '._JX_field_chip_edit', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -2155,6 +2878,89 @@ async function mainAsyncLocal() {
       cancelFieldEdit();
     }
   });
+
+  $(document.body).on('input', '._JX_comment_input', function () {
+    syncCommentComposerState();
+    syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('paste', '._JX_comment_input', function (e) {
+    const imageFiles = getClipboardImageFiles(e);
+    if (!imageFiles.length || !activeCommentContext?.issueKey) {
+      return;
+    }
+    e.preventDefault();
+    imageFiles.forEach(file => {
+      uploadPastedImage(file).catch(() => {});
+    });
+  });
+
+  $(document.body).on('click', '._JX_comment_input', function () {
+    syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('keyup', '._JX_comment_input', function (e) {
+    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
+      return;
+    }
+    syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('keydown', '._JX_comment_input', function (e) {
+    if (e.key === 'Escape' && commentMentionState.visible) {
+      e.preventDefault();
+      resetCommentMentionState();
+      return;
+    }
+
+    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveCommentMentionSelection(1);
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveCommentMentionSelection(-1);
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      applyCommentMentionSelection(commentMentionState.selectedIndex);
+    }
+  });
+
+  $(document.body).on('click', '._JX_comment_mention_option', function (e) {
+    e.preventDefault();
+    const index = Number(e.currentTarget.getAttribute('data-mention-index'));
+    if (Number.isNaN(index)) {
+      return;
+    }
+    applyCommentMentionSelection(index);
+  });
+
+  $(document.body).on('mousedown', function (e) {
+    if ($(e.target).closest('._JX_comment_compose').length) {
+      return;
+    }
+    resetCommentMentionState();
+  });
+
+  $(document.body).on('click', '._JX_comment_save', function (e) {
+    e.preventDefault();
+    handleCommentSave().catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_comment_discard', function (e) {
+    e.preventDefault();
+    handleCommentDiscard().catch(() => {});
+  });
+
   function closePreviewOverlay() {
     previewOverlay.removeClass('is-open');
     previewOverlay.find('img').attr('src', '');
@@ -2195,6 +3001,9 @@ async function mainAsyncLocal() {
   function hideContainer() {
     lastHoveredKey = '';
     popupState = null;
+    discardCommentComposerDraft().catch(() => {});
+    activeCommentContext = null;
+    resetCommentMentionState();
     containerPinned = false;
     container.css({
       left: -5000,

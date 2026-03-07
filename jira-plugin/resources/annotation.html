@@ -151,9 +151,10 @@
             </table>
         </div>
         {{/prs.length}}
-        {{#commentsForDisplay.length}}
+        {{#showCommentsSection}}
         <div class="_JX_comments">
             <div class="_JX_section_title">Comments</div>
+            <div class="_JX_comment_list">
             {{#commentsForDisplay}}
             <div class="_JX_comment">
                 <div class="_JX_comment_meta">
@@ -162,10 +163,26 @@
                 <div class="_JX_comment_body">{{{bodyHtml}}}</div>
             </div>
             {{/commentsForDisplay}}
+            </div>
+            {{^commentsForDisplay.length}}
+            <div class="_JX_comments_empty">No comments yet.</div>
+            {{/commentsForDisplay.length}}
+            {{#showCommentComposer}}
+            <div class="_JX_comment_compose" data-saving="false">
+                <div class="_JX_comment_input_wrap">
+                    <textarea class="_JX_comment_input" rows="3" placeholder="Add a comment. Type @ to mention someone"></textarea>
+                    <div class="_JX_comment_mentions" hidden></div>
+                    <div class="_JX_comment_uploads" hidden></div>
+                </div>
+                <div class="_JX_comment_error"></div>
+                <div class="_JX_comment_actions">
+                    <button class="_JX_comment_discard" type="button" disabled>Discard</button>
+                    <button class="_JX_comment_save" type="button" disabled>Save</button>
+                </div>
+            </div>
+            {{/showCommentComposer}}
         </div>
-        {{/commentsForDisplay.length}}
-        {{#emptyBodyText}}
-        <div class="_JX_empty_body">{{emptyBodyText}}</div>
-        {{/emptyBodyText}}
+        {{/showCommentsSection}}
+
     </div>
 </div>
