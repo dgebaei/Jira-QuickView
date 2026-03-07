@@ -868,7 +868,8 @@ body ._JX {
     outline: none;
   }
 
-  &_edit_cancel {
+  &_edit_cancel,
+  &_edit_discard {
     background: #f7f8f9;
     border: 1px solid #d0d7de;
     border-radius: 6px;
@@ -882,8 +883,37 @@ body ._JX {
     padding: 7px 10px;
   }
 
-  &_edit_cancel:hover {
+  &_edit_cancel:hover,
+  &_edit_discard:hover {
     background: #ebecf0;
+  }
+
+  &_edit_cancel:disabled,
+  &_edit_discard:disabled,
+  &_edit_save:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  &_edit_selected_values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  &_edit_selected_chip {
+    background: #e9f2ff;
+    border: 1px solid #bcd6f7;
+    border-radius: 999px;
+    color: #12315b;
+    font-size: 12px;
+    line-height: 16px;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 4px 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &_edit_dropdown {
@@ -899,12 +929,15 @@ body ._JX {
   }
 
   &_edit_option {
+    align-items: center;
     background: transparent;
     border: none;
     color: #172b4d;
     cursor: pointer;
+    display: flex;
     font-family: inherit;
     font-size: 12px;
+    gap: 8px;
     line-height: 16px;
     padding: 9px 10px;
     text-align: left;
@@ -913,6 +946,44 @@ body ._JX {
   &_edit_option:hover,
   &_edit_option.is-selected {
     background: #e9f2ff;
+  }
+
+  &_edit_option_check {
+    color: #0c66e4;
+    display: inline-flex;
+    flex: 0 0 14px;
+    font-size: 12px;
+    font-weight: 700;
+    justify-content: center;
+  }
+
+  &_edit_option_label {
+    min-width: 0;
+  }
+
+  &_edit_actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+
+  &_edit_save {
+    background: #0c66e4;
+    border: 1px solid #0c66e4;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    padding: 7px 12px;
+  }
+
+  &_edit_save:hover {
+    background: #0055cc;
+    border-color: #0055cc;
   }
 
   &_edit_empty,

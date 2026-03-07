@@ -1780,7 +1780,7 @@ async function mainAsyncLocal() {
     if (!sprint) {
       return '';
     }
-    return sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name;
+    return sprint.state ? `${sprint.name} (${String(sprint.state).toUpperCase()})` : sprint.name;
   }
 
   function normalizeFixVersionSortName(name) {
@@ -1794,27 +1794,80 @@ async function mainAsyncLocal() {
     });
   }
 
-  async function getProjectVersionOptions(issueData, cacheKey, emptyLabel) {
+  function normalizeMultiSelectOptionIds(optionIds) {
+    return [...new Set((Array.isArray(optionIds) ? optionIds : [])
+      .map(optionId => String(optionId || '').trim())
+      .filter(Boolean))];
+  }
+
+  function areSameOptionIds(left, right) {
+    const leftIds = normalizeMultiSelectOptionIds(left).sort();
+    const rightIds = normalizeMultiSelectOptionIds(right).sort();
+    if (leftIds.length !== rightIds.length) {
+      return false;
+    }
+    return leftIds.every((optionId, index) => optionId === rightIds[index]);
+  }
+
+  function resolveMultiSelectOptions(optionIds, options, fallbackOptions = []) {
+    const optionMap = new Map();
+    (Array.isArray(fallbackOptions) ? fallbackOptions : []).forEach(option => {
+      const optionId = String(option?.id || '').trim();
+      if (optionId) {
+        optionMap.set(optionId, option);
+      }
+    });
+    (Array.isArray(options) ? options : []).forEach(option => {
+      const optionId = String(option?.id || '').trim();
+      if (optionId) {
+        optionMap.set(optionId, option);
+      }
+    });
+    return normalizeMultiSelectOptionIds(optionIds)
+      .map(optionId => optionMap.get(optionId))
+      .filter(Boolean);
+  }
+
+  function buildNextMultiSelectState(editState, changes = {}) {
+    const selectedOptionIds = normalizeMultiSelectOptionIds(changes.selectedOptionIds ?? editState.selectedOptionIds);
+    const originalOptionIds = normalizeMultiSelectOptionIds(changes.originalOptionIds ?? editState.originalOptionIds);
+    const options = changes.options ?? editState.options;
+    const selectedOptions = resolveMultiSelectOptions(
+      selectedOptionIds,
+      options,
+      changes.selectedOptions ?? editState.selectedOptions
+    );
+    return {
+      ...editState,
+      ...changes,
+      options,
+      selectedOptionIds,
+      selectedOptions,
+      originalOptionIds,
+      hasChanges: !areSameOptionIds(selectedOptionIds, originalOptionIds)
+    };
+  }
+
+  async function getProjectVersionOptions(issueData, cacheKey) {
     const projectKey = String(issueData?.key || '').split('-')[0];
     if (!projectKey) {
       return [];
     }
     return getCachedValue(fieldOptionsCache, `${cacheKey}__${projectKey}`, async () => {
       const versions = await get(`${INSTANCE_URL}rest/api/2/project/${encodeURIComponent(projectKey)}/versions`);
-      const options = (Array.isArray(versions) ? versions : [])
+      return (Array.isArray(versions) ? versions : [])
         .filter(version => version?.name && !version?.archived)
         .sort(compareFixVersionOptions)
         .map(version => buildEditOption(version.id, version.name, {rawValue: version}));
-      return [buildEditOption('', emptyLabel), ...options];
     });
   }
 
   async function getFixVersionOptions(issueData) {
-    return getProjectVersionOptions(issueData, 'fixVersions', 'No fix version');
+    return getProjectVersionOptions(issueData, 'fixVersions');
   }
 
   async function getAffectsVersionOptions(issueData) {
-    return getProjectVersionOptions(issueData, 'versions', 'No affects version');
+    return getProjectVersionOptions(issueData, 'versions');
   }
 
   async function getCandidateSprintBoards(issueData) {
@@ -1922,17 +1975,21 @@ async function mainAsyncLocal() {
       return {
         fieldKey,
         label: 'Affects version',
+        selectionMode: 'multi',
         currentText: formatVersionText(currentVersions),
-        currentOptionId: currentVersions.length === 1 ? String(currentVersions[0]?.id || '') : null,
+        currentSelections: currentVersions
+          .filter(version => version?.id && version?.name)
+          .map(version => buildEditOption(version.id, version.name, {rawValue: version})),
+        initialInputValue: '',
         loadOptions: () => getAffectsVersionOptions(issueData),
-        save: option => {
+        save: selectedOptions => {
           return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
             fields: {
-              versions: option.id ? [{id: option.id}] : []
+              versions: selectedOptions.map(option => ({id: option.id}))
             }
           });
         },
-        successMessage: option => option.id ? `Affects version set to ${option.label}` : 'Affects version cleared'
+        successMessage: selectedOptions => selectedOptions.length ? 'Affects versions updated' : 'Affects versions cleared'
       };
     }
 
@@ -1941,17 +1998,21 @@ async function mainAsyncLocal() {
       return {
         fieldKey,
         label: 'Fix version',
+        selectionMode: 'multi',
         currentText: formatVersionText(currentFixVersions),
-        currentOptionId: currentFixVersions.length === 1 ? String(currentFixVersions[0]?.id || '') : null,
+        currentSelections: currentFixVersions
+          .filter(version => version?.id && version?.name)
+          .map(version => buildEditOption(version.id, version.name, {rawValue: version})),
+        initialInputValue: '',
         loadOptions: () => getFixVersionOptions(issueData),
-        save: option => {
+        save: selectedOptions => {
           return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
             fields: {
-              fixVersions: option.id ? [{id: option.id}] : []
+              fixVersions: selectedOptions.map(option => ({id: option.id}))
             }
           });
         },
-        successMessage: option => option.id ? `Fix version set to ${option.label}` : 'Fix version cleared'
+        successMessage: selectedOptions => selectedOptions.length ? 'Fix versions updated' : 'Fix versions cleared'
       };
     }
 
@@ -1960,10 +2021,16 @@ async function mainAsyncLocal() {
       return {
         fieldKey,
         label: 'Sprint',
+        selectionMode: 'single',
         currentText: formatSprintText(currentSprints),
         currentOptionId: currentSprints.length === 1 ? String(currentSprints[0]?.id || '') : null,
+        currentSelections: currentSprints.length === 1
+          ? [buildEditOption(currentSprints[0]?.id, formatSprintOptionLabel(currentSprints[0]), {rawValue: currentSprints[0]})]
+          : [],
+        initialInputValue: formatSprintText(currentSprints),
         loadOptions: () => getSprintOptions(issueData),
-        save: async option => {
+        save: async selectedOptions => {
+          const option = selectedOptions[0] || buildEditOption('', 'No sprint');
           const sprintFieldId = pickSprintFieldId(issueData, await getSprintFieldIds(INSTANCE_URL));
           if (!sprintFieldId) {
             throw new Error('Could not resolve the Sprint field');
@@ -1974,7 +2041,10 @@ async function mainAsyncLocal() {
             }
           });
         },
-        successMessage: option => option.id ? `Sprint set to ${option.label}` : 'Sprint cleared'
+        successMessage: selectedOptions => {
+          const option = selectedOptions[0] || buildEditOption('', 'No sprint');
+          return option.id ? `Sprint set to ${option.label}` : 'Sprint cleared';
+        }
       };
     }
 
@@ -1993,12 +2063,25 @@ async function mainAsyncLocal() {
   function buildEditableFieldChip(fieldKey, baseChip, state) {
     const editState = state?.editState;
     if (editState?.fieldKey === fieldKey) {
+      const isMultiSelect = editState.selectionMode === 'multi';
+      const selectedOptionIds = new Set(isMultiSelect
+        ? normalizeMultiSelectOptionIds(editState.selectedOptionIds)
+        : (editState.selectedOptionId === null || typeof editState.selectedOptionId === 'undefined'
+            ? []
+            : [String(editState.selectedOptionId)]));
       const options = filterEditOptions(editState.options, editState.inputValue).map(option => ({
         ...option,
         fieldKey,
-        isSelected: editState.selectedOptionId === option.id,
+        isSelected: selectedOptionIds.has(option.id),
+        isMultiSelect,
         title: option.label
       }));
+      const selectedValues = isMultiSelect
+        ? (editState.selectedOptions || []).map(option => ({
+            ...option,
+            title: option.label
+          }))
+        : [];
       return {
         ...baseChip,
         isEditable: true,
@@ -2007,7 +2090,7 @@ async function mainAsyncLocal() {
         fieldKey,
         editLabel: editState.label,
         inputValue: editState.inputValue,
-        inputPlaceholder: `Type to filter ${editState.label.toLowerCase()} values`,
+        inputPlaceholder: editState.inputPlaceholder || `Type to filter ${editState.label.toLowerCase()} values`,
         inputDisabled: !!(editState.loadingOptions || editState.saving),
         loadingText: editState.loadingOptions
           ? `Loading ${editState.label.toLowerCase()} values...`
@@ -2017,7 +2100,13 @@ async function mainAsyncLocal() {
         options,
         hasOptions: options.length > 0,
         editEmptyText: editState.loadingOptions ? 'Loading values...' : 'No matching values',
-        editError: editState.errorMessage || ''
+        editError: editState.errorMessage || '',
+        isMultiSelect,
+        showActionButtons: isMultiSelect,
+        showSelectedValues: isMultiSelect && selectedValues.length > 0,
+        selectedValues,
+        saveDisabled: !!(editState.loadingOptions || editState.saving || !editState.hasChanges),
+        discardDisabled: !!editState.saving
       };
     }
     return {
@@ -2321,35 +2410,19 @@ async function mainAsyncLocal() {
 
     const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
     const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
-    const canEditAffectsVersions = affectsVersions.length <= 1;
-    const canEditFixVersions = fixVersions.length <= 1;
     const row2Chips = [
       displayFields.sprint ? buildEditableFieldChip('sprint', buildFilterChip(
         `Sprint: ${formatSprintText(sprints) || '--'}`,
         ''
       ), state) : null,
-      displayFields.affects ? (
-        canEditAffectsVersions
-          ? buildEditableFieldChip('versions', buildFilterChip(
-            `Affects: ${formatVersionText(affectsVersions) || '--'}`,
-            singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
-          ), state)
-          : buildFilterChip(
-            `Affects: ${formatVersionText(affectsVersions) || '--'}`,
-            ''
-          )
-      ) : null,
-      displayFields.fixVersions ? (
-        canEditFixVersions
-          ? buildEditableFieldChip('fixVersions', buildFilterChip(
-            `Fix version: ${formatVersionText(fixVersions) || '--'}`,
-            singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
-          ), state)
-          : buildFilterChip(
-            `Fix version: ${formatVersionText(fixVersions) || '--'}`,
-            ''
-          )
-      ) : null,
+      displayFields.affects ? buildEditableFieldChip('versions', buildFilterChip(
+        `Affects: ${formatVersionText(affectsVersions) || '--'}`,
+        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : ''
+      ), state) : null,
+      displayFields.fixVersions ? buildEditableFieldChip('fixVersions', buildFilterChip(
+        `Fix version: ${formatVersionText(fixVersions) || '--'}`,
+        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : ''
+      ), state) : null,
       ...customFieldChips[2]
     ].filter(Boolean);
 
@@ -2647,15 +2720,23 @@ async function mainAsyncLocal() {
     if (!definition) {
       return;
     }
-    const initialValue = '';
+    const isMultiSelect = definition.selectionMode === 'multi';
+    const initialValue = definition.initialInputValue ?? definition.currentText ?? '';
+    const currentSelections = Array.isArray(definition.currentSelections) ? definition.currentSelections : [];
     popupState = {
       ...popupState,
       editState: {
         fieldKey,
         label: definition.label,
+        selectionMode: definition.selectionMode || 'single',
         inputValue: initialValue,
+        inputPlaceholder: `Type to filter ${definition.label.toLowerCase()} values`,
         options: [],
-        selectedOptionId: definition.currentOptionId,
+        selectedOptionId: isMultiSelect ? null : definition.currentOptionId,
+        selectedOptionIds: isMultiSelect ? normalizeMultiSelectOptionIds(currentSelections.map(option => option.id)) : [],
+        selectedOptions: isMultiSelect ? currentSelections : [],
+        originalOptionIds: isMultiSelect ? normalizeMultiSelectOptionIds(currentSelections.map(option => option.id)) : [],
+        hasChanges: false,
         loadingOptions: true,
         saving: false,
         errorMessage: '',
@@ -2670,19 +2751,29 @@ async function mainAsyncLocal() {
       if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
         return;
       }
-      const selectedOption = (Array.isArray(options) ? options : []).find(option => option.id === popupState.editState.selectedOptionId);
-      const nextInputValue = '';
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          inputValue: nextInputValue,
-          options,
-          loadingOptions: false,
-          selectionStart: nextInputValue.length,
-          selectionEnd: nextInputValue.length
-        }
-      };
+      if (popupState.editState.selectionMode === 'multi') {
+        popupState = {
+          ...popupState,
+          editState: buildNextMultiSelectState(popupState.editState, {
+            options,
+            loadingOptions: false
+          })
+        };
+      } else {
+        const selectedOption = (Array.isArray(options) ? options : []).find(option => option.id === popupState.editState.selectedOptionId);
+        const nextInputValue = selectedOption ? selectedOption.label : popupState.editState.inputValue;
+        popupState = {
+          ...popupState,
+          editState: {
+            ...popupState.editState,
+            inputValue: nextInputValue,
+            options,
+            loadingOptions: false,
+            selectionStart: nextInputValue.length,
+            selectionEnd: nextInputValue.length
+          }
+        };
+      }
       await renderIssuePopup(popupState);
     } catch (error) {
       const errorMessage = buildEditFieldError(error);
@@ -2691,11 +2782,16 @@ async function mainAsyncLocal() {
       }
       popupState = {
         ...popupState,
-        editState: {
-          ...popupState.editState,
-          loadingOptions: false,
-          errorMessage
-        }
+        editState: popupState.editState.selectionMode === 'multi'
+          ? buildNextMultiSelectState(popupState.editState, {
+              loadingOptions: false,
+              errorMessage
+            })
+          : {
+              ...popupState.editState,
+              loadingOptions: false,
+              errorMessage
+            }
       };
       await renderIssuePopup(popupState);
       snackBar(errorMessage);
@@ -2718,6 +2814,19 @@ async function mainAsyncLocal() {
       return;
     }
     const normalizedValue = String(nextValue || '');
+    if (popupState.editState.selectionMode === 'multi') {
+      popupState = {
+        ...popupState,
+        editState: buildNextMultiSelectState(popupState.editState, {
+          inputValue: normalizedValue,
+          errorMessage: '',
+          selectionStart,
+          selectionEnd
+        })
+      };
+      renderIssuePopup(popupState).catch(() => {});
+      return;
+    }
     const exactOption = (popupState.editState.options || []).find(option => {
       return option.label.toLowerCase() === normalizedValue.trim().toLowerCase();
     });
@@ -2743,6 +2852,21 @@ async function mainAsyncLocal() {
     if (!option) {
       return;
     }
+    if (popupState.editState.selectionMode === 'multi') {
+      const selectedOptionIds = normalizeMultiSelectOptionIds(popupState.editState.selectedOptionIds);
+      const nextSelectedOptionIds = selectedOptionIds.includes(option.id)
+        ? selectedOptionIds.filter(candidateId => candidateId !== option.id)
+        : [...selectedOptionIds, option.id];
+      popupState = {
+        ...popupState,
+        editState: buildNextMultiSelectState(popupState.editState, {
+          selectedOptionIds: nextSelectedOptionIds,
+          errorMessage: ''
+        })
+      };
+      renderIssuePopup(popupState).catch(() => {});
+      return;
+    }
     popupState = {
       ...popupState,
       editState: {
@@ -2757,21 +2881,40 @@ async function mainAsyncLocal() {
     renderIssuePopup(popupState).catch(() => {});
   }
 
-  function resolveSelectedEditOption(editState) {
+  function resolveSelectedEditOptions(editState) {
     if (!editState) {
-      return null;
+      return [];
+    }
+    if (editState.selectionMode === 'multi') {
+      return Array.isArray(editState.selectedOptions) ? editState.selectedOptions : [];
     }
     if (editState.selectedOptionId !== null && typeof editState.selectedOptionId !== 'undefined') {
       const selectedOption = (editState.options || []).find(option => option.id === editState.selectedOptionId);
       if (selectedOption) {
-        return selectedOption;
+        return [selectedOption];
       }
     }
     const normalizedInput = String(editState.inputValue || '').trim().toLowerCase();
     if (!normalizedInput) {
-      return null;
+      return [];
     }
-    return (editState.options || []).find(option => option.label.toLowerCase() === normalizedInput) || null;
+    const exactOption = (editState.options || []).find(option => option.label.toLowerCase() === normalizedInput);
+    return exactOption ? [exactOption] : [];
+  }
+
+  function toggleMultiSelectOptionFromInput(fieldKey) {
+    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.selectionMode !== 'multi') {
+      return;
+    }
+    const normalizedInput = String(popupState.editState.inputValue || '').trim().toLowerCase();
+    if (!normalizedInput) {
+      return;
+    }
+    const exactOption = (popupState.editState.options || []).find(option => option.label.toLowerCase() === normalizedInput);
+    if (!exactOption) {
+      return;
+    }
+    selectFieldEditOption(exactOption.id);
   }
 
   async function submitFieldEdit(fieldKey) {
@@ -2782,8 +2925,12 @@ async function mainAsyncLocal() {
     if (!definition) {
       return;
     }
-    const selectedOption = resolveSelectedEditOption(popupState.editState);
-    if (!selectedOption) {
+    const selectedOptions = resolveSelectedEditOptions(popupState.editState);
+    if (popupState.editState.selectionMode === 'multi') {
+      if (!popupState.editState.hasChanges) {
+        return;
+      }
+    } else if (!selectedOptions.length) {
       const errorMessage = 'Pick an existing value from the dropdown before pressing Enter';
       popupState = {
         ...popupState,
@@ -2799,17 +2946,22 @@ async function mainAsyncLocal() {
 
     popupState = {
       ...popupState,
-      editState: {
-        ...popupState.editState,
-        saving: true,
-        errorMessage: ''
-      }
+      editState: popupState.editState.selectionMode === 'multi'
+        ? buildNextMultiSelectState(popupState.editState, {
+            saving: true,
+            errorMessage: ''
+          })
+        : {
+            ...popupState.editState,
+            saving: true,
+            errorMessage: ''
+          }
     };
     await renderIssuePopup(popupState);
 
     try {
-      await definition.save(selectedOption);
-      await refreshPopupIssueState(definition.successMessage(selectedOption), {showSnackBar: true});
+      await definition.save(selectedOptions);
+      await refreshPopupIssueState(definition.successMessage(selectedOptions));
     } catch (error) {
       const errorMessage = buildEditFieldError(error);
       if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
@@ -2817,11 +2969,16 @@ async function mainAsyncLocal() {
       }
       popupState = {
         ...popupState,
-        editState: {
-          ...popupState.editState,
-          saving: false,
-          errorMessage
-        }
+        editState: popupState.editState.selectionMode === 'multi'
+          ? buildNextMultiSelectState(popupState.editState, {
+              saving: false,
+              errorMessage
+            })
+          : {
+              ...popupState.editState,
+              saving: false,
+              errorMessage
+            }
       };
       await renderIssuePopup(popupState);
       snackBar(errorMessage);
@@ -2939,10 +3096,17 @@ async function mainAsyncLocal() {
     startFieldEdit(fieldKey).catch(() => {});
   });
 
-  $(document.body).on('click', '._JX_edit_cancel', function (e) {
+  $(document.body).on('click', '._JX_edit_cancel, ._JX_edit_discard', function (e) {
     e.preventDefault();
     e.stopPropagation();
     cancelFieldEdit();
+  });
+
+  $(document.body).on('click', '._JX_edit_save', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    submitFieldEdit(fieldKey).catch(() => {});
   });
 
   $(document.body).on('click', '._JX_edit_option', function (e) {
@@ -2959,9 +3123,18 @@ async function mainAsyncLocal() {
   $(document.body).on('keydown', '._JX_edit_input', function (e) {
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    const editState = popupState?.editState;
     if (e.key === 'Enter') {
       e.preventDefault();
-      submitFieldEdit(fieldKey).catch(() => {});
+      if (editState?.fieldKey === fieldKey && editState.selectionMode === 'multi') {
+        if (e.ctrlKey || e.metaKey) {
+          submitFieldEdit(fieldKey).catch(() => {});
+        } else {
+          toggleMultiSelectOptionFromInput(fieldKey);
+        }
+      } else {
+        submitFieldEdit(fieldKey).catch(() => {});
+      }
       return;
     }
     if (e.key === 'Escape') {
