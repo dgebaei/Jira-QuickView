@@ -269,9 +269,11 @@ async function mainAsyncLocal() {
   const issueSearchCache = new Map();
   const issueSearchRecentCache = new Map();
   const labelSuggestionCache = new Map();
+  const labelLocalOptionsCache = new Map();
   let labelSuggestionSupportPromise = null;
   let preferredAssigneeIdentifier = '';
   let editSearchRequestCounter = 0;
+  let labelSearchTimeoutId = null;
   let popupState = null;
   let activeCommentContext = null;
   let commentMentionState = emptyCommentMentionState();
@@ -1705,13 +1707,27 @@ async function mainAsyncLocal() {
 
   function buildLabelOption(label, extra = {}) {
     const normalizedLabel = String(label || '').trim();
+    const normalizedMetaText = String(extra.metaText || '').trim();
     return buildEditOption(normalizedLabel, normalizedLabel, {
+      ...extra,
+      metaText: normalizedMetaText && normalizedMetaText !== normalizedLabel ? normalizedMetaText : '',
       rawValue: normalizedLabel,
-      ...extra
     });
   }
 
   function normalizeLabelSuggestionPayload(payload) {
+    if (Array.isArray(payload)) {
+      return payload
+        .map(entry => {
+          if (typeof entry === 'string') {
+            return buildLabelOption(entry);
+          }
+          return buildLabelOption(entry?.label || entry?.value || entry?.name || stripSimpleHtml(entry?.html || entry?.displayName || ''), {
+            metaText: stripSimpleHtml(entry?.html || entry?.displayName || '')
+          });
+        })
+        .filter(option => option.id);
+    }
     if (Array.isArray(payload?.results)) {
       return payload.results
         .map(entry => buildLabelOption(entry?.value || stripSimpleHtml(entry?.displayName || ''), {
@@ -1731,26 +1747,15 @@ async function mainAsyncLocal() {
 
   async function fetchLabelSuggestions(queryText) {
     const normalizedQuery = String(queryText || '').trim();
-    const endpoints = [
-      `${INSTANCE_URL}rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=${encodeURIComponent(normalizedQuery)}`,
-      `${INSTANCE_URL}rest/api/1.0/labels/suggest?query=${encodeURIComponent(normalizedQuery)}`
-    ];
-    let lastError;
-    for (const url of endpoints) {
-      try {
-        const response = await get(url);
-        return normalizeLabelSuggestionPayload(response);
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not load label suggestions');
+    const response = await get(`${INSTANCE_URL}rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=${encodeURIComponent(normalizedQuery)}`);
+    return normalizeLabelSuggestionPayload(response);
   }
 
   async function getLabelSuggestions(queryText = '') {
-    const normalizedQuery = String(queryText || '').trim().toLowerCase();
-    return getCachedValue(labelSuggestionCache, normalizedQuery, async () => {
-      return fetchLabelSuggestions(normalizedQuery);
+    const rawQuery = String(queryText || '').trim();
+    const cacheKey = rawQuery.toLowerCase();
+    return getCachedValue(labelSuggestionCache, cacheKey, async () => {
+      return fetchLabelSuggestions(rawQuery);
     });
   }
 
@@ -1819,6 +1824,23 @@ async function mainAsyncLocal() {
       return {key: rawValue.key};
     }
     return rawValue;
+  }
+
+  function normalizeIssueTypeOptions(allowedIssueTypes, currentIssueType) {
+    const currentIsSubtask = currentIssueType?.subtask === true;
+    return (Array.isArray(allowedIssueTypes) ? allowedIssueTypes : [])
+      .filter(issueType => issueType?.id && issueType?.name)
+      .filter(issueType => {
+        if (typeof issueType?.subtask !== 'boolean' || typeof currentIssueType?.subtask !== 'boolean') {
+          return true;
+        }
+        return issueType.subtask === currentIsSubtask;
+      })
+      .map(issueType => buildEditOption(issueType.id, issueType.name, {
+        iconUrl: issueType.iconUrl || '',
+        metaText: issueType.description || '',
+        rawValue: issueType
+      }));
   }
 
   async function getSupportedCustomFieldDefinition(fieldId, issueData) {
@@ -2712,6 +2734,51 @@ async function mainAsyncLocal() {
       };
     }
 
+    if (fieldKey === 'issuetype') {
+      const capability = await getEditableFieldCapability(issueData, 'issuetype');
+      const currentIssueType = issueData?.fields?.issuetype;
+      const issueTypeOptions = normalizeIssueTypeOptions(capability.allowedValues || [], currentIssueType);
+      const currentOption = currentIssueType?.id && currentIssueType?.name
+        ? buildEditOption(currentIssueType.id, currentIssueType.name, {
+            iconUrl: currentIssueType.iconUrl || '',
+            metaText: currentIssueType.description || '',
+            rawValue: currentIssueType
+          })
+        : null;
+      const allOptions = mergeEditOptions(currentOption ? [currentOption] : [], issueTypeOptions);
+      if (!capability.editable || allOptions.length < 2) {
+        return null;
+      }
+      return {
+        fieldKey,
+        editorType: 'single-select',
+        label: 'Issue type',
+        selectionMode: 'single',
+        currentText: currentIssueType?.name || '',
+        currentOptionId: currentOption?.id || null,
+        currentSelections: currentOption ? [currentOption] : [],
+        initialInputValue: '',
+        loadOptions: async () => allOptions,
+        save: selectedOptions => {
+          const selectedIssueType = selectedOptions[0];
+          if (!selectedIssueType?.id) {
+            throw new Error('Pick an issue type before saving');
+          }
+          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+            fields: {
+              issuetype: {id: selectedIssueType.id}
+            }
+          });
+        },
+        successMessage: selectedOptions => {
+          const selectedIssueType = selectedOptions[0];
+          return selectedIssueType?.label
+            ? `Issue type set to ${selectedIssueType.label}`
+            : 'Issue type updated';
+        }
+      };
+    }
+
     if (fieldKey === 'status') {
       const transitions = await getTransitionOptions(issueData?.key);
       if (!transitions.length) {
@@ -2896,11 +2963,19 @@ async function mainAsyncLocal() {
         inputPlaceholder: 'Search existing labels',
         loadOptions: async () => {
           const baselineSuggestions = await getLabelSuggestions('').catch(() => []);
-          return mergeEditOptions(currentSelections, baselineSuggestions);
+          const mergedOptions = mergeEditOptions(currentSelections, baselineSuggestions);
+          labelLocalOptionsCache.set(issueData.key, mergedOptions);
+          return mergedOptions;
         },
         searchOptions: async query => {
-          const searchedOptions = await getLabelSuggestions(query);
-          return mergeEditOptions(currentSelections, mergeEditOptions(searchedOptions, popupState?.editState?.options || []));
+          const normalizedQuery = String(query || '').trim();
+          const localBaselineOptions = labelLocalOptionsCache.get(issueData.key) || [];
+          const searchedOptions = await getLabelSuggestions(normalizedQuery);
+          const mergedOptions = normalizedQuery
+            ? searchedOptions
+            : mergeEditOptions(currentSelections, mergeEditOptions(searchedOptions, mergeEditOptions(localBaselineOptions, popupState?.editState?.options || [])));
+          labelLocalOptionsCache.set(issueData.key, mergedOptions);
+          return mergedOptions;
         },
         save: selectedOptions => {
           const nextLabels = selectedOptions.map(option => option.id).filter(Boolean);
@@ -3352,7 +3427,8 @@ async function mainAsyncLocal() {
     const statusName = issueData.fields.status?.name;
     const priorityName = issueData.fields.priority?.name;
     const projectKey = key.split('-')[0];
-    const [priorityCapability, assigneeCapability, transitionOptions, sprintCapability, affectsCapability, fixVersionsCapability, labelsCapability, labelSuggestionSupport, customFieldChips] = await Promise.all([
+    const [issueTypeCapability, priorityCapability, assigneeCapability, transitionOptions, sprintCapability, affectsCapability, fixVersionsCapability, labelsCapability, labelSuggestionSupport, customFieldChips] = await Promise.all([
+      displayFields.issueType ? getEditableFieldCapability(issueData, 'issuetype') : Promise.resolve({editable: false, allowedValues: []}),
       displayFields.priority ? getEditableFieldCapability(issueData, 'priority') : Promise.resolve({editable: false}),
       displayFields.assignee ? getEditableFieldCapability(issueData, 'assignee') : Promise.resolve({editable: false}),
       displayFields.status ? getTransitionOptions(issueData.key).catch(() => []) : Promise.resolve([]),
@@ -3364,16 +3440,20 @@ async function mainAsyncLocal() {
       buildCustomFieldChips(issueData, customFields, state)
     ]);
     const statusEditable = Array.isArray(transitionOptions) && transitionOptions.length > 0;
+    const issueTypeEditable = !!issueTypeCapability?.editable && normalizeIssueTypeOptions(issueTypeCapability.allowedValues || [], issueData.fields.issuetype).length > 1;
     const priorityEditable = !!priorityCapability?.editable;
     const assigneeEditable = !!assigneeCapability?.editable;
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
 
     const row1Chips = [
-      displayFields.issueType ? buildFilterChip(
+      displayFields.issueType ? buildEditableFieldChip('issuetype', buildFilterChip(
         issueTypeName || 'No type',
         issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
         {iconUrl: issueData.fields.issuetype?.iconUrl || ''}
-      ) : null,
+      ), state, {
+        canEdit: issueTypeEditable,
+        editTitle: 'Edit issue type'
+      }) : null,
       displayFields.status ? buildEditableFieldChip('status', buildFilterChip(
         statusName || 'No status',
         statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
@@ -3645,6 +3725,7 @@ async function mainAsyncLocal() {
     editMetaCache.delete(popupState.key);
     transitionOptionsCache.delete(popupState.key);
     assigneeLocalOptionsCache.delete(popupState.key);
+    labelLocalOptionsCache.delete(popupState.key);
     issueSearchCache.clear();
     [...assigneeSearchCache.keys()].forEach(cacheKey => {
       if (String(cacheKey).startsWith(`${popupState.key}__`)) {
@@ -3738,7 +3819,7 @@ async function mainAsyncLocal() {
       await renderIssuePopup(popupState);
     }
   }
-  const triggerSearchOptionsForActiveEdit = debounce(async (fieldKey, queryText, requestId) => {
+  async function runSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
     if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
       return;
     }
@@ -3751,7 +3832,7 @@ async function mainAsyncLocal() {
       if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.searchRequestId !== requestId) {
         return;
       }
-      const mergedOptions = popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search'
+      const mergedOptions = popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search'
         ? mergeEditOptions(options, popupState.editState.options)
         : options;
       popupState = {
@@ -3778,7 +3859,21 @@ async function mainAsyncLocal() {
       };
       await renderIssuePopup(popupState);
     }
+  }
+
+  const triggerSearchOptionsForActiveEdit = debounce((fieldKey, queryText, requestId) => {
+    runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
   }, 220);
+
+  function scheduleLabelSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
+    if (labelSearchTimeoutId) {
+      clearTimeout(labelSearchTimeoutId);
+    }
+    labelSearchTimeoutId = setTimeout(() => {
+      labelSearchTimeoutId = null;
+      runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
+    }, 180);
+  }
   async function startFieldEdit(fieldKey) {
     if (!popupState?.issueData) {
       return;
@@ -3912,6 +4007,20 @@ async function mainAsyncLocal() {
         })
       };
       renderIssuePopup(popupState).catch(() => {});
+
+      if (popupState.editState.editorType === 'label-search') {
+        const searchRequestId = ++editSearchRequestCounter;
+        popupState = {
+          ...popupState,
+          editState: {
+            ...popupState.editState,
+            loadingOptions: true,
+            searchRequestId
+          }
+        };
+        renderIssuePopup(popupState).catch(() => {});
+        scheduleLabelSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
+      }
       return;
     }
     const exactOption = (popupState.editState.options || []).find(option => {
@@ -3968,7 +4077,11 @@ async function mainAsyncLocal() {
         }
       };
       renderIssuePopup(popupState).catch(() => {});
-      triggerSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
+      if (popupState.editState.editorType === 'label-search') {
+        scheduleLabelSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
+      } else {
+        triggerSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
+      }
     }
   }
 
