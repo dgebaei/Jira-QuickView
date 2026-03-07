@@ -1,6 +1,6 @@
 /*global chrome */
 import defaultConfig from 'options/config';
-import {uniqueId} from 'lodash';
+import uniqueId from 'lodash/uniqueId';
 import regexEscape from 'escape-string-regexp';
 import {storageGet} from 'src/chrome';
 

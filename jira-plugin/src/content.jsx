@@ -1420,15 +1420,29 @@ async function mainAsyncLocal() {
     return chipsByRow;
   }
 
-  function readSprintsFromIssue(issueData) {
+  function getIssueSprintEntries(issueData) {
     const names = issueData.names || {};
     const fields = issueData.fields || {};
     const sprintFieldIds = Object.keys(names).filter(fieldId => {
       return typeof names[fieldId] === 'string' && names[fieldId].toLowerCase().includes('sprint');
     });
-    const sprintValues = sprintFieldIds
-      .map(fieldId => fields[fieldId])
-      .filter(value => value !== undefined && value !== null);
+    const sprintEntries = [];
+    sprintFieldIds.forEach(fieldId => {
+      const value = fields[fieldId];
+      if (value === undefined || value === null) {
+        return;
+      }
+      if (Array.isArray(value)) {
+        sprintEntries.push(...value.filter(Boolean));
+        return;
+      }
+      sprintEntries.push(value);
+    });
+    return sprintEntries;
+  }
+
+  function readSprintsFromIssue(issueData) {
+    const sprintEntries = getIssueSprintEntries(issueData);
     const seen = {};
     const sprints = [];
 
@@ -1445,27 +1459,65 @@ async function mainAsyncLocal() {
       sprints.push({id: sprintId, name, state: state || ''});
     };
 
-    sprintValues.forEach(value => {
-      const entries = Array.isArray(value) ? value : [value];
-      entries.forEach(entry => {
-        if (!entry) {
-          return;
-        }
-        if (typeof entry === 'string') {
-          const idMatch = entry.match(/id=([^,\]]+)/i);
-          const nameMatch = entry.match(/name=([^,\]]+)/i);
-          const stateMatch = entry.match(/state=([^,\]]+)/i);
-          pushSprint(
-            idMatch && idMatch[1] ? idMatch[1] : '',
-            nameMatch && nameMatch[1] ? nameMatch[1] : entry,
-            stateMatch && stateMatch[1]
-          );
-          return;
-        }
-        pushSprint(entry.id || '', entry.name || entry.goal || entry.id, entry.state);
-      });
+    sprintEntries.forEach(entry => {
+      if (!entry) {
+        return;
+      }
+      if (typeof entry === 'string') {
+        const idMatch = entry.match(/id=([^,\]]+)/i);
+        const nameMatch = entry.match(/name=([^,\]]+)/i);
+        const stateMatch = entry.match(/state=([^,\]]+)/i);
+        pushSprint(
+          idMatch && idMatch[1] ? idMatch[1] : '',
+          nameMatch && nameMatch[1] ? nameMatch[1] : entry,
+          stateMatch && stateMatch[1]
+        );
+        return;
+      }
+      pushSprint(entry.id || '', entry.name || entry.goal || entry.id, entry.state);
     });
     return sprints;
+  }
+
+  function readSprintBoardRefsFromIssue(issueData) {
+    const projectKey = String(issueData?.key || '').split('-')[0];
+    const seen = new Set();
+    const boardRefs = [];
+
+    getIssueSprintEntries(issueData).forEach(entry => {
+      const candidateBoardIds = [];
+      if (typeof entry === 'string') {
+        ['rapidViewId', 'boardId', 'originBoardId'].forEach(fieldName => {
+          const match = entry.match(new RegExp(`${fieldName}=([^,\\]]+)`, 'i'));
+          if (match && match[1]) {
+            candidateBoardIds.push(match[1]);
+          }
+        });
+      } else {
+        candidateBoardIds.push(
+          entry.rapidViewId,
+          entry.boardId,
+          entry.originBoardId,
+          entry.board?.id,
+          entry.rapidView?.id
+        );
+      }
+
+      candidateBoardIds.forEach(candidateId => {
+        const boardId = String(candidateId || '').trim();
+        if (!boardId || seen.has(boardId)) {
+          return;
+        }
+        seen.add(boardId);
+        boardRefs.push({
+          id: boardId,
+          name: String(entry?.board?.name || entry?.rapidView?.name || ''),
+          projectKey
+        });
+      });
+    });
+
+    return boardRefs;
   }
 
   function formatFixVersionText(fixVersions) {
@@ -1765,6 +1817,34 @@ async function mainAsyncLocal() {
     return getProjectVersionOptions(issueData, 'versions', 'No affects version');
   }
 
+  async function getCandidateSprintBoards(issueData) {
+    const projectKey = String(issueData?.key || '').split('-')[0];
+    const boardsById = new Map();
+    const addBoard = board => {
+      const boardId = String(board?.id || '').trim();
+      if (!boardId) {
+        return;
+      }
+      const existingBoard = boardsById.get(boardId) || {};
+      boardsById.set(boardId, {
+        ...existingBoard,
+        ...board,
+        id: boardId,
+        name: String(board?.name || existingBoard.name || ''),
+        projectKey: String(board?.projectKey || existingBoard.projectKey || projectKey)
+      });
+    };
+
+    if (projectKey) {
+      const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`).catch(() => null);
+      const projectBoards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
+      projectBoards.forEach(addBoard);
+    }
+
+    readSprintBoardRefsFromIssue(issueData).forEach(addBoard);
+    return [...boardsById.values()];
+  }
+
   async function getSprintOptions(issueData) {
     const projectKey = String(issueData?.key || '').split('-')[0];
     if (!projectKey) {
@@ -1774,23 +1854,45 @@ async function mainAsyncLocal() {
     if (!sprintFieldIds.length) {
       return [];
     }
-    return getCachedValue(fieldOptionsCache, `sprint__${projectKey}`, async () => {
-      const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`);
-      const boards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
+    const issueBoardIdsKey = readSprintBoardRefsFromIssue(issueData)
+      .map(board => String(board.id || ''))
+      .filter(Boolean)
+      .sort()
+      .join(',');
+    return getCachedValue(fieldOptionsCache, `sprint__${projectKey}__${issueBoardIdsKey}`, async () => {
+      const boards = await getCandidateSprintBoards(issueData);
       const sprintMap = new Map();
       const sprintResponses = await Promise.allSettled(boards.map(board => {
-        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`);
+        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`)
+          .then(response => ({board, response}));
       }));
 
       sprintResponses.forEach(result => {
         if (result.status !== 'fulfilled') {
           return;
         }
-        const sprints = Array.isArray(result.value?.values) ? result.value.values : [];
+        const sprints = Array.isArray(result.value?.response?.values) ? result.value.response.values : [];
         sprints.forEach(sprint => {
-          if (sprint?.id && sprint?.name) {
-            sprintMap.set(String(sprint.id), sprint);
+          if (!sprint?.id || !sprint?.name) {
+            return;
           }
+          const sprintId = String(sprint.id);
+          const existingSprint = sprintMap.get(sprintId);
+          const boardRefs = Array.isArray(existingSprint?.boardRefs) ? existingSprint.boardRefs.slice() : [];
+          const board = result.value?.board || {};
+          const boardRefKey = String(board.id || '');
+          if (boardRefKey && !boardRefs.some(ref => String(ref.id) === boardRefKey)) {
+            boardRefs.push({
+              id: board.id,
+              name: board.name || '',
+              projectKey: board.projectKey || projectKey
+            });
+          }
+          sprintMap.set(sprintId, {
+            ...(existingSprint || {}),
+            ...sprint,
+            boardRefs
+          });
         });
       });
 
@@ -1951,8 +2053,14 @@ async function mainAsyncLocal() {
         upcomingSprint: null
       };
     }
-    if (projectSprintOptionsPromises.has(projectKey)) {
-      return projectSprintOptionsPromises.get(projectKey);
+    const issueBoardIdsKey = readSprintBoardRefsFromIssue(issueData)
+      .map(board => String(board.id || ''))
+      .filter(Boolean)
+      .sort()
+      .join(',');
+    const cacheKey = `${projectKey}__${issueBoardIdsKey}`;
+    if (projectSprintOptionsPromises.has(cacheKey)) {
+      return projectSprintOptionsPromises.get(cacheKey);
     }
 
     const sprintPromise = (async () => {
@@ -1964,8 +2072,7 @@ async function mainAsyncLocal() {
         };
       }
 
-      const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`);
-      const boards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
+      const boards = await getCandidateSprintBoards(issueData);
       if (!boards.length) {
         return {
           activeSprints: [],
@@ -1997,7 +2104,7 @@ async function mainAsyncLocal() {
             boardRefs.push({
               id: board.id,
               name: board.name || '',
-              projectKey
+              projectKey: board.projectKey || projectKey
             });
           }
           sprintMap.set(sprintId, {
@@ -2038,14 +2145,14 @@ async function mainAsyncLocal() {
         upcomingSprint
       };
     })().catch(error => {
-      projectSprintOptionsPromises.delete(projectKey);
+      projectSprintOptionsPromises.delete(cacheKey);
       return {
         activeSprints: [],
         upcomingSprint: null
       };
     });
 
-    projectSprintOptionsPromises.set(projectKey, sprintPromise);
+    projectSprintOptionsPromises.set(cacheKey, sprintPromise);
     return sprintPromise;
   }
 
@@ -2540,7 +2647,7 @@ async function mainAsyncLocal() {
     if (!definition) {
       return;
     }
-    const initialValue = definition.currentText || '';
+    const initialValue = '';
     popupState = {
       ...popupState,
       editState: {
@@ -2564,7 +2671,7 @@ async function mainAsyncLocal() {
         return;
       }
       const selectedOption = (Array.isArray(options) ? options : []).find(option => option.id === popupState.editState.selectedOptionId);
-      const nextInputValue = selectedOption ? selectedOption.label : popupState.editState.inputValue;
+      const nextInputValue = '';
       popupState = {
         ...popupState,
         editState: {
@@ -3149,3 +3256,4 @@ if (!window.__JX__script_injected__) {
 }
 
 window.__JX__script_injected__ = true;
+

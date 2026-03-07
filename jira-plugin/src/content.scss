@@ -247,7 +247,7 @@ body ._JX {
     max-height: calc(100vh - 16px);
     max-width: 600px;
     width: min(600px, calc(100vw - 24px));
-    overflow: visible;
+    overflow: hidden;
     user-select: text;
     -webkit-user-select: text;
     color: #24292f;
@@ -323,10 +323,10 @@ body ._JX {
   }
   &_description {
     flex: 1 1 auto;
-    max-height: none;
+    max-height: min(520px, calc(100vh - 220px));
     min-height: 0;
     overflow-y: auto;
-    overflow: visible;
+    overflow-x: hidden;
     border-bottom: 1px solid #dde4e6;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -517,9 +517,14 @@ body ._JX {
   }
 
   &_comment_compose {
+    background: #fff;
     border-top: 1px solid #dde4e6;
-    margin-top: 10px;
-    padding-top: 10px;
+    bottom: -10px;
+    box-shadow: 0 -10px 18px rgba(9, 30, 66, 0.08);
+    margin: 10px -10px -10px;
+    padding: 10px;
+    position: sticky;
+    z-index: 2;
   }
 
   &_comment_input_wrap {
@@ -528,9 +533,11 @@ body ._JX {
 
   &_comment_input {
     border: 1px solid #c7d1db;
+    box-sizing: border-box;
     border-radius: 6px;
     font: inherit;
     min-height: 78px;
+    max-width: 100%;
     padding: 8px 10px;
     resize: vertical;
     width: 100%;
@@ -1083,3 +1090,5 @@ body ._JX {
     }
   }
 }
+
+
