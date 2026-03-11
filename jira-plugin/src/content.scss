@@ -2,6 +2,7 @@ body ._JX {
   &_container {
     position: absolute;
     z-index: 99999;
+    width: max-content;
 
     &.container-pinned {
       position: fixed !important;
@@ -30,12 +31,12 @@ body ._JX {
 
     &_user {
       display: block;
-      flex: 0 0 20px;
-      width: 20px;
-      height: 20px;
+      flex: 0 0 32px;
+      width: 32px;
+      height: 32px;
       margin-right: -6px;
       align-self: center;
-      min-width: 20px;
+      min-width: 32px;
       margin-top: -2px;
       border: 1px solid #dfe1e6;
       border-radius: 50%;
@@ -77,20 +78,6 @@ body ._JX {
 
     &_assignee_slot ._JX_assignee_edit_button {
       margin-left: 2px;
-    }
-
-    &_copy {
-      color: #172b4d;
-      background-color: transparent;
-      border: none;
-      cursor: pointer;
-      vertical-align: middle;
-      position: relative;
-      top: 2px;
-
-      &:hover {
-        color: #8993a4;
-      }
     }
 
     &_copy {
@@ -259,6 +246,8 @@ body ._JX {
       flex-wrap: nowrap;
       justify-content: space-between;
       gap: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #d0dbe5;
     }
 
     &_row_main {
@@ -478,6 +467,10 @@ body ._JX {
     tbody td:nth-child(4) {
       width: 16%;
     }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
   }
 
   &_comments {
@@ -521,7 +514,7 @@ body ._JX {
     -webkit-user-select: text;
 
     a {
-      font-size: 11px;
+      font-size: 12px;
       text-decoration: underline;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -535,6 +528,7 @@ body ._JX {
     }
 
     * {
+      font-size: 12px;
       max-width: 100%;
       min-width: 0;
       overflow-wrap: anywhere;
@@ -1168,7 +1162,7 @@ body ._JX {
     width: 100%;
     background-color: white;
     color: #172b4d;
-    font-size: 14px;
+    font-size: 12px;
     line-height: 18px;
     max-height: 20px;
     text-overflow: ellipsis;

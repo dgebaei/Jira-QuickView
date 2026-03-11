@@ -3419,8 +3419,10 @@ async function mainAsyncLocal() {
     if (user?.isDefaultAvatar === true) {
       return true;
     }
+    const JIRA_DEFAULT_AVATAR_DATA_URI = 'data:image/svg+xml;base64,PHN2ZyBpZD0iV2Fyc3R3YV8xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+CiAgPHN0eWxlPgogICAgLnN0MHtmaWxsOiNjMWM3ZDB9CiAgPC9zdHlsZT4KICA8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMTIgMjRDNS40IDI0IDAgMTguNiAwIDEyUzUuNCAwIDEyIDBzMTIgNS40IDEyIDEyLTUuNCAxMi0xMiAxMnoiLz4KICA8cGF0aCBkPSJNMTkuNSAxMmMwLS45LS42LTEuNy0xLjUtMS45LS4yLTMuMS0yLjgtNS42LTYtNS42UzYuMiA3IDYgMTAuMWMtLjkuMi0xLjUgMS0xLjUgMS45IDAgMSAuNyAxLjggMS43IDIgLjYgMi44IDMgNS41IDUuOCA1LjVzNS4yLTIuNyA1LjgtNS41YzEtLjIgMS43LTEgMS43LTJ6IiBmaWxsPSIjZjRmNWY3Ii8+CiAgPHBhdGggY2xhc3M9InN0MCIgZD0iTTEyIDE2LjljLTEgMC0yLS43LTIuMy0xLjYtLjEtLjMgMC0uNS4zLS42LjMtLjEuNSAwIC42LjMuMi42LjggMSAxLjQgMSAuNiAwIDEuMi0uNCAxLjQtMSAuMS0uMy40LS40LjYtLjMuMy4xLjQuNC4zLjYtLjMuOS0xLjMgMS42LTIuMyAxLjZ6Ii8+Cjwvc3ZnPg==';
     const normalizedUrl = String(avatarUrl || '').toLowerCase();
-    return normalizedUrl.includes('defaultavatar') ||
+    return avatarUrl === JIRA_DEFAULT_AVATAR_DATA_URI ||
+      normalizedUrl.includes('defaultavatar') ||
       normalizedUrl.includes('/avatar.png') ||
       normalizedUrl.includes('avatar/default') ||
       normalizedUrl.includes('initials=');
@@ -4615,6 +4617,29 @@ async function mainAsyncLocal() {
     copyPrettyLink(e.currentTarget).catch(() => snackBar('There was an error!'));
   });
 
+  $(document.body).on('click', '._JX_close_button', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    hideContainer();
+    passiveCancel(200);
+  });
+
+  $(document.body).on('click', '._JX_pin_button', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!containerPinned) {
+      snackBar('Ticket Pinned! Hit esc to close !');
+      container.addClass('container-pinned');
+      const position = container.position();
+      container.css({
+        left: position.left - document.scrollingElement.scrollLeft,
+        top: position.top - document.scrollingElement.scrollTop,
+      });
+      containerPinned = true;
+      clearTimeout(hideTimeOut);
+    }
+  });
+
   $(document.body).on('click', '._JX_actions_toggle', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -4849,7 +4874,7 @@ async function mainAsyncLocal() {
     activeCommentContext = null;
     resetCommentMentionState();
     containerPinned = false;
-    container.css({
+    container.html('').css({
       left: -5000,
       top: -5000,
       position: 'absolute',
@@ -4882,6 +4907,7 @@ async function mainAsyncLocal() {
   }
 
   let hideTimeOut;
+  let hoverDelayTimeout;
   let containerPinned = false;
   let lastHoveredKey = '';
   container.on('dragstop', () => {
@@ -4898,7 +4924,7 @@ async function mainAsyncLocal() {
     }
   });
   $(document.body).on('mousemove', debounce(function (e) {
-    if (cancelToken.cancel) {
+    if (e.buttons || cancelToken.cancel) {
       return;
     }
     const element = document.elementFromPoint(e.clientX, e.clientY);
@@ -4909,11 +4935,34 @@ async function mainAsyncLocal() {
     }
     if (element) {
       let keys = getJiraKeys(getShallowText(element));
+      if (!size(keys) && element.children.length < 10) {
+        const fullText = (element.textContent || '');
+        if (fullText.length < 200) {
+          keys = getJiraKeys(fullText);
+        }
+      }
       if (!size(keys) && element.href) {
         keys = getJiraKeys(getRelativeHref(element.href));
       }
       if (!size(keys) && element.parentElement && element.parentElement.href) {
         keys = getJiraKeys(getRelativeHref(element.parentElement.href));
+      }
+      if (!size(keys)) {
+        let ancestor = element.parentElement;
+        for (let i = 0; i < 5 && ancestor && !size(keys); i++) {
+          if (ancestor === document.body) break;
+          keys = getJiraKeys(getShallowText(ancestor));
+          if (!size(keys) && ancestor.children.length < 20) {
+            const ancestorText = (ancestor.textContent || '');
+            if (ancestorText.length < 300) {
+              keys = getJiraKeys(ancestorText);
+            }
+          }
+          if (!size(keys) && ancestor.href) {
+            keys = getJiraKeys(getRelativeHref(ancestor.href));
+          }
+          ancestor = ancestor.parentElement;
+        }
       }
 
       if (size(keys)) {
@@ -4932,55 +4981,59 @@ async function mainAsyncLocal() {
           }
           return;
         }
+        clearTimeout(hoverDelayTimeout);
         lastHoveredKey = key;
         const pointerX = e.pageX;
         const pointerY = e.pageY;
-        (async function (cancelToken) {
-          const issueData = await getIssueMetaData(key);
-          await normalizeIssueImages(issueData);
-          let pullRequests = [];
-          if (displayFields.pullRequests) {
-            try {
-              const pullRequestResponse = await getPullRequestDataCached(issueData.id);
-              pullRequests = normalizePullRequests(pullRequestResponse);
-            } catch (ex) {
-              console.log('[Jira HotLinker] Pull request fetch failed', {
-                issueKey: key,
-                issueId: issueData.id,
-                error: ex?.message || String(ex)
-              });
+        hoverDelayTimeout = setTimeout(function () {
+          (async function (cancelToken) {
+            const issueData = await getIssueMetaData(key);
+            await normalizeIssueImages(issueData);
+            let pullRequests = [];
+            if (displayFields.pullRequests) {
+              try {
+                const pullRequestResponse = await getPullRequestDataCached(issueData.id);
+                pullRequests = normalizePullRequests(pullRequestResponse);
+              } catch (ex) {
+                console.log('[Jira HotLinker] Pull request fetch failed', {
+                  issueKey: key,
+                  issueId: issueData.id,
+                  error: ex?.message || String(ex)
+                });
+              }
             }
-          }
 
-          if (cancelToken.cancel) {
-            return;
-          }
-          let quickActions = [];
-          try {
-            quickActions = await resolveQuickActions(issueData);
-          } catch (ex) {
-            quickActions = [];
-          }
+            if (cancelToken.cancel) {
+              return;
+            }
+            let quickActions = [];
+            try {
+              quickActions = await resolveQuickActions(issueData);
+            } catch (ex) {
+              quickActions = [];
+            }
 
-          popupState = {
-            key,
-            issueData,
-            pullRequests,
-            pointerX,
-            pointerY,
-            quickActions,
-            actionsOpen: false,
-            actionLoadingKey: '',
-            actionError: '',
-            lastActionSuccess: '',
-            editState: null
-          };
-          await renderIssuePopup(popupState);
-        })(cancelToken).catch((error) => {
-          notifyJiraConnectionFailure(INSTANCE_URL, error);
-          lastHoveredKey = '';
-        });
+            popupState = {
+              key,
+              issueData,
+              pullRequests,
+              pointerX,
+              pointerY,
+              quickActions,
+              actionsOpen: false,
+              actionLoadingKey: '',
+              actionError: '',
+              lastActionSuccess: '',
+              editState: null
+            };
+            await renderIssuePopup(popupState);
+          })(cancelToken).catch((error) => {
+            notifyJiraConnectionFailure(INSTANCE_URL, error);
+            lastHoveredKey = '';
+          });
+        }, 400);
       } else if (!containerPinned) {
+        clearTimeout(hoverDelayTimeout);
         lastHoveredKey = '';
         hideTimeOut = setTimeout(hideContainer, 250);
       }
