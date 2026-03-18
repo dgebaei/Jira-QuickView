@@ -4,7 +4,7 @@
   "description": "Jira HotLinker, quick access to Jira metadata when hovering over ticket numbers!",
   "main": " ",
   "scripts": {
-    "analyze": "webpack -p --bail --profile --json > stats.json || webpack-bundle-analyzer stats.json",
+    "analyze": "webpack --mode=production --bail --profile --json > stats.json || webpack-bundle-analyzer stats.json",
     "dev": "webpack --watch --mode=development",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -45,4 +45,3 @@
     "webpack-cli": "4.9.2"
   }
 }
-
