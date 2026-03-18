@@ -819,6 +819,11 @@ body ._JX {
   &_field_chip_link {
     text-decoration: none !important;
     color: #172b4d !important;
+
+    &:hover {
+      text-decoration: underline !important;
+      text-underline-offset: 2px;
+    }
   }
 
   &_field_chip_content {
@@ -1101,6 +1106,24 @@ body ._JX {
 
   &_edit_error {
     color: #c9372c;
+  }
+
+  &_labels_chip_content {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  &_field_chip_inline_link {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &_labels_chip_link {
+    font-weight: 500;
   }
   &_PR_STATUS {
     border: 1px solid #a5b3c2;

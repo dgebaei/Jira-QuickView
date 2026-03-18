@@ -2421,6 +2421,34 @@ async function mainAsyncLocal() {
     };
   }
 
+  function buildLabelsChip(labels, projectKey) {
+    const normalizedLabels = Array.isArray(labels)
+      ? labels.map(label => String(label || '').trim()).filter(Boolean)
+      : [];
+    const dedupedLabels = normalizedLabels.filter((label, index, array) => array.indexOf(label) === index);
+    const headerJql = dedupedLabels.length
+      ? scopeJqlToProject(projectKey, `labels in (${dedupedLabels.map(encodeJqlValue).join(', ')})`)
+      : '';
+
+    return {
+      text: `Labels: ${dedupedLabels.join(', ') || '--'}`,
+      chipTitle: dedupedLabels.length ? `Labels: ${dedupedLabels.join(', ')}` : 'Labels: --',
+      isLabelsComposite: true,
+      labelsView: {
+        headerText: 'Labels',
+        headerLinkUrl: headerJql ? buildJqlUrl(headerJql) : '',
+        headerLinkTitle: headerJql ? buildLinkHoverTitle('View issues with any listed label', dedupedLabels.join(', ')) : '',
+        hasLabels: dedupedLabels.length > 0,
+        labels: dedupedLabels.map((label, index) => ({
+          text: label,
+          linkUrl: buildJqlUrl(scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(label)}`)),
+          linkTitle: buildLinkHoverTitle('View issues with this label', label),
+          showSeparator: index < dedupedLabels.length - 1
+        }))
+      }
+    };
+  }
+
   function buildAttachmentChips(attachments) {
     const totals = {
       image: 0,
@@ -3856,13 +3884,8 @@ async function mainAsyncLocal() {
       ...customFieldChips[2]
     ].filter(Boolean);
 
-    const singleLabel = labels.length === 1 ? labels[0] : '';
     const row3Chips = [
-      displayFields.labels ? buildEditableFieldChip('labels', buildFilterChip(
-        `Labels: ${labels.filter(Boolean).join(', ') || '--'}`,
-        singleLabel ? `${scopeJqlToProject(projectKey, `labels = ${encodeJqlValue(singleLabel)}`)}` : '',
-        {linkLabel: singleLabel}
-      ), state, {
+      displayFields.labels ? buildEditableFieldChip('labels', buildLabelsChip(labels, projectKey), state, {
         canEdit: labelsEditable,
         editTitle: 'Edit labels'
       }) : null,

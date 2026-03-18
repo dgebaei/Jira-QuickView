@@ -179,11 +179,26 @@
             {{#row2Chips}}
             {{#isEditable}}
             <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
+                {{#isLabelsComposite}}
+                <span class="_JX_field_chip_content _JX_labels_chip_content">
+                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+                    {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+                    <span>: </span>
+                    {{#labelsView.hasLabels}}
+                    {{#labelsView.labels}}
+                    <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
+                    {{/labelsView.labels}}
+                    {{/labelsView.hasLabels}}
+                    {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
+                </span>
+                {{/isLabelsComposite}}
+                {{^isLabelsComposite}}
                 {{#linkUrl}}
                 {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/isEditing}}
                 {{#isEditing}}<span class="_JX_field_chip_content">{{text}}</span>{{/isEditing}}
                 {{/linkUrl}}
                 {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
+                {{/isLabelsComposite}}
                 <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
                     {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
                     {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
@@ -244,11 +259,26 @@
             {{#row3Chips}}
             {{#isEditable}}
             <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
+                {{#isLabelsComposite}}
+                <span class="_JX_field_chip_content _JX_labels_chip_content">
+                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+                    {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+                    <span>: </span>
+                    {{#labelsView.hasLabels}}
+                    {{#labelsView.labels}}
+                    <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
+                    {{/labelsView.labels}}
+                    {{/labelsView.hasLabels}}
+                    {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
+                </span>
+                {{/isLabelsComposite}}
+                {{^isLabelsComposite}}
                 {{#linkUrl}}
                 {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/isEditing}}
                 {{#isEditing}}<span class="_JX_field_chip_content">{{text}}</span>{{/isEditing}}
                 {{/linkUrl}}
                 {{^linkUrl}}<span class="_JX_field_chip_content">{{text}}</span>{{/linkUrl}}
+                {{/isLabelsComposite}}
                 <button class="_JX_field_chip_edit" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
                     {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
                     {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
@@ -298,8 +328,25 @@
             </div>
             {{/isEditable}}
             {{^isEditable}}
+            {{#isLabelsComposite}}
+            <span class="_JX_field_chip" title="{{chipTitle}}">
+                <span class="_JX_field_chip_content _JX_labels_chip_content">
+                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+                    {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+                    <span>: </span>
+                    {{#labelsView.hasLabels}}
+                    {{#labelsView.labels}}
+                    <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
+                    {{/labelsView.labels}}
+                    {{/labelsView.hasLabels}}
+                    {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
+                </span>
+            </span>
+            {{/isLabelsComposite}}
+            {{^isLabelsComposite}}
             {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
             {{^linkUrl}}<span class="_JX_field_chip" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
+            {{/isLabelsComposite}}
             {{/isEditable}}
             {{/row3Chips}}
         </div>
