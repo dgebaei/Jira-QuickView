@@ -21,7 +21,7 @@ const env = {
   PLAYWRIGHT_HTML_OPEN: 'never',
 };
 
-const result = spawnSync('npx', ['playwright', 'merge-reports', '--reporter', 'html', blobDir], {
+const result = spawnSync('npm', ['exec', '--', 'playwright', 'merge-reports', '--reporter', 'html', blobDir], {
   cwd: repoRoot,
   env,
   stdio: 'inherit',

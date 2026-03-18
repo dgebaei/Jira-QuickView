@@ -36,7 +36,7 @@ const env = {
   PWTEST_BLOB_DO_NOT_REMOVE: '1',
 };
 
-const testResult = spawnSync('npx', ['playwright', 'test', ...args], {
+const testResult = spawnSync('npm', ['exec', '--', 'playwright', 'test', ...args], {
   cwd: repoRoot,
   env,
   stdio: 'inherit',
