@@ -101,6 +101,21 @@ chrome.runtime.onMessage.addListener(function (msg) {
 
 let ui_tips_shown_local = [];
 const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
+const COMMENT_REACTION_OPTIONS = [
+  {emoji: '👍', emojiId: '1f44d', label: 'thumbs up'},
+  {emoji: '👎', emojiId: '1f44e', label: 'thumbs down'},
+  {emoji: '🔥', emojiId: '1f525', label: 'fire'},
+  {emoji: '😍', emojiId: '1f60d', label: 'heart eyes'},
+  {emoji: '😂', emojiId: '1f602', label: 'joy'},
+  {emoji: '😢', emojiId: '1f622', label: 'cry'}
+];
+
+function emptyCommentReactionState() {
+  return {
+    byCommentId: {},
+    supported: true
+  };
+}
 
 async function showTip(tipName, tipMessage) {
   if (ui_tips_shown_local.indexOf(tipName) !== -1) {
@@ -138,8 +153,8 @@ async function getImageDataUrl(url) {
   return unwrapResponse(await sendMessage({action: 'getImageDataUrl', url}));
 }
 
-async function requestJson(method, url, body) {
-  return unwrapResponse(await sendMessage({action: 'requestJson', method, url, body}));
+async function requestJson(method, url, body, headers) {
+  return unwrapResponse(await sendMessage({action: 'requestJson', method, url, body, headers}));
 }
 async function uploadAttachment(url, file) {
   const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
@@ -510,7 +525,7 @@ async function mainAsyncLocal() {
 
   // ── Comments ──────────────────────────────────────────────
 
-  async function buildCommentsForDisplay(issueData) {
+  async function buildCommentsForDisplay(issueData, reactionState = popupState?.commentReactionState) {
     const comments = [...(issueData.fields.comment?.comments || [])].sort((a, b) => {
       return new Date(a.created).getTime() - new Date(b.created).getTime();
     });
@@ -525,12 +540,73 @@ async function mainAsyncLocal() {
       const rendered = renderedById[comment.id];
       const baseHtml = rendered || textToLinkedHtml(comment.body || '');
       const bodyHtml = await normalizeRichHtml(baseHtml, {imageMaxHeight: 100});
+      const reactionUi = buildCommentReactionUi(comment.id, reactionState);
       return {
+        id: comment.id,
         author: comment.author?.displayName || 'Unknown',
         created: formatRelativeDate(comment.created),
-        bodyHtml
+        bodyHtml,
+        reactionError: getCommentReactionError(comment.id, reactionState),
+        ...reactionUi
       };
     }));
+  }
+
+  function normalizeCommentReactionState(state) {
+    if (state && typeof state === 'object') {
+      return {
+        byCommentId: state.byCommentId || {},
+        supported: state.supported !== false
+      };
+    }
+    return emptyCommentReactionState();
+  }
+
+  function getCommentReactionEntry(commentId, emojiId, reactionState = popupState?.commentReactionState) {
+    const normalizedState = normalizeCommentReactionState(reactionState);
+    return normalizedState.byCommentId?.[String(commentId)]?.[emojiId] || {};
+  }
+
+  function getCommentReactionError(commentId, reactionState = popupState?.commentReactionState) {
+    const reactionEntry = getCommentReactionEntry(commentId, '__comment__', reactionState);
+    return reactionEntry.error || '';
+  }
+
+  function buildCommentReactionOptions(commentId, reactionState = popupState?.commentReactionState) {
+    const normalizedState = normalizeCommentReactionState(reactionState);
+    if (!normalizedState.supported || !commentId) {
+      return [];
+    }
+    // Jira's reaction read/toggle APIs are still unknown, so this only reflects adds from the current popup session.
+    return COMMENT_REACTION_OPTIONS.map(option => {
+      const reactionEntry = getCommentReactionEntry(commentId, option.emojiId, normalizedState);
+      const addedCount = Number(reactionEntry.addedCount) || 0;
+      const isPending = !!reactionEntry.pending;
+      const isSelected = !!reactionEntry.selected;
+      const title = isPending
+        ? `${option.label}...`
+        : option.label;
+      return {
+        commentId,
+        count: addedCount,
+        disabledAttr: (isPending || isSelected) ? 'disabled' : '',
+        emoji: option.emoji,
+        emojiId: option.emojiId,
+        hasCount: addedCount > 0,
+        isPending,
+        isSelected,
+        label: option.label,
+        title
+      };
+    });
+  }
+
+  function buildCommentReactionUi(commentId, reactionState = popupState?.commentReactionState) {
+    const reactionOptions = buildCommentReactionOptions(commentId, reactionState);
+    return {
+      hasReactionOptions: reactionOptions.length > 0,
+      menuReactionOptions: reactionOptions
+    };
   }
 
   async function getCurrentUserInfo() {
@@ -609,6 +685,46 @@ async function mainAsyncLocal() {
       discard: container.find('._JX_comment_discard'),
       error: container.find('._JX_comment_error')
     };
+  }
+
+  function captureCommentComposerDraft() {
+    const {root, input, error} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    if (!root.length || !inputElement) {
+      return null;
+    }
+    return {
+      errorText: error.text() || '',
+      hadFocus: document.activeElement === inputElement,
+      saving: root.attr('data-saving') === 'true',
+      selectionEnd: typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : (input.val() || '').length,
+      selectionStart: typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : (input.val() || '').length,
+      value: input.val() || ''
+    };
+  }
+
+  function restoreCommentComposerDraft(draft) {
+    if (!draft) {
+      return;
+    }
+    const {root, input} = getCommentComposerElements();
+    const inputElement = input.get(0);
+    if (!root.length || !inputElement) {
+      return;
+    }
+    input.val(draft.value || '');
+    root.attr('data-saving', draft.saving ? 'true' : 'false');
+    setCommentComposerError(draft.errorText || '');
+    const nextValue = String(draft.value || '');
+    const maxIndex = nextValue.length;
+    const selectionStart = Math.min(maxIndex, Number.isInteger(draft.selectionStart) ? draft.selectionStart : maxIndex);
+    const selectionEnd = Math.min(maxIndex, Number.isInteger(draft.selectionEnd) ? draft.selectionEnd : maxIndex);
+    if (!draft.saving) {
+      if (draft.hadFocus) {
+        inputElement.focus();
+      }
+      inputElement.setSelectionRange(selectionStart, selectionEnd);
+    }
   }
 
   function hasCommentUploadInFlight() {
@@ -1081,7 +1197,98 @@ async function mainAsyncLocal() {
     activityItem.attr('title', `${nextCount} comments`);
   }
 
-  async function appendCommentToPopup(commentText, uploadedAttachments = []) {
+  function setCommentReactionEntry(commentId, emojiId, changes) {
+    if (!popupState) {
+      return;
+    }
+    const normalizedCommentId = String(commentId || '');
+    const normalizedEmojiId = String(emojiId || '');
+    const currentState = normalizeCommentReactionState(popupState.commentReactionState);
+    const currentCommentState = currentState.byCommentId[normalizedCommentId] || {};
+    const currentEntry = currentCommentState[normalizedEmojiId] || {};
+    popupState = {
+      ...popupState,
+      commentReactionState: {
+        ...currentState,
+        byCommentId: {
+          ...currentState.byCommentId,
+          [normalizedCommentId]: {
+            ...currentCommentState,
+            [normalizedEmojiId]: {
+              ...currentEntry,
+              ...changes
+            }
+          }
+        }
+      }
+    };
+  }
+
+  function disableCommentReactions() {
+    if (!popupState) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      commentReactionState: {
+        ...normalizeCommentReactionState(popupState.commentReactionState),
+        supported: false
+      }
+    };
+  }
+
+  function isCommentReactionUnsupportedError(error) {
+    const message = String(error?.message || error?.inner || error || '');
+    return /http\s+(401|403|404|405)\b/i.test(message) || /forbidden|not found|method not allowed/i.test(message);
+  }
+
+  async function addCommentReaction(commentId, emojiId) {
+    return requestJson('POST', `${INSTANCE_URL}rest/internal/2/reactions`, {
+      commentId: String(commentId),
+      emojiId
+    }, {
+      'X-Atlassian-Token': 'no-check'
+    });
+  }
+
+  async function handleCommentReactionClick(commentId, emojiId) {
+    if (!popupState?.issueData || !commentId || !emojiId) {
+      return;
+    }
+    const currentEntry = getCommentReactionEntry(commentId, emojiId);
+    if (currentEntry.pending || currentEntry.selected) {
+      return;
+    }
+
+    setCommentReactionEntry(commentId, '__comment__', {error: ''});
+    setCommentReactionEntry(commentId, emojiId, {pending: true});
+    await renderIssuePopup(popupState);
+
+    try {
+      await addCommentReaction(commentId, emojiId);
+      const addedCount = (Number(getCommentReactionEntry(commentId, emojiId).addedCount) || 0) + 1;
+      setCommentReactionEntry(commentId, emojiId, {
+        addedCount,
+        pending: false,
+        selected: true
+      });
+      await renderIssuePopup(popupState);
+    } catch (error) {
+      if (isCommentReactionUnsupportedError(error)) {
+        disableCommentReactions();
+        await renderIssuePopup(popupState);
+        snackBar('Comment reactions are not available in this Jira context');
+        return;
+      }
+      setCommentReactionEntry(commentId, emojiId, {pending: false});
+      setCommentReactionEntry(commentId, '__comment__', {
+        error: error?.message || error?.inner || 'Could not add reaction'
+      });
+      await renderIssuePopup(popupState);
+    }
+  }
+
+  async function appendCommentToPopup(savedComment, commentText, uploadedAttachments = []) {
     const commentsRoot = container.find('._JX_comments');
     if (!commentsRoot.length) {
       return;
@@ -1091,14 +1298,15 @@ async function mainAsyncLocal() {
     container.find('._JX_empty_body').remove();
     const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
     const bodyHtml = await buildOptimisticCommentBodyHtml(commentText || '', uploadedAttachments);
-    const commentHtml = `
-      <div class="_JX_comment">
-        <div class="_JX_comment_meta">
-          <span class="_JX_comment_author">${escapeHtml(currentUser.displayName || 'You')}</span> | <span class="_JX_comment_time">Just now</span>
-        </div>
-        <div class="_JX_comment_body">${bodyHtml}</div>
-      </div>
-    `;
+    const commentView = {
+      author: savedComment?.author?.displayName || currentUser.displayName || 'You',
+      bodyHtml,
+      created: savedComment?.created ? formatRelativeDate(savedComment.created) : 'Just now',
+      id: savedComment?.id || '',
+      reactionError: '',
+      ...buildCommentReactionUi(savedComment?.id || '')
+    };
+    const commentHtml = buildCommentHtml(commentView);
 
     const commentList = commentsRoot.find('._JX_comment_list');
     if (commentList.length) {
@@ -1133,10 +1341,10 @@ async function mainAsyncLocal() {
 
     try {
       const uploadedAttachments = getUploadedCommentAttachments();
-      await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
+      const savedComment = await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
         body: commentText
       });
-      await appendCommentToPopup(commentText, uploadedAttachments);
+      await appendCommentToPopup(savedComment, commentText, uploadedAttachments);
       elements.input.val('');
       await clearCommentUploads({deleteUploaded: false});
       elements.root.attr('data-saving', 'false');
@@ -3769,7 +3977,7 @@ async function mainAsyncLocal() {
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
       imageMaxHeight: 180
     });
-    const commentsForDisplay = await buildCommentsForDisplay(issueData);
+    const commentsForDisplay = await buildCommentsForDisplay(issueData, state.commentReactionState);
     const fixVersions = issueData.fields.fixVersions || [];
     const affectsVersions = issueData.fields.versions || [];
     const sprints = readSprintsFromIssue(issueData);
@@ -4058,6 +4266,9 @@ async function mainAsyncLocal() {
     if (!state?.issueData) {
       return;
     }
+    const commentComposerDraft = state.key === activeCommentContext?.issueKey
+      ? captureCommentComposerDraft()
+      : null;
     const displayData = await buildPopupDisplayData(state);
     if (state !== popupState) {
       return;
@@ -4067,6 +4278,7 @@ async function mainAsyncLocal() {
     }
     container.html(Mustache.render(annotationTemplate, displayData));
     activeCommentContext = displayFields.comments ? {issueKey: state.key, issueId: state.issueData.id} : null;
+    restoreCommentComposerDraft(commentComposerDraft);
     renderCommentUploads();
     renderCommentMentionSuggestions();
     syncCommentComposerState();
@@ -4893,6 +5105,24 @@ async function mainAsyncLocal() {
     handleCommentDiscard().catch(() => {});
   });
 
+  $(document.body).on('click', '._JX_comment_reaction_button', function (e) {
+    e.preventDefault();
+    const commentId = e.currentTarget.getAttribute('data-comment-id');
+    const emojiId = e.currentTarget.getAttribute('data-emoji-id');
+    handleCommentReactionClick(commentId, emojiId).catch(() => {});
+  });
+
+  $(document.body).on('toggle', '._JX_comment_reaction_dropdown', function (e) {
+    if (!this.open) {
+      return;
+    }
+    container.find('._JX_comment_reaction_dropdown[open]').each(function () {
+      if (this !== e.currentTarget) {
+        this.open = false;
+      }
+    });
+  });
+
   // ── Image Preview ─────────────────────────────────────────
   function closePreviewOverlay() {
     previewOverlay.removeClass('is-open');
@@ -5076,6 +5306,7 @@ async function mainAsyncLocal() {
         pointerX,
         pointerY,
         quickActions,
+        commentReactionState: emptyCommentReactionState(),
         actionsOpen: false,
         actionLoadingKey: '',
         actionError: '',

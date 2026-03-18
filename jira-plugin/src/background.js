@@ -224,7 +224,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         method,
         headers: {
           'Accept': 'application/json, text/plain, */*',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(request.headers || {})
         },
         body: typeof request.body === 'undefined' ? undefined : JSON.stringify(request.body)
       }))

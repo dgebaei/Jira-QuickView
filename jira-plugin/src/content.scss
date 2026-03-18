@@ -483,7 +483,7 @@ body ._JX {
   &_comment {
     border-bottom: 1px solid #dde4e6;
     margin-bottom: 4px;
-    padding-bottom: 4px;
+    padding-bottom: 3px;
 
     &:last-child {
       border-bottom: none;
@@ -493,10 +493,19 @@ body ._JX {
   }
 
   &_comment_meta {
+    align-items: center;
     color: #5e6c84;
+    display: flex;
     font-size: 11px;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
+    justify-content: space-between;
+    gap: 8px;
     text-align: left;
+  }
+
+  &_comment_meta_main {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   &_comment_author {
@@ -506,7 +515,7 @@ body ._JX {
 
   &_comment_body {
     font-size: 14px;
-    line-height: 1.35;
+    line-height: 1.25;
     overflow-wrap: anywhere;
     word-break: break-word;
     white-space: normal;
@@ -539,6 +548,150 @@ body ._JX {
     code {
       white-space: pre-wrap;
     }
+  }
+
+  &_comment_reactions {
+    align-items: flex-end;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    margin-top: 0;
+  }
+
+  &_comment_reaction_bar {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+
+  &_comment_reaction_dropdown {
+    position: relative;
+
+    &[open] {
+      ._JX_comment_reaction_more {
+        background: #f4f8fb;
+        border-color: #8fb8e8;
+        color: #0c4a7a;
+      }
+    }
+  }
+
+  &_comment_reaction_button {
+    align-items: center;
+    appearance: none;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 999px;
+    color: #42526e;
+    cursor: pointer;
+    display: inline-flex;
+    font-family: inherit;
+    font-size: 13px;
+    gap: 0;
+    line-height: 1;
+    height: 24px;
+    justify-content: center;
+    min-height: 24px;
+    min-width: 24px;
+    padding: 3px;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+
+    &:hover:not(:disabled) {
+      background: #f4f8fb;
+      border-color: #8fb8e8;
+      color: #0c4a7a;
+    }
+
+    &:focus-visible {
+      box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
+      outline: none;
+    }
+
+    &.is-selected {
+      background: #e9f2ff;
+      border-color: #85b8ff;
+      color: #0c66e4;
+      font-weight: 700;
+    }
+
+    &.is-pending,
+    &:disabled {
+      cursor: wait;
+      opacity: 0.72;
+    }
+  }
+
+  &_comment_reaction_more {
+    align-items: center;
+    appearance: none;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 999px;
+    color: #42526e;
+    cursor: pointer;
+    display: inline-flex;
+    font-family: inherit;
+    font-size: 13px;
+    gap: 0;
+    justify-content: center;
+    line-height: 1;
+    list-style: none;
+    min-height: 26px;
+    min-width: 26px;
+    padding: 2px;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &:hover {
+      background: #f4f8fb;
+      border-color: #8fb8e8;
+      color: #0c4a7a;
+    }
+
+    &:focus-visible {
+      box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
+      outline: none;
+    }
+  }
+
+  &_comment_reaction_more_icon {
+    display: block;
+    height: 18px;
+    width: 18px;
+  }
+
+  &_comment_reaction_menu {
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 12px;
+    box-shadow: 0 8px 18px rgba(9, 30, 66, 0.16);
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    margin-top: 4px;
+    min-width: 0;
+    padding: 8px 10px;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 2;
+  }
+
+  &_comment_reaction_emoji {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  &_comment_reaction_error {
+    text-align: right;
+    color: #ae2e24;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 4px;
   }
 
   &_comments_empty {
@@ -1273,6 +1426,11 @@ body ._JX {
       &::-webkit-scrollbar-track {
         background: var(--track);
       }
+    }
+
+    &_comment_reaction_emoji,
+    &_comment_reaction_more_icon {
+      filter: invert(1) hue-rotate(-180deg);
     }
   }
 }

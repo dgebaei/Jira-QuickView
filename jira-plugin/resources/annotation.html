@@ -409,7 +409,29 @@
             {{#commentsForDisplay}}
             <div class="_JX_comment">
                 <div class="_JX_comment_meta">
-                    <span class="_JX_comment_author">{{author}}</span> | <span class="_JX_comment_time">{{created}}</span>
+                    <span class="_JX_comment_meta_main"><span class="_JX_comment_author">{{author}}</span> | <span class="_JX_comment_time">{{created}}</span></span>
+                    {{#hasReactionOptions}}
+                    <div class="_JX_comment_reactions">
+                        <div class="_JX_comment_reaction_bar">
+                            <details class="_JX_comment_reaction_dropdown">
+                                <summary class="_JX_comment_reaction_more" aria-label="Add reaction" title="Add reaction">
+                                    <svg class="_JX_comment_reaction_more_icon" width="16" height="16" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                        <path fill="currentColor" d="M12 2.75c5.11 0 9.25 4.14 9.25 9.25S17.11 21.25 12 21.25 2.75 17.11 2.75 12 6.89 2.75 12 2.75zm0 1.5A7.75 7.75 0 1 0 19.75 12 7.75 7.75 0 0 0 12 4.25zm-2.5 6.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zm5 0a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zm-5.04 4.03a.75.75 0 0 1 1.05.11 1.93 1.93 0 0 0 2.98 0 .75.75 0 0 1 1.16.95 3.43 3.43 0 0 1-5.3 0 .75.75 0 0 1 .11-1.06z"></path>
+                                        <path fill="currentColor" d="M18.5 4.5a.75.75 0 0 1 .75.75V7h1.75a.75.75 0 0 1 0 1.5h-1.75v1.75a.75.75 0 0 1-1.5 0V8.5H16a.75.75 0 0 1 0-1.5h1.75V5.25a.75.75 0 0 1 .75-.75z"></path>
+                                    </svg>
+                                </summary>
+                                <div class="_JX_comment_reaction_menu">
+                                    {{#menuReactionOptions}}
+                                    <button class="_JX_comment_reaction_button{{#isSelected}} is-selected{{/isSelected}}{{#isPending}} is-pending{{/isPending}}" type="button" data-comment-id="{{commentId}}" data-emoji-id="{{emojiId}}" title="{{title}}" aria-label="{{title}}" {{disabledAttr}}>
+                                        <span class="_JX_comment_reaction_emoji" aria-hidden="true">{{emoji}}</span>
+                                    </button>
+                                    {{/menuReactionOptions}}
+                                </div>
+                            </details>
+                        </div>
+                        {{#reactionError}}<div class="_JX_comment_reaction_error">{{reactionError}}</div>{{/reactionError}}
+                    </div>
+                    {{/hasReactionOptions}}
                 </div>
                 <div class="_JX_comment_body">{{{bodyHtml}}}</div>
             </div>
