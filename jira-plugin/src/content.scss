@@ -497,17 +497,123 @@ body ._JX {
     color: #5e6c84;
     display: flex;
     font-size: 11px;
-    margin-bottom: 2px;
-    justify-content: space-between;
     gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 3px;
     text-align: left;
   }
 
   &_comment_meta_main {
+    align-items: center;
+    display: inline-flex;
     flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 6px;
     min-width: 0;
   }
 
+  &_comment_time {
+    color: #44546f;
+    text-decoration: underline;
+
+    &:hover {
+      color: #0c66e4;
+    }
+  }
+
+  &_comment_meta_icon_button {
+    align-items: center;
+    appearance: none;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    color: #44546f;
+    cursor: pointer;
+    display: inline-flex;
+    height: 22px;
+    justify-content: center;
+    padding: 0;
+    width: 22px;
+
+    &:hover {
+      background: #f4f5f7;
+      color: #0c66e4;
+    }
+
+    &:focus-visible {
+      outline: 2px solid #4c9aff;
+      outline-offset: 2px;
+    }
+
+    svg {
+      display: block;
+    }
+  }
+
+  &_comment_meta_actions,
+  &_comment_inline_actions {
+    align-items: center;
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  &_comment_meta_button,
+  &_comment_edit_cancel,
+  &_comment_edit_save,
+  &_comment_delete_cancel,
+  &_comment_delete_confirm {
+    appearance: none;
+    background: transparent;
+    border: 1px solid #c7d1db;
+    border-radius: 999px;
+    color: #344563;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 5px 10px;
+  }
+
+  &_comment_meta_button:hover,
+  &_comment_edit_cancel:hover,
+  &_comment_delete_cancel:hover {
+    background: #f4f5f7;
+  }
+
+  &_comment_edit_save,
+  &_comment_delete_confirm {
+    background: #0c66e4;
+    border-color: #0c66e4;
+    color: #fff;
+  }
+
+  &_comment_delete_confirm {
+    background: #c9372c;
+    border-color: #c9372c;
+  }
+
+  &_comment_edit_save:hover {
+    background: #0055cc;
+    border-color: #0055cc;
+  }
+
+  &_comment_delete_confirm:hover {
+    background: #ae2e24;
+    border-color: #ae2e24;
+  }
+
+  &_comment_meta_button:disabled,
+  &_comment_edit_cancel:disabled,
+  &_comment_edit_save:disabled,
+  &_comment_delete_cancel:disabled,
+  &_comment_delete_confirm:disabled {
+    background: #f3f4f6;
+    border-color: #d7dde5;
+    color: #7a869a;
+    cursor: not-allowed;
+  }
   &_comment_author {
     color: #172b4d;
     font-weight: bold;
@@ -692,6 +798,48 @@ body ._JX {
     font-size: 11px;
     font-weight: 700;
     margin-top: 4px;
+  }
+
+  &_comment_editor,
+  &_comment_delete_panel {
+    background: #f7f8fa;
+    border: 1px solid #dfe1e6;
+    border-radius: 8px;
+    padding: 10px;
+  }
+
+  &_comment_edit_input {
+    background: #fff;
+    border: 1px solid #c7d1db;
+    border-radius: 6px;
+    box-sizing: border-box;
+    color: #172b4d;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.45;
+    min-height: 92px;
+    padding: 8px 10px;
+    resize: vertical;
+    width: 100%;
+  }
+
+  &_comment_edit_input:focus {
+    border-color: #0c66e4;
+    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
+    outline: none;
+  }
+
+  &_comment_delete_text {
+    color: #172b4d;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  &_comment_action_error {
+    color: #ae2e24;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 8px;
   }
 
   &_comments_empty {
@@ -1396,6 +1544,17 @@ body ._JX {
       padding-left: 0;
       padding-top: 8px;
       width: 100%;
+    }
+
+    &_comment_meta {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    &_comment_meta_actions,
+    &_comment_inline_actions {
+      flex-wrap: wrap;
+      justify-content: flex-start;
     }
   }
 }
