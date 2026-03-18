@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom';
 import defaultConfig from 'options/config';
 import {storageGet, storageSet, permissionsRequest} from 'src/chrome';
 import {hasPathSlash, resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
+import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocumentTheme} from 'src/theme';
 
 import 'options/options.scss';
 
@@ -147,8 +148,10 @@ function getCustomFieldError(fieldId, fieldCatalog) {
 }
 
 async function main() {
+  const storedConfig = await storageGet(defaultConfig);
+  syncDocumentTheme(document, storedConfig.themeMode || DEFAULT_THEME_MODE);
   ReactDOM.render(
-    <ConfigPage {...await storageGet(defaultConfig)} />,
+    <ConfigPage {...storedConfig} />,
     document.getElementById('container')
   );
 }
@@ -156,6 +159,7 @@ async function main() {
 function ConfigPage(props) {
   const [instanceUrl, setInstanceUrl] = useState(props.instanceUrl || '');
   const [domainsText, setDomainsText] = useState((props.domains || []).join(', '));
+  const [themeMode, setThemeMode] = useState(normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE));
   const [displayFields, setDisplayFields] = useState({
     ...defaultConfig.displayFields,
     ...(props.displayFields || {})
@@ -182,6 +186,8 @@ function ConfigPage(props) {
       cancelled = true;
     };
   }, [instanceUrl, props.instanceUrl]);
+
+  useEffect(() => syncDocumentTheme(document, themeMode), [themeMode]);
 
   const setDisplayFieldValue = (key, checked) => {
     setDisplayFields(current => ({
@@ -255,6 +261,7 @@ function ConfigPage(props) {
     await storageSet({
       instanceUrl: normalizedInstanceUrl,
       domains,
+      themeMode: normalizeThemeMode(themeMode),
       v15upgrade: true,
       hoverDepth,
       hoverModifierKey,
@@ -362,6 +369,18 @@ function ConfigPage(props) {
               When set, hover over a Jira key and then press the chosen key to reveal the tooltip.
               You can also hold the key first and then hover. Useful for on-demand activation instead of automatic popups.
             </span>
+          </label>
+
+          <label className='formField'>
+            <span className='fieldLabel'>Color mode</span>
+            <select value={themeMode} onChange={event => setThemeMode(normalizeThemeMode(event.target.value))}>
+              {SUPPORTED_THEME_MODES.map(mode => (
+                <option key={mode} value={mode}>
+                  {mode === 'system' ? 'System - follow your device theme' : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </option>
+              ))}
+            </select>
+            <span className='fieldHelp'>Applies to the options page and the hover popup UI.</span>
           </label>
         </section>
 

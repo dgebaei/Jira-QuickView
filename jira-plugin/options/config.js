@@ -3,6 +3,7 @@ export default {
     'https://github.com/'
   ],
   instanceUrl: '',
+  themeMode: 'system',
   v15upgrade: false,
   customFields: [],
   hoverDepth: 'shallow',

@@ -7,6 +7,7 @@ import {waitForDocument} from 'src/utils';
 import {sendMessage, storageGet, storageSet} from 'src/chrome';
 import {snackBar} from 'src/snack';
 import config from 'options/config.js';
+import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 
 waitForDocument(() => require('src/content.scss'));
 
@@ -209,8 +210,19 @@ async function mainAsyncLocal() {
   const hoverDepth = config.hoverDepth || 'shallow';
   const hoverModifierKey = config.hoverModifierKey || 'none';
   const customFields = normalizeCustomFields(config.customFields);
+  let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
   let getJiraKeys = buildFallbackJiraKeyMatcher();
+
+  chrome.storage.onChanged.addListener(function (changes, areaName) {
+    if (areaName !== 'sync' || !changes.themeMode) {
+      return;
+    }
+
+    stopSyncDocumentTheme();
+    stopSyncDocumentTheme = syncDocumentTheme(document, changes.themeMode.newValue || DEFAULT_THEME_MODE);
+  });
+
   try {
     jiraProjects = await get(await getInstanceUrl() + 'rest/api/2/project');
   } catch (ex) {

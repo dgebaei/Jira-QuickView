@@ -1224,32 +1224,30 @@ body ._JX {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  body ._JX {
-    &_container {
-      filter: invert(0.9) hue-rotate(180deg);
+html[data-jhl-theme='dark'] body ._JX {
+  &_container {
+    filter: invert(0.9) hue-rotate(180deg);
+  }
+
+  &_title_user {
+    filter: invert(1) hue-rotate(-180deg);
+  }
+
+  &_description {
+    --thumb: #686868;
+    --track: #414141;
+    scrollbar-color: var(--track) var(--thumb);
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
     }
-
-    &_title_user {
-      filter: invert(1) hue-rotate(-180deg);
+    &::-webkit-scrollbar-thumb {
+      background: var(--thumb);
     }
-
-    &_description {
-      --thumb: #686868;
-      --track: #414141;
-      scrollbar-color: var(--track) var(--thumb);
-      scrollbar-width: thin;
-
-      &::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-      }
-      &::-webkit-scrollbar-thumb {
-        background: var(--thumb);
-      }
-      &::-webkit-scrollbar-track {
-        background: var(--track);
-      }
+    &::-webkit-scrollbar-track {
+      background: var(--track);
     }
   }
 }
