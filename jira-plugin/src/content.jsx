@@ -264,6 +264,11 @@ async function mainAsyncLocal() {
   let commentUploadState = emptyCommentUploadState();
   let commentUploadSessionId = 0;
   let commentUploadSequence = 0;
+  let commentComposerDraftValue = '';
+  let commentComposerErrorMessage = '';
+  let commentComposerHadFocus = false;
+  let commentComposerSelectionStart = 0;
+  let commentComposerSelectionEnd = 0;
 
 
   // ── URL & Image Handling ───────────────────────────────────
@@ -510,11 +515,13 @@ async function mainAsyncLocal() {
 
   // ── Comments ──────────────────────────────────────────────
 
-  async function buildCommentsForDisplay(issueData) {
+  async function buildCommentsForDisplay(issueData, commentSession = null) {
+    const issueKey = issueData?.key || '';
     const comments = [...(issueData.fields.comment?.comments || [])].sort((a, b) => {
       return new Date(a.created).getTime() - new Date(b.created).getTime();
     });
     const renderedById = {};
+    const currentUser = await getCurrentUserInfo().catch(() => null);
     ((issueData.renderedFields?.comment?.comments) || []).forEach(comment => {
       if (comment && comment.id) {
         renderedById[comment.id] = comment.body;
@@ -525,10 +532,50 @@ async function mainAsyncLocal() {
       const rendered = renderedById[comment.id];
       const baseHtml = rendered || textToLinkedHtml(comment.body || '');
       const bodyHtml = await normalizeRichHtml(baseHtml, {imageMaxHeight: 100});
+      const commentId = String(comment.id || '');
+      const isOwnedByCurrentUser = areSameJiraUser(comment.author, currentUser);
+      const isEditing = commentSession?.commentId === commentId && commentSession.mode === 'edit';
+      const isDeleteConfirming = commentSession?.commentId === commentId && commentSession.mode === 'delete';
+      const sessionError = commentSession?.commentId === commentId ? (commentSession.error || '') : '';
+      const editDraft = commentSession?.commentId === commentId
+        ? String(commentSession.draft ?? comment.body ?? '')
+        : String(comment.body || '');
+      const hasEditDraft = !!editDraft.trim();
+      const commentPermalink = buildCommentPermalink(issueKey, commentId);
+      const commentLinkTitleText = `[${issueKey}] ${issueData?.fields?.summary || ''}`.trim();
       return {
+        id: commentId,
         author: comment.author?.displayName || 'Unknown',
+        authorIdentity: {
+          accountId: comment.author?.accountId || '',
+          key: comment.author?.key || '',
+          name: comment.author?.name || comment.author?.username || '',
+          username: comment.author?.username || comment.author?.name || ''
+        },
         created: formatRelativeDate(comment.created),
-        bodyHtml
+        commentPermalink,
+        commentLinkTitle: buildLinkHoverTitle('Open comment in Jira', commentLinkTitleText, commentPermalink),
+        commentCopyTitle: buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink),
+        commentCopyLabel: commentLinkTitleText,
+        bodyHtml,
+        bodyRaw: String(comment.body || ''),
+        isOwnedByCurrentUser,
+        showCommentActions: isOwnedByCurrentUser,
+        isEditing,
+        isDeleteConfirming,
+        commentActionBusy: !!commentSession?.saving && commentSession?.commentId === commentId,
+        commentActionError: sessionError,
+        showCommentDefaultActions: isOwnedByCurrentUser && !isEditing && !isDeleteConfirming,
+        showCommentEditHeaderActions: isOwnedByCurrentUser && isEditing,
+        showCommentDeleteHeaderActions: isOwnedByCurrentUser && isDeleteConfirming,
+        commentEditDraft: editDraft,
+        commentEditSaveDisabled: !hasEditDraft || (!!commentSession?.saving && commentSession?.commentId === commentId),
+        commentEditCancelDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
+        commentDeleteCancelDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
+        commentDeleteConfirmDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
+        commentEditSaveText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Saving...' : 'Save',
+        commentDeleteConfirmText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Deleting...' : 'Yes',
+        commentDeleteCancelText: 'No'
       };
     }));
   }
@@ -696,6 +743,7 @@ async function mainAsyncLocal() {
       return false;
     }
     input.val(nextValue);
+    commentComposerDraftValue = nextValue;
     const caretPosition = Math.min(nextValue.length, (typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : nextValue.length));
     inputElement.setSelectionRange(caretPosition, caretPosition);
     return true;
@@ -717,6 +765,7 @@ async function mainAsyncLocal() {
     const insertedText = `${prefix}${text}${suffix}`;
     const nextValue = value.slice(0, selectionStart) + insertedText + value.slice(selectionEnd);
     input.val(nextValue);
+    commentComposerDraftValue = nextValue;
     inputElement.focus();
     const caretPosition = selectionStart + insertedText.length;
     inputElement.setSelectionRange(caretPosition, caretPosition);
@@ -759,6 +808,10 @@ async function mainAsyncLocal() {
   async function discardCommentComposerDraft(options = {}) {
     const {deleteUploaded = true} = options;
     resetCommentMentionState();
+    commentComposerDraftValue = '';
+    commentComposerHadFocus = false;
+    commentComposerSelectionStart = 0;
+    commentComposerSelectionEnd = 0;
     const {input} = getCommentComposerElements();
     if (input.length) {
       input.val('');
@@ -1040,6 +1093,7 @@ async function mainAsyncLocal() {
       `${candidate.mentionMarkup} ` +
       inputElement.value.slice(mentionRange.end);
     input.val(nextValue);
+    commentComposerDraftValue = nextValue;
     inputElement.focus();
     const caretPosition = mentionRange.start + candidate.mentionMarkup.length + 1;
     inputElement.setSelectionRange(caretPosition, caretPosition);
@@ -1062,6 +1116,7 @@ async function mainAsyncLocal() {
   }
 
   function setCommentComposerError(message) {
+    commentComposerErrorMessage = message || '';
     const {error} = getCommentComposerElements();
     if (!error.length) {
       return;
@@ -1081,7 +1136,7 @@ async function mainAsyncLocal() {
     activityItem.attr('title', `${nextCount} comments`);
   }
 
-  async function appendCommentToPopup(commentText, uploadedAttachments = []) {
+  async function appendCommentToPopup(savedComment, commentText, uploadedAttachments = []) {
     const commentsRoot = container.find('._JX_comments');
     if (!commentsRoot.length) {
       return;
@@ -1089,12 +1144,21 @@ async function mainAsyncLocal() {
 
     commentsRoot.find('._JX_comments_empty').remove();
     container.find('._JX_empty_body').remove();
+    const issueKey = activeCommentContext?.issueKey || popupState?.issueData?.key || '';
+    const issueSummary = popupState?.issueData?.fields?.summary || '';
     const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
     const bodyHtml = await buildOptimisticCommentBodyHtml(commentText || '', uploadedAttachments);
+    const commentId = String(savedComment?.id || '');
+    const commentPermalink = buildCommentPermalink(issueKey, commentId);
+    const commentLinkTitleText = `[${issueKey}] ${issueSummary}`.trim();
     const commentHtml = `
-      <div class="_JX_comment">
+      <div class="_JX_comment" data-comment-id="${escapeHtml(commentId)}">
         <div class="_JX_comment_meta">
-          <span class="_JX_comment_author">${escapeHtml(currentUser.displayName || 'You')}</span> | <span class="_JX_comment_time">Just now</span>
+          <span class="_JX_comment_meta_main"><span class="_JX_comment_author">${escapeHtml(savedComment?.author?.displayName || currentUser.displayName || 'You')}</span> | <a class="_JX_comment_time" href="${escapeHtml(commentPermalink)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(buildLinkHoverTitle('Open comment in Jira', commentLinkTitleText, commentPermalink))}">Just now</a><button class="_JX_comment_meta_icon_button _JX_copy_link" type="button" title="${escapeHtml(buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink))}" aria-label="${escapeHtml(buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink))}" data-url="${escapeHtml(commentPermalink)}" data-ticket="${escapeHtml(issueKey)}" data-title="${escapeHtml(commentLinkTitleText)}"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><path d="M10 19h8V8h-8v11zM8 7.992C8 6.892 8.902 6 10.009 6h7.982C19.101 6 20 6.893 20 7.992v11.016c0 1.1-.902 1.992-2.009 1.992H10.01A2.001 2.001 0 0 1 8 19.008V7.992z"></path><path d="M5 16V4.992C5 3.892 5.902 3 7.009 3H15v13H5zm2 0h8V5H7v11z"></path></g></svg></button></span>
+          <span class="_JX_comment_meta_actions">
+            <button class="_JX_comment_meta_button _JX_comment_edit_button" type="button" data-comment-id="${escapeHtml(commentId)}">Edit</button>
+            <button class="_JX_comment_meta_button _JX_comment_delete_button" type="button" data-comment-id="${escapeHtml(commentId)}">Delete</button>
+          </span>
         </div>
         <div class="_JX_comment_body">${bodyHtml}</div>
       </div>
@@ -1117,6 +1181,7 @@ async function mainAsyncLocal() {
     resetCommentMentionState();
     const elements = getCommentComposerElements();
     const commentText = elements.input.val().trim();
+    commentComposerDraftValue = commentText;
     if (!commentText) {
       syncCommentComposerState();
       return;
@@ -1133,11 +1198,15 @@ async function mainAsyncLocal() {
 
     try {
       const uploadedAttachments = getUploadedCommentAttachments();
-      await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
+      const savedComment = await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
         body: commentText
       });
-      await appendCommentToPopup(commentText, uploadedAttachments);
+      await appendCommentToPopup(savedComment, commentText, uploadedAttachments);
       elements.input.val('');
+      commentComposerDraftValue = '';
+      commentComposerHadFocus = false;
+      commentComposerSelectionStart = 0;
+      commentComposerSelectionEnd = 0;
       await clearCommentUploads({deleteUploaded: false});
       elements.root.attr('data-saving', 'false');
       setCommentComposerError('');
@@ -1155,6 +1224,154 @@ async function mainAsyncLocal() {
       return;
     }
     await discardCommentComposerDraft();
+  }
+
+  function restoreCommentComposerState() {
+    const elements = getCommentComposerElements();
+    if (!elements.root.length) {
+      return;
+    }
+    if (elements.input.val() !== commentComposerDraftValue) {
+      elements.input.val(commentComposerDraftValue);
+    }
+    setCommentComposerError(commentComposerErrorMessage);
+    const inputElement = elements.input.get(0);
+    if (inputElement && commentComposerHadFocus) {
+      inputElement.focus();
+      const maxIndex = inputElement.value.length;
+      inputElement.setSelectionRange(
+        Math.min(maxIndex, Number.isInteger(commentComposerSelectionStart) ? commentComposerSelectionStart : maxIndex),
+        Math.min(maxIndex, Number.isInteger(commentComposerSelectionEnd) ? commentComposerSelectionEnd : maxIndex)
+      );
+    }
+  }
+
+  function getActiveCommentSession() {
+    return popupState?.commentSession || null;
+  }
+
+  function setCommentSession(nextSession) {
+    if (!popupState) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      commentSession: nextSession
+    };
+  }
+
+  function cancelCommentSession() {
+    if (!popupState?.commentSession) {
+      return;
+    }
+    setCommentSession(null);
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function getIssueCommentById(commentId) {
+    const normalizedCommentId = String(commentId || '');
+    return (popupState?.issueData?.fields?.comment?.comments || []).find(comment => String(comment?.id || '') === normalizedCommentId) || null;
+  }
+
+  function startCommentEdit(commentId, commentBody) {
+    if (!popupState?.issueData || !commentId) {
+      return;
+    }
+    setCommentSession({
+      commentId: String(commentId),
+      draft: String(commentBody || ''),
+      error: '',
+      mode: 'edit',
+      selectionEnd: String(commentBody || '').length,
+      selectionStart: String(commentBody || '').length,
+      saving: false
+    });
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function startCommentDeleteConfirm(commentId) {
+    if (!popupState?.issueData || !commentId) {
+      return;
+    }
+    setCommentSession({
+      commentId: String(commentId),
+      draft: '',
+      error: '',
+      mode: 'delete',
+      saving: false
+    });
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function updateCommentEditDraft(commentId, draft, selectionStart, selectionEnd) {
+    const activeSession = getActiveCommentSession();
+    if (!activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit') {
+      return;
+    }
+    setCommentSession({
+      ...activeSession,
+      draft: String(draft || ''),
+      error: '',
+      selectionEnd,
+      selectionStart
+    });
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  async function saveCommentEdit(commentId) {
+    const activeSession = getActiveCommentSession();
+    if (!popupState?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit' || activeSession.saving) {
+      return;
+    }
+    const nextDraft = String(activeSession.draft || '');
+    if (!nextDraft.trim()) {
+      setCommentSession({...activeSession, error: 'Comment cannot be empty.'});
+      await renderIssuePopup(popupState);
+      return;
+    }
+
+    setCommentSession({...activeSession, draft: nextDraft, error: '', saving: true});
+    await renderIssuePopup(popupState);
+
+    try {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`, {
+        body: nextDraft
+      });
+      await refreshPopupIssueState('Comment updated');
+    } catch (error) {
+      const errorMessage = error?.message || error?.inner || 'Could not update comment';
+      const latestSession = getActiveCommentSession();
+      if (!latestSession || latestSession.commentId !== String(commentId) || latestSession.mode !== 'edit') {
+        return;
+      }
+      setCommentSession({...latestSession, error: errorMessage, saving: false});
+      await renderIssuePopup(popupState);
+      snackBar(errorMessage);
+    }
+  }
+
+  async function confirmCommentDelete(commentId) {
+    const activeSession = getActiveCommentSession();
+    if (!popupState?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'delete' || activeSession.saving) {
+      return;
+    }
+
+    setCommentSession({...activeSession, error: '', saving: true});
+    await renderIssuePopup(popupState);
+
+    try {
+      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`);
+      await refreshPopupIssueState('Comment deleted');
+    } catch (error) {
+      const errorMessage = error?.message || error?.inner || 'Could not delete comment';
+      const latestSession = getActiveCommentSession();
+      if (!latestSession || latestSession.commentId !== String(commentId) || latestSession.mode !== 'delete') {
+        return;
+      }
+      setCommentSession({...latestSession, error: errorMessage, saving: false});
+      await renderIssuePopup(popupState);
+      snackBar(errorMessage);
+    }
   }
 
   // ── Pull Requests & Dev Status ─────────────────────────────
@@ -2350,6 +2567,13 @@ async function mainAsyncLocal() {
       .map(part => ensureTooltipSentence(part))
       .filter(Boolean)
       .join('\n');
+  }
+
+  function buildCommentPermalink(issueKey, commentId) {
+    if (!issueKey || !commentId) {
+      return '';
+    }
+    return `${INSTANCE_URL}browse/${issueKey}?focusedCommentId=${commentId}&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-${commentId}`;
   }
 
   function appendTooltipText(baseText, extraText) {
@@ -3741,7 +3965,7 @@ async function mainAsyncLocal() {
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
       imageMaxHeight: 180
     });
-    const commentsForDisplay = await buildCommentsForDisplay(issueData);
+    const commentsForDisplay = await buildCommentsForDisplay(issueData, state.commentSession);
     const fixVersions = issueData.fields.fixVersions || [];
     const affectsVersions = issueData.fields.versions || [];
     const sprints = readSprintsFromIssue(issueData);
@@ -4042,8 +4266,27 @@ async function mainAsyncLocal() {
     if (activeCommentContext?.issueKey && activeCommentContext.issueKey !== state.key) {
       discardCommentComposerDraft().catch(() => {});
     }
+    const existingCommentInput = container.find('._JX_comment_input');
+    if (existingCommentInput.length) {
+      commentComposerDraftValue = existingCommentInput.val() || '';
+      const existingCommentInputElement = existingCommentInput.get(0);
+      if (existingCommentInputElement) {
+        commentComposerHadFocus = document.activeElement === existingCommentInputElement;
+        commentComposerSelectionStart = typeof existingCommentInputElement.selectionStart === 'number' ? existingCommentInputElement.selectionStart : commentComposerDraftValue.length;
+        commentComposerSelectionEnd = typeof existingCommentInputElement.selectionEnd === 'number' ? existingCommentInputElement.selectionEnd : commentComposerDraftValue.length;
+      }
+    }
+    const existingDescription = container.find('._JX_description');
+    const descriptionScrollLeft = existingDescription.length ? existingDescription.scrollLeft() : 0;
+    const descriptionScrollTop = existingDescription.length ? existingDescription.scrollTop() : 0;
     container.html(Mustache.render(annotationTemplate, displayData));
     activeCommentContext = displayFields.comments ? {issueKey: state.key, issueId: state.issueData.id} : null;
+    const nextDescription = container.find('._JX_description');
+    if (nextDescription.length) {
+      nextDescription.scrollLeft(descriptionScrollLeft);
+      nextDescription.scrollTop(descriptionScrollTop);
+    }
+    restoreCommentComposerState();
     renderCommentUploads();
     renderCommentMentionSuggestions();
     syncCommentComposerState();
@@ -4058,6 +4301,16 @@ async function mainAsyncLocal() {
         const selectionStart = Math.min(maxIndex, Number.isInteger(state.editState.selectionStart) ? state.editState.selectionStart : maxIndex);
         const selectionEnd = Math.min(maxIndex, Number.isInteger(state.editState.selectionEnd) ? state.editState.selectionEnd : maxIndex);
         input.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
+    if (state.commentSession?.mode === 'edit' && state.commentSession.commentId) {
+      const commentInput = container.find(`._JX_comment_edit_input[data-comment-id="${state.commentSession.commentId}"]`)[0];
+      if (commentInput) {
+        commentInput.focus();
+        const maxIndex = commentInput.value.length;
+        const selectionStart = Math.min(maxIndex, Number.isInteger(state.commentSession.selectionStart) ? state.commentSession.selectionStart : maxIndex);
+        const selectionEnd = Math.min(maxIndex, Number.isInteger(state.commentSession.selectionEnd) ? state.commentSession.selectionEnd : maxIndex);
+        commentInput.setSelectionRange(selectionStart, selectionEnd);
       }
     }
     constrainEditPopoversToViewport();
@@ -4127,7 +4380,8 @@ async function mainAsyncLocal() {
       actionError: '',
       lastActionSuccess: showSnackBar ? '' : successMessage,
       actionsOpen: false,
-      editState: null
+      editState: null,
+      commentSession: null
     };
     await renderIssuePopup(popupState);
     if (showSnackBar && successMessage) {
@@ -4789,8 +5043,26 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('input', '._JX_comment_input', function () {
+    commentComposerDraftValue = this.value || '';
+    commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : commentComposerDraftValue.length;
+    commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : commentComposerDraftValue.length;
     syncCommentComposerState();
     syncCommentMentionSuggestions(this);
+  });
+
+  $(document.body).on('click keyup select', '._JX_comment_input', function () {
+    commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length;
+    commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length;
+  });
+
+  $(document.body).on('input', '._JX_comment_edit_input', function (e) {
+    e.stopPropagation();
+    updateCommentEditDraft(
+      e.currentTarget.getAttribute('data-comment-id') || '',
+      e.currentTarget.value,
+      e.currentTarget.selectionStart,
+      e.currentTarget.selectionEnd
+    );
   });
 
   $(document.body).on('paste', '._JX_comment_input', function (e) {
@@ -4868,6 +5140,51 @@ async function mainAsyncLocal() {
   $(document.body).on('click', '._JX_comment_discard', function (e) {
     e.preventDefault();
     handleCommentDiscard().catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_comment_edit_button', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
+    startCommentEdit(commentId, getIssueCommentById(commentId)?.body || '');
+  });
+
+  $(document.body).on('click', '._JX_comment_delete_button', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    startCommentDeleteConfirm(e.currentTarget.getAttribute('data-comment-id') || '');
+  });
+
+  $(document.body).on('click', '._JX_comment_edit_cancel, ._JX_comment_delete_cancel', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelCommentSession();
+  });
+
+  $(document.body).on('click', '._JX_comment_edit_save', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    saveCommentEdit(e.currentTarget.getAttribute('data-comment-id') || '').catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_comment_delete_confirm', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    confirmCommentDelete(e.currentTarget.getAttribute('data-comment-id') || '').catch(() => {});
+  });
+
+  $(document.body).on('keydown', '._JX_comment_edit_input', function (e) {
+    e.stopPropagation();
+    const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelCommentSession();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveCommentEdit(commentId).catch(() => {});
+    }
   });
 
   // ── Image Preview ─────────────────────────────────────────
@@ -5057,7 +5374,8 @@ async function mainAsyncLocal() {
         actionLoadingKey: '',
         actionError: '',
         lastActionSuccess: '',
-        editState: null
+        editState: null,
+        commentSession: null
       };
       await renderIssuePopup(popupState);
     })(cancelToken).catch((error) => {
