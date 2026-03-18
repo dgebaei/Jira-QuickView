@@ -49,8 +49,13 @@ function getAllowedLiveIssueKeys(config = getLiveJiraConfig()) {
   return config.issueKeys.filter(issueKey => config.projectKeys.includes(getIssueProjectKey(issueKey)));
 }
 
+function getAllowedLiveIssue(config = getLiveJiraConfig(), index = 0) {
+  return getAllowedLiveIssueKeys(config)[index] || null;
+}
+
 module.exports = {
   assertAllowedLiveIssue,
+  getAllowedLiveIssue,
   getAllowedLiveIssueKeys,
   getIssueProjectKey,
   getLiveJiraConfig,

@@ -139,6 +139,10 @@ Current live-scope rule:
 - live-scope config guard
 - allowed-issue popup smoke test
 - authenticated allowed-issue popup smoke test using storage state
+- live edit-control and quick-action surface checks
+- live priority mutation with restoration
+- live assignee mutation with restoration
+- live temporary-label mutation with cleanup
 
 ## Current Coverage Summary
 
@@ -154,6 +158,7 @@ Covered now:
 - comment mention failure and draft discard coverage
 - partial endpoint failure tolerance for PRs, issue search, and comments
 - primary negative-path connection/auth scenarios
+- initial guarded live mutation coverage for priority, assignee, and labels
 
 Not yet covered deeply enough:
 
@@ -231,6 +236,12 @@ npm run test:e2e:reset-report-data
 3. Add drag-behavior and multi-key-page popup interaction tests.
 4. Add pasted-image upload happy-path and failure-path coverage once a stable Playwright clipboard-image strategy is in place.
 5. Add private Jira auth fixtures and real-instance smoke coverage once credentials/project access are available.
+
+## CI
+
+- GitHub Actions workflow: `.github/workflows/playwright-extension.yml`
+- CI runs `npm run test:e2e:extension`
+- CI uploads `tests/output/playwright` as an artifact for report and trace inspection
 
 ## Skill Guidance
 

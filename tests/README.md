@@ -55,6 +55,15 @@ Run them with:
 npm run test:e2e:live
 ```
 
+Current live coverage includes:
+
+- scope guard validation
+- authenticated popup smoke checks
+- edit-control and quick-action surface checks
+- priority mutation with restoration
+- assignee mutation with restoration
+- temporary label mutation with cleanup
+
 ## Private Jira Safety Scope
 
 The live suite intentionally refuses to run outside the allowed scope.
@@ -74,6 +83,8 @@ export JIRA_LIVE_ISSUE_KEYS="E2E-101,E2E-102"
 ```
 
 That means live tests may target `E2E-101` and `E2E-102`, but not any other issue.
+
+For mutation tests, use only issues that are safe to edit and safe to restore.
 
 ## Auth Storage State
 
@@ -180,6 +191,20 @@ Reset saved reports and artifacts:
 npm run test:e2e:reset-report-data
 ```
 
+## CI
+
+GitHub Actions runs the extension-only Playwright suite on pull requests to `master` and uploads the Playwright artifacts.
+
+Workflow:
+
+- `.github/workflows/playwright-extension.yml`
+
+Uploaded CI artifacts include:
+
+- merged HTML report data
+- blob reports
+- failure traces, screenshots, and videos when present
+
 ## Current Coverage Areas
 
 The suite currently covers:
@@ -191,7 +216,7 @@ The suite currently covers:
 - quick actions and several inline editors in mocked mode
 - anonymous, unauthorized, and unreachable Jira scenarios
 - public Jira smoke checks
-- live Jira scope-gated smoke checks
+- live Jira scope-gated smoke and guarded mutation checks
 
 ## Current Known Gap
 
