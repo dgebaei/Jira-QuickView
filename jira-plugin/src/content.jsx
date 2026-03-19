@@ -3502,6 +3502,32 @@ async function mainAsyncLocal() {
       });
     }
   }
+
+  function updatePopupState(nextStateOrUpdater) {
+    popupState = typeof nextStateOrUpdater === 'function'
+      ? nextStateOrUpdater(popupState)
+      : nextStateOrUpdater;
+    return popupState;
+  }
+
+  function buildPopupInteractionReset(overrides = {}) {
+    return {
+      actionLoadingKey: '',
+      actionError: '',
+      lastActionSuccess: '',
+      actionsOpen: false,
+      editState: null,
+      commentSession: null,
+      ...overrides,
+    };
+  }
+
+  async function renderUpdatedPopupState(nextStateOrUpdater) {
+    const nextState = updatePopupState(nextStateOrUpdater);
+    await renderIssuePopup(nextState);
+    return nextState;
+  }
+
   async function refreshPopupIssueState(successMessage = '', options = {}) {
     if (!popupState?.key) {
       return;
@@ -3533,20 +3559,16 @@ async function mainAsyncLocal() {
       return;
     }
 
-    popupState = {
-      ...popupState,
+    await renderUpdatedPopupState(currentState => ({
+      ...currentState,
       issueData: refreshedIssueData,
       pullRequests: refreshedPullRequests,
       quickActions,
-      actionLoadingKey: '',
-      actionError: '',
-      lastActionSuccess: showSnackBar ? '' : successMessage,
-      actionsOpen: false,
-      editState: null,
-      commentSession: null,
-      timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData)
-    };
-    await renderIssuePopup(popupState);
+      ...buildPopupInteractionReset({
+        lastActionSuccess: showSnackBar ? '' : successMessage,
+      }),
+      timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
+    }));
     if (showSnackBar && successMessage) {
       snackBar(successMessage);
     }
@@ -3561,26 +3583,24 @@ async function mainAsyncLocal() {
       return;
     }
 
-    popupState = {
-      ...popupState,
+    await renderUpdatedPopupState(currentState => ({
+      ...currentState,
       actionsOpen: false,
       actionLoadingKey: action.key,
       actionError: '',
-      lastActionSuccess: ''
-    };
-    await renderIssuePopup(popupState);
+      lastActionSuccess: '',
+    }));
 
     try {
       const successMessage = await executeQuickAction(action, popupState.issueData);
       await refreshPopupIssueState(successMessage);
     } catch (error) {
-      popupState = {
-        ...popupState,
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
         actionLoadingKey: '',
         actionError: buildQuickActionError(error),
-        lastActionSuccess: ''
-      };
-      await renderIssuePopup(popupState);
+        lastActionSuccess: '',
+      }));
     }
   }
   async function runSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
@@ -4033,19 +4053,14 @@ async function mainAsyncLocal() {
           errorMessage
         });
 
-        popupState = {
-          ...popupState,
+        await renderUpdatedPopupState(currentPopupState => ({
+          ...currentPopupState,
           issueData: refreshedIssueData,
           pullRequests: refreshedPullRequests,
           quickActions,
-          actionLoadingKey: '',
-          actionError: '',
-          lastActionSuccess: '',
-          actionsOpen: false,
-          editState: null,
-          timeTrackingEditState: refreshedTimeTrackingState
-        };
-        await renderIssuePopup(popupState);
+          ...buildPopupInteractionReset(),
+          timeTrackingEditState: refreshedTimeTrackingState,
+        }));
 
         if (successMessage) {
           snackBar(errorMessage ? `${successMessage}. ${errorMessage}` : successMessage);
@@ -4650,7 +4665,7 @@ async function mainAsyncLocal() {
         quickActions = [];
       }
 
-      popupState = {
+      await renderUpdatedPopupState({
         key,
         issueData,
         pullRequests,
@@ -4658,15 +4673,9 @@ async function mainAsyncLocal() {
         pointerY,
         quickActions,
         commentReactionState: emptyCommentReactionState(),
-        actionsOpen: false,
-        actionLoadingKey: '',
-        actionError: '',
-        lastActionSuccess: '',
-        editState: null,
-        commentSession: null,
-        timeTrackingEditState: createTimeTrackingEditState(issueData)
-      };
-      await renderIssuePopup(popupState);
+        ...buildPopupInteractionReset(),
+        timeTrackingEditState: createTimeTrackingEditState(issueData),
+      });
     })(cancelToken).catch((error) => {
       notifyJiraConnectionFailure(INSTANCE_URL, error);
       lastHoveredKey = '';
