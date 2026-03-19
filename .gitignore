@@ -1,10 +1,12 @@
 .idea/*
 .agents/
 .opencode/
+.worktrees/
 .test.swp
 *.swp
 *.zip
 /bun.lock
+node_modules
 node_modules/
 tests/.auth/
 tests/output/
