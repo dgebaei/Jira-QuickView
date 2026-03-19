@@ -10,6 +10,10 @@
 
 - Always `git pull origin master --rebase` before starting work to stay in sync with remote
 - PRs target `master` on `dgebaei/Jira-Hot-Linker`
+- By default, do feature work in a dedicated git worktree under `.worktrees/` inside the repo, unless the user explicitly asks to work in the main checkout.
+- Name each worktree folder after the task or branch and keep `.worktrees/` ignored.
+- For manual extension testing, use the stable unpacked path `.worktrees/_active-extension_/jira-plugin` and refresh it with `scripts/build-extension-and-reload.sh`.
+- Shared agent workflow docs live under `.agents/skills/`; prefer those local project skills when available so different agents and harnesses reuse the same repo conventions.
 
 ## Build
 
