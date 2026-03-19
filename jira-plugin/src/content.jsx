@@ -204,6 +204,16 @@ async function mainAsyncLocal() {
   const $ = require('jquery');
   const draggable = require('jquery-ui/ui/widgets/draggable');
 
+  if (isOfficeOverlaySite()) {
+    console.log('[Jira HotLinker][Frame init]', {
+      href: window.location.href,
+      origin: window.location.origin,
+      isTopFrame: window === window.top,
+      frameElementId: window.frameElement?.id || '',
+      frameElementTitle: window.frameElement?.getAttribute?.('title') || ''
+    });
+  }
+
   // ── Initialization & State ──────────────────────────────────
 
   const config = await getConfig();
@@ -1188,6 +1198,87 @@ async function mainAsyncLocal() {
       //TODO, not specific enough, need to evaluate getBoundingClientRect
       return n.nodeType === TEXT_NODE;
     }).text();
+  }
+
+  function normalizeSearchText(input, maxLength = 400) {
+    return String(input || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  }
+
+  function isEditorOverlaySite() {
+    const host = window.location.hostname.toLowerCase();
+    return host === 'docs.google.com' ||
+      host.endsWith('.sharepoint.com') ||
+      host.endsWith('.office.com') ||
+      host.endsWith('.officeapps.live.com') ||
+      host.endsWith('.cloud.microsoft');
+  }
+
+  function isOfficeOverlaySite() {
+    const host = window.location.hostname.toLowerCase();
+    return host.endsWith('.sharepoint.com') ||
+      host.endsWith('.office.com') ||
+      host.endsWith('.officeapps.live.com') ||
+      host.endsWith('.cloud.microsoft');
+  }
+
+  function getReferencedText(node, attributeName) {
+    const ids = String(node?.getAttribute?.(attributeName) || '').trim().split(/\s+/).filter(Boolean);
+    return ids.map(id => normalizeSearchText(document.getElementById(id)?.textContent || '')).filter(Boolean);
+  }
+
+  function getNodeSearchTexts(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) {
+      return [];
+    }
+
+    const texts = [
+      getShallowText(node),
+      node.textContent,
+      node.innerText,
+      node.getAttribute('aria-label'),
+      node.getAttribute('title'),
+      node.getAttribute('data-stringify-text'),
+      node.getAttribute('data-tooltip'),
+      node.getAttribute('data-value'),
+      node.getAttribute('data-text'),
+      node.getAttribute('data-contents'),
+      node.value,
+      node.placeholder
+    ];
+
+    texts.push(...getReferencedText(node, 'aria-labelledby'));
+    texts.push(...getReferencedText(node, 'aria-describedby'));
+
+    if (node.shadowRoot) {
+      texts.push(node.shadowRoot.textContent);
+    }
+
+    if (node.href) {
+      texts.push(getRelativeHref(node.href));
+    }
+
+    const dedupedTexts = [];
+    const seen = new Set();
+    texts.forEach(text => {
+      const normalized = normalizeSearchText(text);
+      if (!normalized || seen.has(normalized)) {
+        return;
+      }
+      seen.add(normalized);
+      dedupedTexts.push(normalized);
+    });
+
+    return dedupedTexts;
+  }
+
+  function getJiraKeysFromTexts(texts) {
+    for (const text of texts) {
+      const keys = getJiraKeys(text);
+      if (size(keys)) {
+        return keys;
+      }
+    }
+    return [];
   }
 
   function getPullRequestData(issueId, applicationType) {
@@ -4586,15 +4677,12 @@ async function mainAsyncLocal() {
     }
   });
   function extractKeysFromNode(node) {
-    let keys = getJiraKeys(getShallowText(node));
+    let keys = getJiraKeysFromTexts(getNodeSearchTexts(node));
     if (!size(keys) && node.children.length < 10) {
-      const fullText = (node.textContent || '');
+      const fullText = normalizeSearchText(node.textContent || '');
       if (fullText.length < 200) {
         keys = getJiraKeys(fullText);
       }
-    }
-    if (!size(keys) && node.href) {
-      keys = getJiraKeys(getRelativeHref(node.href));
     }
     return keys;
   }
@@ -4612,20 +4700,84 @@ async function mainAsyncLocal() {
       let ancestor = element.parentElement;
       for (let i = 0; i < maxAncestors && ancestor && !size(keys); i++) {
         if (ancestor === document.body) break;
-        keys = getJiraKeys(getShallowText(ancestor));
+        keys = getJiraKeysFromTexts(getNodeSearchTexts(ancestor));
         if (!size(keys) && ancestor.children.length < 20) {
-          const ancestorText = (ancestor.textContent || '');
+          const ancestorText = normalizeSearchText(ancestor.textContent || '');
           if (ancestorText.length < 300) {
             keys = getJiraKeys(ancestorText);
           }
-        }
-        if (!size(keys) && ancestor.href) {
-          keys = getJiraKeys(getRelativeHref(ancestor.href));
         }
         ancestor = ancestor.parentElement;
       }
     }
     return keys;
+  }
+
+  let officeHoverDebugLastKey = '';
+  let officeHoverDebugLastAt = 0;
+
+  function describeElementForDebug(element) {
+    if (!element) {
+      return null;
+    }
+    const texts = getNodeSearchTexts(element).slice(0, 5);
+    return {
+      tag: element.tagName,
+      id: element.id || '',
+      className: typeof element.className === 'string' ? element.className.slice(0, 200) : '',
+      role: element.getAttribute('role') || '',
+      ariaLabel: element.getAttribute('aria-label') || '',
+      title: element.getAttribute('title') || '',
+      src: element.getAttribute('src') || '',
+      texts,
+      childCount: element.children ? element.children.length : 0
+    };
+  }
+
+  function logOfficeHoverDebug(primaryElement, layeredElements, layeredKeys) {
+    if (!isOfficeOverlaySite()) {
+      return;
+    }
+
+    const now = Date.now();
+    const summary = JSON.stringify({
+      primary: describeElementForDebug(primaryElement),
+      layered: layeredElements.slice(0, 4).map(describeElementForDebug),
+      layeredKeys
+    });
+
+    if (summary === officeHoverDebugLastKey && now - officeHoverDebugLastAt < 1500) {
+      return;
+    }
+
+    officeHoverDebugLastKey = summary;
+    officeHoverDebugLastAt = now;
+    console.log('[Jira HotLinker][Office debug]', JSON.parse(summary));
+  }
+
+  function detectLayeredJiraKeysFromPoint(clientX, clientY) {
+    if (!isEditorOverlaySite() || typeof document.elementsFromPoint !== 'function') {
+      return [];
+    }
+
+    const elementsAtPoint = document.elementsFromPoint(clientX, clientY).filter(Boolean);
+    const candidates = [];
+
+    for (const element of elementsAtPoint) {
+      if (!element || element === container[0] || $.contains(container[0], element)) {
+        continue;
+      }
+
+      candidates.push(element);
+      const keys = detectJiraKeysAtPoint(element);
+      if (size(keys)) {
+        logOfficeHoverDebug(document.elementFromPoint(clientX, clientY), candidates, keys);
+        return keys;
+      }
+    }
+
+    logOfficeHoverDebug(document.elementFromPoint(clientX, clientY), candidates, []);
+    return [];
   }
 
   let pendingHover = null;
@@ -4725,7 +4877,10 @@ async function mainAsyncLocal() {
       return;
     }
     if (element) {
-      const keys = detectJiraKeysAtPoint(element);
+      let keys = detectJiraKeysAtPoint(element);
+      if (!size(keys)) {
+        keys = detectLayeredJiraKeysFromPoint(e.clientX, e.clientY);
+      }
 
       if (size(keys)) {
         const key = keys[0].replace(' ', '-');

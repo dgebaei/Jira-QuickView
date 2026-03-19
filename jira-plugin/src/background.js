@@ -1,7 +1,8 @@
 /*global chrome */
+import regexEscape from 'escape-string-regexp';
 import defaultConfig from 'options/config.js';
 import {storageGet, storageSet, permissionsRequest, promisifyChrome} from 'src/chrome';
-import {contentScript, resetDeclarativeMapping} from 'options/declarative';
+import {contentScript, resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 
 const executeScript = promisifyChrome(chrome.scripting, 'executeScript');
 const sendMessage = promisifyChrome(chrome.tabs, 'sendMessage');
@@ -54,9 +55,73 @@ function validateMessageSender(sender) {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+function uniqueList(values) {
+  return values.filter((value, index) => value && values.indexOf(value) === index);
+}
+
+function getRelatedActivationOrigins(tabUrl) {
+  let hostname = '';
+  let origin = '';
+
+  try {
+    const parsedUrl = new URL(tabUrl);
+    hostname = parsedUrl.hostname.toLowerCase();
+    origin = parsedUrl.origin + '/';
+  } catch (ex) {
+    return [];
+  }
+
+  const relatedOrigins = [origin];
+
+  if (hostname.endsWith('.sharepoint.com') || hostname.endsWith('.office.com') || hostname.endsWith('.officeapps.live.com') || hostname.endsWith('.cloud.microsoft')) {
+    relatedOrigins.push(
+      'https://*.sharepoint.com/*',
+      'https://*.office.com/*',
+      'https://*.officeapps.live.com/*',
+      'https://*.cloud.microsoft/*'
+    );
+  }
+
+  if (hostname === 'docs.google.com' || hostname.endsWith('.docs.google.com') || hostname.endsWith('.googleusercontent.com')) {
+    relatedOrigins.push(
+      'https://docs.google.com/*',
+      'https://*.googleusercontent.com/*'
+    );
+  }
+
+  return uniqueList(relatedOrigins);
+}
+
+function matchPatternToRegex(pattern) {
+  const wildcardToken = '__JX_WILDCARD__';
+  return new RegExp('^' + regexEscape(toMatchUrl(pattern).replace(/\*/g, wildcardToken)).replace(new RegExp(wildcardToken, 'g'), '.*') + '$', 'i');
+}
+
+async function shouldInjectIntoUrl(rawUrl) {
+  if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+    return false;
+  }
+
+  const config = await storageGet(defaultConfig);
+  return (config.domains || []).some(pattern => {
+    try {
+      return matchPatternToRegex(pattern).test(rawUrl);
+    } catch (ex) {
+      return false;
+    }
+  });
+}
+
+async function ensureFrameContentScriptReady(tabId, frameId) {
+  await executeScript({
+    target: {tabId, frameIds: [frameId]},
+    files: [contentScript]
+  });
+}
+
 async function ensureContentScriptReady(tabId) {
   await executeScript({
-    target: {tabId},
+    target: {tabId, allFrames: true},
     files: [contentScript]
   });
 }
@@ -257,6 +322,21 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   return false;
 });
 
+chrome.webNavigation.onCommitted.addListener(details => {
+  if (details.tabId < 0 || details.frameId === 0) {
+    return;
+  }
+
+  shouldInjectIntoUrl(details.url)
+    .then(shouldInject => {
+      if (!shouldInject) {
+        return;
+      }
+      return ensureFrameContentScriptReady(details.tabId, details.frameId).catch(() => {});
+    })
+    .catch(() => {});
+});
+
 async function browserOnClicked (tab) {
   if (!tab || !tab.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
     return;
@@ -266,19 +346,24 @@ async function browserOnClicked (tab) {
     chrome.runtime.openOptionsPage();
     return;
   }
-  const origin = new URL(tab.url).origin + '/';
-  const granted = await permissionsRequest({origins: [origin]});
+  const origins = getRelatedActivationOrigins(tab.url);
+  const origin = origins[0];
+  const granted = await permissionsRequest({origins});
   if (granted) {
     const config = await storageGet(defaultConfig);
-    if (config.domains.indexOf(origin) !== -1) {
+    const domainsToAdd = origins.filter(candidate => config.domains.indexOf(candidate) === -1);
+    if (!domainsToAdd.length) {
       await notifyTab(tab.id, origin + ' is already added.');
       return;
     }
-    config.domains.push(origin);
+    config.domains.push(...domainsToAdd);
     await storageSet(config);
     await resetDeclarativeMapping();
     await ensureContentScriptReady(tab.id);
-    await notifyTab(tab.id, origin + ' added successfully !');
+    const extraOriginsAdded = domainsToAdd.length > 1;
+    await notifyTab(tab.id, extraOriginsAdded
+      ? origin + ' added successfully with Office/Google editor support.'
+      : origin + ' added successfully !');
   }
 }
 

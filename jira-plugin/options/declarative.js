@@ -45,6 +45,7 @@ export async function resetDeclarativeMapping() {
         conditions: config.domains.map(pageStateWildCardMatcher),
         actions: [new chrome.declarativeContent.RequestContentScript({
           js: [contentScript],
+          allFrames: true,
         })]
       }]);
     }
