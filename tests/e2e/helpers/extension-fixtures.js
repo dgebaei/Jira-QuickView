@@ -140,7 +140,7 @@ async function injectContentScript(extensionApp, page) {
       chrome.tabs.query({}, resolve);
     });
     const tab = tabs.find(candidate => candidate.url === targetUrl);
-    if (!tab?.id) {
+    if (!tab || typeof tab.id !== 'number' || tab.id < 0) {
       throw new Error(`Could not find tab for ${targetUrl}`);
     }
     await chrome.scripting.executeScript({

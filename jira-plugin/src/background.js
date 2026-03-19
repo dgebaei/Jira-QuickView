@@ -1,11 +1,14 @@
 /*global chrome */
 import regexEscape from 'escape-string-regexp';
 import defaultConfig from 'options/config.js';
-import {storageGet, storageSet, permissionsRequest, promisifyChrome} from 'src/chrome';
+import {storageGet, storageSet, promisifyChrome} from 'src/chrome';
 import {contentScript, resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 
 const executeScript = promisifyChrome(chrome.scripting, 'executeScript');
 const sendMessage = promisifyChrome(chrome.tabs, 'sendMessage');
+const setActionTitle = promisifyChrome(chrome.action, 'setTitle');
+const setBadgeText = promisifyChrome(chrome.action, 'setBadgeText');
+const setBadgeBackgroundColor = promisifyChrome(chrome.action, 'setBadgeBackgroundColor');
 
 var SEND_RESPONSE_IS_ASYNC = true;
 const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
@@ -57,6 +60,15 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function uniqueList(values) {
   return values.filter((value, index) => value && values.indexOf(value) === index);
+}
+
+function hasTabId(tab) {
+  return tab && typeof tab.id === 'number' && tab.id >= 0;
+}
+
+function hasConfiguredDomain(configDomains, candidate) {
+  const normalizedCandidate = toMatchUrl(candidate);
+  return (configDomains || []).some(existingDomain => toMatchUrl(existingDomain) === normalizedCandidate);
 }
 
 function getRelatedActivationOrigins(tabUrl) {
@@ -143,6 +155,105 @@ async function notifyTab(tabId, message) {
     }
   }
   return false;
+}
+
+async function injectActionFeedback(tabId, message) {
+  await executeScript({
+    target: {tabId},
+    func: (text) => {
+      const existing = document.getElementById('__JX_action_feedback__');
+      if (existing) {
+        existing.remove();
+      }
+
+      const toast = document.createElement('div');
+      toast.id = '__JX_action_feedback__';
+      toast.textContent = text;
+      toast.style.position = 'fixed';
+      toast.style.right = '20px';
+      toast.style.bottom = '20px';
+      toast.style.zIndex = '2147483647';
+      toast.style.maxWidth = '420px';
+      toast.style.padding = '12px 16px';
+      toast.style.borderRadius = '12px';
+      toast.style.background = 'rgba(22, 28, 45, 0.96)';
+      toast.style.color = '#fff';
+      toast.style.font = '600 14px/1.4 sans-serif';
+      toast.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.25)';
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(8px)';
+      toast.style.transition = 'opacity 120ms ease, transform 120ms ease';
+
+      document.documentElement.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+      });
+
+      window.setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(8px)';
+        window.setTimeout(() => toast.remove(), 180);
+      }, 2800);
+    },
+    args: [message]
+  });
+}
+
+async function setActionStatus(tabId, message) {
+  await setActionTitle({tabId, title: message});
+  await setBadgeBackgroundColor({tabId, color: '#1f6feb'});
+  await setBadgeText({tabId, text: 'ON'});
+  setTimeout(() => {
+    chrome.action.setBadgeText({tabId, text: ''});
+  }, 3000);
+}
+
+async function setActionBadge(tabId, text, color, title) {
+  if (!hasTabId({id: tabId})) {
+    return;
+  }
+  if (title) {
+    await setActionTitle({tabId, title});
+  }
+  if (color) {
+    await setBadgeBackgroundColor({tabId, color});
+  }
+  await setBadgeText({tabId, text});
+}
+
+function clearActionBadgeLater(tabId, delayMs = 3000) {
+  setTimeout(() => {
+    chrome.action.setBadgeText({tabId, text: ''});
+  }, delayMs);
+}
+
+function requestActionOrigins(origins) {
+  return new Promise((resolve, reject) => {
+    chrome.permissions.request({origins: origins.map(toMatchUrl)}, granted => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(!!granted);
+    });
+  });
+}
+
+async function showActionFeedback(tabId, message) {
+  try {
+    await injectActionFeedback(tabId, message);
+    await setActionStatus(tabId, message).catch(() => {});
+    return true;
+  } catch (error) {
+    const delivered = await notifyTab(tabId, message).catch(() => false);
+    if (delivered) {
+      await setActionStatus(tabId, message).catch(() => {});
+      return true;
+    }
+    await setActionStatus(tabId, message).catch(() => {});
+    return false;
+  }
 }
 
 async function fetchWithCredentials(url, init = {}) {
@@ -338,22 +449,36 @@ chrome.webNavigation.onCommitted.addListener(details => {
 });
 
 async function browserOnClicked (tab) {
-  if (!tab || !tab.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
+  if (!hasTabId(tab) || !tab.url || !/^https?:\/\//i.test(tab.url)) {
     return;
   }
-  const config = await storageGet(defaultConfig);
-  if (!config.instanceUrl || !config.v15upgrade) {
-    chrome.runtime.openOptionsPage();
-    return;
-  }
+
   const origins = getRelatedActivationOrigins(tab.url);
   const origin = origins[0];
-  const granted = await permissionsRequest({origins});
+
+  const granted = await requestActionOrigins(origins);
+  if (!granted) {
+    await showActionFeedback(tab.id, 'Jira HotLinker was not enabled because the permission request was cancelled.').catch(() => {});
+    clearActionBadgeLater(tab.id);
+    return;
+  }
+
+  await setActionBadge(tab.id, '...', '#6b7280', 'Jira HotLinker is checking this page').catch(() => {});
+
+  const config = await storageGet(defaultConfig);
+  if (!config.instanceUrl || !config.v15upgrade) {
+    await showActionFeedback(tab.id, 'Open Jira HotLinker options and save your Jira instance before enabling pages.').catch(() => {});
+    chrome.runtime.openOptionsPage();
+    clearActionBadgeLater(tab.id);
+    return;
+  }
+
   if (granted) {
     const config = await storageGet(defaultConfig);
-    const domainsToAdd = origins.filter(candidate => config.domains.indexOf(candidate) === -1);
+    const domainsToAdd = origins.filter(candidate => !hasConfiguredDomain(config.domains, candidate));
     if (!domainsToAdd.length) {
-      await notifyTab(tab.id, origin + ' is already added.');
+      await showActionFeedback(tab.id, origin + ' is already enabled for Jira HotLinker.');
+      clearActionBadgeLater(tab.id);
       return;
     }
     config.domains.push(...domainsToAdd);
@@ -361,9 +486,10 @@ async function browserOnClicked (tab) {
     await resetDeclarativeMapping();
     await ensureContentScriptReady(tab.id);
     const extraOriginsAdded = domainsToAdd.length > 1;
-    await notifyTab(tab.id, extraOriginsAdded
+    await showActionFeedback(tab.id, extraOriginsAdded
       ? origin + ' added successfully with Office/Google editor support.'
-      : origin + ' added successfully !');
+      : origin + ' added successfully.');
+    clearActionBadgeLater(tab.id);
   }
 }
 
@@ -378,7 +504,14 @@ async function browserOnClicked (tab) {
   });
 
   chrome.action.onClicked.addListener(tab => {
-    browserOnClicked(tab).catch(() => {});
+    browserOnClicked(tab).catch(async error => {
+      console.error('Jira HotLinker action click failed', error);
+      if (hasTabId(tab)) {
+        const message = error?.message || 'Jira HotLinker failed to enable this page.';
+        await showActionFeedback(tab.id, message).catch(() => {});
+        await setActionBadge(tab.id, 'ERR', '#b42318', message).catch(() => {});
+        clearActionBadgeLater(tab.id, 5000);
+      }
+    });
   });
 })();
-
