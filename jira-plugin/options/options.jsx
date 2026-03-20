@@ -1,5 +1,5 @@
 /*global chrome */
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useCallback} from 'react';
 import ReactDOM from 'react-dom';
 import defaultConfig from 'options/config';
 import {storageGet, storageSet, permissionsRequest} from 'src/chrome';
@@ -7,12 +7,6 @@ import {hasPathSlash, resetDeclarativeMapping, toMatchUrl} from 'options/declara
 import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocumentTheme} from 'src/theme';
 
 import 'options/options.scss';
-
-const errorText = document.createElement('div');
-document.body.appendChild(errorText);
-window.onerror = function (msg, file, line, column, error) {
-  errorText.textContent = (error && error.stack) ? error.stack : String(msg || 'Unknown error');
-};
 
 const FIELD_OPTIONS = [
   {key: 'issueType', label: 'Issue Type'},
@@ -167,13 +161,26 @@ function ConfigPage(props) {
   });
   const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || 'shallow');
   const [hoverModifierKey, setHoverModifierKey] = useState(props.hoverModifierKey || 'none');
-  const [customFields, setCustomFields] = useState(normalizeCustomFields(props.customFields));
+  const [customFields, setCustomFields] = useState(() =>
+    normalizeCustomFields(props.customFields).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
+  );
   const [fieldCatalog, setFieldCatalog] = useState({});
   const [status, setStatus] = useState('');
   const [statusTone, setStatusTone] = useState('neutral');
   const [isSaving, setIsSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(
+    () => sessionStorage.getItem('jhl_adv') === '1'
+  );
   const customFieldErrors = customFields.map(field => getCustomFieldError(field.fieldId, fieldCatalog));
   const hasInvalidCustomFields = customFieldErrors.some(Boolean);
+
+  const toggleAdvanced = useCallback(() => {
+    setShowAdvanced(prev => {
+      const next = !prev;
+      sessionStorage.setItem('jhl_adv', next ? '1' : '0');
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,7 +221,11 @@ function ConfigPage(props) {
   };
 
   const removeCustomField = (index) => {
-    setCustomFields(current => current.filter((field, fieldIndex) => fieldIndex !== index));
+    setCustomFields(current => current.filter((_, fieldIndex) => fieldIndex !== index));
+  };
+
+  const handleThemeChange = (mode) => {
+    setThemeMode(normalizeThemeMode(mode));
   };
 
   const saveOptions = async () => {
@@ -280,213 +291,306 @@ function ConfigPage(props) {
     }, 2500);
   };
 
+  const discardOptions = () => {
+    window.location.reload();
+  };
+
+  const statusMessage = status || (hasInvalidCustomFields ? 'Fix invalid custom field IDs before saving.' : 'Changes are local until you save them.');
+
   return (
     <div className='optionsPage'>
+      {/* ── Hero ─────────────────────────────────────────── */}
       <header className='heroCard'>
-        <div>
-          <div className='eyebrow'>Jira HotLinker</div>
+        <div className='heroLeft'>
+          <div className='heroEyebrow'>Jira HotLinker</div>
           <h1 className='heroTitle'>Extension Options</h1>
           <p className='heroCopy'>
-            Configure where the extension runs, which built-in ticket fields are visible in the hover card,
-            and any Jira custom fields you want surfaced in rows 1, 2, or 3.
+            Configure your Jira connection, theme, and which fields appear in the hover popup.
           </p>
         </div>
-        <div className='heroMeta'>
-          <div className={'statusPill' + (status ? ' statusPillActive' : '')}>
-            {status || (hasInvalidCustomFields ? 'Fix invalid custom field IDs before saving.' : 'Changes are local until you save them.')}
+        <div className='heroRight'>
+          <div className='statusPill'>
+            <span className={`statusPillDot ${statusTone === 'success' ? 'statusPillDotActive' : ''}`} />
+            {statusMessage}
           </div>
-          {!props.v15upgrade && (
-            <div className='upgradeNotice'>
-              After upgrading the extension, click Save once to refresh its permissions.
-            </div>
-          )}
         </div>
       </header>
 
+      {/* ── Settings Grid ───────────────────────────────── */}
       <div className='settingsGrid'>
+
+        {/* ── BASIC: Connection ─────────────────────────── */}
+        <div className='sectionEyebrow'>Basic</div>
+
         <section className='settingsCard'>
-          <div className='sectionHeading'>
-            <div>
-              <h2>Connection</h2>
-              <p>Tell the extension which Jira instance to query and where it should activate.</p>
-            </div>
+          <div className='cardHeader'>
+            <h2>Connection</h2>
+            <p>Tell the extension where Jira lives and which pages it should activate on.</p>
           </div>
+          <div className='cardBody'>
+            <label className='formField'>
+              <span className='fieldLabel'>Jira instance URL</span>
+              <input
+                id='instanceUrl'
+                type='text'
+                value={instanceUrl}
+                onChange={event => setInstanceUrl(event.target.value)}
+                placeholder='https://your-company.atlassian.net/' />
+              <span className='fieldHelp'>Used for issue metadata, field discovery, and link targets.</span>
+            </label>
 
-          <label className='formField'>
-            <span className='fieldLabel'>Jira instance URL</span>
-            <input
-              id='instanceUrl'
-              type='text'
-              value={instanceUrl}
-              onChange={event => setInstanceUrl(event.target.value)}
-              placeholder='https://your-company.atlassian.net/'/>
-            <span className='fieldHelp'>Used for issue metadata, field discovery, and link targets.</span>
-          </label>
-
-          <label className='formField'>
-            <span className='fieldLabel'>Allowed pages</span>
-            <textarea
-              id='domains'
-              value={domainsText}
-              onChange={event => setDomainsText(event.target.value)}
-              placeholder='github.com, outlook.office.com'/>
-            <span className='fieldHelp'>
-              Comma-separated domains, URLs, or valid <a href='https://developer.chrome.com/extensions/match_patterns'>match patterns</a>.
-              You can also add a page directly from the extension icon.
-            </span>
-          </label>
+            <label className='formField'>
+              <span className='fieldLabel'>Allowed pages</span>
+              <textarea
+                id='domains'
+                value={domainsText}
+                onChange={event => setDomainsText(event.target.value)}
+                placeholder='github.com, outlook.office.com' />
+              <span className='fieldHelp'>
+                Comma-separated domains, URLs, or valid{' '}
+                <a href='https://developer.chrome.com/extensions/match_patterns' target='_blank' rel='noopener noreferrer'>
+                  match patterns
+                </a>.
+                You can also add a page directly from the extension icon.
+              </span>
+            </label>
+          </div>
         </section>
 
+        {/* ── BASIC: Appearance ──────────────────────────── */}
         <section className='settingsCard'>
-          <div className='sectionHeading'>
-            <div>
-              <h2>Hover Behavior</h2>
-              <p>Control when the tooltip appears as you move the mouse.</p>
-            </div>
+          <div className='cardHeader'>
+            <h2>Appearance</h2>
+            <p>Choose how the options page and hover popup look across light and dark environments.</p>
           </div>
-
-          <label className='formField'>
-            <span className='fieldLabel'>Trigger depth</span>
-            <select value={hoverDepth} onChange={event => setHoverDepth(event.target.value)}>
-              <option value='exact' title='Triggers only when the cursor is directly over text or a link containing a Jira key. Least sensitive — best for dense pages.'>Exact — only the hovered element itself</option>
-              <option value='shallow' title='Checks the hovered element and its immediate parent. Good balance between precision and convenience.'>Shallow — hovered element + immediate parent</option>
-              <option value='deep' title='Walks up to 5 levels of parent elements looking for Jira keys. Most sensitive — may trigger on nearby text you did not intend to hover.'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
-            </select>
-            <span className='fieldHelp'>
-              How aggressively the extension searches surrounding DOM elements for Jira issue keys.
-              Use "Exact" if the tooltip triggers too often on pages with dense text.
-            </span>
-          </label>
-
-          <label className='formField'>
-            <span className='fieldLabel'>Modifier key</span>
-            <select value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
-              <option value='none' title='The tooltip appears automatically whenever the cursor rests on a Jira key. No extra keys needed.'>None — hover alone triggers the tooltip</option>
-              <option value='alt' title='Hover over a Jira key, then press Alt to show the tooltip. You can also hold Alt before hovering.'>Alt — press Alt after hovering</option>
-              <option value='ctrl' title='Hover over a Jira key, then press Ctrl to show the tooltip. You can also hold Ctrl before hovering.'>Ctrl — press Ctrl after hovering</option>
-              <option value='shift' title='Hover over a Jira key, then press Shift to show the tooltip. You can also hold Shift before hovering.'>Shift — press Shift after hovering</option>
-            </select>
-            <span className='fieldHelp'>
-              When set, hover over a Jira key and then press the chosen key to reveal the tooltip.
-              You can also hold the key first and then hover. Useful for on-demand activation instead of automatic popups.
-            </span>
-          </label>
-
-          <label className='formField'>
+          <div className='cardBody'>
             <span className='fieldLabel'>Color mode</span>
-            <select value={themeMode} onChange={event => setThemeMode(normalizeThemeMode(event.target.value))}>
+            <div className='themePills'>
               {SUPPORTED_THEME_MODES.map(mode => (
-                <option key={mode} value={mode}>
-                  {mode === 'system' ? 'System - follow your device theme' : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                </option>
+                <button
+                  key={mode}
+                  type='button'
+                  className={`themePill ${themeMode === mode ? 'themePillSelected' : 'themePillUnselected'}`}
+                  onClick={() => handleThemeChange(mode)}
+                >
+                  {mode === 'system' ? 'System' : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </button>
               ))}
-            </select>
-            <span className='fieldHelp'>Applies to the options page and the hover popup UI.</span>
-          </label>
+            </div>
+            <div className='tipBox'>
+              Tip: Most users keep the default System setting. Switch to Light or Dark only if you prefer a fixed appearance regardless of your OS theme.
+            </div>
+          </div>
         </section>
 
-        <section className='settingsCard settingsCardWide'>
-          <div className='sectionHeading'>
-            <div>
+      </div>
+
+      {/* ── Advanced Toggle ──────────────────────────────── */}
+      <div className='advToggleCard'>
+        <span className='advToggleIcon' aria-hidden='true'>&#9881;</span>
+        <div className='advToggleText'>
+          <h3>Show advanced settings</h3>
+          <p>Hover trigger depth, modifier keys, field layout editor, custom fields, and settings sync.</p>
+        </div>
+        <button
+          type='button'
+          className='advToggleBtn'
+          onClick={toggleAdvanced}
+          aria-expanded={showAdvanced}
+        >
+          {showAdvanced ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      {/* ── ADVANCED Sections ───────────────────────────── */}
+      {showAdvanced && (
+        <div className='settingsGrid'>
+          <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
+
+          {/* ── Hover Behavior ───────────────────────────── */}
+          <section className='settingsCard settingsGridFull'>
+            <div className='cardHeader'>
+              <h2>Hover Behavior</h2>
+              <p>Control when the tooltip appears as you move the mouse over Jira issue keys.</p>
+            </div>
+            <div className='cardBody'>
+              <div className='hoverRow'>
+                <label className='formField'>
+                  <span className='fieldLabel'>Trigger depth</span>
+                  <select value={hoverDepth} onChange={event => setHoverDepth(event.target.value)}>
+                    <option value='exact'>Exact — only the hovered element itself</option>
+                    <option value='shallow'>Shallow — hovered element + immediate parent</option>
+                    <option value='deep'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
+                  </select>
+                  <span className='fieldHelp'>
+                    How aggressively the extension searches surrounding DOM elements for Jira keys.
+                    Use &ldquo;Exact&rdquo; if the tooltip triggers too often on pages with dense text.
+                  </span>
+                </label>
+
+                <label className='formField'>
+                  <span className='fieldLabel'>Modifier key</span>
+                  <select value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
+                    <option value='none'>None — hover alone triggers the tooltip</option>
+                    <option value='alt'>Alt — press Alt after hovering</option>
+                    <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
+                    <option value='shift'>Shift — press Shift after hovering</option>
+                  </select>
+                  <span className='fieldHelp'>
+                    When set, hover over a Jira key and then press the chosen key to reveal the tooltip.
+                    Useful for on-demand activation instead of automatic popups.
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Tooltip Layout ───────────────────────────── */}
+          <section className='settingsCard settingsGridFull'>
+            <div className='cardHeader'>
               <h2>Tooltip Layout</h2>
               <p>Choose which built-in Jira fields appear in each part of the hover card.</p>
             </div>
-          </div>
-          <div className='fieldLayoutGroups'>
-            {FIELD_GROUPS.map(group => (
-              <div key={group.title} className='fieldGroupCard'>
-                <div className='fieldGroupHeader'>
-                  <h3>{group.title}</h3>
-                  <p>{group.description}</p>
-                </div>
-                <div className='displayFields'>
-                  {group.keys.map(key => {
-                    const option = FIELD_OPTIONS.find(field => field.key === key);
-                    return (
-                      <label key={key} className='displayFieldOption'>
-                        <input
-                          id={'displayField_' + key}
-                          type='checkbox'
-                          checked={!!displayFields[key]}
-                          onChange={event => setDisplayFieldValue(key, event.target.checked)}
-                        />
-                        <span>{option ? option.label : key}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className='settingsCard settingsCardWide'>
-          <div className='sectionHeading sectionHeadingSplit'>
-            <div>
-              <h2>Custom Fields</h2>
-              <p>Add Jira field IDs and choose where each one appears in the hover summary.</p>
-            </div>
-            <button type='button' className='secondaryButton' onClick={addCustomField}>Add another field</button>
-          </div>
-
-          {customFields.length === 0 ? (
-            <div className='emptyState'>
-              No custom fields configured yet. Add one if you want to surface plugin-provided Jira data in the hover card.
-            </div>
-          ) : (
-            <div className='customFieldsSection'>
-              {customFields.map((field, index) => (
-                <div key={index} className='customFieldRow'>
-                  <div className='customFieldHeader'>Custom field {index + 1}</div>
-                  <label className='customFieldLabel'>
-                    <span className='fieldLabel'>Field ID</span>
-                    <input
-                      type='text'
-                      value={field.fieldId}
-                      onChange={event => updateCustomField(index, {fieldId: event.target.value})}
-                      placeholder='customfield_12345'/>
-                  </label>
-                  <label className='customFieldLabel'>
-                    <span className='fieldLabel'>Location</span>
-                    <select
-                      value={field.row}
-                      onChange={event => updateCustomField(index, {row: Number(event.target.value)})}>
-                      <option value={1}>Top bar - row 1</option>
-                      <option value={2}>Top bar - row 2</option>
-                      <option value={3}>Top bar - row 3</option>
-                    </select>
-                  </label>
-                  <div className={'customFieldMeta' + (customFieldErrors[index] ? ' customFieldMetaError' : '')}>
-                    {customFieldErrors[index]
-                      ? customFieldErrors[index]
-                      : field.fieldId
-                        ? `Resolved field name: ${fieldCatalog[field.fieldId] || 'Waiting for Jira field metadata.'}`
-                        : 'The field name will appear here after Jira returns metadata for this ID.'}
+            <div className='cardBody'>
+              <div className='fieldLayoutGroups'>
+                {FIELD_GROUPS.map(group => (
+                  <div key={group.title} className='fieldGroupCard'>
+                    <div className='fieldGroupHeader'>
+                      <h3>{group.title}</h3>
+                      <p>{group.description}</p>
+                    </div>
+                    <div className='displayFields'>
+                      {group.keys.map(key => {
+                        const option = FIELD_OPTIONS.find(field => field.key === key);
+                        return (
+                          <label key={key} className='displayFieldOption'>
+                            <input
+                              id={'displayField_' + key}
+                              type='checkbox'
+                              checked={!!displayFields[key]}
+                              onChange={event => setDisplayFieldValue(key, event.target.checked)}
+                            />
+                            <span>{option ? option.label : key}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <button type='button' className='ghostButton customFieldRemove' onClick={() => removeCustomField(index)}>
-                    Remove
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          )}
-        </section>
-      </div>
+          </section>
 
+          {/* ── Custom Fields ────────────────────────────── */}
+          <section className='settingsCard settingsGridFull'>
+            <div className='cardHeader' style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+              <div>
+                <h2>Custom Fields</h2>
+                <p>Add Jira field IDs and choose where each one appears in the hover summary.</p>
+              </div>
+              <button type='button' className='secondaryButton' onClick={addCustomField}>
+                + Add field
+              </button>
+            </div>
+            <div className='cardBody'>
+              {customFields.length === 0 ? (
+                <div className='emptyState'>
+                  No custom fields configured yet. Add one if you want to surface plugin-provided Jira data in the hover card.
+                </div>
+              ) : (
+                <div className='customFieldsSection'>
+                  {customFields.map((field) => (
+                    <div key={field._uid} className='customFieldRow'>
+                      <div className='customFieldHeader'>Custom field {index + 1}</div>
+                      <label className='customFieldLabel'>
+                        <span className='fieldLabel'>Field ID</span>
+                        <input
+                          type='text'
+                          value={field.fieldId}
+                          onChange={event => updateCustomField(index, {fieldId: event.target.value})}
+                          placeholder='customfield_12345' />
+                      </label>
+                      <label className='customFieldLabel'>
+                        <span className='fieldLabel'>Location</span>
+                        <select
+                          value={field.row}
+                          onChange={event => updateCustomField(index, {row: Number(event.target.value)})}>
+                          <option value={1}>Top bar - row 1</option>
+                          <option value={2}>Top bar - row 2</option>
+                          <option value={3}>Top bar - row 3</option>
+                        </select>
+                      </label>
+                      <div className={`customFieldMeta ${customFieldErrors[index] ? 'customFieldMetaError' : ''}`}>
+                        {customFieldErrors[index]
+                          ? customFieldErrors[index]
+                          : field.fieldId
+                            ? `Resolved field name: ${fieldCatalog[field.fieldId] || 'Waiting for Jira field metadata.'}`
+                            : 'The field name will appear here after Jira returns metadata for this ID.'}
+                      </div>
+                      <button
+                        type='button'
+                        className='dangerButton ghostButton customFieldRemove'
+                        onClick={() => removeCustomField(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ── Settings Sync ────────────────────────────── */}
+          <section className='settingsCard settingsGridFull'>
+            <div className='cardHeader'>
+              <h2>Settings Sync</h2>
+              <p>Export, import, or auto-sync your extension configuration across your team.</p>
+            </div>
+            <div className='cardBody'>
+              <div className='syncButtons'>
+                <button type='button' className='syncBtn' onClick={() => {}}>
+                  &#10132; Export Settings (.json)
+                </button>
+                <button type='button' className='syncBtn' onClick={() => {}}>
+                  &#10132; Import Settings (.json)
+                </button>
+                <button type='button' className='syncBtn proButton' onClick={() => {}}>
+                  &#10022; Team Sync (Pro)
+                </button>
+              </div>
+              <p className='syncProHint'>auto-sync config across your team</p>
+            </div>
+          </section>
+
+        </div>
+      )}
+
+      {/* ── Footer Action Bar ────────────────────────────── */}
       <footer className='actionBar'>
         <div className='actionCopy'>
           <strong>Save changes</strong>
-          <span>Applies the current Jira URL, allowed pages, built-in tooltip fields, and configured custom fields.</span>
+          <span>Applies the Jira URL, allowed pages, appearance, and field settings.</span>
         </div>
         <div className='actionControls'>
           {(status || hasInvalidCustomFields) && (
-            <div className={'saveNotice saveNotice' + ((hasInvalidCustomFields && !status) ? 'Error' : statusTone.charAt(0).toUpperCase() + statusTone.slice(1))}>
+            <div className={`saveNotice saveNotice${statusTone.charAt(0).toUpperCase() + statusTone.slice(1)}`}>
               {status || 'Fix invalid custom field IDs before saving.'}
             </div>
           )}
-          <button onClick={saveOptions} id='save' className='primaryButton' disabled={isSaving || hasInvalidCustomFields}>
-            {isSaving ? 'Saving...' : 'Save changes'}
-          </button>
+          <div className='actionControlsRow'>
+            <button type='button' className='ghostButton' onClick={discardOptions} disabled={isSaving}>
+              Discard
+            </button>
+            <button
+              type='button'
+              className='saveBtn primaryButton'
+              onClick={saveOptions}
+              disabled={isSaving || hasInvalidCustomFields}
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
       </footer>
     </div>
