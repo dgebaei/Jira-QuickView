@@ -16,8 +16,8 @@ Redesign the options page (`jira-plugin/options/options.jsx`) to support a **Bas
 |-------|--------|-------|
 | Phase 1 — Basic Structure & Toggle Shell | **Done** | See [Phase 1 Complete](#phase-1--basic-structure--toggle-shell) |
 | Phase 2 — Appearance Card | **Done** | See [Phase 2 Complete](#phase-2--appearance-card) |
-| Phase 3 — Hover Behavior Card | Pending | |
-| Phase 4 — Drag-and-Drop Editor | Pending | |
+| Phase 3 — Hover Behavior Card | **Done** | Two-column layout, native selects with help text |
+| Phase 4 — Drag-and-Drop Editor | **Done** | See [Phase 4 Complete](#phase-4--drag-and-drop-editor) |
 | Phase 5 — Custom Fields Card | Pending | |
 | Phase 6 — Settings Sync | Pending | |
 | Phase 7 — Visual Polish | Pending | |
@@ -66,6 +66,40 @@ const toggleAdvanced = useCallback(() => {
 ## Phase 2 — Appearance Card (Basic) ✅
 
 **Completed:** Theme selector redesigned from `<select>` to three pill buttons.
+
+---
+
+## Phase 3 — Hover Behavior Card (Advanced) ✅
+
+**Completed:** Hover trigger settings extracted to their own card.
+
+### What was built
+
+- **Gated behind `showAdvanced`** — only visible when advanced is shown
+- **Two-column layout** — trigger depth (left), modifier key (right), responsive to single column on mobile
+- **Native selects** — kept for v1, with help text beneath each
+- **Card styling** — matches the new card system (header strip, blue title, grey description)
+
+---
+
+## Phase 4 — Drag-and-Drop Editor ✅
+
+**Completed:** Tooltip Layout editor with @dnd-kit for drag-and-drop field placement.
+
+### What was built
+
+- **`tooltipLayout` state** — new data model with `row1`, `row2`, `row3`, `contentBlocks`, `people` arrays
+- **`buildTooltipLayoutFromDisplayFields` migration** — converts legacy `displayFields` booleans to new ordered arrays
+- **`TooltipLayoutEditor` component** — sidebar + preview panel with three droppable zones
+- **`FieldLibrary` sidebar** — shows unplaced fields available to drag
+- **`FieldZone` components** — droppable targets for Row 1, Row 2, Row 3
+- **Content blocks** — shown as locked pills (fixed order, not draggable)
+- **People section** — reporter + assignee with drag-to-reorder support
+- **CSS styles** — pill styling, zone highlighting, drag overlay, responsive layout
+
+### Migration
+
+On load, if `tooltipLayout` is not present in stored config, it's built from `displayFields` using `buildTooltipLayoutFromDisplayFields()`.
 
 ---
 

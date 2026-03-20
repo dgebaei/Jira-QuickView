@@ -55,6 +55,11 @@
   --pro-bg: #ede9fe;
   --pro-border: #7c3aed;
   --pro-text: #6d28d9;
+  --tooltip-header-bg: #1e293b;
+  --tooltip-header-border: #334155;
+  --tooltip-header-text: #f8fafc;
+  --tooltip-row-bg: #f8fafc;
+  --tooltip-row-border: #e2e8f0;
   color: var(--page-text);
   font-family: 'Segoe UI Variable Text', 'Aptos', 'Segoe UI', sans-serif;
 }
@@ -116,6 +121,11 @@
   --pro-bg: #2e1065;
   --pro-border: #7c3aed;
   --pro-text: #c4b5fd;
+  --tooltip-header-bg: #1e293b;
+  --tooltip-header-border: #334155;
+  --tooltip-header-text: #f8fafc;
+  --tooltip-row-bg: #0f172a;
+  --tooltip-row-border: #334155;
 }
 
 body {
@@ -133,7 +143,7 @@ body {
 }
 
 .optionsPage {
-  padding: 32px;
+  padding: 24px;
 }
 
 /* ── Eyebrow labels ────────────────────────────────────── */
@@ -143,7 +153,7 @@ body {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .sectionEyebrowMuted {
@@ -153,25 +163,25 @@ body {
 /* ── Hero ─────────────────────────────────────────────── */
 .heroCard {
   background: var(--hero-bg);
-  border-radius: 16px;
-  box-shadow: var(--card-shadow);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
-  align-items: start;
+  align-items: center;
   padding: 0;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   overflow: hidden;
 }
 
 .heroLeft {
-  padding: 28px 32px;
+  padding: 20px 24px;
 }
 
 .heroRight {
-  padding: 28px 32px;
+  padding: 20px 24px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .heroEyebrow {
@@ -184,11 +194,11 @@ body {
 }
 
 .heroTitle {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 800;
   color: var(--hero-text);
-  margin: 0 0 10px;
-  line-height: 1.1;
+  margin: 0 0 8px;
+  line-height: 1.2;
 }
 
 .heroCopy {
@@ -233,8 +243,59 @@ body {
 /* ── Settings Grid ──────────────────────────────────────── */
 .settingsGrid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settingsGridFull {
+  grid-column: 1 / -1;
+}
+
+/* ── Cards ─────────────────────────────────────────────── */
+.settingsCard {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.cardHeader {
+  background: var(--group-card-bg);
+  border-bottom: 1px solid var(--card-border);
+  padding: 14px 18px;
+}
+
+.cardHeader .sectionEyebrow {
+  margin-bottom: 6px;
+}
+
+.cardHeader h2 {
+  color: var(--section-title-color);
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.cardHeader p {
+  color: var(--section-desc-color);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.cardBody {
+  padding: 16px 18px;
+}
+
+/* ── Links ──────────────────────────────────────────────── */
+a {
+  color: var(--section-title-color);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 .settingsGridFull {
@@ -829,4 +890,324 @@ button:disabled {
   .themePills {
     flex-direction: column;
   }
+}
+
+/* ── Tooltip Layout Editor ──────────────────────────────── */
+.tooltipLayoutEditor {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  min-height: 400px;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tooltipLayoutSidebar {
+  background: var(--page-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.tooltipLayoutSidebarHeader {
+  margin-bottom: 10px;
+
+  h4 {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--section-title-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 2px 0;
+  }
+
+  p {
+    font-size: 10px;
+    color: var(--copy-muted);
+    margin: 0;
+  }
+}
+
+.fieldLibrary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fieldLibraryEmpty {
+  font-size: 11px;
+  color: var(--copy-muted);
+  font-style: italic;
+  padding: 6px 0;
+}
+
+.fieldPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--secondary-bg);
+  border: 1px solid var(--secondary-border);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--secondary-color);
+  cursor: grab;
+  user-select: none;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--pill-selected-bg);
+    border-color: var(--pill-selected-border);
+    color: var(--pill-selected-text);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.fieldPillDragging {
+  background: var(--section-title-color);
+  border-color: var(--section-title-color);
+  color: white;
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3);
+}
+
+.fieldPillLabel {
+  white-space: nowrap;
+}
+
+.fieldPillRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin-left: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--error-bg);
+    color: var(--error-color);
+  }
+}
+
+.tooltipLayoutPreview {
+  background: var(--page-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.tooltipPreview {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.tooltipPreviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--tooltip-header-bg, #1e293b);
+  border-bottom: 1px solid var(--tooltip-header-border, #334155);
+}
+
+.tooltipPreviewTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tooltip-header-text, #f8fafc);
+}
+
+.tooltipPreviewPeople {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tooltipPreviewPerson {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: white;
+  cursor: default;
+}
+
+.tooltipPreviewPersonR {
+  background: #3b82f6;
+}
+
+.tooltipPreviewPersonA {
+  background: #8b5cf6;
+}
+
+.tooltipPreviewAvatar {
+  width: 24px;
+  height: 24px;
+  background: #475569;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.tooltipPreviewSection {
+  padding: 12px 14px;
+}
+
+.tooltipPreviewRow {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--tooltip-row-bg);
+  border: 1px dashed var(--tooltip-row-border);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.tooltipPreviewRowOver {
+  border-color: var(--section-title-color);
+  border-style: solid;
+  background: var(--zone-bg);
+}
+
+.tooltipPreviewRowLabel {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.tooltipPreviewRowContent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 26px;
+}
+
+.tooltipPreviewRowEmpty {
+  font-size: 11px;
+  color: var(--copy-muted);
+  font-style: italic;
+}
+
+.tooltipPreviewPeople {
+  padding: 10px 14px;
+  background: var(--group-card-bg);
+  border-top: 1px solid var(--card-border);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.tooltipPreviewPeopleLabel {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.tooltipPreviewPeopleContent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tooltipPreviewContentBlocks {
+  padding: 10px 14px;
+  border-top: 1px solid var(--card-border);
+}
+
+.tooltipPreviewContentLabel {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.tooltipPreviewContentToggles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contentBlockToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 0;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+}
+
+.contentBlockToggleSwitch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: var(--input-border);
+  border-radius: 9px;
+  transition: background 0.2s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.contentBlockToggle input:checked + .contentBlockToggleSwitch {
+  background: var(--section-title-color);
+
+  &::after {
+    transform: translateX(14px);
+  }
+}
+
+.contentBlockToggleLabel {
+  font-size: 11px;
+  color: #64748b;
 }
