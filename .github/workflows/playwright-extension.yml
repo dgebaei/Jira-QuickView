@@ -77,12 +77,12 @@ jobs:
 
   live-authenticated:
     name: Live Authenticated
-    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push') && secrets.JIRA_LIVE_INSTANCE_URL != '' && secrets.JIRA_LIVE_PROJECT_KEYS != '' && secrets.JIRA_LIVE_ISSUE_KEYS != '' && secrets.JIRA_LIVE_STORAGE_STATE_JSON != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     env:
-      JIRA_LIVE_INSTANCE_URL: ${{ secrets.JIRA_LIVE_INSTANCE_URL }}
-      JIRA_LIVE_PROJECT_KEYS: ${{ secrets.JIRA_LIVE_PROJECT_KEYS }}
-      JIRA_LIVE_ISSUE_KEYS: ${{ secrets.JIRA_LIVE_ISSUE_KEYS }}
+      JIRA_LIVE_INSTANCE_URL: ${{ vars.JIRA_LIVE_INSTANCE_URL }}
+      JIRA_LIVE_PROJECT_KEYS: ${{ vars.JIRA_LIVE_PROJECT_KEYS }}
+      JIRA_LIVE_ISSUE_KEYS: ${{ vars.JIRA_LIVE_ISSUE_KEYS }}
       JIRA_LIVE_STORAGE_STATE: tests/.auth/jira-live.json
 
     steps:
@@ -102,11 +102,13 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Write Jira live storage state
+        if: secrets.JIRA_LIVE_STORAGE_STATE_JSON != ''
         run: mkdir -p tests/.auth && printf '%s' "$JIRA_LIVE_STORAGE_STATE_JSON" > tests/.auth/jira-live.json
         env:
           JIRA_LIVE_STORAGE_STATE_JSON: ${{ secrets.JIRA_LIVE_STORAGE_STATE_JSON }}
 
       - name: Run live authenticated Playwright suite
+        if: secrets.JIRA_LIVE_STORAGE_STATE_JSON != ''
         run: npm run test:e2e:live-authenticated
 
       - name: Upload live authenticated artifacts
