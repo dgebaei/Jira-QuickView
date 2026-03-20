@@ -4850,7 +4850,7 @@ async function mainAsyncLocal() {
     } else {
       hoverDelayTimeout = setTimeout(function () {
         fetchAndShowPopup(key, pointerX, pointerY);
-      }, 400);
+      }, 250);
     }
   }
 
