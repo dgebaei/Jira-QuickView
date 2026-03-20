@@ -102,13 +102,15 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Write Jira live storage state
-        if: secrets.JIRA_LIVE_STORAGE_STATE_JSON != ''
-        run: mkdir -p tests/.auth && printf '%s' "$JIRA_LIVE_STORAGE_STATE_JSON" > tests/.auth/jira-live.json
+        run: |
+          mkdir -p tests/.auth
+          if [ -n "$JIRA_LIVE_STORAGE_STATE_JSON" ]; then
+            printf '%s' "$JIRA_LIVE_STORAGE_STATE_JSON" > tests/.auth/jira-live.json
+          fi
         env:
           JIRA_LIVE_STORAGE_STATE_JSON: ${{ secrets.JIRA_LIVE_STORAGE_STATE_JSON }}
 
       - name: Run live authenticated Playwright suite
-        if: secrets.JIRA_LIVE_STORAGE_STATE_JSON != ''
         run: npm run test:e2e:live-authenticated
 
       - name: Upload live authenticated artifacts
