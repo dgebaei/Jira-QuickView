@@ -1,7 +1,25 @@
 /*global chrome */
-import React, {useEffect, useState, useCallback} from 'react';
+import React, {useEffect, useState, useCallback, useRef} from 'react';
 import ReactDOM from 'react-dom';
-import defaultConfig from 'options/config';
+import defaultConfig, {buildTooltipLayoutFromDisplayFields} from 'options/config';
+import {
+  DndContext,
+  DragOverlay,
+  rectIntersection,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  useDraggable,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {CSS} from '@dnd-kit/utilities';
 import {storageGet, storageSet, permissionsRequest} from 'src/chrome';
 import {hasPathSlash, resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocumentTheme} from 'src/theme';
@@ -151,6 +169,372 @@ async function main() {
   );
 }
 
+const ROW_FIELD_KEYS = ['issueType', 'status', 'priority', 'epicParent', 'sprint', 'affects', 'fixVersions', 'environment', 'labels'];
+const CONTENT_BLOCK_KEYS = [
+  { key: 'description', label: 'Description' },
+  { key: 'attachments', label: 'Attachments' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'pullRequests', label: 'Pull Requests' }
+];
+const DRAGGABLE_ZONES = ['row1', 'row2', 'row3'];
+
+function SortableField({ id, label, onRemove }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className='fieldPill' {...attributes} {...listeners}>
+      <span className='fieldPillLabel'>{label}</span>
+      {onRemove && (
+        <button
+          type='button'
+          className='fieldPillRemove'
+          onClick={(e) => { e.stopPropagation(); onRemove(id); }}
+          title='Remove from layout'
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DraggableLibraryField({ id, label }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
+
+  const style = {
+    opacity: isDragging ? 0.5 : 1,
+    cursor: 'grab',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`fieldPill ${isDragging ? 'fieldPillDragging' : ''}`}
+      {...listeners}
+      {...attributes}
+    >
+      <span className='fieldPillLabel'>{label}</span>
+    </div>
+  );
+}
+
+function FieldLibrary({ fields, onAddCustomField }) {
+  if (fields.length === 0) {
+    return (
+      <div className='fieldLibraryEmpty'>
+        <p>All built-in fields are placed in the layout.</p>
+        <button
+          type='button'
+          className='secondaryButton'
+          onClick={onAddCustomField}
+          style={{ marginTop: '8px', fontSize: '11px', padding: '4px 10px' }}
+        >
+          + Add custom field
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className='fieldLibrary'>
+      {fields.map(field => (
+        <DraggableLibraryField
+          key={field.key}
+          id={field.key}
+          label={field.label}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ContentBlockToggle({ block, checked, onChange }) {
+  return (
+    <label className='contentBlockToggle'>
+      <input
+        type='checkbox'
+        checked={checked}
+        onChange={(e) => onChange(block.key, e.target.checked)}
+      />
+      <span className='contentBlockToggleSwitch' />
+      <span className='contentBlockToggleLabel'>{block.label}</span>
+    </label>
+  );
+}
+
+function DroppableZone({ id, title, fields, onRemove, isOver }) {
+  const { setNodeRef } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`tooltipPreviewRow ${isOver ? 'tooltipPreviewRowOver' : ''}`}
+    >
+      <span className='tooltipPreviewRowLabel'>{title}</span>
+      <SortableContext items={fields.map(f => f.key)} strategy={verticalListSortingStrategy}>
+        <div className='tooltipPreviewRowContent'>
+          {fields.map(field => (
+            <SortableField
+              key={field.key}
+              id={field.key}
+              label={field.label}
+              onRemove={onRemove}
+            />
+          ))}
+          {fields.length === 0 && (
+            <span className='tooltipPreviewRowEmpty'>Drop fields here</span>
+          )}
+        </div>
+      </SortableContext>
+    </div>
+  );
+}
+
+function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fieldCatalog, onAddCustomField }) {
+  const [activeId, setActiveId] = useState(null);
+  const [overId, setOverId] = useState(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const allFields = {};
+  FIELD_OPTIONS.forEach(opt => {
+    if (ROW_FIELD_KEYS.includes(opt.key)) {
+      allFields[opt.key] = opt.label;
+    }
+  });
+  customFields.forEach(cf => {
+    if (cf.fieldId) {
+      const name = fieldCatalog[cf.fieldId] || cf.fieldId;
+      allFields[`custom_${cf._uid}`] = name;
+    }
+  });
+
+  const placedRowKeys = new Set([
+    ...tooltipLayout.row1,
+    ...tooltipLayout.row2,
+    ...tooltipLayout.row3,
+  ]);
+
+  const libraryFields = Object.keys(allFields)
+    .filter(key => !placedRowKeys.has(key))
+    .map(key => ({ key, label: allFields[key] }));
+
+  const getZoneForKey = (key) => {
+    if (tooltipLayout.row1.includes(key)) return 'row1';
+    if (tooltipLayout.row2.includes(key)) return 'row2';
+    if (tooltipLayout.row3.includes(key)) return 'row3';
+    return null;
+  };
+
+  const handleRemoveFromZone = (zone, key) => {
+    setTooltipLayout(prev => ({
+      ...prev,
+      [zone]: prev[zone].filter(k => k !== key)
+    }));
+  };
+
+  const handleToggleContentBlock = (key, checked) => {
+    setTooltipLayout(prev => {
+      if (checked) {
+        return { ...prev, contentBlocks: [...prev.contentBlocks, key] };
+      } else {
+        return { ...prev, contentBlocks: prev.contentBlocks.filter(k => k !== key) };
+      }
+    });
+  };
+
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragOver = (event) => {
+    const { over } = event;
+    if (over) {
+      setOverId(over.id);
+    } else {
+      setOverId(null);
+    }
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
+
+    if (!over) return;
+
+    const activeKey = active.id;
+    const overId = over.id;
+
+    const fromZone = getZoneForKey(activeKey);
+
+    let toZone = null;
+    if (DRAGGABLE_ZONES.includes(overId)) {
+      toZone = overId;
+    } else {
+      toZone = getZoneForKey(overId);
+    }
+
+    if (!toZone) return;
+
+    if (fromZone === toZone) {
+      const overIndex = tooltipLayout[toZone].indexOf(overId);
+      if (overIndex >= 0 && activeKey !== overId) {
+        setTooltipLayout(prev => {
+          const newZone = [...prev[toZone]];
+          const activeIndex = newZone.indexOf(activeKey);
+          if (activeIndex >= 0) {
+            newZone.splice(activeIndex, 1);
+            newZone.splice(overIndex, 0, activeKey);
+          }
+          return { ...prev, [toZone]: newZone };
+        });
+      }
+      return;
+    }
+
+    if (fromZone) {
+      setTooltipLayout(prev => {
+        const newLayout = { ...prev };
+        newLayout[fromZone] = prev[fromZone].filter(k => k !== activeKey);
+
+        const overIndex = prev[toZone].indexOf(overId);
+        if (overIndex >= 0) {
+          newLayout[toZone] = [...prev[toZone]];
+          newLayout[toZone].splice(overIndex, 0, activeKey);
+        } else {
+          newLayout[toZone] = [...prev[toZone], activeKey];
+        }
+
+        return newLayout;
+      });
+    } else if (DRAGGABLE_ZONES.includes(toZone)) {
+      const overIndex = tooltipLayout[toZone].indexOf(overId);
+      if (overIndex >= 0) {
+        setTooltipLayout(prev => {
+          const newZone = [...prev[toZone]];
+          newZone.splice(overIndex, 0, activeKey);
+          return { ...prev, [toZone]: newZone };
+        });
+      } else {
+        setTooltipLayout(prev => ({
+          ...prev,
+          [toZone]: [...prev[toZone], activeKey]
+        }));
+      }
+    }
+  };
+
+  const activeField = activeId ? { key: activeId, label: allFields[activeId] || activeId } : null;
+
+  const getFieldsForZone = (zone) => {
+    return (tooltipLayout[zone] || []).map(key => ({
+      key,
+      label: allFields[key] || key
+    }));
+  };
+
+  return (
+    <div className='tooltipLayoutEditor'>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={rectIntersection}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className='tooltipLayoutSidebar'>
+          <div className='tooltipLayoutSidebarHeader'>
+            <h4>Available Fields</h4>
+            <p>Drag fields into rows</p>
+          </div>
+          <FieldLibrary fields={libraryFields} onAddCustomField={onAddCustomField} />
+        </div>
+
+        <div className='tooltipLayoutPreview'>
+          <div className='tooltipPreview'>
+            <div className='tooltipPreviewHeader'>
+              <span className='tooltipPreviewTitle'>PROJECT-123</span>
+              <div className='tooltipPreviewPeople'>
+                <div className='tooltipPreviewPerson tooltipPreviewPersonR' title='Reporter'>Re</div>
+                <div className='tooltipPreviewPerson tooltipPreviewPersonA' title='Assignee'>As</div>
+              </div>
+            </div>
+
+            <div className='tooltipPreviewSection'>
+              <DroppableZone
+                id='row1'
+                title='Row 1'
+                fields={getFieldsForZone('row1')}
+                onRemove={(key) => handleRemoveFromZone('row1', key)}
+                isOver={overId === 'row1'}
+              />
+              <DroppableZone
+                id='row2'
+                title='Row 2'
+                fields={getFieldsForZone('row2')}
+                onRemove={(key) => handleRemoveFromZone('row2', key)}
+                isOver={overId === 'row2'}
+              />
+              <DroppableZone
+                id='row3'
+                title='Row 3'
+                fields={getFieldsForZone('row3')}
+                onRemove={(key) => handleRemoveFromZone('row3', key)}
+                isOver={overId === 'row3'}
+              />
+            </div>
+
+            <div className='tooltipPreviewContentBlocks'>
+              <span className='tooltipPreviewContentLabel'>Content</span>
+              <div className='tooltipPreviewContentToggles'>
+                {CONTENT_BLOCK_KEYS.map(block => (
+                  <ContentBlockToggle
+                    key={block.key}
+                    block={block}
+                    checked={tooltipLayout.contentBlocks.includes(block.key)}
+                    onChange={handleToggleContentBlock}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <DragOverlay>
+          {activeField ? (
+            <div className='fieldPill fieldPillDragging'>
+              <span className='fieldPillLabel'>{activeField.label}</span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  );
+}
+
 function ConfigPage(props) {
   const [instanceUrl, setInstanceUrl] = useState(props.instanceUrl || '');
   const [domainsText, setDomainsText] = useState((props.domains || []).join(', '));
@@ -164,6 +548,15 @@ function ConfigPage(props) {
   const [customFields, setCustomFields] = useState(() =>
     normalizeCustomFields(props.customFields).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
   );
+  const [tooltipLayout, setTooltipLayout] = useState(() => {
+    if (props.tooltipLayout) {
+      return props.tooltipLayout;
+    }
+    return buildTooltipLayoutFromDisplayFields({
+      ...defaultConfig.displayFields,
+      ...(props.displayFields || {})
+    });
+  });
   const [fieldCatalog, setFieldCatalog] = useState({});
   const [status, setStatus] = useState('');
   const [statusTone, setStatusTone] = useState('neutral');
@@ -278,6 +671,7 @@ function ConfigPage(props) {
       hoverDepth,
       hoverModifierKey,
       displayFields,
+      tooltipLayout,
       customFields: normalizeCustomFields(customFields)
     });
     resetDeclarativeMapping();
@@ -320,10 +714,9 @@ function ConfigPage(props) {
       <div className='settingsGrid'>
 
         {/* ── BASIC: Connection ─────────────────────────── */}
-        <div className='sectionEyebrow'>Basic</div>
-
         <section className='settingsCard'>
           <div className='cardHeader'>
+            <div className='sectionEyebrow'>Basic</div>
             <h2>Connection</h2>
             <p>Tell the extension where Jira lives and which pages it should activate on.</p>
           </div>
@@ -405,11 +798,10 @@ function ConfigPage(props) {
       {/* ── ADVANCED Sections ───────────────────────────── */}
       {showAdvanced && (
         <div className='settingsGrid'>
-          <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
-
           {/* ── Hover Behavior ───────────────────────────── */}
           <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
+              <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
               <h2>Hover Behavior</h2>
               <p>Control when the tooltip appears as you move the mouse over Jira issue keys.</p>
             </div>
@@ -449,35 +841,16 @@ function ConfigPage(props) {
           <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
               <h2>Tooltip Layout</h2>
-              <p>Choose which built-in Jira fields appear in each part of the hover card.</p>
+              <p>Drag fields to customize which Jira data appears in each row of the hover card.</p>
             </div>
             <div className='cardBody'>
-              <div className='fieldLayoutGroups'>
-                {FIELD_GROUPS.map(group => (
-                  <div key={group.title} className='fieldGroupCard'>
-                    <div className='fieldGroupHeader'>
-                      <h3>{group.title}</h3>
-                      <p>{group.description}</p>
-                    </div>
-                    <div className='displayFields'>
-                      {group.keys.map(key => {
-                        const option = FIELD_OPTIONS.find(field => field.key === key);
-                        return (
-                          <label key={key} className='displayFieldOption'>
-                            <input
-                              id={'displayField_' + key}
-                              type='checkbox'
-                              checked={!!displayFields[key]}
-                              onChange={event => setDisplayFieldValue(key, event.target.checked)}
-                            />
-                            <span>{option ? option.label : key}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <TooltipLayoutEditor
+                tooltipLayout={tooltipLayout}
+                setTooltipLayout={setTooltipLayout}
+                customFields={customFields}
+                fieldCatalog={fieldCatalog}
+                onAddCustomField={addCustomField}
+              />
             </div>
           </section>
 
@@ -499,7 +872,7 @@ function ConfigPage(props) {
                 </div>
               ) : (
                 <div className='customFieldsSection'>
-                  {customFields.map((field) => (
+                  {customFields.map((field, index) => (
                     <div key={field._uid} className='customFieldRow'>
                       <div className='customFieldHeader'>Custom field {index + 1}</div>
                       <label className='customFieldLabel'>
