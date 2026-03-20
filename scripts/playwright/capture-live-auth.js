@@ -1,7 +1,10 @@
+require('./load-env-defaults');
+
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const {chromium} = require('@playwright/test');
+const {normalizeInstanceUrl} = require('../../tests/e2e/helpers/live-jira');
 
 function ask(question) {
   const rl = readline.createInterface({
@@ -18,8 +21,12 @@ function ask(question) {
 
 async function main() {
   const instanceUrl = String(process.env.JIRA_LIVE_INSTANCE_URL || '').trim();
+  const normalizedInstanceUrl = normalizeInstanceUrl(instanceUrl);
   if (!instanceUrl) {
     throw new Error('Set JIRA_LIVE_INSTANCE_URL before capturing live Jira auth state.');
+  }
+  if (!normalizedInstanceUrl) {
+    throw new Error('JIRA_LIVE_INSTANCE_URL must be a valid Jira URL. You can use the site root or a Jira Cloud board/project URL.');
   }
 
   const repoRoot = path.resolve(__dirname, '../..');
@@ -35,6 +42,7 @@ async function main() {
   const page = await context.newPage();
 
   console.log(`Opening ${instanceUrl} in a real browser window.`);
+  console.log(`Normalized Jira site for tests: ${normalizedInstanceUrl}`);
   console.log('Log in with your dedicated Jira test account, then return here.');
   await page.goto(instanceUrl, {waitUntil: 'domcontentloaded'});
 

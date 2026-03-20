@@ -1804,7 +1804,16 @@ async function mainAsyncLocal() {
         jqlParts.push(`(${searchClauses.join(' OR ')})`);
       }
       const jql = `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
-      const response = await get(`${INSTANCE_URL}rest/api/2/search?maxResults=20&fields=summary,issuetype,status&jql=${encodeURIComponent(jql)}`);
+      let response;
+      try {
+        response = await get(`${INSTANCE_URL}rest/api/2/search?maxResults=20&fields=summary,issuetype,status&jql=${encodeURIComponent(jql)}`);
+      } catch (error) {
+        const errorText = String(error?.message || error?.inner || error || '');
+        if (!errorText.includes('410')) {
+          throw error;
+        }
+        response = await get(`${INSTANCE_URL}rest/api/3/search/jql?maxResults=20&fields=summary,issuetype,status&jql=${encodeURIComponent(jql)}`);
+      }
       const issues = Array.isArray(response?.issues) ? response.issues : [];
       const options = issues
         .map(issue => buildIssueSearchOption(issue))
@@ -2739,6 +2748,13 @@ async function mainAsyncLocal() {
     return String(value || '').trim();
   }
 
+  function defaultHoursIfNoUnit(value) {
+    if (!value) {
+      return value;
+    }
+    return /[a-zA-Z]$/.test(value) ? value : `${value}h`;
+  }
+
   function buildTimeTrackingSavePlan(timeTrackingState, options = {}) {
     const canEditEstimates = options.canEditEstimates !== false;
     const originalEstimateInput = normalizeTimeTrackingInput(timeTrackingState?.originalEstimateInput);
@@ -2751,16 +2767,16 @@ async function mainAsyncLocal() {
     const estimateFields = {};
     const worklogStarted = buildWorklogStartedValue(worklogDateInput);
     const worklogPayload = worklogAmountInput ? {
-      timeSpent: worklogAmountInput,
+      timeSpent: defaultHoursIfNoUnit(worklogAmountInput),
       ...(worklogDescriptionInput ? {comment: worklogDescriptionInput} : {}),
       ...(worklogStarted ? {started: worklogStarted} : {})
     } : null;
 
     if (originalEstimateChanged) {
-      estimateFields.originalEstimate = originalEstimateInput;
+      estimateFields.originalEstimate = defaultHoursIfNoUnit(originalEstimateInput);
     }
     if (remainingEstimateChanged) {
-      estimateFields.remainingEstimate = remainingEstimateInput;
+      estimateFields.remainingEstimate = defaultHoursIfNoUnit(remainingEstimateInput);
     }
 
     return {
@@ -2935,7 +2951,7 @@ async function mainAsyncLocal() {
 
   // ── Avatars & User Display ─────────────────────────────────
 
-  function getUserInitials(displayName, fallbackInitials = 'NA') {
+  function getUserInitials(displayName, fallbackInitials = '--') {
     const tokens = String(displayName || '')
       .trim()
       .split(/\s+/)
@@ -2965,7 +2981,7 @@ async function mainAsyncLocal() {
       normalizedUrl.includes('initials=');
   }
 
-  function buildUserAvatarView(user, titlePrefix, fallbackInitials = 'NA') {
+  function buildUserAvatarView(user, titlePrefix, fallbackInitials = '--') {
     const displayName = user?.displayName || '';
     const avatarUrl = user?.avatarUrls?.['48x48'] || '';
     const useInitials = isLikelyDefaultAvatar(user, avatarUrl);
@@ -2981,10 +2997,10 @@ async function mainAsyncLocal() {
     const assignee = issueData?.fields?.assignee;
     const displayName = assignee?.displayName || 'Unassigned';
     const baseAvatarView = assignee
-      ? buildUserAvatarView(assignee, 'Assignee', 'NA')
+      ? buildUserAvatarView(assignee, 'Assignee', '--')
       : {
           avatarUrl: '',
-          initials: 'NA',
+          initials: '--',
           displayName,
           titleText: 'Assignee: Unassigned'
         };
@@ -3340,7 +3356,7 @@ async function mainAsyncLocal() {
     const visibleAttachments = displayFields.attachments ? previewAttachments : [];
     const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
     const reporterView = displayFields.reporter && issueData.fields.reporter
-      ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', 'NA')
+      ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
       : null;
     const assigneeView = displayFields.assignee
       ? buildAssigneeAvatarView(state, issueData, assigneeEditable)
@@ -3831,7 +3847,7 @@ async function mainAsyncLocal() {
       }
       await renderIssuePopup(popupState);
 
-      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search' || popupState.editState.editorType === 'tempo-account-search')) {
+      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search')) {
         const searchRequestId = ++editSearchRequestCounter;
         popupState = {
           ...popupState,
@@ -3842,9 +3858,7 @@ async function mainAsyncLocal() {
           }
         };
         await renderIssuePopup(popupState);
-        if (popupState.editState.editorType !== 'label-search') {
-          triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
-        }
+        triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
       }
     } catch (error) {
       const errorMessage = buildEditFieldError(error);

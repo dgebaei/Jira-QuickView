@@ -12,33 +12,58 @@ Both `tests/.auth/` and `tests/output/` are ignored by git.
 
 ## Test Modes
 
-### Mocked extension tests
+### Mock edge tests
 
-These are the main automated tests. They use:
+These deterministic tests focus on failure injection and unhappy-path coverage. They use:
 
 - the unpacked Chromium extension
 - local fixture pages
-- a mocked Jira backend
+- a mocked Jira backend by default
+
+You can switch these extension suites to a real Jira Cloud backend with `MOCK=false`.
 
 Run them with:
 
 ```bash
-npm run test:e2e:extension
+npm run test:e2e:mock-edge
 ```
 
 ### Public Jira smoke tests
 
-These are lightweight live checks against Atlassian's public Jira pages.
+These are lightweight anonymous checks against Atlassian's public Jira pages.
 
 Run them with:
 
 ```bash
-RUN_PUBLIC_JIRA_TESTS=1 npm run test:e2e:public
+npm run test:e2e:public-smoke
 ```
 
-### Private Jira live tests
+### Live authenticated tests
 
-These are opt-in and only run when all required environment variables are configured.
+These run the extension against your Jira Cloud tenant with an authenticated storage state. They cover the main happy-path extension flows plus the guarded live mutation flows.
+
+Run them with:
+
+```bash
+export MOCK=false
+export JIRA_LIVE_INSTANCE_URL="https://dgebaei.atlassian.net/jira/software/projects/JIRA/boards/1"
+export JIRA_LIVE_PROJECT_KEYS="JIRA"
+export JIRA_LIVE_ISSUE_KEYS="JIRA-1,JIRA-2"
+export JIRA_LIVE_STORAGE_STATE="tests/.auth/jira-live.json"
+npm run test:e2e:live-authenticated
+```
+
+Backward-compatible aliases:
+
+- `npm run test:e2e:extension` -> `npm run test:e2e:live-authenticated`
+- `npm run test:e2e:public` -> `npm run test:e2e:public-smoke`
+- `npm run test:e2e:live` -> `npm run test:e2e:live-authenticated`
+
+Repo-local defaults can be stored in `.env.playwright.local`. This worktree now loads that file automatically for Playwright config and scripts, so `npm run test:e2e:all` can pick up your Jira Cloud settings without re-exporting them each time.
+
+### Private Jira live configuration
+
+These authenticated suites are opt-in and only run when all required environment variables are configured.
 
 Required environment variables:
 
@@ -49,11 +74,7 @@ export JIRA_LIVE_ISSUE_KEYS="E2E-101,E2E-102"
 export JIRA_LIVE_STORAGE_STATE="tests/.auth/jira-live.json"
 ```
 
-Run them with:
-
-```bash
-npm run test:e2e:live
-```
+`JIRA_LIVE_INSTANCE_URL` may be either the Jira site root or a deeper Jira URL such as a board, project, or issue page. The live helpers normalize it to the site origin before opening `/browse/<issueKey>` pages.
 
 Current live coverage includes:
 
@@ -63,6 +84,7 @@ Current live coverage includes:
 - priority mutation with restoration
 - assignee mutation with restoration
 - temporary label mutation with cleanup
+- deterministic live preparation for required attachment, label, and priority data
 
 ## Private Jira Safety Scope
 
@@ -80,6 +102,15 @@ Example:
 export JIRA_LIVE_INSTANCE_URL="https://yourcompany.atlassian.net"
 export JIRA_LIVE_PROJECT_KEYS="E2E,QA"
 export JIRA_LIVE_ISSUE_KEYS="E2E-101,E2E-102"
+```
+
+Jira Cloud example using your tenant:
+
+```bash
+export JIRA_LIVE_INSTANCE_URL="https://dgebaei.atlassian.net/jira/software/projects/JIRA/boards/1"
+export JIRA_LIVE_PROJECT_KEYS="JIRA"
+export JIRA_LIVE_ISSUE_KEYS="JIRA-1,JIRA-2"
+export JIRA_LIVE_STORAGE_STATE="tests/.auth/jira-live.json"
 ```
 
 That means live tests may target `E2E-101` and `E2E-102`, but not any other issue.
@@ -121,6 +152,14 @@ export JIRA_LIVE_INSTANCE_URL="https://yourcompany.atlassian.net"
 npm run test:e2e:auth:live
 ```
 
+For Jira Cloud, you can also point it at a board URL if that is the easiest place to log in first:
+
+```bash
+export JIRA_LIVE_INSTANCE_URL="https://dgebaei.atlassian.net/jira/software/projects/JIRA/boards/1"
+export JIRA_LIVE_STORAGE_STATE="tests/.auth/jira-live.json"
+npm run test:e2e:auth:live
+```
+
 If you want a custom path:
 
 ```bash
@@ -135,7 +174,9 @@ All generated Playwright output now lives under `tests/output/playwright/`.
 
 Important paths:
 
+- run explorer: `tests/output/playwright/index.html`
 - merged HTML report: `tests/output/playwright/report/index.html`
+- per-run HTML reports: `tests/output/playwright/runs/<run-id>/index.html`
 - accumulated blob reports: `tests/output/playwright/blob-report`
 - run artifacts: `tests/output/playwright/test-results`
 
@@ -145,7 +186,7 @@ Open the merged report with:
 npm run test:e2e:show-report
 ```
 
-The report is cumulative across runs because each environment writes a blob report and the HTML report is rebuilt from all saved blobs.
+The run explorer includes a summary view plus a sidebar of saved runs. The merged HTML report remains cumulative because each environment writes a blob report and the summary is rebuilt from all saved blobs.
 
 If you want a clean report before the next run:
 
@@ -166,6 +207,14 @@ Run everything configured by Playwright:
 ```bash
 npm run test:e2e:all
 ```
+
+Project lanes in Playwright are now:
+
+- `mock-edge`
+- `public-smoke`
+- `live-authenticated`
+
+`npm run test:e2e:all` now runs those three lanes sequentially so each one gets the correct default environment.
 
 Run the extension suite in headed mode:
 
@@ -193,11 +242,26 @@ npm run test:e2e:reset-report-data
 
 ## CI
 
-GitHub Actions runs the extension-only Playwright suite on pull requests to `master` and uploads the Playwright artifacts.
+GitHub Actions now runs separate Playwright lanes:
 
 Workflow:
 
 - `.github/workflows/playwright-extension.yml`
+
+CI behavior:
+
+- pull requests: `mock-edge` and `public-smoke`
+- scheduled runs and manual dispatch: `live-authenticated` when Jira secrets are configured
+- pushes to `master`: `mock-edge`, `public-smoke`, and `live-authenticated` when Jira secrets are configured
+
+Required GitHub Actions secrets for `live-authenticated`:
+
+- `JIRA_LIVE_INSTANCE_URL`
+- `JIRA_LIVE_PROJECT_KEYS`
+- `JIRA_LIVE_ISSUE_KEYS`
+- `JIRA_LIVE_STORAGE_STATE_JSON`
+
+`JIRA_LIVE_STORAGE_STATE_JSON` should contain the full JSON contents of `tests/.auth/jira-live.json` for your dedicated Jira test account.
 
 Uploaded CI artifacts include:
 

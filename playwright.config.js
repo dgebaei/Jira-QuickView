@@ -1,3 +1,5 @@
+require('./scripts/playwright/load-env-defaults');
+
 const path = require('path');
 
 const testResultsDir = process.env.PLAYWRIGHT_OUTPUT_DIR
@@ -28,16 +30,16 @@ module.exports = {
   globalSetup: path.join(__dirname, 'tests/e2e/helpers/global-setup.js'),
   projects: [
     {
-      name: 'extension',
-      testIgnore: /(?:^|\/)public-jira\.spec\.js$|(?:^|\/)live-jira\.spec\.js$/,
+      name: 'mock-edge',
+      testMatch: /(?:^|\/)(?:error-states|partial-failures)\.spec\.js$/,
     },
     {
-      name: 'public-jira',
-      grep: /@public/,
+      name: 'public-smoke',
+      testMatch: /(?:^|\/)public-jira\.spec\.js$/,
     },
     {
-      name: 'live-jira',
-      grep: /@live/,
+      name: 'live-authenticated',
+      testMatch: /(?:^|\/)(?:options|hover-and-popup|mock-jira-flows|advanced-mock-flows|live-jira)\.spec\.js$/,
     },
   ],
 };

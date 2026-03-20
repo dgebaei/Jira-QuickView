@@ -1,4 +1,4 @@
-name: Playwright Extension Suite
+name: Playwright Suites
 
 on:
   pull_request:
@@ -8,9 +8,16 @@ on:
     branches:
       - master
       - feature/playwright-e2e-suite
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  extension-tests:
+  mock-edge:
+    name: Mock Edge
     runs-on: ubuntu-latest
 
     steps:
@@ -29,13 +36,202 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run extension Playwright suite
-        run: npm run test:e2e:extension
+      - name: Run mock edge Playwright suite
+        run: npm run test:e2e:mock-edge
 
-      - name: Upload Playwright artifacts
+      - name: Upload mock edge artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-extension-artifacts
+          name: playwright-mock-edge-artifacts
           path: tests/output/playwright
           if-no-files-found: warn
+
+  public-smoke:
+    name: Public Smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run public smoke Playwright suite
+        run: npm run test:e2e:public-smoke
+
+      - name: Upload public smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-public-smoke-artifacts
+          path: tests/output/playwright
+          if-no-files-found: warn
+
+  live-authenticated:
+    name: Live Authenticated
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    env:
+      JIRA_LIVE_INSTANCE_URL: ${{ vars.JIRA_LIVE_INSTANCE_URL }}
+      JIRA_LIVE_PROJECT_KEYS: ${{ vars.JIRA_LIVE_PROJECT_KEYS }}
+      JIRA_LIVE_ISSUE_KEYS: ${{ vars.JIRA_LIVE_ISSUE_KEYS }}
+      JIRA_LIVE_STORAGE_STATE: tests/.auth/jira-live.json
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Write Jira live storage state
+        run: |
+          mkdir -p tests/.auth
+          if [ -n "$JIRA_LIVE_STORAGE_STATE_JSON" ]; then
+            printf '%s' "$JIRA_LIVE_STORAGE_STATE_JSON" > tests/.auth/jira-live.json
+          fi
+        env:
+          JIRA_LIVE_STORAGE_STATE_JSON: ${{ secrets.JIRA_LIVE_STORAGE_STATE_JSON }}
+
+      - name: Run live authenticated Playwright suite
+        run: npm run test:e2e:live-authenticated
+
+      - name: Upload live authenticated artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-live-authenticated-artifacts
+          path: tests/output/playwright
+          if-no-files-found: warn
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/feature/playwright-e2e-suite')
+    runs-on: ubuntu-latest
+    needs: [mock-edge, public-smoke, live-authenticated]
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: tests/output/playwright
+
+      - name: Flatten artifact directories
+        run: |
+          cd tests/output/playwright
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              mv "$dir"*.html . 2>/dev/null || true
+              mv "$dir"runs/ . 2>/dev/null || true
+              mv "$dir"report/ . 2>/dev/null || true
+              mv "$dir"blob-report/ . 2>/dev/null || true
+              mv "$dir"test-results/ . 2>/dev/null || true
+              mv "$dir"runs.json . 2>/dev/null || true
+              rmdir "$dir" 2>/dev/null || true
+            fi
+          done
+          ls -la
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: tests/output/playwright
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  comment-pr:
+    name: Comment PR with Test Links
+    if: github.event_name == 'pull_request' && needs.deploy-pages.result != 'skipped'
+    runs-on: ubuntu-latest
+    needs: [deploy-pages]
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: tests/output/playwright
+
+      - name: Create PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const runsDir = path.join(process.cwd(), 'tests/output/playwright/runs');
+            let runs = [];
+            if (fs.existsSync(runsDir)) {
+              runs = fs.readdirSync(runsDir)
+                .filter(f => fs.statSync(path.join(runsDir, f)).isDirectory())
+                .sort((a, b) => b.localeCompare(a))
+                .slice(0, 3);
+            }
+            
+            const baseUrl = 'https://dgebaei.github.io/Jira-Hot-Linker/playwright/runs';
+            
+            const runsList = runs.map(function(run) {
+              return '- [' + run + '](' + baseUrl + '/' + run + '/)';
+            }).join('\n');
+            
+            const body = '## Playwright Test Results\n\nView interactive dashboard: https://dgebaei.github.io/Jira-Hot-Linker/playwright/\n\n### Latest Runs:\n' + runsList + '\n\n> Built from `' + context.sha.slice(0, 7) + '`';
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  comment-pr-simple:
+    name: Comment PR Status
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [mock-edge, public-smoke, live-authenticated]
+
+    steps:
+      - name: Create PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = '## Playwright Test Results\n\nTests completed successfully!\n\nThe interactive dashboard will be available after merging to master.\n\n> Built from `' + context.sha.slice(0, 7) + '`';
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

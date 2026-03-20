@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 function parseCsvEnv(name) {
   return String(process.env[name] || '')
     .split(',')
@@ -5,19 +7,34 @@ function parseCsvEnv(name) {
     .filter(Boolean);
 }
 
+function normalizeInstanceUrl(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch (error) {
+    return '';
+  }
+}
+
 function getLiveJiraConfig() {
-  const instanceUrl = String(process.env.JIRA_LIVE_INSTANCE_URL || '').trim();
+  const instanceUrlInput = String(process.env.JIRA_LIVE_INSTANCE_URL || '').trim();
+  const instanceUrl = normalizeInstanceUrl(instanceUrlInput);
   const projectKeys = parseCsvEnv('JIRA_LIVE_PROJECT_KEYS');
   const issueKeys = parseCsvEnv('JIRA_LIVE_ISSUE_KEYS');
   const storageStatePath = String(process.env.JIRA_LIVE_STORAGE_STATE || '').trim();
 
   return {
+    instanceUrlInput,
     instanceUrl,
     projectKeys,
     issueKeys,
     storageStatePath,
     isConfigured: !!instanceUrl && projectKeys.length > 0 && issueKeys.length > 0,
-    hasAuth: !!storageStatePath,
+    hasAuth: !!storageStatePath && fs.existsSync(storageStatePath),
   };
 }
 
@@ -59,4 +76,5 @@ module.exports = {
   getAllowedLiveIssueKeys,
   getIssueProjectKey,
   getLiveJiraConfig,
+  normalizeInstanceUrl,
 };

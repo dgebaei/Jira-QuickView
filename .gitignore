@@ -2,6 +2,7 @@
 .agents/
 .opencode/
 .worktrees/
+.env.playwright.local
 .test.swp
 *.swp
 *.zip

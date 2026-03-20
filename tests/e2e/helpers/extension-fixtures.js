@@ -12,6 +12,11 @@ async function readStorageStateFile() {
   if (!storageStatePath) {
     return null;
   }
+  try {
+    await fs.access(path.resolve(storageStatePath));
+  } catch (error) {
+    return null;
+  }
   const raw = await fs.readFile(path.resolve(storageStatePath), 'utf8');
   return JSON.parse(raw);
 }
@@ -136,11 +141,59 @@ async function injectContentScript(extensionApp, page) {
   const serviceWorker = extensionApp.context.serviceWorkers()[0] || await extensionApp.context.waitForEvent('serviceworker');
   const pageUrl = page.url();
   await serviceWorker.evaluate(async targetUrl => {
-    const tabs = await new Promise(resolve => {
-      chrome.tabs.query({}, resolve);
-    });
-    const tab = tabs.find(candidate => candidate.url === targetUrl);
-    if (!tab || typeof tab.id !== 'number' || tab.id < 0) {
+    function normalizeUrl(value) {
+      try {
+        const url = new URL(value);
+        url.hash = '';
+        return url.toString();
+      } catch (error) {
+        return String(value || '');
+      }
+    }
+
+    function samePage(left, right) {
+      try {
+        const leftUrl = new URL(left);
+        const rightUrl = new URL(right);
+        return leftUrl.origin === rightUrl.origin && leftUrl.pathname === rightUrl.pathname;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function sameOrigin(left, right) {
+      try {
+        return new URL(left).origin === new URL(right).origin;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    const normalizedTargetUrl = normalizeUrl(targetUrl);
+    const deadline = Date.now() + 5000;
+    let tab = null;
+
+    while (!tab && Date.now() < deadline) {
+      const tabs = await new Promise(resolve => {
+        chrome.tabs.query({}, resolve);
+      });
+
+      tab = tabs.find(candidate => {
+        const candidateUrl = normalizeUrl(candidate.url);
+        return candidateUrl === normalizedTargetUrl || candidateUrl.startsWith(normalizedTargetUrl) || samePage(candidateUrl, normalizedTargetUrl);
+      }) || null;
+
+      if (!tab) {
+        const sameOriginTabs = tabs.filter(candidate => sameOrigin(candidate.url, normalizedTargetUrl));
+        tab = sameOriginTabs[sameOriginTabs.length - 1] || null;
+      }
+
+      if (!tab) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    if (!tab?.id) {
       throw new Error(`Could not find tab for ${targetUrl}`);
     }
     await chrome.scripting.executeScript({

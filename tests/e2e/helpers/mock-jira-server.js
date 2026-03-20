@@ -1,7 +1,7 @@
 const http = require('http');
 
 const PNG_BUFFER = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAuklEQVR42u3RMQEAIAzAsPnBCeqmBD+4wAGI2A6OHDXQxMx99U9hAhABASIgQAQEiIAAMQKIgAARECACAkRAgAiIgAARECACAkRAgAiIgAARECACAkRAgAiIgAApNdZpDwgQIECAAAECBAgQIECAAAECBAgQIECAAAECBAgQIECAAAECRECACAgQAREQIAICRECACAgQAREQIAICRECACAgQAQFiAhABASIgQAQEiIAAERABASIgQNTcA6yedS4u1mgqAAAAAElFTkSuQmCC',
   'base64'
 );
 
@@ -130,6 +130,11 @@ function createState(origin) {
           renderedBody: '<p>Initial comment with a link <a href="https://example.com/docs">https://example.com/docs</a></p>',
         },
       ],
+      timetracking: {
+        originalEstimate: '1w',
+        remainingEstimate: '1d',
+        timeSpent: '2h',
+      },
       customFields: {
         customfield_12345: 'Customer impact: High',
       },
@@ -225,6 +230,7 @@ function buildIssueResponse(origin, state) {
     }))},
     customfield_10020: issue.sprintEntries,
     customfield_12345: issue.customFields.customfield_12345,
+    timetracking: issue.timetracking,
   };
   return {
     id: issue.id,
@@ -288,6 +294,11 @@ function buildEditmeta(state) {
         name: 'Sprint',
         operations: ['set'],
         schema: {custom: 'com.pyxis.greenhopper.jira:gh-sprint', type: 'array'},
+      },
+      timetracking: {
+        name: 'Time Tracking',
+        operations: ['set'],
+        schema: {type: 'timetracking'},
       },
     },
   };
@@ -365,6 +376,13 @@ async function createMockJiraServer() {
         name: entry.name,
         state: entry.state,
       }));
+    }
+    if (state.scenario === 'empty-optional-fields') {
+      state.issue.labels = [];
+      state.issue.fixVersions = [];
+      state.issue.parent = null;
+      state.labels = [];
+      state.issueSearchCatalog = [];
     }
   };
 
@@ -555,6 +573,14 @@ async function createMockJiraServer() {
         state.issue.parent = match
           ? {key: match.key, fields: {summary: match.fields.summary}}
           : {key: fields.parent.key, fields: {summary: fields.parent.key}};
+      }
+      if (fields.timetracking) {
+        const tt = fields.timetracking;
+        state.issue.timetracking = {
+          originalEstimate: tt.originalEstimate != null ? tt.originalEstimate : state.issue.timetracking.originalEstimate,
+          remainingEstimate: tt.remainingEstimate != null ? tt.remainingEstimate : state.issue.timetracking.remainingEstimate,
+          timeSpent: tt.timeSpent != null ? tt.timeSpent : state.issue.timetracking.timeSpent,
+        };
       }
       noContent(res);
       return;
