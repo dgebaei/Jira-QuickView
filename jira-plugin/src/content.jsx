@@ -2951,7 +2951,7 @@ async function mainAsyncLocal() {
 
   // ── Avatars & User Display ─────────────────────────────────
 
-  function getUserInitials(displayName, fallbackInitials = 'NA') {
+  function getUserInitials(displayName, fallbackInitials = '--') {
     const tokens = String(displayName || '')
       .trim()
       .split(/\s+/)
@@ -2981,7 +2981,7 @@ async function mainAsyncLocal() {
       normalizedUrl.includes('initials=');
   }
 
-  function buildUserAvatarView(user, titlePrefix, fallbackInitials = 'NA') {
+  function buildUserAvatarView(user, titlePrefix, fallbackInitials = '--') {
     const displayName = user?.displayName || '';
     const avatarUrl = user?.avatarUrls?.['48x48'] || '';
     const useInitials = isLikelyDefaultAvatar(user, avatarUrl);
@@ -2997,10 +2997,10 @@ async function mainAsyncLocal() {
     const assignee = issueData?.fields?.assignee;
     const displayName = assignee?.displayName || 'Unassigned';
     const baseAvatarView = assignee
-      ? buildUserAvatarView(assignee, 'Assignee', 'NA')
+      ? buildUserAvatarView(assignee, 'Assignee', '--')
       : {
           avatarUrl: '',
-          initials: 'NA',
+          initials: '--',
           displayName,
           titleText: 'Assignee: Unassigned'
         };
@@ -3356,7 +3356,7 @@ async function mainAsyncLocal() {
     const visibleAttachments = displayFields.attachments ? previewAttachments : [];
     const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
     const reporterView = displayFields.reporter && issueData.fields.reporter
-      ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', 'NA')
+      ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
       : null;
     const assigneeView = displayFields.assignee
       ? buildAssigneeAvatarView(state, issueData, assigneeEditable)
