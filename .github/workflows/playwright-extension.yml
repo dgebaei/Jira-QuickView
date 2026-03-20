@@ -159,9 +159,9 @@ jobs:
 
   comment-pr:
     name: Comment PR with Test Links
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.deploy-pages.result != 'skipped'
     runs-on: ubuntu-latest
-    needs: [mock-edge, public-smoke, live-authenticated]
+    needs: [deploy-pages]
 
     steps:
       - name: Download all artifacts
@@ -187,11 +187,31 @@ jobs:
             
             const baseUrl = 'https://dgebaei.github.io/Jira-Hot-Linker/playwright/runs';
             
-            const runsList = runs.map(run => {
+            const runsList = runs.map(function(run) {
               return '- [' + run + '](' + baseUrl + '/' + run + '/)';
             }).join('\n');
             
             const body = '## Playwright Test Results\n\nView interactive dashboard: https://dgebaei.github.io/Jira-Hot-Linker/playwright/\n\n### Latest Runs:\n' + runsList + '\n\n> Built from `' + context.sha.slice(0, 7) + '`';
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  comment-pr-simple:
+    name: Comment PR Status
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [mock-edge, public-smoke, live-authenticated]
+
+    steps:
+      - name: Create PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = '## Playwright Test Results\n\nTests completed successfully!\n\nThe interactive dashboard will be available after merging to master.\n\n> Built from `' + context.sha.slice(0, 7) + '`';
             
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
