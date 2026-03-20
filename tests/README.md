@@ -174,7 +174,9 @@ All generated Playwright output now lives under `tests/output/playwright/`.
 
 Important paths:
 
+- run explorer: `tests/output/playwright/index.html`
 - merged HTML report: `tests/output/playwright/report/index.html`
+- per-run HTML reports: `tests/output/playwright/runs/<run-id>/index.html`
 - accumulated blob reports: `tests/output/playwright/blob-report`
 - run artifacts: `tests/output/playwright/test-results`
 
@@ -184,7 +186,7 @@ Open the merged report with:
 npm run test:e2e:show-report
 ```
 
-The report is cumulative across runs because each environment writes a blob report and the HTML report is rebuilt from all saved blobs.
+The run explorer includes a summary view plus a sidebar of saved runs. The merged HTML report remains cumulative because each environment writes a blob report and the summary is rebuilt from all saved blobs.
 
 If you want a clean report before the next run:
 

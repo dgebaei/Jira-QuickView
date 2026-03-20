@@ -3840,7 +3840,7 @@ async function mainAsyncLocal() {
       }
       await renderIssuePopup(popupState);
 
-      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search' || popupState.editState.editorType === 'tempo-account-search')) {
+      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search')) {
         const searchRequestId = ++editSearchRequestCounter;
         popupState = {
           ...popupState,
@@ -3851,9 +3851,7 @@ async function mainAsyncLocal() {
           }
         };
         await renderIssuePopup(popupState);
-        if (popupState.editState.editorType !== 'label-search') {
-          triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
-        }
+        triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
       }
     } catch (error) {
       const errorMessage = buildEditFieldError(error);
