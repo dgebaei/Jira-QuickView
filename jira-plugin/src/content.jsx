@@ -2748,6 +2748,13 @@ async function mainAsyncLocal() {
     return String(value || '').trim();
   }
 
+  function defaultHoursIfNoUnit(value) {
+    if (!value) {
+      return value;
+    }
+    return /[a-zA-Z]$/.test(value) ? value : `${value}h`;
+  }
+
   function buildTimeTrackingSavePlan(timeTrackingState, options = {}) {
     const canEditEstimates = options.canEditEstimates !== false;
     const originalEstimateInput = normalizeTimeTrackingInput(timeTrackingState?.originalEstimateInput);
@@ -2760,16 +2767,16 @@ async function mainAsyncLocal() {
     const estimateFields = {};
     const worklogStarted = buildWorklogStartedValue(worklogDateInput);
     const worklogPayload = worklogAmountInput ? {
-      timeSpent: worklogAmountInput,
+      timeSpent: defaultHoursIfNoUnit(worklogAmountInput),
       ...(worklogDescriptionInput ? {comment: worklogDescriptionInput} : {}),
       ...(worklogStarted ? {started: worklogStarted} : {})
     } : null;
 
     if (originalEstimateChanged) {
-      estimateFields.originalEstimate = originalEstimateInput;
+      estimateFields.originalEstimate = defaultHoursIfNoUnit(originalEstimateInput);
     }
     if (remainingEstimateChanged) {
-      estimateFields.remainingEstimate = remainingEstimateInput;
+      estimateFields.remainingEstimate = defaultHoursIfNoUnit(remainingEstimateInput);
     }
 
     return {
