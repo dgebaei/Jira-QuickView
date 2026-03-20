@@ -184,6 +184,15 @@ test('updates assignee on an allowed live Jira issue and restores it @live', asy
 
   const currentAssigneeTitle = await getAssigneeTitle(page);
   const currentAssigneeAccountId = String(issue?.fields?.assignee?.accountId || '');
+
+  if (currentAssigneeAccountId && currentAssigneeAccountId === String(currentUser?.accountId || '')) {
+    await updateIssueFields(issueKey, {
+      assignee: null,
+    }, config);
+    await page.reload({waitUntil: 'domcontentloaded'});
+    await rehydrateLivePopupAfterReload(extensionApp, page, issueKey);
+  }
+
   const assignToMeAction = page.locator('._JX_action_item[data-action-key="assign-to-me"]');
   await page.locator('._JX_actions_toggle').click();
   await expect(assignToMeAction).toBeVisible();
