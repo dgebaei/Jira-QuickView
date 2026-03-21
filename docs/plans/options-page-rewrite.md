@@ -18,8 +18,8 @@ Redesign the options page (`jira-plugin/options/options.jsx`) to support a **Bas
 | Phase 2 — Appearance Card | **Done** | See [Phase 2 Complete](#phase-2--appearance-card) |
 | Phase 3 — Hover Behavior Card | **Done** | Two-column layout, native selects with help text |
 | Phase 4 — Drag-and-Drop Editor | **Done** | See [Phase 4 Complete](#phase-4--drag-and-drop-editor) |
-| Phase 5 — Custom Fields Card | Pending | |
-| Phase 6 — Settings Sync | Pending | |
+| Phase 5 — Custom Fields Card | **Done** | Connected to drag-and-drop editor |
+| Phase 6 — Settings Sync | **Done** | Export/Import JSON, Pro modal |
 | Phase 7 — Visual Polish | Pending | |
 | Phase 8 — Testing | Pending | |
 
@@ -268,36 +268,28 @@ The right-side panel shows a live-updating preview built from `tooltipLayout`:
 
 ---
 
-## Phase 5 — Custom Fields Card (Advanced)
+## Phase 5 — Custom Fields Card (Advanced) ✅
 
-**Goal:** The custom field editor already exists. Style it and connect it to the drag-and-drop editor's sidebar.
+**Completed:** Custom field editor connected to drag-and-drop editor.
 
-### Steps
+### What was built
 
-1. Keep the existing card structure but style it to match the new card design (header strip, blue title, grey description).
-2. Connect it to the drag-and-drop editor's sidebar: adding a custom field here also adds it to the library sidebar (and vice versa). Both views write to the same `customFields` array.
-3. The card becomes a "detail view" for managing custom field IDs and row placement — the drag-and-drop editor provides the visual alternative.
-
-**Deliverable:** Custom Fields card visible in advanced, fully functional, visually consistent.
+- **Adding custom fields** — creates a new field with `_uid` and automatically adds it to Row 3 in the tooltip layout
+- **Removing custom fields** — removes from `customFields` array and from any zone in `tooltipLayout`
+- **Custom field pills in library** — appear in the sidebar with `custom_${_uid}` key, showing resolved name from Jira field catalog
+- **"Add custom field" button in empty library** — redirects users to add fields via the Custom Fields card
 
 ---
 
-## Phase 6 — Settings Sync (Advanced)
+## Phase 6 — Settings Sync (Advanced) ✅
 
-**Goal:** Add Export/Import JSON buttons. No backend yet — this is Phase 1 of the sync roadmap.
+**Completed:** Export/Import JSON functionality and Team Sync Pro modal.
 
-### Steps
+### What was built
 
-1. **Export**: `JSON.stringify(storedConfig, null, 2)` → create a `Blob` → trigger `URL.createObjectURL` download as `jira-hotlinker-settings.json`.
-
-2. **Import**: `<input type="file" accept=".json">` hidden, triggered by the Import button. Read the file, `JSON.parse` it, validate it has at least `instanceUrl` and `domains`, then merge it into the current form state (don't save yet — populate the form for review before clicking "Save changes").
-
-3. **Team Sync (Pro) button**: Link to a placeholder modal ("Coming soon — sign up for the Pro waitlist"). Purple styling matches mockup. Wire up to a `mailto` or a simple info dialog for now.
-
-4. Add Export / Import / Team Sync buttons to the bottom of the Settings Sync card, with a brief description line.
-
-**Deliverable:** Export/Import work. Pro button is visually present with a "coming soon" treatment.
-
+- **Export** — Downloads current settings as `jira-hotlinker-settings.json` with version and timestamp
+- **Import** — File picker reads JSON, validates, populates form state (without saving), shows success/error status
+- **Team Sync Pro** — Modal overlay with purple styling, "Join Waitlist" mailto link
 ---
 
 ## Phase 7 — Visual Polish & CSS

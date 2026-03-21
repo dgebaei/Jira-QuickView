@@ -610,15 +610,111 @@ function ConfigPage(props) {
   };
 
   const addCustomField = () => {
-    setCustomFields(current => current.concat({fieldId: '', row: 3}));
+    const newField = { fieldId: '', row: 3, _uid: `cf-${Date.now()}` };
+    setCustomFields(current => current.concat(newField));
+    setTooltipLayout(prev => ({
+      ...prev,
+      row3: [...prev.row3, `custom_${newField._uid}`]
+    }));
   };
 
   const removeCustomField = (index) => {
-    setCustomFields(current => current.filter((_, fieldIndex) => fieldIndex !== index));
+    const field = customFields[index];
+    if (field && field._uid) {
+      const key = `custom_${field._uid}`;
+      setTooltipLayout(prev => ({
+        row1: prev.row1.filter(k => k !== key),
+        row2: prev.row2.filter(k => k !== key),
+        row3: prev.row3.filter(k => k !== key),
+        contentBlocks: prev.contentBlocks,
+        people: prev.people
+      }));
+    }
+    setCustomFields(current => current.filter((_, fieldIndex) => index !== fieldIndex));
   };
 
   const handleThemeChange = (mode) => {
     setThemeMode(normalizeThemeMode(mode));
+  };
+
+  const exportSettings = () => {
+    const config = {
+      version: '2.2.1',
+      exportedAt: new Date().toISOString(),
+      instanceUrl,
+      domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
+      themeMode,
+      hoverDepth,
+      hoverModifierKey,
+      displayFields,
+      tooltipLayout,
+      customFields: normalizeCustomFields(customFields)
+    };
+
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'jira-hotlinker-settings.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importSettings = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const config = JSON.parse(text);
+
+        if (!config.instanceUrl && !config.domains) {
+          setStatusTone('error');
+          setStatus('Invalid settings file.');
+          return;
+        }
+
+        setInstanceUrl(config.instanceUrl || '');
+        setDomainsText((config.domains || []).join(', '));
+        setThemeMode(normalizeThemeMode(config.themeMode || 'system'));
+        setHoverDepth(config.hoverDepth || 'shallow');
+        setHoverModifierKey(config.hoverModifierKey || 'none');
+        setDisplayFields(config.displayFields || defaultConfig.displayFields);
+        setTooltipLayout(config.tooltipLayout || defaultConfig.tooltipLayout);
+        setCustomFields((config.customFields || []).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`})));
+
+        setStatusTone('success');
+        setStatus('Settings imported. Click Save to apply.');
+      } catch (err) {
+        setStatusTone('error');
+        setStatus('Failed to import settings file.');
+      }
+    };
+    input.click();
+  };
+
+  const showProModal = () => {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:12px;padding:24px;max-width:400px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 12px;color:#1e40af;">Team Sync (Pro)</h3>
+        <p style="color:#64748b;margin:0 0 16px;">Auto-sync your Jira HotLinker settings across your team. Coming soon!</p>
+        <p style="color:#94a3b8;font-size:12px;margin:0 0 16px;">Join the waitlist to get early access.</p>
+        <a href="mailto:dgebaei@gmail.com?subject=Team Sync Pro Waitlist" style="display:inline-block;background:#7c3aed;color:white;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:600;">Join Waitlist</a>
+        <button onclick="this.closest('div').parentElement.remove()" style="display:block;margin:12px auto 0;background:transparent;border:none;color:#64748b;cursor:pointer;">Close</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
   };
 
   const saveOptions = async () => {
@@ -922,13 +1018,13 @@ function ConfigPage(props) {
             </div>
             <div className='cardBody'>
               <div className='syncButtons'>
-                <button type='button' className='syncBtn' onClick={() => {}}>
+                <button type='button' className='syncBtn' onClick={exportSettings}>
                   &#10132; Export Settings (.json)
                 </button>
-                <button type='button' className='syncBtn' onClick={() => {}}>
+                <button type='button' className='syncBtn' onClick={importSettings}>
                   &#10132; Import Settings (.json)
                 </button>
-                <button type='button' className='syncBtn proButton' onClick={() => {}}>
+                <button type='button' className='syncBtn proButton' onClick={showProModal}>
                   &#10022; Team Sync (Pro)
                 </button>
               </div>
