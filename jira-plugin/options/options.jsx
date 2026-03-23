@@ -181,7 +181,7 @@ const DRAGGABLE_CONTENT_KEYS = CONTENT_BLOCK_KEYS.filter(k => !k.required).map(k
 const DRAGGABLE_ZONES = ['row1', 'row2', 'row3'];
 const CONTENT_BLOCKS_DROPPABLE = 'contentBlocks';
 
-function SortableField({ id, label, onRemove }) {
+function SortableField({ id, label, onRemove, isCustom }) {
   const {
     attributes,
     listeners,
@@ -200,7 +200,7 @@ function SortableField({ id, label, onRemove }) {
   return (
     <div ref={setNodeRef} style={style} className='fieldPill' {...attributes} {...listeners}>
       <span className='fieldPillLabel'>{label}</span>
-      {onRemove && (
+      {onRemove && !isCustom && (
         <button
           type='button'
           className='fieldPillRemove'
@@ -235,30 +235,13 @@ function DraggableLibraryField({ id, label }) {
   );
 }
 
-function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomFieldIds, fieldCatalog }) {
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState('');
-  const trimmed = draft.trim();
-
-  let validationMsg = '';
-  let validationTone = '';
-  if (trimmed) {
-    if (!/^customfield_\d+$/i.test(trimmed)) {
-      validationMsg = 'Format: customfield_12345';
-      validationTone = 'error';
-    } else if (existingCustomFieldIds.includes(trimmed)) {
-      validationMsg = 'Already added';
-      validationTone = 'error';
-    } else if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]) {
-      validationMsg = 'Not found in Jira';
-      validationTone = 'error';
-    } else if (fieldCatalog[trimmed]) {
-      validationMsg = fieldCatalog[trimmed];
-      validationTone = 'success';
-    } else {
-      validationMsg = 'Checking\u2026';
-      validationTone = 'neutral';
-    }
+function FieldLibrary({ fields }) {
+  if (fields.length === 0) {
+    return (
+      <div className='fieldLibraryEmpty'>
+        All fields are placed in the layout.
+      </div>
+    );
   }
   const canSave = trimmed && validationTone === 'success';
 
@@ -346,6 +329,7 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
               id={field.key}
               label={field.label}
               onRemove={onRemove}
+              isCustom={field.key.startsWith('custom_')}
             />
           ))}
           {fields.length === 0 && (
@@ -419,7 +403,7 @@ function DroppableContentBlocks({ id, isOver, children }) {
   );
 }
 
-function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, setCustomFields, fieldCatalog, onAddField, onRemoveCustomField }) {
+function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fieldCatalog }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
 
@@ -441,7 +425,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
     }
   });
   customFields.forEach(cf => {
-    const key = cf.fieldId ? `custom_${cf.fieldId}` : `custom_${cf._uid}`;
+    const key = `custom_${cf._uid}`;
     const name = cf.fieldId ? (fieldCatalog[cf.fieldId] || cf.fieldId) : '(unsaved)';
     allFields[key] = name;
   });
@@ -611,13 +595,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
                 <h4>Available Fields</h4>
                 <p>Drag fields into rows</p>
               </div>
-              <FieldLibrary
-                fields={libraryFields}
-                onAddField={onAddField}
-                onRemoveCustomField={onRemoveCustomField}
-                existingCustomFieldIds={customFields.map(cf => cf.fieldId).filter(Boolean)}
-                fieldCatalog={fieldCatalog}
-              />
+              <FieldLibrary fields={libraryFields} />
             </div>
           </div>
 
@@ -828,16 +806,13 @@ function ConfigPage(props) {
     setCustomFields(current => current.concat(newField));
   };
 
-  const removeCustomFieldByKey = (layoutKey) => {
-    const fieldId = layoutKey.replace('custom_', '');
-    if (!window.confirm('Remove this custom field from the extension?')) return;
-    setCustomFields(current => current.filter(f => f.fieldId !== fieldId));
-    setTooltipLayout(prev => ({
-      ...prev,
-      row1: prev.row1.filter(k => k !== layoutKey),
-      row2: prev.row2.filter(k => k !== layoutKey),
-      row3: prev.row3.filter(k => k !== layoutKey),
-    }));
+  const addCustomField = () => {
+    const newField = { fieldId: '', row: 3, _uid: `cf-${Date.now()}` };
+    setCustomFields(current => current.concat(newField));
+  };
+
+  const removeCustomField = (index) => {
+    setCustomFields(current => current.filter((_, fieldIndex) => index !== fieldIndex));
   };
 
   const handleThemeChange = (mode) => {
@@ -1162,8 +1137,6 @@ function ConfigPage(props) {
                 customFields={customFields}
                 setCustomFields={setCustomFields}
                 fieldCatalog={fieldCatalog}
-                onAddField={addCustomField}
-                onRemoveCustomField={removeCustomFieldByKey}
               />
             </div>
           </section>

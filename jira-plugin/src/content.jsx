@@ -227,18 +227,9 @@ async function mainAsyncLocal() {
     timeTracking: true,
     ...(config.displayFields || {})
   };
-  const tooltipLayout = config.tooltipLayout || {
-    row1: ['issueType', 'status', 'priority'],
-    row2: ['epicParent', 'sprint', 'affects', 'fixVersions'],
-    row3: ['environment', 'labels'],
-    contentBlocks: ['description', 'timeTracking', 'pullRequests', 'comments'],
-    people: ['reporter', 'assignee']
-  };
-  const layoutContentBlocks = (tooltipLayout.contentBlocks || ['description', 'timeTracking', 'pullRequests', 'comments'])
-    .filter(k => displayFields[k] !== false);
-  const showPullRequests = layoutContentBlocks.includes('pullRequests');
-  const hoverDepth = config.hoverDepth || 'exact';
-  const hoverModifierKey = config.hoverModifierKey || 'any';
+  const tooltipLayout = config.tooltipLayout;
+  const hoverDepth = config.hoverDepth || 'shallow';
+  const hoverModifierKey = config.hoverModifierKey || 'none';
   const customFields = normalizeCustomFields(config.customFields);
   let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
@@ -3300,9 +3291,10 @@ async function mainAsyncLocal() {
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
     const environmentEditable = !!environmentCapability?.editable && (environmentCapability.operations || []).includes('set');
 
-    const layoutRow1 = tooltipLayout?.row1 || ['issueType', 'status', 'priority'];
-    const layoutRow2 = tooltipLayout?.row2 || ['epicParent', 'sprint', 'affects', 'fixVersions'];
+    const layoutRow1 = tooltipLayout?.row1 || ['issueType', 'status', 'priority', 'epicParent'];
+    const layoutRow2 = tooltipLayout?.row2 || ['sprint', 'affects', 'fixVersions'];
     const layoutRow3 = tooltipLayout?.row3 || ['environment', 'labels'];
+    const layoutContentBlocks = tooltipLayout?.contentBlocks || ['description', 'attachments', 'comments', 'pullRequests'];
 
     const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
     const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
@@ -3446,6 +3438,7 @@ async function mainAsyncLocal() {
     const issueUrl = INSTANCE_URL + 'browse/' + key;
     const showAttachments = layoutContentBlocks.includes('attachments');
     const showComments = layoutContentBlocks.includes('comments');
+    const showPullRequests = layoutContentBlocks.includes('pullRequests');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');
     const visibleCommentsTotal = showComments ? commentsTotal : 0;
     const visibleAttachments = showAttachments ? previewAttachments : [];
