@@ -137,7 +137,7 @@ async function fetchFieldCatalog(instanceUrl) {
     }
     return fields.reduce((acc, field) => {
       if (field && field.id) {
-        acc[field.id] = field.name || field.id;
+        acc[field.id] = field;
       }
       return acc;
     }, {});
@@ -154,10 +154,27 @@ function getCustomFieldError(fieldId, fieldCatalog) {
   if (!/^customfield_\d+$/i.test(trimmed)) {
     return 'Use a Jira custom field ID in the form customfield_12345.';
   }
-  if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]) {
+  if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]?.name) {
     return 'This field ID was not found in Jira.';
   }
   return '';
+}
+
+function getFieldNameFromCatalog(fieldId, fieldCatalog) {
+  const field = fieldCatalog[fieldId];
+  return field?.name || fieldId;
+}
+
+function getCustomFieldByFieldId(fieldId, customFields) {
+  return customFields.find(cf => cf.fieldId === fieldId);
+}
+
+function resolveCustomFieldLabelByFieldId(key, customFields, fieldCatalog) {
+  if (!key.startsWith('custom_')) return null;
+  const fieldId = key.replace('custom_', '');
+  const cf = getCustomFieldByFieldId(fieldId, customFields);
+  if (!cf) return key;
+  return getFieldNameFromCatalog(cf.fieldId, fieldCatalog) || cf.fieldId;
 }
 
 async function main() {
@@ -210,11 +227,21 @@ function SortableField({ id, label, onRemove, isCustom }) {
           ×
         </button>
       )}
+      {onRemove && isCustom && (
+        <button
+          type='button'
+          className='fieldPillRemove'
+          onClick={(e) => { e.stopPropagation(); onRemove(id); }}
+          title='Remove from layout (moves to Available Fields)'
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
 
-function DraggableLibraryField({ id, label }) {
+function DraggableLibraryField({ id, label, onRemove, customFieldKey }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
 
   const style = {
@@ -231,85 +258,109 @@ function DraggableLibraryField({ id, label }) {
       {...attributes}
     >
       <span className='fieldPillLabel'>{label}</span>
+      {onRemove && customFieldKey && (
+        <button
+          type='button'
+          className='fieldPillRemove fieldPillRemoveCustom'
+          onClick={(e) => { e.stopPropagation(); onRemove(customFieldKey); }}
+          title='Remove custom field completely'
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
 
-function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomFieldIds, fieldCatalog }) {
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState('');
-  const trimmed = draft.trim();
+function FieldLibrary({ 
+  fields, 
+  onAddClick, 
+  isAddingField, 
+  newFieldInput, 
+  newFieldError, 
+  onStartAdding, 
+  onInputChange, 
+  onSaveNewField, 
+  onDiscardNewField, 
+  onRemoveCustomField,
+  confirmRemoveUid,
+  onConfirmRemove,
+  onCancelRemove
+}) {
+  const inputRef = React.useRef(null);
+  const isAdding = isAddingField;
+  const newFieldIsValid = newFieldInput && (!newFieldError || newFieldError.startsWith('Resolved:'));
 
-  let validationMsg = '';
-  let validationTone = '';
-  if (trimmed) {
-    if (!/^customfield_\d+$/i.test(trimmed)) {
-      validationMsg = 'Format: customfield_12345';
-      validationTone = 'error';
-    } else if (existingCustomFieldIds.includes(trimmed)) {
-      validationMsg = 'Already added';
-      validationTone = 'error';
-    } else if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]) {
-      validationMsg = 'Not found in Jira';
-      validationTone = 'error';
-    } else if (fieldCatalog[trimmed]) {
-      validationMsg = fieldCatalog[trimmed];
-      validationTone = 'success';
-    } else {
-      validationMsg = 'Checking\u2026';
-      validationTone = 'neutral';
+  React.useEffect(() => {
+    if (isAdding && inputRef.current) {
+      inputRef.current.focus();
     }
-  }
-  const canSave = trimmed && validationTone === 'success';
-
-  const handleSave = () => {
-    if (!canSave) return;
-    onAddField(trimmed);
-    setDraft('');
-    setAdding(false);
-  };
-
-  const handleCancel = () => {
-    setDraft('');
-    setAdding(false);
-  };
+  }, [isAdding]);
 
   return (
     <div className='fieldLibrary'>
       {fields.map(field => (
-        <div key={field.key} className='fieldLibraryItem'>
-          <DraggableLibraryField id={field.key} label={field.label} />
-          {field.key.startsWith('custom_') && (
-            <button type='button' className='fieldLibraryRemove' onClick={() => onRemoveCustomField(field.key)} title='Remove field'>×</button>
-          )}
-        </div>
+        <DraggableLibraryField
+          key={field.key}
+          id={field.key}
+          label={field.label}
+          onRemove={field.key.startsWith('custom_') ? onRemoveCustomField : null}
+          customFieldKey={field.key}
+        />
       ))}
-      {fields.length === 0 && !adding && (
-        <div className='fieldLibraryEmpty'>All fields are placed in the layout.</div>
-      )}
-      {adding ? (
-        <div className='fieldLibraryAdd'>
+      {isAdding && (
+        <div className='fieldLibraryAdding'>
           <input
+            ref={inputRef}
             type='text'
-            className='fieldLibraryInput'
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
+            className={`fieldLibraryInput ${newFieldError && !newFieldError.startsWith('Resolved:') ? 'fieldLibraryInputError' : ''}`}
+            value={newFieldInput}
+            onChange={(e) => onInputChange(e.target.value)}
             placeholder='customfield_12345'
-            autoFocus
           />
-          {validationMsg && (
-            <div className={`fieldLibraryValidation fieldLibraryValidation--${validationTone}`}>{validationMsg}</div>
-          )}
-          <div className='fieldLibraryAddActions'>
-            <button type='button' className='fieldLibraryAddBtn' onClick={handleCancel} title='Cancel'>✕</button>
-            <button type='button' className='fieldLibraryAddBtn fieldLibraryAddBtnSave' onClick={handleSave} disabled={!canSave} title='Save'>✓</button>
+          <div className={`fieldLibraryValidation ${newFieldError && !newFieldError.startsWith('Resolved:') ? 'fieldLibraryValidationError' : (newFieldError ? 'fieldLibraryValidationSuccess' : '')}`}>
+            {newFieldError || 'Enter a valid field ID'}
+          </div>
+          <div className='fieldLibraryActions'>
+            <button
+              type='button'
+              className='fieldLibraryAction fieldLibrarySave'
+              onClick={onSaveNewField}
+              disabled={!newFieldIsValid}
+              title={newFieldIsValid ? 'Save field' : 'Enter a valid field ID to save'}
+            >
+              ✓
+            </button>
+            <button
+              type='button'
+              className='fieldLibraryAction fieldLibraryCancel'
+              onClick={onDiscardNewField}
+              title='Discard'
+            >
+              ×
+            </button>
           </div>
         </div>
-      ) : (
-        <button type='button' className='fieldLibraryAddFieldBtn' onClick={() => setAdding(true)}>
+      )}
+      {!isAdding && (
+        <button type='button' className='fieldLibraryAddBtn' onClick={onStartAdding}>
           + Add field
         </button>
+      )}
+      {confirmRemoveUid && (
+        <div className='fieldLibraryConfirmOverlay'>
+          <div className='fieldLibraryConfirm'>
+            <p>Remove this custom field completely?</p>
+            <div className='fieldLibraryConfirmActions'>
+              <button type='button' className='fieldLibraryConfirmYes' onClick={onConfirmRemove}>
+                Remove
+              </button>
+              <button type='button' className='fieldLibraryConfirmNo' onClick={onCancelRemove}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -420,9 +471,13 @@ function DroppableContentBlocks({ id, isOver, children }) {
   );
 }
 
-function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, setCustomFields, fieldCatalog, onAddField, onRemoveCustomField }) {
+function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, setCustomFields, fieldCatalog, onAddCustomField, onRemoveCustomField }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [isAddingField, setIsAddingField] = useState(false);
+  const [newFieldInput, setNewFieldInput] = useState('');
+  const [newFieldError, setNewFieldError] = useState('');
+  const [confirmRemoveUid, setConfirmRemoveUid] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -441,17 +496,28 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
       allFields[opt.key] = opt.label;
     }
   });
-  customFields.forEach(cf => {
-    const key = cf.fieldId ? `custom_${cf.fieldId}` : `custom_${cf._uid}`;
-    const name = cf.fieldId ? (fieldCatalog[cf.fieldId] || cf.fieldId) : '(unsaved)';
-    allFields[key] = name;
-  });
 
   const placedRowKeys = new Set([
     ...tooltipLayout.row1,
     ...tooltipLayout.row2,
     ...tooltipLayout.row3,
   ]);
+
+  customFields.forEach(cf => {
+    const key = `custom_${cf.fieldId}`;
+    if (!placedRowKeys.has(key)) {
+      const name = cf.fieldId ? (getFieldNameFromCatalog(cf.fieldId, fieldCatalog) || cf.fieldId) : '(unsaved)';
+      allFields[key] = name;
+    }
+  });
+
+  const resolveLabel = (key) => {
+    if (allFields[key]) return allFields[key];
+    if (key.startsWith('custom_')) {
+      return resolveCustomFieldLabelByFieldId(key, customFields, fieldCatalog);
+    }
+    return key;
+  };
 
   const libraryFields = Object.keys(allFields)
     .filter(key => !placedRowKeys.has(key))
@@ -469,6 +535,10 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
       ...prev,
       [zone]: prev[zone].filter(k => k !== key)
     }));
+    if (key.startsWith('custom_')) {
+      const fieldId = key.replace('custom_', '');
+      setCustomFields(prev => prev.filter(cf => cf.fieldId !== fieldId));
+    }
   };
 
   const handleToggleContentBlock = (key, checked) => {
@@ -479,6 +549,65 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
         return { ...prev, contentBlocks: prev.contentBlocks.filter(k => k !== key) };
       }
     });
+  };
+
+  const validateNewField = (fieldId) => {
+    const trimmed = String(fieldId || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+    if (!/^customfield_\d+$/i.test(trimmed)) {
+      return 'Use a Jira custom field ID in the form customfield_12345.';
+    }
+    if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]?.name) {
+      return 'This field ID was not found in Jira.';
+    }
+    if (fieldCatalog[trimmed]?.name) {
+      return `Resolved: ${fieldCatalog[trimmed].name}`;
+    }
+    return '';
+  };
+
+  const handleNewFieldChange = (value) => {
+    setNewFieldInput(value);
+    setNewFieldError(validateNewField(value));
+  };
+
+  const handleAddNewField = () => {
+    const error = validateNewField(newFieldInput);
+    if (error && !error.startsWith('Resolved:')) {
+      setNewFieldError(error);
+      return;
+    }
+    onAddCustomField(newFieldInput);
+    setIsAddingField(false);
+    setNewFieldInput('');
+    setNewFieldError('');
+  };
+
+  const handleDiscardNewField = () => {
+    setIsAddingField(false);
+    setNewFieldInput('');
+    setNewFieldError('');
+  };
+
+  const handleFieldRemoveClick = (key) => {
+    if (key.startsWith('custom_')) {
+      const fieldId = key.replace('custom_', '');
+      const placedInZone = getZoneForKey(key);
+      if (placedInZone) {
+        handleRemoveFromZone(placedInZone, key);
+      } else {
+        setConfirmRemoveUid(fieldId);
+      }
+    }
+  };
+
+  const confirmRemoveCustomField = () => {
+    if (confirmRemoveUid) {
+      onRemoveCustomField(confirmRemoveUid);
+      setConfirmRemoveUid(null);
+    }
   };
 
   const handleDragStart = (event) => {
@@ -587,12 +716,12 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
     }
   };
 
-  const activeField = activeId ? { key: activeId, label: allFields[activeId] || activeId } : null;
+  const activeField = activeId ? { key: activeId, label: resolveLabel(activeId) } : null;
 
   const getFieldsForZone = (zone) => {
     return (tooltipLayout[zone] || []).map(key => ({
       key,
-      label: allFields[key] || key
+      label: resolveLabel(key)
     }));
   };
 
@@ -612,12 +741,19 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
                 <h4>Available Fields</h4>
                 <p>Drag fields into rows</p>
               </div>
-              <FieldLibrary
-                fields={libraryFields}
-                onAddField={onAddField}
-                onRemoveCustomField={onRemoveCustomField}
-                existingCustomFieldIds={customFields.map(cf => cf.fieldId).filter(Boolean)}
-                fieldCatalog={fieldCatalog}
+              <FieldLibrary 
+                fields={libraryFields} 
+                isAddingField={isAddingField}
+                newFieldInput={newFieldInput}
+                newFieldError={newFieldError}
+                onStartAdding={() => setIsAddingField(true)}
+                onInputChange={handleNewFieldChange}
+                onSaveNewField={handleAddNewField}
+                onDiscardNewField={handleDiscardNewField}
+                onRemoveCustomField={handleFieldRemoveClick}
+                confirmRemoveUid={confirmRemoveUid}
+                onConfirmRemove={confirmRemoveCustomField}
+                onCancelRemove={() => setConfirmRemoveUid(null)}
               />
             </div>
           </div>
@@ -696,6 +832,8 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
             </div>
           </div>
 
+          <div className='tooltipLayoutDivider' />
+
           <div className='tooltipLayoutBlocksRight'>
             <div className='tooltipLayoutPreview'>
               <div className='tooltipPreview'>
@@ -735,7 +873,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
             {activeId ? (
               <div className='fieldPill fieldPillDragging'>
                 <span className='fieldPillLabel'>
-                  {allFields[activeId] || (CONTENT_BLOCK_KEYS.find(b => b.key === activeId)?.label) || activeId}
+                  {resolveLabel(activeId)}
                 </span>
               </div>
             ) : null}
@@ -757,7 +895,7 @@ function ConfigPage(props) {
   const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || 'shallow');
   const [hoverModifierKey, setHoverModifierKey] = useState(props.hoverModifierKey || 'none');
   const [customFields, setCustomFields] = useState(() =>
-    normalizeCustomFields(props.customFields).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
+    normalizeCustomFields(props.customFields)
   );
   const [tooltipLayout, setTooltipLayout] = useState(() => {
     if (props.tooltipLayout) {
@@ -894,7 +1032,7 @@ function ConfigPage(props) {
         setHoverModifierKey(config.hoverModifierKey || 'none');
         setDisplayFields(config.displayFields || defaultConfig.displayFields);
         setTooltipLayout(config.tooltipLayout || defaultConfig.tooltipLayout);
-        setCustomFields((config.customFields || []).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`})));
+        setCustomFields((config.customFields || []));
 
         setStatusTone('success');
         setStatus('Settings imported. Click Save to apply.');
@@ -1135,6 +1273,7 @@ function ConfigPage(props) {
                   <span className='fieldLabel'>Modifier key</span>
                   <select value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
                     <option value='none'>None — hover alone triggers the tooltip</option>
+                    <option value='any'>Any — any modifier key triggers the tooltip</option>
                     <option value='alt'>Alt — press Alt after hovering</option>
                     <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
                     <option value='shift'>Shift — press Shift after hovering</option>
@@ -1162,8 +1301,19 @@ function ConfigPage(props) {
                 customFields={customFields}
                 setCustomFields={setCustomFields}
                 fieldCatalog={fieldCatalog}
-                onAddField={addCustomField}
-                onRemoveCustomField={removeCustomFieldByKey}
+                onAddCustomField={(fieldId) => {
+                  const newField = { fieldId, row: 3, _uid: fieldId };
+                  setCustomFields(prev => [...prev, newField]);
+                }}
+                onRemoveCustomField={(fieldId) => {
+                  setTooltipLayout(prev => ({
+                    ...prev,
+                    row1: prev.row1.filter(k => k !== `custom_${fieldId}`),
+                    row2: prev.row2.filter(k => k !== `custom_${fieldId}`),
+                    row3: prev.row3.filter(k => k !== `custom_${fieldId}`),
+                  }));
+                  setCustomFields(prev => prev.filter(f => f.fieldId !== fieldId));
+                }}
               />
             </div>
           </section>

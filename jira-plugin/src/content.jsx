@@ -25,14 +25,42 @@ const getConfig = async () => (await storageGet(config));
 // ── Field ID Resolution ─────────────────────────────────────────
 
 let allFieldsPromise;
+let allFieldsCache = {};
 
 function getAllFields(instanceUrl) {
   if (!allFieldsPromise) {
     allFieldsPromise = get(instanceUrl + 'rest/api/2/field')
-      .then(fields => (Array.isArray(fields) ? fields : []))
+      .then(fields => {
+        if (Array.isArray(fields)) {
+          allFieldsCache = fields.reduce((acc, field) => {
+            if (field.id) {
+              acc[field.id] = field;
+            }
+            return acc;
+          }, {});
+        }
+        return Array.isArray(fields) ? fields : [];
+      })
       .catch(() => []);
   }
   return allFieldsPromise;
+}
+
+function getFieldById(instanceUrl, fieldId) {
+  return getAllFields(instanceUrl).then(fields => allFieldsCache[fieldId] || null);
+}
+
+function getFieldClauseName(fieldId) {
+  const field = allFieldsCache[fieldId];
+  if (!field || !field.clauseNames || !Array.isArray(field.clauseNames)) {
+    return null;
+  }
+  for (const clauseName of field.clauseNames) {
+    if (clauseName.includes('[')) {
+      return clauseName;
+    }
+  }
+  return field.clauseNames[0] || null;
 }
 
 function getFieldIdsByFilter(instanceUrl, filterFn) {
@@ -2014,11 +2042,14 @@ async function mainAsyncLocal() {
     const jqlValues = currentValues
       .map(value => buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta))
       .filter(Boolean);
+    const jqlFieldName = getFieldClauseName(fieldId) || fieldName;
+    const needsQuotes = jqlFieldName.includes('[');
+    const safeFieldName = needsQuotes ? `"${jqlFieldName}"` : jqlFieldName;
     const jqlClause = !jqlValues.length
       ? ''
       : jqlValues.length === 1
-        ? `${fieldName} = ${jqlValues[0]}`
-        : `${fieldName} in (${jqlValues.join(', ')})`;
+        ? `${safeFieldName} = ${jqlValues[0]}`
+        : `${safeFieldName} in (${jqlValues.join(', ')})`;
     const linkLabel = Array.isArray(rawValue)
       ? currentValues.map(entry => getCustomFieldPrimitive(entry)).filter(Boolean).join(', ')
       : getCustomFieldPrimitive(rawValue);
@@ -2311,13 +2342,16 @@ async function mainAsyncLocal() {
       });
   }
 
-  function formatCustomFieldChip(fieldName, entry) {
+  function formatCustomFieldChip(fieldId, fieldName, entry) {
     if (entry === undefined || entry === null) {
       return null;
     }
+    const jqlFieldName = getFieldClauseName(fieldId) || fieldName;
+    const needsQuotes = jqlFieldName.includes('[');
+    const safeFieldName = needsQuotes ? `"${jqlFieldName}"` : jqlFieldName;
     if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
       const textValue = String(entry);
-      return buildFilterChip(fieldName ? `${fieldName}: ${textValue}` : textValue, `${fieldName} = ${encodeJqlValue(textValue)}`, {
+      return buildFilterChip(fieldName ? `${fieldName}: ${textValue}` : textValue, `${safeFieldName} = ${encodeJqlValue(textValue)}`, {
         linkLabel: textValue
       });
     }
@@ -2328,7 +2362,7 @@ async function mainAsyncLocal() {
     const formattedValue = entry.key && (entry.name || entry.value)
       ? `[${entry.key}] ${entry.name || entry.value}`
       : String(primaryText);
-    return buildFilterChip(fieldName ? `${fieldName}: ${formattedValue}` : formattedValue, `${fieldName} = ${encodeJqlValue(String(primaryText))}`, {
+    return buildFilterChip(fieldName ? `${fieldName}: ${formattedValue}` : formattedValue, `${safeFieldName} = ${encodeJqlValue(String(primaryText))}`, {
       linkLabel: String(primaryText)
     });
   }
@@ -2358,7 +2392,7 @@ async function mainAsyncLocal() {
       }
       const entries = Array.isArray(rawValue) ? rawValue : [rawValue];
       entries.forEach(entry => {
-        const chip = formatCustomFieldChip(fieldName, entry);
+        const chip = formatCustomFieldChip(fieldId, fieldName, entry);
         if (chip && chip.text) {
           const nonEditableReason = getNonEditableFieldReason();
           chipsByRow[row].push({
@@ -4956,6 +4990,11 @@ async function mainAsyncLocal() {
     });
   }
 
+  console.log('[Jira HotLinker] Initializing hover detection on:', window.location.hostname, {
+    isTopFrame: window === window.top,
+    frameId: window.frameElement?.id || null
+  });
+
   $(document.body).on('mousemove', debounce(function (e) {
     if (e.buttons || cancelToken.cancel) {
       return;
@@ -5003,7 +5042,7 @@ async function mainAsyncLocal() {
         triggerPopupForKey(key, e.pageX, e.pageY, hoverModifierKey !== 'none');
       }
     }
-  }, 100));
+  }, 50));
 }
 
 if (!window.__JX__script_injected__) {

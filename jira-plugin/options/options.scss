@@ -341,8 +341,8 @@ a {
   width: 100%;
 }
 
-.formField + .formField {
-  margin-top: 16px;
+.hoverRow .formField + .formField {
+  margin-top: 0;
 }
 
 .hoverRow .formField + .formField {
@@ -753,7 +753,7 @@ button:disabled {
   border-radius: 14px;
   box-shadow: var(--card-shadow);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 18px;
   justify-content: space-between;
   padding: 18px 22px;
@@ -784,6 +784,14 @@ button:disabled {
   color: var(--action-copy-color);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.actionControls {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
 }
 
 .actionControlsRow {
@@ -915,7 +923,7 @@ button:disabled {
 .tooltipLayoutEditor {
   display: grid;
   grid-template-columns: 200px 1fr;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   gap: 20px;
   min-height: 400px;
 
@@ -945,12 +953,25 @@ button:disabled {
 
 .tooltipLayoutBlocksLeft {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 3;
 }
 
 .tooltipLayoutBlocksRight {
   grid-column: 2;
+  grid-row: 3;
+}
+
+.tooltipLayoutDivider {
+  grid-column: 1 / -1;
   grid-row: 2;
+  height: 1px;
+  background: var(--card-border);
+  margin: 0;
+
+  @media (max-width: 900px) {
+    margin: 0 -20px;
+    width: calc(100% + 40px);
+  }
 }
 
 .tooltipLayoutSidebar {
@@ -983,6 +1004,7 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  position: relative;
 }
 
 .fieldLibraryEmpty {
@@ -992,102 +1014,88 @@ button:disabled {
   padding: 6px 0;
 }
 
-.fieldLibraryItem {
-  display: flex;
+.fieldLibraryAddBtn {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-
-.fieldLibraryRemove {
+  justify-content: center;
+  padding: 4px 10px;
   background: transparent;
-  border: none;
-  color: var(--copy-muted);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
-
-  .fieldLibraryItem:hover & {
-    opacity: 1;
-  }
-
-  &:hover {
-    color: var(--error-color);
-  }
-}
-
-.fieldLibraryAddFieldBtn {
-  background: transparent;
-  border: 1px dashed var(--card-border);
-  border-radius: 8px;
+  border: 1px dashed var(--secondary-border);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--secondary-color);
   cursor: pointer;
-  font-size: 11px;
-  margin-top: 6px;
-  padding: 4px 10px;
-  width: 100%;
+  transition: all 0.15s ease;
 
   &:hover {
-    background: var(--empty-bg);
+    background: var(--secondary-bg);
     border-style: solid;
   }
 }
 
-.fieldLibraryAdd {
+.fieldLibraryAdding {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 6px;
+  padding: 4px 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--secondary-border);
+  border-radius: 12px;
 }
 
 .fieldLibraryInput {
-  background: var(--input-bg);
+  width: 140px;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 11px;
   border: 1px solid var(--input-border);
   border-radius: 6px;
-  color: var(--page-text);
-  font-family: inherit;
-  font-size: 11px;
-  padding: 5px 8px;
-  width: 100%;
-  box-sizing: border-box;
+  background: var(--input-bg);
+  color: var(--input-text);
 
   &:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
     outline: none;
+    border-color: var(--input-focus-border);
   }
+}
+
+.fieldLibraryInputError {
+  border-color: var(--error-color);
 }
 
 .fieldLibraryValidation {
   font-size: 10px;
-  line-height: 1.3;
-
-  &--success { color: var(--status-success-color, #16a34a); }
-  &--error { color: var(--error-color, #dc2626); }
-  &--neutral { color: var(--copy-muted); }
+  color: var(--custom-meta-color);
 }
 
-.fieldLibraryAddActions {
+.fieldLibraryValidationError {
+  color: var(--error-color);
+}
+
+.fieldLibraryValidationSuccess {
+  color: var(--status-success-color);
+}
+
+.fieldLibraryActions {
   display: flex;
   gap: 4px;
   justify-content: flex-end;
 }
 
-.fieldLibraryAddBtn {
-  background: transparent;
-  border: 1px solid var(--card-border);
-  border-radius: 6px;
-  color: var(--copy-muted);
+.fieldLibraryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 3px 8px;
-
-  &:hover {
-    background: var(--empty-bg);
-  }
+  transition: all 0.15s ease;
 
   &:disabled {
     opacity: 0.4;
@@ -1095,12 +1103,116 @@ button:disabled {
   }
 }
 
-.fieldLibraryAddBtnSave {
-  color: var(--status-success-color, #16a34a);
-  border-color: var(--status-success-color, #16a34a);
+.fieldLibrarySave {
+  background: var(--status-success-bg);
+  color: var(--status-success-color);
 
   &:hover:not(:disabled) {
-    background: var(--status-success-bg, #f0fdf4);
+    background: var(--status-success-color);
+    color: white;
+  }
+}
+
+.fieldLibraryCancel {
+  background: var(--error-bg);
+  color: var(--error-color);
+
+  &:hover {
+    background: var(--error-color);
+    color: white;
+  }
+}
+
+.fieldLibraryConfirmOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.fieldLibraryConfirm {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+
+  p {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--field-label-color);
+  }
+}
+
+.fieldLibraryConfirmActions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.fieldLibraryConfirmYes {
+  background: var(--error-bg);
+  color: var(--error-color);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 0.85;
+  }
+}
+
+.fieldLibraryConfirmNo {
+  background: var(--ghost-bg);
+  color: var(--ghost-color);
+  border: 1px solid var(--ghost-border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--group-card-bg);
+  }
+}
+
+.fieldPillRemoveCustom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin-left: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s ease;
+  opacity: 0;
+
+  &:hover {
+    background: var(--error-bg);
+    color: var(--error-color);
+  }
+
+  .fieldPill:hover & {
+    opacity: 1;
   }
 }
 
