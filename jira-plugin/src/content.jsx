@@ -228,8 +228,8 @@ async function mainAsyncLocal() {
     ...(config.displayFields || {})
   };
   const tooltipLayout = config.tooltipLayout || {
-    row1: ['issueType', 'status', 'priority'],
-    row2: ['epicParent', 'sprint', 'affects', 'fixVersions'],
+    row1: ['status', 'priority', 'epicParent', 'issueType'],
+    row2: ['sprint', 'affects', 'fixVersions'],
     row3: ['environment', 'labels'],
     contentBlocks: ['description', 'timeTracking', 'pullRequests', 'comments'],
     people: ['reporter', 'assignee']
@@ -3300,8 +3300,8 @@ async function mainAsyncLocal() {
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
     const environmentEditable = !!environmentCapability?.editable && (environmentCapability.operations || []).includes('set');
 
-    const layoutRow1 = tooltipLayout?.row1 || ['issueType', 'status', 'priority'];
-    const layoutRow2 = tooltipLayout?.row2 || ['epicParent', 'sprint', 'affects', 'fixVersions'];
+    const layoutRow1 = tooltipLayout?.row1 || ['status', 'priority', 'epicParent', 'issueType'];
+    const layoutRow2 = tooltipLayout?.row2 || ['sprint', 'affects', 'fixVersions'];
     const layoutRow3 = tooltipLayout?.row3 || ['environment', 'labels'];
 
     const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';

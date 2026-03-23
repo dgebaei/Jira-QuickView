@@ -181,7 +181,7 @@ const DRAGGABLE_CONTENT_KEYS = CONTENT_BLOCK_KEYS.filter(k => !k.required).map(k
 const DRAGGABLE_ZONES = ['row1', 'row2', 'row3'];
 const CONTENT_BLOCKS_DROPPABLE = 'contentBlocks';
 
-function SortableField({ id, label, onRemove }) {
+function SortableField({ id, label, onRemove, isCustom }) {
   const {
     attributes,
     listeners,
@@ -200,7 +200,7 @@ function SortableField({ id, label, onRemove }) {
   return (
     <div ref={setNodeRef} style={style} className='fieldPill' {...attributes} {...listeners}>
       <span className='fieldPillLabel'>{label}</span>
-      {onRemove && (
+      {onRemove && !isCustom && (
         <button
           type='button'
           className='fieldPillRemove'
@@ -346,6 +346,7 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
               id={field.key}
               label={field.label}
               onRemove={onRemove}
+              isCustom={field.key.startsWith('custom_')}
             />
           ))}
           {fields.length === 0 && (
@@ -839,7 +840,6 @@ function ConfigPage(props) {
       row3: prev.row3.filter(k => k !== layoutKey),
     }));
   };
-
   const handleThemeChange = (mode) => {
     setThemeMode(normalizeThemeMode(mode));
   };
