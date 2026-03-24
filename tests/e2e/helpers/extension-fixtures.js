@@ -87,8 +87,14 @@ async function configureExtension(optionsPage, config) {
   // chrome.permissions.request (which cannot be reliably mocked in headless
   // Chromium) and uses drag-and-drop for field layout (which is impractical
   // to automate).  Writing to storage directly is the robust approach.
+  // Ensure instanceUrl has a trailing slash — the content script concatenates
+  // it directly with API paths (e.g. INSTANCE_URL + 'rest/api/2/...').
+  let instanceUrl = String(config.instanceUrl || '').trim();
+  if (instanceUrl && !instanceUrl.endsWith('/')) {
+    instanceUrl += '/';
+  }
   const payload = {
-    instanceUrl: config.instanceUrl,
+    instanceUrl,
     domains: Array.isArray(config.domains) ? config.domains : [],
   };
   if (config.hoverDepth) {
