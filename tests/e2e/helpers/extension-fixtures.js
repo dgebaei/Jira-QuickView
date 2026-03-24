@@ -126,11 +126,12 @@ async function configureExtension(optionsPage, config) {
   await expect(optionsPage.locator('.saveNotice')).toContainText(/saved|not saved|error/i);
 
   // Verify the config was actually persisted to chrome.storage.sync.
-  const storedUrl = await optionsPage.evaluate(() => {
-    return new Promise(resolve => chrome.storage.sync.get('instanceUrl', result => resolve(result.instanceUrl)));
+  const storedConfig = await optionsPage.evaluate(() => {
+    return new Promise(resolve => chrome.storage.sync.get(null, resolve));
   });
-  if (!storedUrl) {
-    throw new Error('configureExtension: instanceUrl was not persisted to chrome.storage.sync after save');
+  const noticeText = await optionsPage.locator('.saveNotice').textContent().catch(() => '<no notice>');
+  if (!storedConfig.instanceUrl) {
+    throw new Error(`configureExtension: instanceUrl not persisted. Notice="${noticeText}", storage keys=[${Object.keys(storedConfig)}], instanceUrl="${storedConfig.instanceUrl}", domains="${JSON.stringify(storedConfig.domains)}"`);
   }
 
   // displayFields and customFields are configured via drag-and-drop in the
