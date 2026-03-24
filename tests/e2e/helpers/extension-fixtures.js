@@ -126,6 +126,8 @@ async function configureExtension(optionsPage, config) {
   if (!saved.v15upgrade) {
     throw new Error('Failed to save v15upgrade to storage');
   }
+
+  await optionsPage.getByRole('button', {name: 'Save'}).click();
 }
 
 async function hoverIssueKey(page, selector, modifier) {
