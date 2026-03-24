@@ -6,9 +6,6 @@ function unreachableConfig(servers) {
   return {
     instanceUrl: 'http://127.0.0.1:9/',
     domains: [servers.allowedPage.origin],
-    hoverDepth: 'shallow',
-    hoverModifierKey: 'none',
-    customFields: [],
   };
 }
 

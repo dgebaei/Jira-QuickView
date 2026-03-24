@@ -21,12 +21,8 @@ test.skip('validates custom field ids and resolves their names from Jira metadat
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
 
-  const showButton = optionsPage.getByRole('button', {name: 'Show'});
-  if (await showButton.isVisible().catch(() => false)) {
-    await showButton.click();
-  }
-
-  await optionsPage.getByRole('button', {name: 'Add field'}).first().click();
+  await optionsPage.getByRole('button', {name: 'Show'}).click();
+  await optionsPage.getByRole('button', {name: 'Add another field'}).click();
   const row = optionsPage.locator('.customFieldRow').first();
 
   await row.locator('input[placeholder="customfield_12345"]').fill('impact');

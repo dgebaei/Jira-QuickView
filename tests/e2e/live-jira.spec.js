@@ -27,10 +27,7 @@ async function configureLiveExtension(optionsPage, config) {
   await configureExtension(optionsPage, {
     instanceUrl: config.instanceUrl,
     domains: [config.instanceUrl],
-    hoverDepth: 'shallow',
-    hoverModifierKey: 'none',
-    customFields: [],
-  });
+  }, true);
 }
 
 async function injectLiveHoverAnchor(page, issueKey) {

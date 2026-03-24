@@ -104,17 +104,19 @@ async function configureExtension(optionsPage, config) {
     v15upgrade: true
   };
 
-  await optionsPage.evaluate(async (data) => {
-    await chrome.storage.sync.set(data);
-  }, storageData);
-  await optionsPage.waitForTimeout(500);
+  const needsAdvanced = config.hoverDepth || config.hoverModifierKey || config.displayFields || (Array.isArray(config.customFields) && config.customFields.length > 0);
+  if (needsAdvanced) {
+    const advToggle = optionsPage.getByRole('button', {name: 'Show'}).filter({hasText: 'Show'});
+    if (await advToggle.isVisible()) {
+      await advToggle.click();
+    }
+  }
 
-  const saved = await optionsPage.evaluate(() => {
-    return chrome.storage.sync.get(['instanceUrl', 'domains', 'tooltipLayout', 'v15upgrade']);
-  });
-
-  if (!saved.instanceUrl) {
-    throw new Error('Failed to save instanceUrl to storage');
+  if (config.hoverDepth) {
+    await optionsPage.getByLabel('Trigger depth').selectOption(config.hoverDepth);
+  }
+  if (config.hoverModifierKey) {
+    await optionsPage.getByLabel('Modifier key').selectOption(config.hoverModifierKey);
   }
 
   if (!saved.tooltipLayout) {
