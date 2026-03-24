@@ -121,6 +121,7 @@ async function configureExtension(optionsPage, config) {
   }
 
   await optionsPage.getByRole('button', {name: 'Save'}).click();
+  await optionsPage.locator('.saveNotice').waitFor();
 
   // displayFields and customFields are configured via drag-and-drop in the
   // redesigned options page.  Rather than automating DnD interactions, write
