@@ -21,6 +21,7 @@ async function openAllowedPage(extensionApp, servers, target, route = '/popup-ac
 test('injects only on configured domains', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: targetModeRequiresAuth()});
   await configureExtension(optionsPage, baseConfig(servers, target));
+  await expect(optionsPage.locator('.saveNotice')).toContainText('Options saved successfully.');
 
   const {page: allowed} = await openAllowedPage(extensionApp, servers, target, '/');
   const disallowed = await extensionApp.context.newPage();

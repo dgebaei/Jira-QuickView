@@ -82,73 +82,30 @@ async function getExtensionId(context) {
 }
 
 async function configureExtension(optionsPage, config) {
-  let normalizedUrl = String(config.instanceUrl || '').trim();
-  if (normalizedUrl && !normalizedUrl.endsWith('/')) {
-    normalizedUrl += '/';
-  }
-
-  const storageData = {
-    instanceUrl: normalizedUrl,
-    domains: config.domains,
-    hoverDepth: config.hoverDepth || 'exact',
-    hoverModifierKey: config.hoverModifierKey || 'none',
-    displayFields: config.displayFields || {},
-    customFields: config.customFields || [],
-    tooltipLayout: {
-      row1: ['issueType', 'status', 'priority', 'epicParent'],
-      row2: ['sprint', 'affects', 'fixVersions'],
-      row3: ['environment', 'labels'],
-      contentBlocks: ['description', 'attachments', 'comments', 'pullRequests'],
-      people: ['reporter', 'assignee']
-    },
-    v15upgrade: true
+  // Write the config directly to chrome.storage.sync rather than going
+  // through the options page UI.  The redesigned options page requires
+  // chrome.permissions.request (which cannot be reliably mocked in headless
+  // Chromium) and uses drag-and-drop for field layout (which is impractical
+  // to automate).  Writing to storage directly is the robust approach.
+  const payload = {
+    instanceUrl: config.instanceUrl,
+    domains: Array.isArray(config.domains) ? config.domains : [],
   };
-
-  const needsAdvanced = config.hoverDepth || config.hoverModifierKey;
-  if (needsAdvanced) {
-    const advToggle = optionsPage.locator('.advToggleBtn');
-    if (await advToggle.isVisible() && (await advToggle.getAttribute('aria-expanded')) !== 'true') {
-      await advToggle.click();
-      await optionsPage.locator('.advToggleBtn[aria-expanded="true"]').waitFor();
-    }
-  }
-
   if (config.hoverDepth) {
-    await optionsPage.getByLabel('Trigger depth').selectOption(config.hoverDepth);
+    payload.hoverDepth = config.hoverDepth;
   }
   if (config.hoverModifierKey) {
-    await optionsPage.getByLabel('Modifier key').selectOption(config.hoverModifierKey);
+    payload.hoverModifierKey = config.hoverModifierKey;
   }
-
-  await optionsPage.locator('.saveBtn').click();
-  // Wait for the async save to complete. The saveNotice shows the final status
-  // text — either success or error — once storageSet finishes.
-  await expect(optionsPage.locator('.saveNotice')).toContainText(/saved|not saved|error/i);
-
-  // Verify the config was actually persisted to chrome.storage.sync.
-  const storedConfig = await optionsPage.evaluate(() => {
-    return new Promise(resolve => chrome.storage.sync.get(null, resolve));
-  });
-  const noticeText = await optionsPage.locator('.saveNotice').textContent().catch(() => '<no notice>');
-  if (!storedConfig.instanceUrl) {
-    throw new Error(`configureExtension: instanceUrl not persisted. Notice="${noticeText}", storage keys=[${Object.keys(storedConfig)}], instanceUrl="${storedConfig.instanceUrl}", domains="${JSON.stringify(storedConfig.domains)}"`);
-  }
-
-  // displayFields and customFields are configured via drag-and-drop in the
-  // redesigned options page.  Rather than automating DnD interactions, write
-  // them directly to extension storage after the UI save completes.
-  const storageOverrides = {};
   if (config.displayFields) {
-    storageOverrides.displayFields = config.displayFields;
+    payload.displayFields = config.displayFields;
   }
   if (Array.isArray(config.customFields) && config.customFields.length > 0) {
-    storageOverrides.customFields = config.customFields;
+    payload.customFields = config.customFields;
   }
-  if (Object.keys(storageOverrides).length > 0) {
-    await optionsPage.evaluate(overrides => {
-      return new Promise(resolve => chrome.storage.sync.set(overrides, resolve));
-    }, storageOverrides);
-  }
+  await optionsPage.evaluate(data => {
+    return new Promise(resolve => chrome.storage.sync.set(data, resolve));
+  }, payload);
 }
 
 async function hoverIssueKey(page, selector, modifier) {

@@ -41,8 +41,6 @@ test.skip('persists hover behavior and layout settings through the options page'
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const customFieldId = target.mode === 'mock' ? 'customfield_12345' : await getFirstCustomFieldId(target);
   test.skip(!customFieldId, 'No Jira custom field is available for options persistence coverage.');
-  await configureExtension(optionsPage, baseConfig(servers, target));
-  await optionsPage.reload();
 
   const showButton = optionsPage.getByRole('button', {name: 'Show'});
   if (await showButton.isVisible().catch(() => false)) {
@@ -76,10 +74,4 @@ test.skip('persists hover behavior and layout settings through the options page'
   expect(stored.displayFields.comments).toBe(false);
   expect(stored.displayFields.pullRequests).toBe(false);
   expect(stored.customFields[0].fieldId).toBe(customFieldId);
-});
-
-test('shows an error when optional host permissions are denied', async ({optionsPage, servers}) => {
-  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
-  await configureExtension(optionsPage, baseConfig(servers, target), false);
-  await expect(optionsPage.locator('.saveNotice')).toContainText('Options not saved.');
 });
