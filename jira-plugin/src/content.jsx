@@ -236,6 +236,16 @@ async function mainAsyncLocal() {
     pullRequests: true,
     ...(config.displayFields || {})
   };
+  const tooltipLayout = config.tooltipLayout || {
+    row1: ['issueType', 'status', 'priority', 'epicParent'],
+    row2: ['sprint', 'affects', 'fixVersions'],
+    row3: ['environment', 'labels'],
+    contentBlocks: ['description', 'attachments', 'comments', 'pullRequests'],
+    people: ['reporter', 'assignee']
+  };
+  const layoutContentBlocks = (tooltipLayout.contentBlocks || ['description', 'attachments', 'comments', 'pullRequests'])
+    .filter(k => displayFields[k] !== false);
+  const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'shallow';
   const hoverModifierKey = config.hoverModifierKey || 'none';
   const customFields = normalizeCustomFields(config.customFields);
@@ -3236,48 +3246,9 @@ async function mainAsyncLocal() {
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
     const environmentEditable = !!environmentCapability?.editable && (environmentCapability.operations || []).includes('set');
 
-    const row1Chips = [
-      displayFields.issueType ? buildEditableFieldChip('issuetype', buildFilterChip(
-        issueTypeName || 'No type',
-        issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
-        {iconUrl: issueData.fields.issuetype?.iconUrl || '', linkLabel: issueTypeName}
-      ), state, {
-        canEdit: issueTypeEditable,
-        editTitle: 'Edit issue type'
-      }) : null,
-      displayFields.status ? buildEditableFieldChip('status', buildFilterChip(
-        statusName || 'No status',
-        statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
-        {iconUrl: issueData.fields.status?.iconUrl || '', linkLabel: statusName}
-      ), state, {
-        canEdit: statusEditable,
-        editTitle: 'Change status'
-      }) : null,
-      displayFields.priority ? buildEditableFieldChip('priority', buildFilterChip(
-        priorityName || 'No priority',
-        priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
-        {iconUrl: issueData.fields.priority?.iconUrl || '', linkLabel: priorityName}
-      ), state, {
-        canEdit: priorityEditable,
-        editTitle: 'Edit priority'
-      }) : null,
-      displayFields.epicParent ? buildEditableFieldChip('parentLink', {
-        text: linkageData?.currentLink
-          ? `${linkageData.label}: [${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
-          : `${linkageData?.label || 'Parent'}: --`,
-        linkUrl: linkageData?.currentLink?.url || '',
-        linkTitle: linkageData?.currentLink
-          ? buildLinkHoverTitle(
-              linkageData.mode === 'epicLink' ? 'View epic issue' : 'View parent issue',
-              `[${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
-            )
-          : ''
-      }, state, {
-        canEdit: !!linkageData?.editable,
-        editTitle: linkageData?.mode === 'epicLink' ? 'Edit epic link' : 'Edit parent'
-      }) : null,
-      ...customFieldChips[1]
-    ].filter(Boolean);
+    const layoutRow1 = tooltipLayout?.row1 || ['issueType', 'status', 'priority', 'epicParent'];
+    const layoutRow2 = tooltipLayout?.row2 || ['sprint', 'affects', 'fixVersions'];
+    const layoutRow3 = tooltipLayout?.row3 || ['environment', 'labels'];
 
     const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
     const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
@@ -3293,32 +3264,89 @@ async function mainAsyncLocal() {
           sprintClauses.length === 1 ? sprintClauses[0] : `(${sprintClauses.join(' OR ')})`
         )
       : '';
-    const row2Chips = [
-      displayFields.sprint ? buildEditableFieldChip('sprint', buildFilterChip(
-        `Sprint: ${formatSprintText(sprints) || '--'}`,
-        sprintJql,
-        {linkLabel: visibleSprints.length > 1 ? 'listed sprints' : (formatSprintText(sprints) || '')}
-      ), state, {
-        canEdit: !!sprintCapability?.editable
-      }) : null,
-      displayFields.affects ? buildEditableFieldChip('versions', buildFilterChip(
-        `Affects: ${formatVersionText(affectsVersions) || '--'}`,
-        singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : '',
-        {linkLabel: singleAffectsVersion}
-      ), state, {
-        canEdit: !!affectsCapability?.editable,
-        isRightAligned: true
-      }) : null,
-      displayFields.fixVersions ? buildEditableFieldChip('fixVersions', buildFilterChip(
-        `Fix version: ${formatVersionText(fixVersions) || '--'}`,
-        singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : '',
-        {linkLabel: singleFixVersion}
-      ), state, {
-        canEdit: !!fixVersionsCapability?.editable,
-        isRightAligned: true
-      }) : null,
-      ...customFieldChips[2]
-    ].filter(Boolean);
+
+    const buildRow1Chip = (fieldKey) => {
+      switch (fieldKey) {
+        case 'issueType':
+          return buildEditableFieldChip('issuetype', buildFilterChip(
+            issueTypeName || 'No type',
+            issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
+            {iconUrl: issueData.fields.issuetype?.iconUrl || '', linkLabel: issueTypeName}
+          ), state, {
+            canEdit: issueTypeEditable,
+            editTitle: 'Edit issue type'
+          });
+        case 'status':
+          return buildEditableFieldChip('status', buildFilterChip(
+            statusName || 'No status',
+            statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
+            {iconUrl: issueData.fields.status?.iconUrl || '', linkLabel: statusName}
+          ), state, {
+            canEdit: statusEditable,
+            editTitle: 'Change status'
+          });
+        case 'priority':
+          return buildEditableFieldChip('priority', buildFilterChip(
+            priorityName || 'No priority',
+            priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
+            {iconUrl: issueData.fields.priority?.iconUrl || '', linkLabel: priorityName}
+          ), state, {
+            canEdit: priorityEditable,
+            editTitle: 'Edit priority'
+          });
+        case 'epicParent':
+          return buildEditableFieldChip('parentLink', {
+            text: linkageData?.currentLink
+              ? `${linkageData.label}: [${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
+              : `${linkageData?.label || 'Parent'}: --`,
+            linkUrl: linkageData?.currentLink?.url || '',
+            linkTitle: linkageData?.currentLink
+              ? buildLinkHoverTitle(
+                  linkageData.mode === 'epicLink' ? 'View epic issue' : 'View parent issue',
+                  `[${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
+                )
+              : ''
+          }, state, {
+            canEdit: !!linkageData?.editable,
+            editTitle: linkageData?.mode === 'epicLink' ? 'Edit epic link' : 'Edit parent'
+          });
+        default:
+          return null;
+      }
+    };
+
+    const buildRow2Chip = (fieldKey) => {
+      switch (fieldKey) {
+        case 'sprint':
+          return buildEditableFieldChip('sprint', buildFilterChip(
+            `Sprint: ${formatSprintText(sprints) || '--'}`,
+            sprintJql,
+            {linkLabel: visibleSprints.length > 1 ? 'listed sprints' : (formatSprintText(sprints) || '')}
+          ), state, {
+            canEdit: !!sprintCapability?.editable
+          });
+        case 'affects':
+          return buildEditableFieldChip('versions', buildFilterChip(
+            `Affects: ${formatVersionText(affectsVersions) || '--'}`,
+            singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : '',
+            {linkLabel: singleAffectsVersion}
+          ), state, {
+            canEdit: !!affectsCapability?.editable,
+            isRightAligned: true
+          });
+        case 'fixVersions':
+          return buildEditableFieldChip('fixVersions', buildFilterChip(
+            `Fix version: ${formatVersionText(fixVersions) || '--'}`,
+            singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : '',
+            {linkLabel: singleFixVersion}
+          ), state, {
+            canEdit: !!fixVersionsCapability?.editable,
+            isRightAligned: true
+          });
+        default:
+          return null;
+      }
+    };
 
     const singleLabel = labels.length === 1 ? labels[0] : '';
     const environmentText = formatEnvironmentDisplayText(issueData.fields.environment);
@@ -3326,24 +3354,34 @@ async function mainAsyncLocal() {
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
       .trim();
-    const row3Chips = [
-      displayFields.environment ? buildEditableFieldChip('environment', buildFilterChip(
-        `Environment: ${environmentText}`,
-        '',
-        {
-          chipTitle: environmentTooltip ? `Environment: ${environmentTooltip}` : 'Environment: --',
-          truncateText: true
-        }
-      ), state, {
-        canEdit: environmentEditable,
-        editTitle: 'Edit environment'
-      }) : null,
-      displayFields.labels ? buildEditableFieldChip('labels', buildLabelsChip(labels, projectKey), state, {
-        canEdit: labelsEditable,
-        editTitle: 'Edit labels'
-      }) : null,
-      ...customFieldChips[3]
-    ].filter(Boolean);
+
+    const buildRow3Chip = (fieldKey) => {
+      switch (fieldKey) {
+        case 'environment':
+          return buildEditableFieldChip('environment', buildFilterChip(
+            `Environment: ${environmentText}`,
+            '',
+            {
+              chipTitle: environmentTooltip ? `Environment: ${environmentTooltip}` : 'Environment: --',
+              truncateText: true
+            }
+          ), state, {
+            canEdit: environmentEditable,
+            editTitle: 'Edit environment'
+          });
+        case 'labels':
+          return buildEditableFieldChip('labels', buildLabelsChip(labels, projectKey), state, {
+            canEdit: labelsEditable,
+            editTitle: 'Edit labels'
+          });
+        default:
+          return null;
+      }
+    };
+
+    const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]);
+    const row2Chips = layoutRow2.map(buildRow2Chip).filter(Boolean).concat(customFieldChips[2]);
+    const row3Chips = layoutRow3.map(buildRow3Chip).filter(Boolean).concat(customFieldChips[3]);
 
     const copyTicketMeta = ticket => ({
       copyUrl: ticket.url,
@@ -3352,8 +3390,11 @@ async function mainAsyncLocal() {
     });
 
     const issueUrl = INSTANCE_URL + 'browse/' + key;
-    const visibleCommentsTotal = displayFields.comments ? commentsTotal : 0;
-    const visibleAttachments = displayFields.attachments ? previewAttachments : [];
+    const showAttachments = layoutContentBlocks.includes('attachments');
+    const showComments = layoutContentBlocks.includes('comments');
+    const showTimeTracking = layoutContentBlocks.includes('timeTracking');
+    const visibleCommentsTotal = showComments ? commentsTotal : 0;
+    const visibleAttachments = showAttachments ? previewAttachments : [];
     const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
     const reporterView = displayFields.reporter && issueData.fields.reporter
       ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
@@ -3361,7 +3402,7 @@ async function mainAsyncLocal() {
     const assigneeView = displayFields.assignee
       ? buildAssigneeAvatarView(state, issueData, assigneeEditable)
       : null;
-    const timeTrackingSection = buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability);
+    const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
     const displayData = {
       urlTitle: `[${key}] ${issueData.fields.summary}`,
       ticketKey: key,
@@ -3374,16 +3415,16 @@ async function mainAsyncLocal() {
         url: issueUrl
       }),
       prs: [],
-      description: displayFields.description ? normalizedDescription : '',
+      description: layoutContentBlocks.includes('description') ? normalizedDescription : '',
       hasBodyContent: true,
       emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
         ? 'No description, attachments or comments.'
         : '',
       attachments,
       previewAttachments: visibleAttachments,
-      commentsForDisplay: displayFields.comments ? commentsForDisplay : [],
-      showCommentsSection: displayFields.comments || commentsForDisplay.length > 0,
-      showCommentComposer: displayFields.comments,
+      commentsForDisplay: showComments ? commentsForDisplay : [],
+      showCommentsSection: showComments || commentsForDisplay.length > 0,
+      showCommentComposer: showComments,
       issuetype: issueData.fields.issuetype,
       status: issueData.fields.status,
       priority: issueData.fields.priority,
@@ -3414,7 +3455,7 @@ async function mainAsyncLocal() {
     if (issueData.fields.comment?.comments?.[0]?.id) {
       displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
     }
-    if (displayFields.pullRequests && size(pullRequests)) {
+    if (showPullRequests && size(pullRequests)) {
       const filteredPullRequests = pullRequests.filter(pr => {
         return pr && pr.url !== location.href;
       });
@@ -3646,7 +3687,7 @@ async function mainAsyncLocal() {
     await normalizeIssueImages(refreshedIssueData);
 
     let refreshedPullRequests = [];
-    if (displayFields.pullRequests) {
+    if (showPullRequests) {
       try {
         const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
         refreshedPullRequests = normalizePullRequests(pullRequestResponse);
@@ -4127,7 +4168,7 @@ async function mainAsyncLocal() {
         await normalizeIssueImages(refreshedIssueData);
 
         let refreshedPullRequests = [];
-        if (displayFields.pullRequests) {
+        if (showPullRequests) {
           try {
             const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
             refreshedPullRequests = normalizePullRequests(pullRequestResponse);
@@ -4808,7 +4849,7 @@ async function mainAsyncLocal() {
       const issueData = await getIssueMetaData(key);
       await normalizeIssueImages(issueData);
       let pullRequests = [];
-      if (displayFields.pullRequests) {
+      if (showPullRequests) {
         try {
           const pullRequestResponse = await getPullRequestDataCached(issueData.id);
           pullRequests = normalizePullRequests(pullRequestResponse);
