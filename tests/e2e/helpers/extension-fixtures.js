@@ -81,50 +81,35 @@ async function getExtensionId(context) {
   return serviceWorker.url().split('/')[2];
 }
 
-async function configureExtension(optionsPage, config, permissionOverride) {
-  if (typeof permissionOverride === 'boolean') {
-    await optionsPage.evaluate(result => {
-      const original = chrome.permissions.request.bind(chrome.permissions);
-      chrome.permissions.request = (permissions, callback) => {
-        window.__lastPermissionRequest = permissions;
-        callback(result);
-      };
-      window.__restorePermissionsRequest = () => {
-        chrome.permissions.request = original;
-      };
-    }, permissionOverride);
+async function configureExtension(optionsPage, config) {
+  let normalizedUrl = String(config.instanceUrl || '').trim();
+  if (normalizedUrl && !normalizedUrl.endsWith('/')) {
+    normalizedUrl += '/';
   }
 
-  await optionsPage.getByLabel('Jira instance URL').fill(config.instanceUrl);
-  await optionsPage.getByLabel('Allowed pages').fill(config.domains.join(', '));
+  const storageData = {
+    instanceUrl: normalizedUrl,
+    domains: config.domains,
+    hoverDepth: config.hoverDepth || 'exact',
+    hoverModifierKey: config.hoverModifierKey || 'none',
+    displayFields: config.displayFields || {},
+    customFields: config.customFields || [],
+    v15upgrade: true
+  };
 
-  if (config.hoverDepth) {
-    await optionsPage.getByLabel('Trigger depth').selectOption(config.hoverDepth);
-  }
-  if (config.hoverModifierKey) {
-    await optionsPage.getByLabel('Modifier key').selectOption(config.hoverModifierKey);
-  }
+  await optionsPage.evaluate(async (data) => {
+    await chrome.storage.sync.set(data);
+  }, storageData);
 
-  if (config.displayFields) {
-    for (const [key, checked] of Object.entries(config.displayFields)) {
-      await optionsPage.locator(`#displayField_${key}`).setChecked(checked);
-    }
-  }
+  await optionsPage.waitForTimeout(500);
 
-  if (Array.isArray(config.customFields)) {
-    const addButton = optionsPage.getByRole('button', {name: 'Add another field'});
-    for (let index = 0; index < config.customFields.length; index += 1) {
-      const existingRows = await optionsPage.locator('.customFieldRow').count();
-      if (existingRows <= index) {
-        await addButton.click();
-      }
-      const row = optionsPage.locator('.customFieldRow').nth(index);
-      await row.getByLabel('Field ID').fill(config.customFields[index].fieldId);
-      await row.getByLabel('Location').selectOption(String(config.customFields[index].row));
-    }
-  }
+  const saved = await optionsPage.evaluate(() => {
+    return chrome.storage.sync.get(['instanceUrl', 'domains']);
+  });
 
-  await optionsPage.getByRole('button', {name: 'Save changes'}).click();
+  if (!saved.instanceUrl) {
+    throw new Error('Failed to save instanceUrl to storage');
+  }
 }
 
 async function hoverIssueKey(page, selector, modifier) {
