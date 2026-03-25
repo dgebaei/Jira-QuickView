@@ -94,6 +94,12 @@ async function configureExtension(optionsPage, config) {
     hoverModifierKey: config.hoverModifierKey || 'none',
     displayFields: config.displayFields || {},
     customFields: config.customFields || [],
+    tooltipLayout: {
+      row1: ['issueType', 'status', 'priority', 'epicParent'],
+      row2: ['sprint', 'affects', 'fixVersions'],
+      row3: ['environment', 'labels'],
+      contentBlocks: ['description', 'attachments', 'comments', 'pullRequests']
+    },
     v15upgrade: true
   };
 
