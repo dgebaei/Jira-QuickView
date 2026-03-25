@@ -93,7 +93,8 @@ async function configureExtension(optionsPage, config) {
     hoverDepth: config.hoverDepth || 'exact',
     hoverModifierKey: config.hoverModifierKey || 'none',
     displayFields: config.displayFields || {},
-    customFields: config.customFields || []
+    customFields: config.customFields || [],
+    v15upgrade: true
   };
 
   await optionsPage.evaluate(async (data) => {
