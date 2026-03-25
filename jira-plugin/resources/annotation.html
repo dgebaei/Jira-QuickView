@@ -261,7 +261,7 @@
         </div>
         {{/row2Chips.length}}
         {{#row3Chips.length}}
-        <div class="_JX_status_row">
+        <div class="_JX_status_row _JX_status_row_lower">
             {{#row3Chips}}
             {{#isEditable}}
             <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
@@ -358,7 +358,14 @@
             {{/row3Chips}}
         </div>
         {{/row3Chips.length}}
+        </div>
+    {{#hasActionNotice}}
+    <div class="_JX_action_notice {{actionNoticeClass}}">{{actionNoticeText}}</div>
+    {{/hasActionNotice}}
+
+    <div class="_JX_content_blocks">
         {{#timeTrackingSection}}
+        <div class="_JX_content_block" data-content-block="timeTracking">
         <div class="_JX_time_tracking">
             <div class="_JX_section_title">Time Tracking</div>
             <div class="_JX_time_tracking_layout">
@@ -395,20 +402,22 @@
             {{#showEstimateHint}}<div class="_JX_time_tracking_hint">{{estimateHintText}}</div>{{/showEstimateHint}}
             {{#errorMessage}}<div class="_JX_time_tracking_error">{{errorMessage}}</div>{{/errorMessage}}
         </div>
-        {{/timeTrackingSection}}
         </div>
-    {{#hasActionNotice}}
-    <div class="_JX_action_notice {{actionNoticeClass}}">{{actionNoticeText}}</div>
-    {{/hasActionNotice}}
+        {{/timeTrackingSection}}
 
-    <div class="_JX_description">
+        <div class="_JX_content_block" data-content-block="description">
+        <div class="_JX_description">
         {{#description}}
         <div class="_JX_section_title">Description</div>
         <div class="_JX_description_text">
             {{{description}}}
         </div>
         {{/description}}
+        </div>
+        </div>
+
         {{#previewAttachments.length}}
+        <div class="_JX_content_block" data-content-block="attachments">
         <div class="_JX_description_attachments">
             <div class="_JX_section_title">Attachments</div>
             {{#previewAttachments}}
@@ -421,8 +430,11 @@
             </div>
             {{/previewAttachments}}
         </div>
+        </div>
         {{/previewAttachments.length}}
+
         {{#prs.length}}
+        <div class="_JX_content_block" data-content-block="pullRequests">
         <div class="_JX_related_pr">
             <div class="_JX_section_title">Pull Requests</div>
             <table>
@@ -446,8 +458,11 @@
                 </tbody>
             </table>
         </div>
+        </div>
         {{/prs.length}}
+
         {{#showCommentsSection}}
+        <div class="_JX_content_block" data-content-block="comments">
         <div class="_JX_comments">
             <div class="_JX_section_title">Comments</div>
             <div class="_JX_comment_list">
@@ -539,6 +554,7 @@
                 </div>
             </div>
             {{/showCommentComposer}}
+        </div>
         </div>
         {{/showCommentsSection}}
 

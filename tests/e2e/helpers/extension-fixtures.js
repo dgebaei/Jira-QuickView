@@ -76,7 +76,7 @@ async function launchExtensionContext() {
 async function getExtensionId(context) {
   let [serviceWorker] = context.serviceWorkers();
   if (!serviceWorker) {
-    serviceWorker = await context.waitForEvent('serviceworker');
+    serviceWorker = await context.waitForEvent('serviceworker', {timeout: 30000});
   }
   return serviceWorker.url().split('/')[2];
 }

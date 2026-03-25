@@ -181,7 +181,7 @@ const DRAGGABLE_CONTENT_KEYS = CONTENT_BLOCK_KEYS.filter(k => !k.required).map(k
 const DRAGGABLE_ZONES = ['row1', 'row2', 'row3'];
 const CONTENT_BLOCKS_DROPPABLE = 'contentBlocks';
 
-function SortableField({ id, label, onRemove, isCustom }) {
+function SortableField({ id, label, onRemove }) {
   const {
     attributes,
     listeners,
@@ -200,7 +200,7 @@ function SortableField({ id, label, onRemove, isCustom }) {
   return (
     <div ref={setNodeRef} style={style} className='fieldPill' {...attributes} {...listeners}>
       <span className='fieldPillLabel'>{label}</span>
-      {onRemove && !isCustom && (
+      {onRemove && (
         <button
           type='button'
           className='fieldPillRemove'
@@ -235,23 +235,82 @@ function DraggableLibraryField({ id, label }) {
   );
 }
 
-function FieldLibrary({ fields }) {
-  if (fields.length === 0) {
-    return (
-      <div className='fieldLibraryEmpty'>
-        All fields are placed in the layout.
-      </div>
-    );
+function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomFieldIds, fieldCatalog }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState('');
+  const trimmed = draft.trim();
+
+  let validationMsg = '';
+  let validationTone = '';
+  if (trimmed) {
+    if (!/^customfield_\d+$/i.test(trimmed)) {
+      validationMsg = 'Format: customfield_12345';
+      validationTone = 'error';
+    } else if (existingCustomFieldIds.includes(trimmed)) {
+      validationMsg = 'Already added';
+      validationTone = 'error';
+    } else if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]) {
+      validationMsg = 'Not found in Jira';
+      validationTone = 'error';
+    } else if (fieldCatalog[trimmed]) {
+      validationMsg = fieldCatalog[trimmed];
+      validationTone = 'success';
+    } else {
+      validationMsg = 'Checking\u2026';
+      validationTone = 'neutral';
+    }
   }
+  const canSave = trimmed && validationTone === 'success';
+
+  const handleSave = () => {
+    if (!canSave) return;
+    onAddField(trimmed);
+    setDraft('');
+    setAdding(false);
+  };
+
+  const handleCancel = () => {
+    setDraft('');
+    setAdding(false);
+  };
+
   return (
     <div className='fieldLibrary'>
       {fields.map(field => (
-        <DraggableLibraryField
-          key={field.key}
-          id={field.key}
-          label={field.label}
-        />
+        <div key={field.key} className='fieldLibraryItem'>
+          <DraggableLibraryField id={field.key} label={field.label} />
+          {field.key.startsWith('custom_') && (
+            <button type='button' className='fieldLibraryRemove' onClick={() => onRemoveCustomField(field.key)} title='Remove field'>×</button>
+          )}
+        </div>
       ))}
+      {fields.length === 0 && !adding && (
+        <div className='fieldLibraryEmpty'>All fields are placed in the layout.</div>
+      )}
+      {adding ? (
+        <div className='fieldLibraryAdd'>
+          <input
+            type='text'
+            className='fieldLibraryInput'
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
+            placeholder='customfield_12345'
+            autoFocus
+          />
+          {validationMsg && (
+            <div className={`fieldLibraryValidation fieldLibraryValidation--${validationTone}`}>{validationMsg}</div>
+          )}
+          <div className='fieldLibraryAddActions'>
+            <button type='button' className='fieldLibraryAddBtn' onClick={handleCancel} title='Cancel'>✕</button>
+            <button type='button' className='fieldLibraryAddBtn fieldLibraryAddBtnSave' onClick={handleSave} disabled={!canSave} title='Save'>✓</button>
+          </div>
+        </div>
+      ) : (
+        <button type='button' className='fieldLibraryAddFieldBtn' onClick={() => setAdding(true)}>
+          + Add field
+        </button>
+      )}
     </div>
   );
 }
@@ -287,7 +346,6 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
               id={field.key}
               label={field.label}
               onRemove={onRemove}
-              isCustom={field.key.startsWith('custom_')}
             />
           ))}
           {fields.length === 0 && (
@@ -361,7 +419,7 @@ function DroppableContentBlocks({ id, isOver, children }) {
   );
 }
 
-function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fieldCatalog }) {
+function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, setCustomFields, fieldCatalog, onAddField, onRemoveCustomField }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
 
@@ -383,7 +441,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fi
     }
   });
   customFields.forEach(cf => {
-    const key = `custom_${cf._uid}`;
+    const key = cf.fieldId ? `custom_${cf.fieldId}` : `custom_${cf._uid}`;
     const name = cf.fieldId ? (fieldCatalog[cf.fieldId] || cf.fieldId) : '(unsaved)';
     allFields[key] = name;
   });
@@ -553,7 +611,13 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fi
                 <h4>Available Fields</h4>
                 <p>Drag fields into rows</p>
               </div>
-              <FieldLibrary fields={libraryFields} />
+              <FieldLibrary
+                fields={libraryFields}
+                onAddField={onAddField}
+                onRemoveCustomField={onRemoveCustomField}
+                existingCustomFieldIds={customFields.map(cf => cf.fieldId).filter(Boolean)}
+                fieldCatalog={fieldCatalog}
+              />
             </div>
           </div>
 
@@ -713,6 +777,22 @@ function ConfigPage(props) {
   const customFieldErrors = customFields.map(field => getCustomFieldError(field.fieldId, fieldCatalog));
   const hasInvalidCustomFields = customFieldErrors.some(Boolean);
 
+  const savedJsonRef = useRef(JSON.stringify({
+    instanceUrl: props.instanceUrl || '',
+    domainsText: (props.domains || []).join(', '),
+    themeMode: normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE),
+    hoverDepth: props.hoverDepth || 'shallow',
+    hoverModifierKey: props.hoverModifierKey || 'none',
+    tooltipLayout: tooltipLayout,
+    customFields: customFields.map(f => f.fieldId),
+  }));
+  const currentJson = JSON.stringify({
+    instanceUrl, domainsText, themeMode, hoverDepth, hoverModifierKey,
+    tooltipLayout,
+    customFields: customFields.map(f => f.fieldId),
+  });
+  const isDirty = currentJson !== savedJsonRef.current;
+
   const toggleAdvanced = useCallback(() => {
     setShowAdvanced(prev => {
       const next = !prev;
@@ -743,25 +823,21 @@ function ConfigPage(props) {
     }));
   };
 
-  const updateCustomField = (index, patch) => {
-    setCustomFields(current => current.map((field, fieldIndex) => {
-      if (fieldIndex !== index) {
-        return field;
-      }
-      return {
-        ...field,
-        ...patch
-      };
-    }));
-  };
-
-  const addCustomField = () => {
-    const newField = { fieldId: '', row: 3, _uid: `cf-${Date.now()}` };
+  const addCustomField = (fieldId) => {
+    const newField = { fieldId, row: 3, _uid: `cf-${Date.now()}` };
     setCustomFields(current => current.concat(newField));
   };
 
-  const removeCustomField = (index) => {
-    setCustomFields(current => current.filter((_, fieldIndex) => index !== fieldIndex));
+  const removeCustomFieldByKey = (layoutKey) => {
+    const fieldId = layoutKey.replace('custom_', '');
+    if (!window.confirm('Remove this custom field from the extension?')) return;
+    setCustomFields(current => current.filter(f => f.fieldId !== fieldId));
+    setTooltipLayout(prev => ({
+      ...prev,
+      row1: prev.row1.filter(k => k !== layoutKey),
+      row2: prev.row2.filter(k => k !== layoutKey),
+      row3: prev.row3.filter(k => k !== layoutKey),
+    }));
   };
 
   const handleThemeChange = (mode) => {
@@ -903,6 +979,14 @@ function ConfigPage(props) {
     });
     resetDeclarativeMapping();
     setDomainsText(domains.join(', '));
+    savedJsonRef.current = JSON.stringify({
+      instanceUrl: normalizedInstanceUrl,
+      domainsText: domains.join(', '),
+      themeMode: normalizeThemeMode(themeMode),
+      hoverDepth, hoverModifierKey,
+      tooltipLayout,
+      customFields: customFields.map(f => f.fieldId),
+    });
     setIsSaving(false);
     setStatusTone('success');
     setStatus('Options saved successfully.');
@@ -1054,6 +1138,7 @@ function ConfigPage(props) {
                     <option value='alt'>Alt — press Alt after hovering</option>
                     <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
                     <option value='shift'>Shift — press Shift after hovering</option>
+                    <option value='any'>Any — press Alt, Ctrl, or Shift after hovering</option>
                   </select>
                   <span className='fieldHelp'>
                     When set, hover over a Jira key and then press the chosen key to reveal the tooltip.
@@ -1075,68 +1160,11 @@ function ConfigPage(props) {
                 tooltipLayout={tooltipLayout}
                 setTooltipLayout={setTooltipLayout}
                 customFields={customFields}
+                setCustomFields={setCustomFields}
                 fieldCatalog={fieldCatalog}
+                onAddField={addCustomField}
+                onRemoveCustomField={removeCustomFieldByKey}
               />
-            </div>
-          </section>
-
-          {/* ── Custom Fields ────────────────────────────── */}
-          <section className='settingsCard settingsGridFull'>
-            <div className='cardHeader' style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-              <div>
-                <h2>Custom Fields</h2>
-                <p>Add Jira field IDs and choose where each one appears in the hover summary.</p>
-              </div>
-              <button type='button' className='secondaryButton' onClick={addCustomField}>
-                + Add field
-              </button>
-            </div>
-            <div className='cardBody'>
-              {customFields.length === 0 ? (
-                <div className='emptyState'>
-                  No custom fields configured yet. Add one if you want to surface plugin-provided Jira data in the hover card.
-                </div>
-              ) : (
-                <div className='customFieldsSection'>
-                  {customFields.map((field, index) => (
-                    <div key={field._uid} className='customFieldRow'>
-                      <div className='customFieldHeader'>Custom field {index + 1}</div>
-                      <label className='customFieldLabel'>
-                        <span className='fieldLabel'>Field ID</span>
-                        <input
-                          type='text'
-                          value={field.fieldId}
-                          onChange={event => updateCustomField(index, {fieldId: event.target.value})}
-                          placeholder='customfield_12345' />
-                      </label>
-                      <label className='customFieldLabel'>
-                        <span className='fieldLabel'>Location</span>
-                        <select
-                          value={field.row}
-                          onChange={event => updateCustomField(index, {row: Number(event.target.value)})}>
-                          <option value={1}>Top bar - row 1</option>
-                          <option value={2}>Top bar - row 2</option>
-                          <option value={3}>Top bar - row 3</option>
-                        </select>
-                      </label>
-                      <div className={`customFieldMeta ${customFieldErrors[index] ? 'customFieldMetaError' : ''}`}>
-                        {customFieldErrors[index]
-                          ? customFieldErrors[index]
-                          : field.fieldId
-                            ? `Resolved field name: ${fieldCatalog[field.fieldId] || 'Waiting for Jira field metadata.'}`
-                            : 'The field name will appear here after Jira returns metadata for this ID.'}
-                      </div>
-                      <button
-                        type='button'
-                        className='dangerButton ghostButton customFieldRemove'
-                        onClick={() => removeCustomField(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </section>
 
@@ -1166,30 +1194,28 @@ function ConfigPage(props) {
       )}
 
       {/* ── Footer Action Bar ────────────────────────────── */}
-      <footer className='actionBar'>
+      <footer className={`actionBar${isDirty ? ' actionBarDirty' : ''}`}>
         <div className='actionCopy'>
           <strong>Save changes</strong>
           <span>Applies the Jira URL, allowed pages, appearance, and field settings.</span>
         </div>
-        <div className='actionControls'>
+        <div className='actionControlsRow'>
           {(status || hasInvalidCustomFields) && (
-            <div className={`saveNotice saveNotice${statusTone.charAt(0).toUpperCase() + statusTone.slice(1)}`}>
+            <span className={`saveNotice saveNotice${statusTone.charAt(0).toUpperCase() + statusTone.slice(1)}`}>
               {status || 'Fix invalid custom field IDs before saving.'}
-            </div>
+            </span>
           )}
-          <div className='actionControlsRow'>
-            <button type='button' className='ghostButton' onClick={discardOptions} disabled={isSaving}>
-              Discard
-            </button>
-            <button
-              type='button'
-              className='saveBtn primaryButton'
-              onClick={saveOptions}
-              disabled={isSaving || hasInvalidCustomFields}
-            >
-              {isSaving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
+          <button type='button' className='ghostButton' onClick={discardOptions} disabled={isSaving}>
+            Discard
+          </button>
+          <button
+            type='button'
+            className={`saveBtn primaryButton${isDirty ? ' saveBtnDirty' : ''}`}
+            onClick={saveOptions}
+            disabled={isSaving || hasInvalidCustomFields}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       </footer>
     </div>
