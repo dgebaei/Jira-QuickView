@@ -55,9 +55,9 @@
   --pro-bg: #ede9fe;
   --pro-border: #7c3aed;
   --pro-text: #6d28d9;
-  --tooltip-header-bg: #1e293b;
-  --tooltip-header-border: #334155;
-  --tooltip-header-text: #f8fafc;
+  --tooltip-header-bg: #ffffff;
+  --tooltip-header-border: #e2e8f0;
+  --tooltip-header-text: #374151;
   --tooltip-row-bg: #f8fafc;
   --tooltip-row-border: #e2e8f0;
   color: var(--page-text);
@@ -898,32 +898,44 @@ button:disabled {
 }
 
 .tooltipLayoutEditor {
+  display: grid;
   grid-template-columns: 200px 1fr;
+  grid-template-rows: auto auto;
   gap: 20px;
   min-height: 400px;
 
   @media (max-width: 900px) {
-    display: none;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 }
 
-.tooltipLayoutMobile {
-  display: none;
-  padding: 16px;
-  background: var(--empty-bg);
-  border: 1px solid var(--empty-border);
-  border-radius: 8px;
-  text-align: center;
+.tooltipLayoutFieldsSection {
+  display: contents;
+}
 
-  p {
-    color: var(--empty-color);
-    font-size: 13px;
-    margin: 0;
-  }
+.tooltipLayoutFieldsLeft {
+  grid-column: 1;
+  grid-row: 1;
+}
 
-  @media (max-width: 900px) {
-    display: block;
-  }
+.tooltipLayoutFieldsRight {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.tooltipLayoutBlocksSection {
+  display: contents;
+}
+
+.tooltipLayoutBlocksLeft {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.tooltipLayoutBlocksRight {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .tooltipLayoutSidebar {
@@ -1043,36 +1055,154 @@ button:disabled {
 
 .tooltipPreviewHeader {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  justify-content: space-between;
+  padding: 8px 12px;
   background: var(--tooltip-header-bg, #1e293b);
   border-bottom: 1px solid var(--tooltip-header-border, #334155);
 }
 
-.tooltipPreviewTitle {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--tooltip-header-text, #f8fafc);
+.tooltipPreviewLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .tooltipPreviewPeople {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
 }
 
 .tooltipPreviewPerson {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   color: white;
-  cursor: default;
+}
+
+.tooltipPreviewTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tooltipPreviewKey {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tooltip-header-text, #f8fafc);
+  white-space: nowrap;
+}
+
+.tooltipPreviewTitleText {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--tooltip-header-text, #f8fafc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tooltipPreviewActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tooltipPreviewAction {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: var(--tooltip-header-text, #f8fafc);
+  opacity: 0.7;
+
+  &:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+}
+
+.tooltipPreviewActionClose {
+  font-size: 16px;
+  font-weight: 300;
+}
+
+.tooltipLayoutBlocksSidebar {
+  background: var(--page-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.tooltipLayoutBlocksSidebarHeader {
+  margin-bottom: 10px;
+
+  h4 {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--section-title-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 2px 0;
+  }
+
+  p {
+    font-size: 10px;
+    color: var(--copy-muted);
+    margin: 0;
+  }
+}
+
+.blocksLibrary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.blocksLibraryEmpty {
+  font-size: 11px;
+  color: var(--copy-muted);
+  text-align: center;
+  padding: 8px 0;
+}
+
+.blockPill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  background: var(--pill-selected-bg);
+  border: 1px solid var(--pill-selected-border);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pill-selected-color);
+  cursor: grab;
+  user-select: none;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--pill-selected-border);
+    border-color: var(--pill-selected-color);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
 }
 
 .tooltipPreviewPersonR {
@@ -1165,7 +1295,150 @@ button:disabled {
 
 .tooltipPreviewContentBlocks {
   padding: 10px 14px;
+}
+
+.tooltipPreviewContentLabel {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.tooltipPreviewContentList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 40px;
+  border-radius: 6px;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.tooltipPreviewContentListOver {
+  background: var(--pill-selected-bg);
+  border: 1px dashed var(--pill-selected-border);
+}
+
+.contentBlockItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--field-label-color);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.contentBlockItemRequired {
+  background: var(--group-card-bg);
+  border-style: dashed;
+  color: var(--copy-muted);
+}
+
+.contentBlockItemSortable {
+  background: var(--pill-selected-bg);
+  border-color: var(--pill-selected-border);
+  color: var(--pill-selected-color);
+}
+
+.contentBlockItemAvailable {
+  background: var(--secondary-bg);
+  border-color: var(--secondary-border);
+  color: var(--secondary-color);
+  cursor: grab;
+
+  &:hover {
+    background: var(--pill-selected-bg);
+    border-color: var(--pill-selected-border);
+  }
+}
+
+.contentBlockDragHandle {
+  cursor: grab;
+  color: var(--copy-muted);
+  font-size: 12px;
+  user-select: none;
+}
+
+.contentBlockAlways {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--copy-muted);
+  font-style: italic;
+}
+
+.contentBlockRemove {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--copy-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  .contentBlockItem:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    color: var(--error-color);
+  }
+}
+
+.contentBlockEmpty {
+  padding: 10px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--copy-muted);
+  font-style: italic;
+  border: 1px dashed var(--card-border);
+  border-radius: 6px;
+}
+
+.tooltipPreviewContentAvailable {
   border-top: 1px solid var(--card-border);
+  padding-top: 10px;
+}
+
+.contentBlockAvailableLabel {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--copy-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.contentBlockAvailableList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.contentBlockItemAvailable {
+  display: inline-flex;
+  padding: 4px 8px;
+  background: var(--secondary-bg);
+  border: 1px solid var(--secondary-border);
+  border-radius: 12px;
+  font-size: 10px;
+  color: var(--secondary-color);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--pill-selected-bg);
+    border-color: var(--pill-selected-border);
+  }
 }
 
 .tooltipPreviewContentLabel {

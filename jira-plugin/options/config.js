@@ -1,8 +1,8 @@
 export function buildTooltipLayoutFromDisplayFields(displayFields) {
-  const row1Defaults = ['issueType', 'status', 'priority', 'epicParent'];
+  const row1Defaults = ['status', 'priority', 'epicParent', 'issueType'];
   const row2Defaults = ['sprint', 'affects', 'fixVersions'];
   const row3Defaults = ['environment', 'labels'];
-  const contentDefaults = ['description', 'attachments', 'comments', 'pullRequests'];
+  const contentDefaults = ['description', 'attachments', 'comments', 'pullRequests', 'timeTracking'];
   const peopleDefaults = ['reporter', 'assignee'];
 
   const row1 = row1Defaults.filter(f => displayFields[f]);
@@ -39,13 +39,14 @@ export default {
     description: true,
     reporter: true,
     assignee: true,
-    pullRequests: true
+    pullRequests: true,
+    timeTracking: true
   },
   tooltipLayout: {
-    row1: ['issueType', 'status', 'priority', 'epicParent'],
+    row1: ['status', 'priority', 'epicParent', 'issueType'],
     row2: ['sprint', 'affects', 'fixVersions'],
     row3: ['environment', 'labels'],
-    contentBlocks: ['description', 'attachments', 'comments', 'pullRequests'],
+    contentBlocks: ['description', 'attachments', 'comments', 'pullRequests', 'timeTracking'],
     people: ['reporter', 'assignee']
   }
 };

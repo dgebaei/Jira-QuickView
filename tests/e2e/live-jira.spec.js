@@ -30,7 +30,7 @@ async function configureLiveExtension(optionsPage, config) {
     hoverDepth: 'shallow',
     hoverModifierKey: 'none',
     customFields: [],
-  }, true);
+  });
 }
 
 async function injectLiveHoverAnchor(page, issueKey) {

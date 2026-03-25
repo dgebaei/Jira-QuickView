@@ -35,7 +35,7 @@ test.skip('validates custom field ids and resolves their names from Jira metadat
 
   const customFieldId = target.mode === 'mock' ? 'customfield_12345' : await getFirstCustomFieldId(target);
   test.skip(!customFieldId, 'No Jira custom field is available for metadata resolution.');
-  await row.getByLabel('Field ID').fill(customFieldId);
+  await row.locator('input[placeholder="customfield_12345"]').fill(customFieldId);
   await expect(row.locator('.customFieldMeta')).toContainText(/Resolved field name:|Waiting for Jira field metadata\./);
   await expect(optionsPage.getByRole('button', {name: 'Save'})).toBeEnabled();
 });

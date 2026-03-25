@@ -171,14 +171,17 @@ async function main() {
 
 const ROW_FIELD_KEYS = ['issueType', 'status', 'priority', 'epicParent', 'sprint', 'affects', 'fixVersions', 'environment', 'labels'];
 const CONTENT_BLOCK_KEYS = [
-  { key: 'description', label: 'Description' },
+  { key: 'description', label: 'Description', required: true },
   { key: 'attachments', label: 'Attachments' },
   { key: 'comments', label: 'Comments' },
-  { key: 'pullRequests', label: 'Pull Requests' }
+  { key: 'pullRequests', label: 'Pull Requests' },
+  { key: 'timeTracking', label: 'Time Tracking' }
 ];
+const DRAGGABLE_CONTENT_KEYS = CONTENT_BLOCK_KEYS.filter(k => !k.required).map(k => k.key);
 const DRAGGABLE_ZONES = ['row1', 'row2', 'row3'];
+const CONTENT_BLOCKS_DROPPABLE = 'contentBlocks';
 
-function SortableField({ id, label, onRemove }) {
+function SortableField({ id, label, onRemove, isCustom }) {
   const {
     attributes,
     listeners,
@@ -197,7 +200,7 @@ function SortableField({ id, label, onRemove }) {
   return (
     <div ref={setNodeRef} style={style} className='fieldPill' {...attributes} {...listeners}>
       <span className='fieldPillLabel'>{label}</span>
-      {onRemove && (
+      {onRemove && !isCustom && (
         <button
           type='button'
           className='fieldPillRemove'
@@ -232,19 +235,11 @@ function DraggableLibraryField({ id, label }) {
   );
 }
 
-function FieldLibrary({ fields, onAddCustomField }) {
+function FieldLibrary({ fields }) {
   if (fields.length === 0) {
     return (
       <div className='fieldLibraryEmpty'>
-        <p>All built-in fields are placed in the layout.</p>
-        <button
-          type='button'
-          className='secondaryButton'
-          onClick={onAddCustomField}
-          style={{ marginTop: '8px', fontSize: '11px', padding: '4px 10px' }}
-        >
-          + Add custom field
-        </button>
+        All fields are placed in the layout.
       </div>
     );
   }
@@ -292,6 +287,7 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
               id={field.key}
               label={field.label}
               onRemove={onRemove}
+              isCustom={field.key.startsWith('custom_')}
             />
           ))}
           {fields.length === 0 && (
@@ -303,7 +299,69 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
   );
 }
 
-function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fieldCatalog, onAddCustomField }) {
+function SortableContentBlock({ id, label, onRemove }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className='contentBlockItem' {...attributes} {...listeners}>
+      <span className='contentBlockDragHandle'>⋮⋮</span>
+      <span>{label}</span>
+      <button
+        type='button'
+        className='contentBlockRemove'
+        onClick={() => onRemove(id)}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function DraggableContentBlock({ id, label }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
+
+  const style = {
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`contentBlockItem ${isDragging ? 'contentBlockItemDragging' : ''}`}
+      {...listeners}
+      {...attributes}
+    >
+      <span className='contentBlockDragHandle'>⋮⋮</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function DroppableContentBlocks({ id, isOver, children }) {
+  const { setNodeRef } = useDroppable({ id });
+
+  return (
+    <div ref={setNodeRef} className={`tooltipPreviewContentList ${isOver ? 'tooltipPreviewContentListOver' : ''}`}>
+      {children}
+    </div>
+  );
+}
+
+function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fieldCatalog }) {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
 
@@ -325,10 +383,9 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fi
     }
   });
   customFields.forEach(cf => {
-    if (cf.fieldId) {
-      const name = fieldCatalog[cf.fieldId] || cf.fieldId;
-      allFields[`custom_${cf._uid}`] = name;
-    }
+    const key = `custom_${cf._uid}`;
+    const name = cf.fieldId ? (fieldCatalog[cf.fieldId] || cf.fieldId) : '(unsaved)';
+    allFields[key] = name;
   });
 
   const placedRowKeys = new Set([
@@ -387,6 +444,30 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fi
 
     const activeKey = active.id;
     const overId = over.id;
+
+    if (tooltipLayout.contentBlocks.includes(activeKey) && tooltipLayout.contentBlocks.includes(overId)) {
+      const oldIndex = tooltipLayout.contentBlocks.indexOf(activeKey);
+      const newIndex = tooltipLayout.contentBlocks.indexOf(overId);
+      if (oldIndex !== newIndex) {
+        setTooltipLayout(prev => {
+          const newBlocks = [...prev.contentBlocks];
+          newBlocks.splice(oldIndex, 1);
+          newBlocks.splice(newIndex, 0, activeKey);
+          return { ...prev, contentBlocks: newBlocks };
+        });
+      }
+      return;
+    }
+
+    if (DRAGGABLE_CONTENT_KEYS.includes(activeKey) && (overId === CONTENT_BLOCKS_DROPPABLE || tooltipLayout.contentBlocks.includes(overId))) {
+      if (!tooltipLayout.contentBlocks.includes(activeKey)) {
+        setTooltipLayout(prev => {
+          const newBlocks = [...prev.contentBlocks, activeKey];
+          return { ...prev, contentBlocks: newBlocks };
+        });
+      }
+      return;
+    }
 
     const fromZone = getZoneForKey(activeKey);
 
@@ -466,75 +547,135 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fi
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div className='tooltipLayoutSidebar'>
-            <div className='tooltipLayoutSidebarHeader'>
-              <h4>Available Fields</h4>
-              <p>Drag fields into rows</p>
+          <div className='tooltipLayoutFieldsLeft'>
+            <div className='tooltipLayoutSidebar'>
+              <div className='tooltipLayoutSidebarHeader'>
+                <h4>Available Fields</h4>
+                <p>Drag fields into rows</p>
+              </div>
+              <FieldLibrary fields={libraryFields} />
             </div>
-            <FieldLibrary fields={libraryFields} onAddCustomField={onAddCustomField} />
           </div>
 
-          <div className='tooltipLayoutPreview'>
-            <div className='tooltipPreview'>
-              <div className='tooltipPreviewHeader'>
-                <span className='tooltipPreviewTitle'>PROJECT-123</span>
-                <div className='tooltipPreviewPeople'>
-                  <div className='tooltipPreviewPerson tooltipPreviewPersonR' title='Reporter'>Re</div>
-                  <div className='tooltipPreviewPerson tooltipPreviewPersonA' title='Assignee'>As</div>
+          <div className='tooltipLayoutBlocksLeft'>
+            <div className='tooltipLayoutBlocksSidebar'>
+              <div className='tooltipLayoutBlocksSidebarHeader'>
+                <h4>Available Blocks</h4>
+                <p>Drag to content</p>
+              </div>
+              <div className='blocksLibrary'>
+                {DRAGGABLE_CONTENT_KEYS.filter(key => !tooltipLayout.contentBlocks.includes(key)).map(key => {
+                  const block = CONTENT_BLOCK_KEYS.find(b => b.key === key);
+                  if (!block) return null;
+                  return (
+                    <DraggableContentBlock
+                      key={key}
+                      id={key}
+                      label={block.label}
+                    />
+                  );
+                })}
+                {DRAGGABLE_CONTENT_KEYS.filter(key => !tooltipLayout.contentBlocks.includes(key)).length === 0 && (
+                  <div className='blocksLibraryEmpty'>All blocks added</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className='tooltipLayoutFieldsRight'>
+            <div className='tooltipLayoutPreview'>
+              <div className='tooltipPreview'>
+                <div className='tooltipPreviewHeader'>
+                  <div className='tooltipPreviewLeft'>
+                    <div className='tooltipPreviewPeople'>
+                      <div className='tooltipPreviewPerson tooltipPreviewPersonR' title='Reporter'>Re</div>
+                      <div className='tooltipPreviewPerson tooltipPreviewPersonA' title='Assignee'>As</div>
+                    </div>
+                    <div className='tooltipPreviewTitle'>
+                      <span className='tooltipPreviewKey'>[PROJECT-123]</span>
+                      <span className='tooltipPreviewTitleText'>My Awesome Feature Implementation</span>
+                    </div>
+                  </div>
+                  <div className='tooltipPreviewActions'>
+                    <span className='tooltipPreviewAction' title='Copy'>⎘</span>
+                    <span className='tooltipPreviewAction' title='Pin'>📌</span>
+                    <span className='tooltipPreviewAction' title='More'>···</span>
+                    <span className='tooltipPreviewAction tooltipPreviewActionClose' title='Close'>×</span>
+                  </div>
+                </div>
+
+                <div className='tooltipPreviewSection'>
+                  <DroppableZone
+                    id='row1'
+                    title='Row 1'
+                    fields={getFieldsForZone('row1')}
+                    onRemove={(key) => handleRemoveFromZone('row1', key)}
+                    isOver={overId === 'row1'}
+                  />
+                  <DroppableZone
+                    id='row2'
+                    title='Row 2'
+                    fields={getFieldsForZone('row2')}
+                    onRemove={(key) => handleRemoveFromZone('row2', key)}
+                    isOver={overId === 'row2'}
+                  />
+                  <DroppableZone
+                    id='row3'
+                    title='Row 3'
+                    fields={getFieldsForZone('row3')}
+                    onRemove={(key) => handleRemoveFromZone('row3', key)}
+                    isOver={overId === 'row3'}
+                  />
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div className='tooltipPreviewSection'>
-                <DroppableZone
-                  id='row1'
-                  title='Row 1'
-                  fields={getFieldsForZone('row1')}
-                  onRemove={(key) => handleRemoveFromZone('row1', key)}
-                  isOver={overId === 'row1'}
-                />
-                <DroppableZone
-                  id='row2'
-                  title='Row 2'
-                  fields={getFieldsForZone('row2')}
-                  onRemove={(key) => handleRemoveFromZone('row2', key)}
-                  isOver={overId === 'row2'}
-                />
-                <DroppableZone
-                  id='row3'
-                  title='Row 3'
-                  fields={getFieldsForZone('row3')}
-                  onRemove={(key) => handleRemoveFromZone('row3', key)}
-                  isOver={overId === 'row3'}
-                />
-              </div>
-
-              <div className='tooltipPreviewContentBlocks'>
-                <span className='tooltipPreviewContentLabel'>Content</span>
-                <div className='tooltipPreviewContentToggles'>
-                  {CONTENT_BLOCK_KEYS.map(block => (
-                    <ContentBlockToggle
-                      key={block.key}
-                      block={block}
-                      checked={tooltipLayout.contentBlocks.includes(block.key)}
-                      onChange={handleToggleContentBlock}
-                    />
-                  ))}
+          <div className='tooltipLayoutBlocksRight'>
+            <div className='tooltipLayoutPreview'>
+              <div className='tooltipPreview'>
+                <div className='tooltipPreviewContentBlocks'>
+                  <span className='tooltipPreviewContentLabel'>Content Blocks</span>
+                  <DroppableContentBlocks id={CONTENT_BLOCKS_DROPPABLE} isOver={overId === CONTENT_BLOCKS_DROPPABLE}>
+                    <div className='contentBlockItem contentBlockItemRequired'>
+                      <span>Description</span>
+                      <span className='contentBlockAlways'>Always shown</span>
+                    </div>
+                    {tooltipLayout.contentBlocks.length > 0 && (
+                      <SortableContext items={tooltipLayout.contentBlocks} strategy={verticalListSortingStrategy}>
+                        {tooltipLayout.contentBlocks.map(key => {
+                          const block = CONTENT_BLOCK_KEYS.find(b => b.key === key);
+                          if (!block) return null;
+                          return (
+                            <SortableContentBlock
+                              key={key}
+                              id={key}
+                              label={block.label}
+                              onRemove={handleToggleContentBlock}
+                            />
+                          );
+                        })}
+                      </SortableContext>
+                    )}
+                    {tooltipLayout.contentBlocks.length === 0 && (
+                      <div className='contentBlockEmpty'>Drag blocks here</div>
+                    )}
+                  </DroppableContentBlocks>
                 </div>
               </div>
             </div>
           </div>
 
           <DragOverlay>
-            {activeField ? (
+            {activeId ? (
               <div className='fieldPill fieldPillDragging'>
-                <span className='fieldPillLabel'>{activeField.label}</span>
+                <span className='fieldPillLabel'>
+                  {allFields[activeId] || (CONTENT_BLOCK_KEYS.find(b => b.key === activeId)?.label) || activeId}
+                </span>
               </div>
             ) : null}
           </DragOverlay>
         </DndContext>
-      </div>
-      <div className='tooltipLayoutMobile'>
-        <p>Drag-and-drop layout editing is not available on mobile. Please use a larger screen to customize the tooltip layout.</p>
       </div>
     </div>
   );
@@ -617,24 +758,9 @@ function ConfigPage(props) {
   const addCustomField = () => {
     const newField = { fieldId: '', row: 3, _uid: `cf-${Date.now()}` };
     setCustomFields(current => current.concat(newField));
-    setTooltipLayout(prev => ({
-      ...prev,
-      row3: [...prev.row3, `custom_${newField._uid}`]
-    }));
   };
 
   const removeCustomField = (index) => {
-    const field = customFields[index];
-    if (field && field._uid) {
-      const key = `custom_${field._uid}`;
-      setTooltipLayout(prev => ({
-        row1: prev.row1.filter(k => k !== key),
-        row2: prev.row2.filter(k => k !== key),
-        row3: prev.row3.filter(k => k !== key),
-        contentBlocks: prev.contentBlocks,
-        people: prev.people
-      }));
-    }
     setCustomFields(current => current.filter((_, fieldIndex) => index !== fieldIndex));
   };
 
@@ -950,7 +1076,6 @@ function ConfigPage(props) {
                 setTooltipLayout={setTooltipLayout}
                 customFields={customFields}
                 fieldCatalog={fieldCatalog}
-                onAddCustomField={addCustomField}
               />
             </div>
           </section>
