@@ -457,80 +457,85 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, fi
   };
 
   return (
-    <div className='tooltipLayoutEditor'>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={rectIntersection}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-      >
-        <div className='tooltipLayoutSidebar'>
-          <div className='tooltipLayoutSidebarHeader'>
-            <h4>Available Fields</h4>
-            <p>Drag fields into rows</p>
+    <div className='tooltipLayoutWrapper'>
+      <div className='tooltipLayoutEditor'>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={rectIntersection}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className='tooltipLayoutSidebar'>
+            <div className='tooltipLayoutSidebarHeader'>
+              <h4>Available Fields</h4>
+              <p>Drag fields into rows</p>
+            </div>
+            <FieldLibrary fields={libraryFields} onAddCustomField={onAddCustomField} />
           </div>
-          <FieldLibrary fields={libraryFields} onAddCustomField={onAddCustomField} />
-        </div>
 
-        <div className='tooltipLayoutPreview'>
-          <div className='tooltipPreview'>
-            <div className='tooltipPreviewHeader'>
-              <span className='tooltipPreviewTitle'>PROJECT-123</span>
-              <div className='tooltipPreviewPeople'>
-                <div className='tooltipPreviewPerson tooltipPreviewPersonR' title='Reporter'>Re</div>
-                <div className='tooltipPreviewPerson tooltipPreviewPersonA' title='Assignee'>As</div>
+          <div className='tooltipLayoutPreview'>
+            <div className='tooltipPreview'>
+              <div className='tooltipPreviewHeader'>
+                <span className='tooltipPreviewTitle'>PROJECT-123</span>
+                <div className='tooltipPreviewPeople'>
+                  <div className='tooltipPreviewPerson tooltipPreviewPersonR' title='Reporter'>Re</div>
+                  <div className='tooltipPreviewPerson tooltipPreviewPersonA' title='Assignee'>As</div>
+                </div>
+              </div>
+
+              <div className='tooltipPreviewSection'>
+                <DroppableZone
+                  id='row1'
+                  title='Row 1'
+                  fields={getFieldsForZone('row1')}
+                  onRemove={(key) => handleRemoveFromZone('row1', key)}
+                  isOver={overId === 'row1'}
+                />
+                <DroppableZone
+                  id='row2'
+                  title='Row 2'
+                  fields={getFieldsForZone('row2')}
+                  onRemove={(key) => handleRemoveFromZone('row2', key)}
+                  isOver={overId === 'row2'}
+                />
+                <DroppableZone
+                  id='row3'
+                  title='Row 3'
+                  fields={getFieldsForZone('row3')}
+                  onRemove={(key) => handleRemoveFromZone('row3', key)}
+                  isOver={overId === 'row3'}
+                />
+              </div>
+
+              <div className='tooltipPreviewContentBlocks'>
+                <span className='tooltipPreviewContentLabel'>Content</span>
+                <div className='tooltipPreviewContentToggles'>
+                  {CONTENT_BLOCK_KEYS.map(block => (
+                    <ContentBlockToggle
+                      key={block.key}
+                      block={block}
+                      checked={tooltipLayout.contentBlocks.includes(block.key)}
+                      onChange={handleToggleContentBlock}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-
-            <div className='tooltipPreviewSection'>
-              <DroppableZone
-                id='row1'
-                title='Row 1'
-                fields={getFieldsForZone('row1')}
-                onRemove={(key) => handleRemoveFromZone('row1', key)}
-                isOver={overId === 'row1'}
-              />
-              <DroppableZone
-                id='row2'
-                title='Row 2'
-                fields={getFieldsForZone('row2')}
-                onRemove={(key) => handleRemoveFromZone('row2', key)}
-                isOver={overId === 'row2'}
-              />
-              <DroppableZone
-                id='row3'
-                title='Row 3'
-                fields={getFieldsForZone('row3')}
-                onRemove={(key) => handleRemoveFromZone('row3', key)}
-                isOver={overId === 'row3'}
-              />
-            </div>
-
-            <div className='tooltipPreviewContentBlocks'>
-              <span className='tooltipPreviewContentLabel'>Content</span>
-              <div className='tooltipPreviewContentToggles'>
-                {CONTENT_BLOCK_KEYS.map(block => (
-                  <ContentBlockToggle
-                    key={block.key}
-                    block={block}
-                    checked={tooltipLayout.contentBlocks.includes(block.key)}
-                    onChange={handleToggleContentBlock}
-                  />
-                ))}
-              </div>
-            </div>
           </div>
-        </div>
 
-        <DragOverlay>
-          {activeField ? (
-            <div className='fieldPill fieldPillDragging'>
-              <span className='fieldPillLabel'>{activeField.label}</span>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay>
+            {activeField ? (
+              <div className='fieldPill fieldPillDragging'>
+                <span className='fieldPillLabel'>{activeField.label}</span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+      <div className='tooltipLayoutMobile'>
+        <p>Drag-and-drop layout editing is not available on mobile. Please use a larger screen to customize the tooltip layout.</p>
+      </div>
     </div>
   );
 }

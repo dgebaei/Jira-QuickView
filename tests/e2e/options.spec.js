@@ -26,14 +26,7 @@ test.skip('validates custom field ids and resolves their names from Jira metadat
     await showButton.click();
   }
 
-  await optionsPage.waitForTimeout(500);
-
-  const addFieldBtn = optionsPage.getByRole('button', {name: 'Add field'}).first();
-  await addFieldBtn.click();
-  await optionsPage.waitForTimeout(500);
-  
-  const rowCount = await optionsPage.locator('.customFieldRow').count();
-  console.log('Custom field row count:', rowCount);
+  await optionsPage.getByRole('button', {name: 'Add field'}).first().click();
   const row = optionsPage.locator('.customFieldRow').first();
 
   await row.locator('input[placeholder="customfield_12345"]').fill('impact');
@@ -42,7 +35,7 @@ test.skip('validates custom field ids and resolves their names from Jira metadat
 
   const customFieldId = target.mode === 'mock' ? 'customfield_12345' : await getFirstCustomFieldId(target);
   test.skip(!customFieldId, 'No Jira custom field is available for metadata resolution.');
-  await row.locator('input[placeholder="customfield_12345"]').fill(customFieldId);
+  await row.getByLabel('Field ID').fill(customFieldId);
   await expect(row.locator('.customFieldMeta')).toContainText(/Resolved field name:|Waiting for Jira field metadata\./);
   await expect(optionsPage.getByRole('button', {name: 'Save'})).toBeEnabled();
 });
@@ -55,7 +48,7 @@ test.skip('persists hover behavior and layout settings through the options page'
   await optionsPage.reload();
 
   const showButton = optionsPage.getByRole('button', {name: 'Show'});
-  if (await showButton.isVisible()) {
+  if (await showButton.isVisible().catch(() => false)) {
     await showButton.click();
   }
 
@@ -73,7 +66,7 @@ test.skip('persists hover behavior and layout settings through the options page'
   await optionsPage.reload();
 
   const showButton2 = optionsPage.getByRole('button', {name: 'Show'});
-  if (await showButton2.isVisible()) {
+  if (await showButton2.isVisible().catch(() => false)) {
     await showButton2.click();
   }
 
@@ -83,5 +76,3 @@ test.skip('persists hover behavior and layout settings through the options page'
   await expect(optionsPage.locator('#displayField_pullRequests')).not.toBeChecked();
   await expect(optionsPage.locator('.customFieldRow').first().locator('input[placeholder="customfield_12345"]')).toHaveValue(customFieldId);
 });
-
-

@@ -20,7 +20,7 @@ Redesign the options page (`jira-plugin/options/options.jsx`) to support a **Bas
 | Phase 4 — Drag-and-Drop Editor | **Done** | See [Phase 4 Complete](#phase-4--drag-and-drop-editor) |
 | Phase 5 — Custom Fields Card | **Done** | Connected to drag-and-drop editor |
 | Phase 6 — Settings Sync | **Done** | Export/Import JSON, Pro modal |
-| Phase 7 — Visual Polish | Pending | |
+| Phase 7 — Visual Polish | **Done** | |
 | Phase 8 — Testing | Pending | |
 
 ---
@@ -305,6 +305,20 @@ The right-side panel shows a live-updating preview built from `tooltipLayout`:
 5. **Footer**: Discard + Save buttons (ghost + blue filled), styled as in the mockup.
 6. **Hero section**: Dark header strip, Jira HotLinker eyebrow, "Extension Options" title, description, status pill on right.
 7. **Responsive**: Stack the basic cards vertically on narrow viewports. Show a message on mobile instead of the drag-and-drop editor.
+
+---
+
+## Phase 7 — Visual Polish ✅
+
+**Completed:** Visual polish and responsive design.
+
+### What was built
+
+- **Card styling** — Eyebrow labels moved into card headers for proper alignment
+- **Link colors** — Global link styling with proper theme colors
+- **Mobile message** — Drag-and-drop editor shows a message on screens < 900px
+- **Responsive grid** — Cards stack on mobile, hero adjusts layout
+- **Dark mode CSS variables** — All tooltip preview elements use theme-aware variables
 
 ---
 

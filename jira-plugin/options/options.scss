@@ -893,14 +893,36 @@ button:disabled {
 }
 
 /* ── Tooltip Layout Editor ──────────────────────────────── */
+.tooltipLayoutWrapper {
+  position: relative;
+}
+
 .tooltipLayoutEditor {
-  display: grid;
   grid-template-columns: 200px 1fr;
   gap: 20px;
   min-height: 400px;
 
   @media (max-width: 900px) {
-    grid-template-columns: 1fr;
+    display: none;
+  }
+}
+
+.tooltipLayoutMobile {
+  display: none;
+  padding: 16px;
+  background: var(--empty-bg);
+  border: 1px solid var(--empty-border);
+  border-radius: 8px;
+  text-align: center;
+
+  p {
+    color: var(--empty-color);
+    font-size: 13px;
+    margin: 0;
+  }
+
+  @media (max-width: 900px) {
+    display: block;
   }
 }
 
