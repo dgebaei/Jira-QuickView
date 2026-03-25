@@ -30,7 +30,7 @@ test('renders Jira metadata, comments, attachments, pull requests, and custom fi
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
@@ -67,7 +67,7 @@ test('copies the Jira issue link and previews attachment images', async ({extens
     const resolvedTarget = await resolveTargetIssueKeys(target);
     await ensurePreviewAttachment(resolvedTarget.primaryIssueKey, resolvedTarget);
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
   await page.locator('._JX_title_copy').click();
@@ -87,7 +87,7 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
@@ -136,7 +136,7 @@ test('supports mentions and saving new comments in mocked mode', async ({extensi
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
   const commentInput = page.locator('._JX_comment_input');

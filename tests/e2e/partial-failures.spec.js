@@ -30,7 +30,7 @@ test('keeps core issue rendering when pull request endpoints fail', async ({exte
   } else {
     await failWithJson(extensionApp.context, target.instanceUrl, '/rest/dev-status/.+$', 500, {errorMessages: ['Could not load pull requests']});
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
@@ -46,7 +46,7 @@ test('keeps the popup usable when pull request payloads are malformed', async ({
   } else {
     await fulfillMalformedJson(extensionApp.context, target.instanceUrl, '/rest/dev-status/.+$');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
@@ -61,7 +61,7 @@ test('falls back to a non-editable labels chip when label suggestions are unavai
   } else {
     await failWithJson(extensionApp.context, target.instanceUrl, '/rest/api/2/jql/autocompletedata/suggestions(?:\\?.*)?$', 500, {errorMessages: ['Could not load labels']});
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   await expect(page.locator('._JX_field_chip_edit[data-field-key="labels"]')).toHaveCount(0);
@@ -77,7 +77,7 @@ test('shows an inline editor error when issue search fails for parent selection'
   } else {
     await failWithJson(extensionApp.context, target.instanceUrl, '/rest/api/2/search(?:\\?.*)?$', 500, {errorMessages: ['Could not search issues']});
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
   await page.locator('._JX_field_chip_edit[data-field-key="parentLink"]').click();
@@ -94,7 +94,7 @@ test('shows a composer error when saving a comment fails', async ({extensionApp,
   } else {
     await failWithJson(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^/]+/comment$', 500, {errorMessages: ['Could not save comment']});
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const commentInput = page.locator('._JX_comment_input');
@@ -112,7 +112,7 @@ test('shows a mention lookup error when people search fails', async ({extensionA
   } else {
     await failWithJson(extensionApp.context, target.instanceUrl, '/rest/api/2/user/picker(?:\\?.*)?$', 500, {errorMessages: ['Could not load people']});
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const commentInput = page.locator('._JX_comment_input');
@@ -126,7 +126,7 @@ test('discards comment drafts and clears the composer state', async ({extensionA
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const commentInput = page.locator('._JX_comment_input');
@@ -144,7 +144,7 @@ test('renders graceful empty states for labels, parent, and fix versions', async
   test.skip(target.mode !== 'mock', 'This empty-state coverage is deterministic in mocked mode only.');
 
   await servers.jira.setScenario('empty-optional-fields');
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');

@@ -31,7 +31,7 @@ async function openAllowedPage(extensionApp, servers, target) {
 
 test('surfaces a connection error when Jira is unreachable', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
-  await configureExtension(optionsPage, unreachableConfig(servers), true);
+  await configureExtension(optionsPage, unreachableConfig(servers));
   const {page} = await openAllowedPage(extensionApp, servers, target);
 
   await hoverIssueKey(page, '#popup-key');
@@ -46,7 +46,7 @@ test('does not render a popup when the user is not logged in and Jira returns 40
   } else {
     await failWithJson(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^?]+\\?.*$', 401, {errorMessages: ['Login required']});
   }
-  await configureExtension(optionsPage, reachableConfig(servers, target), true);
+  await configureExtension(optionsPage, reachableConfig(servers, target));
   const {page} = await openAllowedPage(extensionApp, servers, target);
 
   await hoverIssueKey(page, '#popup-key');
@@ -62,7 +62,7 @@ test('falls back to a read-only popup when Jira is viewable anonymously', async 
     await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta$', () => ({fields: {}}));
     await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^/]+/transitions$', () => ({transitions: []}));
   }
-  await configureExtension(optionsPage, reachableConfig(servers, target), true);
+  await configureExtension(optionsPage, reachableConfig(servers, target));
   const {page, target: resolvedTarget} = await openAllowedPage(extensionApp, servers, target);
 
   await hoverIssueKey(page, '#popup-key');

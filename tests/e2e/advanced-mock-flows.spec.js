@@ -64,7 +64,7 @@ test('shows assignee and parent search results inside their editors', async ({ex
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
 
@@ -85,7 +85,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
@@ -196,7 +196,7 @@ test('shows grouped quick actions for assignment, transition, and sprint moves',
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   await page.locator('._JX_actions_toggle').click();
@@ -211,7 +211,7 @@ test('offers an explicit unassigned option in the assignee editor', async ({exte
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
 
@@ -248,7 +248,7 @@ test('hides quick actions when the issue is already assigned, already in progres
       },
     }));
   }
-  await configureExtension(optionsPage, baseConfig(servers, target), true);
+  await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   await expect(page.locator('._JX_actions_toggle')).toHaveCount(0);
