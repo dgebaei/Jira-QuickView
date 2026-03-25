@@ -3574,9 +3574,9 @@ async function mainAsyncLocal() {
         commentComposerSelectionEnd = typeof existingCommentInputElement.selectionEnd === 'number' ? existingCommentInputElement.selectionEnd : commentComposerDraftValue.length;
       }
     }
-    const existingDescription = container.find('._JX_description');
-    const descriptionScrollLeft = existingDescription.length ? existingDescription.scrollLeft() : 0;
-    const descriptionScrollTop = existingDescription.length ? existingDescription.scrollTop() : 0;
+    const existingContentBlocks = container.find('._JX_content_blocks');
+    const savedScrollLeft = existingContentBlocks.length ? existingContentBlocks.scrollLeft() : 0;
+    const savedScrollTop = existingContentBlocks.length ? existingContentBlocks.scrollTop() : 0;
     container.html(Mustache.render(annotationTemplate, displayData));
     const contentBlocksContainer = container.find('._JX_content_blocks');
     if (contentBlocksContainer.length) {
@@ -3590,10 +3590,10 @@ async function mainAsyncLocal() {
       contentBlocksContainer.prepend(blocks);
     }
     activeCommentContext = displayFields.comments ? {issueKey: state.key, issueId: state.issueData.id} : null;
-    const nextDescription = container.find('._JX_description');
-    if (nextDescription.length) {
-      nextDescription.scrollLeft(descriptionScrollLeft);
-      nextDescription.scrollTop(descriptionScrollTop);
+    const nextContentBlocks = container.find('._JX_content_blocks');
+    if (nextContentBlocks.length) {
+      nextContentBlocks.scrollLeft(savedScrollLeft);
+      nextContentBlocks.scrollTop(savedScrollTop);
     }
     restoreCommentComposerDraft(commentComposerDraft);
     restoreCommentComposerState();
@@ -4852,6 +4852,7 @@ async function mainAsyncLocal() {
     if (hoverModifierKey === 'alt') return e.altKey;
     if (hoverModifierKey === 'ctrl') return e.ctrlKey;
     if (hoverModifierKey === 'shift') return e.shiftKey;
+    if (hoverModifierKey === 'any') return e.altKey || e.ctrlKey || e.shiftKey;
     return true;
   }
 
