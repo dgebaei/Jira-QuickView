@@ -266,7 +266,7 @@ test('hides attachment and pull request sections when those display settings are
       attachments: false,
       pullRequests: false,
     },
-  }), true);
+  }));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');

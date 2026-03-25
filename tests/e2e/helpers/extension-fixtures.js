@@ -94,21 +94,35 @@ async function configureExtension(optionsPage, config) {
     hoverModifierKey: config.hoverModifierKey || 'none',
     displayFields: config.displayFields || {},
     customFields: config.customFields || [],
+    tooltipLayout: {
+      row1: ['issueType', 'status', 'priority', 'epicParent'],
+      row2: ['sprint', 'affects', 'fixVersions'],
+      row3: ['environment', 'labels'],
+      contentBlocks: ['description', 'attachments', 'comments', 'pullRequests'],
+      people: ['reporter', 'assignee']
+    },
     v15upgrade: true
   };
 
   await optionsPage.evaluate(async (data) => {
     await chrome.storage.sync.set(data);
   }, storageData);
-
   await optionsPage.waitForTimeout(500);
 
   const saved = await optionsPage.evaluate(() => {
-    return chrome.storage.sync.get(['instanceUrl', 'domains']);
+    return chrome.storage.sync.get(['instanceUrl', 'domains', 'tooltipLayout', 'v15upgrade']);
   });
 
   if (!saved.instanceUrl) {
     throw new Error('Failed to save instanceUrl to storage');
+  }
+
+  if (!saved.tooltipLayout) {
+    throw new Error('Failed to save tooltipLayout to storage');
+  }
+
+  if (!saved.v15upgrade) {
+    throw new Error('Failed to save v15upgrade to storage');
   }
 }
 

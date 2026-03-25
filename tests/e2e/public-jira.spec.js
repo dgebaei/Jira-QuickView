@@ -27,7 +27,7 @@ test('loads a popup on the public Atlassian issue page @public', async ({extensi
     hoverDepth: 'shallow',
     hoverModifierKey: 'none',
     customFields: [],
-  }, true);
+  });
 
   const page = await openPublicPageOrSkip(test, extensionApp, 'https://jira.atlassian.com/browse/JRACLOUD-97846');
   const issueLink = page.locator('#key-val, a[href="/browse/JRACLOUD-97846"]').first();
@@ -46,7 +46,7 @@ test('loads a popup from the public Atlassian search results page @public', asyn
     hoverDepth: 'shallow',
     hoverModifierKey: 'none',
     customFields: [],
-  }, true);
+  });
 
   const page = await openPublicPageOrSkip(test, extensionApp, 'https://jira.atlassian.com/issues/?jql=project%3DJRACLOUD%20AND%20type%3DBug%20AND%20statusCategory!%3DDone%20ORDER%20BY%20updated');
   const issueLink = page.locator('a[href^="/browse/"]').filter({hasText: /^[A-Z][A-Z0-9_]+-\d+$/}).first();
