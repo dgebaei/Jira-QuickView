@@ -236,6 +236,7 @@ async function mainAsyncLocal() {
   };
   const layoutContentBlocks = (tooltipLayout.contentBlocks || ['description', 'timeTracking', 'pullRequests', 'comments'])
     .filter(k => displayFields[k] !== false);
+  const collapsedByDefault = tooltipLayout.collapsedByDefault || ['history'];
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
   const hoverModifierKey = config.hoverModifierKey || 'any';
@@ -294,6 +295,7 @@ async function mainAsyncLocal() {
   const labelSuggestionCache = new Map();
   const labelLocalOptionsCache = new Map();
   const tempoAccountSearchCache = new Map();
+  const changelogCache = new Map();
   let labelSuggestionSupportPromise = null;
   let editSearchRequestCounter = 0;
   let labelSearchTimeoutId = null;
@@ -1436,6 +1438,13 @@ async function mainAsyncLocal() {
         ...customFields.map(({fieldId}) => fieldId)
       ];
       return get(INSTANCE_URL + 'rest/api/2/issue/' + issueKey + '?fields=' + fields.join(',') + '&expand=renderedFields,names');
+    });
+  }
+
+  async function getIssueChangelog(issueKey) {
+    return getCachedValue(changelogCache, issueKey, async () => {
+      const data = await get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}?expand=changelog&fields=id`);
+      return data?.changelog?.histories || [];
     });
   }
 
@@ -3259,6 +3268,107 @@ async function mainAsyncLocal() {
   // ── Quick Actions ──────────────────────────────────────────
 
 
+  // ── History Helpers ────────────────────────────────────────
+
+  function formatHistoryDate(dateString) {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (Number.isNaN(date.getTime())) return dateString;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = months[date.getMonth()];
+      const day = date.getDate();
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${month} ${day}, ${hours}:${minutes}`;
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  function truncateText(text, maxLength) {
+    if (!text) return '';
+    const cleaned = String(text).replace(/\s+/g, ' ').trim();
+    if (cleaned.length <= maxLength) return cleaned;
+    return cleaned.slice(0, maxLength) + '...';
+  }
+
+  function buildHistoryFieldChange(item) {
+    const fieldName = item.field || 'Unknown';
+    const fromStr = item.fromString || '--';
+    const toStr = item.toString || '--';
+    const isLargeValue = (fromStr.length > 80 || toStr.length > 80);
+    return {
+      fieldName,
+      fromString: fromStr,
+      toString: toStr,
+      isLargeValue,
+      changeLabel: `${fieldName}: ${fromStr} \u2192 ${toStr}`,
+      collapsedLabel: `${fieldName} (changed)`
+    };
+  }
+
+  function buildHistoryEntries(changelogHistories, comments, attachments) {
+    const entries = [];
+
+    // Changelog field changes
+    if (Array.isArray(changelogHistories)) {
+      for (const history of changelogHistories) {
+        const items = (history.items || []).map(buildHistoryFieldChange);
+        if (items.length === 0) continue;
+        entries.push({
+          type: 'change',
+          timestamp: history.created || '',
+          date: formatHistoryDate(history.created),
+          author: history.author?.displayName || history.author?.name || 'Unknown',
+          items,
+          itemCount: items.length,
+          hasMultipleItems: items.length > 1
+        });
+      }
+    }
+
+    // Comment timeline markers
+    if (Array.isArray(comments)) {
+      for (const comment of comments) {
+        const bodyText = String(comment.body || '').replace(/\{[^}]*\}/g, '').replace(/\[~[^\]]*\]/g, '');
+        entries.push({
+          type: 'comment',
+          isComment: true,
+          timestamp: comment.created || '',
+          date: formatHistoryDate(comment.created),
+          author: comment.author?.displayName || comment.author?.name || 'Unknown',
+          snippet: truncateText(bodyText, 60),
+          markerIcon: '\ud83d\udcac'
+        });
+      }
+    }
+
+    // Attachment timeline markers
+    if (Array.isArray(attachments)) {
+      for (const attachment of attachments) {
+        entries.push({
+          type: 'attachment',
+          isAttachment: true,
+          timestamp: attachment.created || '',
+          date: formatHistoryDate(attachment.created),
+          author: attachment.author?.displayName || attachment.author?.name || 'Unknown',
+          filename: attachment.filename || 'file',
+          markerIcon: '\ud83d\udcce'
+        });
+      }
+    }
+
+    // Sort by timestamp descending (newest first)
+    entries.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    return entries;
+  }
+
   // ── Popup Data & Rendering ─────────────────────────────────
 
   async function buildPopupDisplayData(state) {
@@ -3447,6 +3557,7 @@ async function mainAsyncLocal() {
     const showAttachments = layoutContentBlocks.includes('attachments');
     const showComments = layoutContentBlocks.includes('comments');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');
+    const showHistory = layoutContentBlocks.includes('history');
     const visibleCommentsTotal = showComments ? commentsTotal : 0;
     const visibleAttachments = showAttachments ? previewAttachments : [];
     const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
@@ -3457,6 +3568,24 @@ async function mainAsyncLocal() {
       ? buildAssigneeAvatarView(state, issueData, assigneeEditable)
       : null;
     const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
+
+    // ── Collapsed blocks ─────────────────────────────────
+    const collapsedBlocks = state.collapsedBlocks || {};
+    const isBlockCollapsed = (blockKey) => !!collapsedBlocks[blockKey];
+
+    // ── History entries ──────────────────────────────────
+    let historyEntries = [];
+    let historyCount = 0;
+    let historyLoading = !!state.changelogLoading;
+    if (showHistory && state.changelogData) {
+      historyEntries = buildHistoryEntries(
+        state.changelogData,
+        issueData.fields.comment?.comments || [],
+        attachments
+      );
+      historyCount = historyEntries.length;
+    }
+
     const displayData = {
       urlTitle: `[${key}] ${issueData.fields.summary}`,
       ticketKey: key,
@@ -3470,15 +3599,25 @@ async function mainAsyncLocal() {
       }),
       prs: [],
       description: layoutContentBlocks.includes('description') ? normalizedDescription : '',
+      descriptionCollapsed: isBlockCollapsed('description'),
+      descriptionSectionTitle: isBlockCollapsed('description') ? '\u25b6 Description' : '\u25bc Description',
       hasBodyContent: true,
       emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
         ? 'No description, attachments or comments.'
         : '',
       attachments,
       previewAttachments: visibleAttachments,
+      attachmentsCollapsed: isBlockCollapsed('attachments'),
+      attachmentsSectionTitle: isBlockCollapsed('attachments')
+        ? `\u25b6 Attachments (${previewAttachments.length})`
+        : '\u25bc Attachments',
       commentsForDisplay: showComments ? commentsForDisplay : [],
       showCommentsSection: showComments || commentsForDisplay.length > 0,
-      showCommentComposer: showComments,
+      showCommentComposer: showComments && !isBlockCollapsed('comments'),
+      commentsCollapsed: isBlockCollapsed('comments'),
+      commentsSectionTitle: isBlockCollapsed('comments')
+        ? `\u25b6 Comments (${commentsTotal})`
+        : '\u25bc Comments',
       issuetype: issueData.fields.issuetype,
       status: issueData.fields.status,
       priority: issueData.fields.priority,
@@ -3490,6 +3629,10 @@ async function mainAsyncLocal() {
       row2Chips,
       row3Chips,
       timeTrackingSection,
+      timeTrackingCollapsed: isBlockCollapsed('timeTracking'),
+      timeTrackingSectionTitle: isBlockCollapsed('timeTracking')
+        ? '\u25b6 Time Tracking'
+        : '\u25bc Time Tracking',
       hasComments: visibleCommentsTotal > 0,
       commentsTotal: visibleCommentsTotal,
       attachmentChips: displayFields.attachments ? buildAttachmentChips(attachments) : [],
@@ -3504,6 +3647,18 @@ async function mainAsyncLocal() {
       actionNoticeText: actionError || lastActionSuccess,
       actionNoticeClass: actionError ? '_JX_action_notice_error' : '_JX_action_notice_success',
       hasActionNotice: !!(actionError || lastActionSuccess),
+      pullRequestsCollapsed: isBlockCollapsed('pullRequests'),
+      pullRequestsSectionTitle: isBlockCollapsed('pullRequests')
+        ? '\u25b6 Pull Requests'
+        : '\u25bc Pull Requests',
+      showHistorySection: showHistory,
+      historyCollapsed: isBlockCollapsed('history'),
+      historySectionTitle: isBlockCollapsed('history')
+        ? `\u25b6 History (${historyCount} changes)`
+        : `\u25bc History (${historyCount} changes)`,
+      historyEntries,
+      historyLoading,
+      historyCount,
       ...quickActionData
     };
     if (issueData.fields.comment?.comments?.[0]?.id) {
@@ -3525,6 +3680,9 @@ async function mainAsyncLocal() {
           branchText: formatPullRequestBranch(pr)
         };
       });
+      displayData.pullRequestsSectionTitle = isBlockCollapsed('pullRequests')
+        ? `\u25b6 Pull Requests (${displayData.prs.length})`
+        : '\u25bc Pull Requests';
     }
     displayData.activityIndicators = buildActivityIndicators(
       displayFields.attachments ? attachments : [],
@@ -3696,6 +3854,7 @@ async function mainAsyncLocal() {
     }
     issueCache.delete(popupState.key);
     editMetaCache.delete(popupState.key);
+    changelogCache.delete(popupState.key);
     transitionOptionsCache.delete(popupState.key);
     assigneeLocalOptionsCache.delete(popupState.key);
     labelLocalOptionsCache.delete(popupState.key);
@@ -4371,6 +4530,45 @@ async function mainAsyncLocal() {
   }
 
   // ── Event Handlers ────────────────────────────────────────
+
+  // Collapsible section title click handler
+  $(document.body).on('click', '._JX_section_title_collapsible', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!popupState) return;
+    const blockKey = e.currentTarget.getAttribute('data-block-key');
+    if (!blockKey) return;
+    const currentCollapsed = popupState.collapsedBlocks || {};
+    const nextCollapsed = { ...currentCollapsed, [blockKey]: !currentCollapsed[blockKey] };
+    popupState = {
+      ...popupState,
+      collapsedBlocks: nextCollapsed
+    };
+    // Lazy-load changelog when history block is first expanded
+    if (blockKey === 'history' && !nextCollapsed.history && !popupState.changelogData && !popupState.changelogLoading) {
+      popupState = { ...popupState, changelogLoading: true };
+      renderIssuePopup(popupState).catch(() => {});
+      getIssueChangelog(popupState.key).then(histories => {
+        if (!popupState || popupState.key !== popupState.key) return;
+        popupState = {
+          ...popupState,
+          changelogData: histories,
+          changelogLoading: false
+        };
+        renderIssuePopup(popupState).catch(() => {});
+      }).catch(() => {
+        popupState = {
+          ...popupState,
+          changelogLoading: false,
+          changelogData: []
+        };
+        renderIssuePopup(popupState).catch(() => {});
+      });
+      return;
+    }
+    renderIssuePopup(popupState).catch(() => {});
+  });
+
   $(document.body).on('click', '._JX_open_options', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -4915,6 +5113,11 @@ async function mainAsyncLocal() {
         }
       }
 
+      const initialCollapsedBlocks = {};
+      collapsedByDefault.forEach(k => { initialCollapsedBlocks[k] = true; });
+
+      const showHistoryExpanded = layoutContentBlocks.includes('history') && !initialCollapsedBlocks.history;
+
       await renderUpdatedPopupState({
         key,
         issueData,
@@ -4925,7 +5128,31 @@ async function mainAsyncLocal() {
         commentReactionState,
         ...buildPopupInteractionReset(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
+        collapsedBlocks: initialCollapsedBlocks,
+        changelogData: null,
+        changelogLoading: showHistoryExpanded,
       });
+
+      // Lazy-load changelog when history block starts expanded
+      if (showHistoryExpanded && popupState?.key === key) {
+        getIssueChangelog(key).then(histories => {
+          if (!popupState || popupState.key !== key) return;
+          popupState = {
+            ...popupState,
+            changelogData: histories,
+            changelogLoading: false
+          };
+          renderIssuePopup(popupState).catch(() => {});
+        }).catch(() => {
+          if (!popupState || popupState.key !== key) return;
+          popupState = {
+            ...popupState,
+            changelogLoading: false,
+            changelogData: []
+          };
+          renderIssuePopup(popupState).catch(() => {});
+        });
+      }
     })(cancelToken).catch((error) => {
       notifyJiraConnectionFailure(INSTANCE_URL, error);
       lastHoveredKey = '';

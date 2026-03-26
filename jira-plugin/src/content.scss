@@ -597,6 +597,129 @@ body ._JX {
     letter-spacing: 0.05em;
     margin: 0 0 6px;
     text-transform: uppercase;
+
+    &_collapsible {
+      cursor: pointer;
+      user-select: none;
+
+      &:hover {
+        color: #42526e;
+      }
+    }
+  }
+
+  // ── History block ──────────────────────────────────────
+  &_history {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  &_history_loading {
+    color: #8993a4;
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  &_history_empty {
+    color: #8993a4;
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  &_history_list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  &_history_entry {
+    padding: 4px 0;
+    border-bottom: 1px solid #f0f1f3;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  &_history_change_header {
+    color: #42526e;
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  &_history_field_change {
+    color: #5e6c84;
+    font-size: 11px;
+    padding-left: 8px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  &_history_field_details {
+    padding-left: 8px;
+    font-size: 11px;
+    color: #5e6c84;
+  }
+
+  &_history_field_summary {
+    cursor: pointer;
+    color: #5e6c84;
+    font-size: 11px;
+    user-select: none;
+
+    &:hover {
+      color: #42526e;
+    }
+  }
+
+  &_history_field_diff {
+    padding: 4px 0 2px 4px;
+    word-break: break-word;
+    white-space: pre-wrap;
+    color: #5e6c84;
+    font-size: 11px;
+  }
+
+  &_history_marker {
+    font-style: italic;
+    color: #8993a4;
+    font-size: 11px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  &_history_marker_icon {
+    flex-shrink: 0;
+    font-style: normal;
+  }
+
+  &_history_marker_author {
+    font-weight: 600;
+    color: #5e6c84;
+    flex-shrink: 0;
+  }
+
+  &_history_marker_filename {
+    font-weight: 600;
+    color: #5e6c84;
+    word-break: break-all;
+  }
+
+  &_history_marker_snippet {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &_history_marker_date {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: #b3bac5;
+    font-size: 10px;
   }
 
   &_related_pr {

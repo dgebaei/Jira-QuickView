@@ -175,7 +175,8 @@ const CONTENT_BLOCK_KEYS = [
   { key: 'attachments', label: 'Attachments' },
   { key: 'comments', label: 'Comments' },
   { key: 'pullRequests', label: 'Pull Requests' },
-  { key: 'timeTracking', label: 'Time Tracking' }
+  { key: 'timeTracking', label: 'Time Tracking' },
+  { key: 'history', label: 'History' }
 ];
 const DRAGGABLE_CONTENT_KEYS = CONTENT_BLOCK_KEYS.filter(k => !k.required).map(k => k.key);
 const DRAGGABLE_ZONES = ['row1', 'row2', 'row3'];
@@ -357,7 +358,7 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
   );
 }
 
-function SortableContentBlock({ id, label, onRemove }) {
+function SortableContentBlock({ id, label, onRemove, isCollapsedByDefault, onToggleCollapsedByDefault }) {
   const {
     attributes,
     listeners,
@@ -377,6 +378,19 @@ function SortableContentBlock({ id, label, onRemove }) {
     <div ref={setNodeRef} style={style} className='contentBlockItem' {...attributes} {...listeners}>
       <span className='contentBlockDragHandle'>⋮⋮</span>
       <span>{label}</span>
+      <label
+        className='contentBlockCollapsedToggle'
+        title='Collapsed by default'
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <input
+          type='checkbox'
+          checked={!!isCollapsedByDefault}
+          onChange={(e) => { e.stopPropagation(); onToggleCollapsedByDefault(id, e.target.checked); }}
+        />
+        <span className='contentBlockCollapsedLabel'>Collapsed</span>
+      </label>
       <button
         type='button'
         className='contentBlockRemove'
@@ -476,6 +490,17 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
         return { ...prev, contentBlocks: [...prev.contentBlocks, key] };
       } else {
         return { ...prev, contentBlocks: prev.contentBlocks.filter(k => k !== key) };
+      }
+    });
+  };
+
+  const handleToggleCollapsedByDefault = (key, collapsed) => {
+    setTooltipLayout(prev => {
+      const current = prev.collapsedByDefault || [];
+      if (collapsed) {
+        return { ...prev, collapsedByDefault: current.includes(key) ? current : [...current, key] };
+      } else {
+        return { ...prev, collapsedByDefault: current.filter(k => k !== key) };
       }
     });
   };
@@ -716,6 +741,8 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
                               id={key}
                               label={block.label}
                               onRemove={handleToggleContentBlock}
+                              isCollapsedByDefault={(tooltipLayout.collapsedByDefault || []).includes(key)}
+                              onToggleCollapsedByDefault={handleToggleCollapsedByDefault}
                             />
                           );
                         })}

@@ -367,7 +367,8 @@
         {{#timeTrackingSection}}
         <div class="_JX_content_block" data-content-block="timeTracking">
         <div class="_JX_time_tracking">
-            <div class="_JX_section_title">Time Tracking</div>
+            <div class="_JX_section_title _JX_section_title_collapsible" data-block-key="timeTracking">{{{timeTrackingSectionTitle}}}</div>
+            {{^timeTrackingCollapsed}}
             <div class="_JX_time_tracking_layout">
                 <div class="_JX_time_tracking_row _JX_time_tracking_row_metrics">
                     <div class="_JX_time_tracking_field">
@@ -401,6 +402,7 @@
             </div>
             {{#showEstimateHint}}<div class="_JX_time_tracking_hint">{{estimateHintText}}</div>{{/showEstimateHint}}
             {{#errorMessage}}<div class="_JX_time_tracking_error">{{errorMessage}}</div>{{/errorMessage}}
+            {{/timeTrackingCollapsed}}
         </div>
         </div>
         {{/timeTrackingSection}}
@@ -408,10 +410,12 @@
         <div class="_JX_content_block" data-content-block="description">
         <div class="_JX_description">
         {{#description}}
-        <div class="_JX_section_title">Description</div>
+        <div class="_JX_section_title _JX_section_title_collapsible" data-block-key="description">{{{descriptionSectionTitle}}}</div>
+        {{^descriptionCollapsed}}
         <div class="_JX_description_text">
             {{{description}}}
         </div>
+        {{/descriptionCollapsed}}
         {{/description}}
         </div>
         </div>
@@ -419,7 +423,8 @@
         {{#previewAttachments.length}}
         <div class="_JX_content_block" data-content-block="attachments">
         <div class="_JX_description_attachments">
-            <div class="_JX_section_title">Attachments</div>
+            <div class="_JX_section_title _JX_section_title_collapsible" data-block-key="attachments">{{{attachmentsSectionTitle}}}</div>
+            {{^attachmentsCollapsed}}
             {{#previewAttachments}}
             <div data-mime-type="{{mimeType}}" data-url="{{content}}" data-preview-src="{{content}}" class="_JX_thumb">
                 <a href="{{content}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">
@@ -429,6 +434,7 @@
                 </a>
             </div>
             {{/previewAttachments}}
+            {{/attachmentsCollapsed}}
         </div>
         </div>
         {{/previewAttachments.length}}
@@ -436,7 +442,8 @@
         {{#prs.length}}
         <div class="_JX_content_block" data-content-block="pullRequests">
         <div class="_JX_related_pr">
-            <div class="_JX_section_title">Pull Requests</div>
+            <div class="_JX_section_title _JX_section_title_collapsible" data-block-key="pullRequests">{{{pullRequestsSectionTitle}}}</div>
+            {{^pullRequestsCollapsed}}
             <table>
                 <thead>
                 <tr>
@@ -457,6 +464,7 @@
                 {{/prs}}
                 </tbody>
             </table>
+            {{/pullRequestsCollapsed}}
         </div>
         </div>
         {{/prs.length}}
@@ -464,7 +472,8 @@
         {{#showCommentsSection}}
         <div class="_JX_content_block" data-content-block="comments">
         <div class="_JX_comments">
-            <div class="_JX_section_title">Comments</div>
+            <div class="_JX_section_title _JX_section_title_collapsible" data-block-key="comments">{{{commentsSectionTitle}}}</div>
+            {{^commentsCollapsed}}
             <div class="_JX_comment_list">
             {{#commentsForDisplay}}
             <div class="_JX_comment" data-comment-id="{{id}}">
@@ -560,9 +569,58 @@
                 </div>
             </div>
             {{/showCommentComposer}}
+            {{/commentsCollapsed}}
         </div>
         </div>
         {{/showCommentsSection}}
+
+        {{#showHistorySection}}
+        <div class="_JX_content_block" data-content-block="history">
+        <div class="_JX_history">
+            <div class="_JX_section_title _JX_section_title_collapsible" data-block-key="history">{{{historySectionTitle}}}</div>
+            {{^historyCollapsed}}
+            {{#historyLoading}}
+            <div class="_JX_history_loading">Loading history...</div>
+            {{/historyLoading}}
+            {{^historyLoading}}
+            {{#historyEntries.length}}
+            <div class="_JX_history_list">
+                {{#historyEntries}}
+                <div class="_JX_history_entry _JX_history_entry_{{type}}">
+                    {{#isComment}}
+                    <div class="_JX_history_marker"><span class="_JX_history_marker_icon">{{markerIcon}}</span> <span class="_JX_history_marker_author">{{author}}</span> <span class="_JX_history_marker_snippet">{{snippet}}</span><span class="_JX_history_marker_date">{{date}}</span></div>
+                    {{/isComment}}
+                    {{#isAttachment}}
+                    <div class="_JX_history_marker"><span class="_JX_history_marker_icon">{{markerIcon}}</span> <span class="_JX_history_marker_filename">{{filename}}</span><span class="_JX_history_marker_date">{{date}}</span></div>
+                    {{/isAttachment}}
+                    {{^isComment}}
+                    {{^isAttachment}}
+                    <div class="_JX_history_change_header">{{date}} &middot; {{author}}</div>
+                    {{#items}}
+                    {{^isLargeValue}}
+                    <div class="_JX_history_field_change">{{changeLabel}}</div>
+                    {{/isLargeValue}}
+                    {{#isLargeValue}}
+                    <details class="_JX_history_field_details">
+                        <summary class="_JX_history_field_summary">&#9654; {{collapsedLabel}}</summary>
+                        <div class="_JX_history_field_diff">{{changeLabel}}</div>
+                    </details>
+                    {{/isLargeValue}}
+                    {{/items}}
+                    {{/isAttachment}}
+                    {{/isComment}}
+                </div>
+                {{/historyEntries}}
+            </div>
+            {{/historyEntries.length}}
+            {{^historyEntries.length}}
+            <div class="_JX_history_empty">No history available.</div>
+            {{/historyEntries.length}}
+            {{/historyLoading}}
+            {{/historyCollapsed}}
+        </div>
+        </div>
+        {{/showHistorySection}}
 
     </div>
 </div>

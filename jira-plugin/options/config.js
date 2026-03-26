@@ -44,7 +44,8 @@ export default {
     row1: ['issueType', 'status', 'priority'],
     row2: ['epicParent', 'sprint', 'affects', 'fixVersions'],
     row3: ['environment', 'labels'],
-    contentBlocks: ['description', 'timeTracking', 'pullRequests', 'comments'],
+    contentBlocks: ['description', 'timeTracking', 'pullRequests', 'comments', 'history'],
+    collapsedByDefault: ['history'],
     people: ['reporter', 'assignee']
   }
 };
