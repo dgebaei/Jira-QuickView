@@ -389,7 +389,7 @@ function SortableContentBlock({ id, label, onRemove, isCollapsedByDefault, onTog
           checked={!!isCollapsedByDefault}
           onChange={(e) => { e.stopPropagation(); onToggleCollapsedByDefault(id, e.target.checked); }}
         />
-        <span className='contentBlockCollapsedLabel'>Collapsed</span>
+        <span className='contentBlockCollapsedLabel'>Collapsed by default</span>
       </label>
       <button
         type='button'

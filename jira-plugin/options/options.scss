@@ -1500,8 +1500,53 @@ button:disabled {
   font-style: italic;
 }
 
-.contentBlockRemove {
+.contentBlockCollapsedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--copy-muted);
+  user-select: none;
+
+  input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+    border: 1.5px solid var(--copy-muted);
+    border-radius: 3px;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+
+    &:checked {
+      background: #0052cc;
+      border-color: #0052cc;
+    }
+
+    &:checked::after {
+      content: '✓';
+      color: #fff;
+      font-size: 10px;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      line-height: 1;
+    }
+  }
+}
+
+.contentBlockCollapsedLabel {
+  white-space: nowrap;
+}
+
+.contentBlockRemove {
+  flex-shrink: 0;
   background: transparent;
   border: none;
   color: var(--copy-muted);
