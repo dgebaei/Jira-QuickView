@@ -60,39 +60,25 @@ test('validates custom field ids and resolves their names from Jira metadata', a
   await expect(customFieldLibraryItem(optionsPage, customFieldId)).toContainText(target.mode === 'mock' ? 'Customer Impact' : customFieldId);
 });
 
-test.skip('persists hover behavior and layout settings through the options page', async ({optionsPage, servers}) => {
+test('persists hover behavior settings through the options page', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
-  const customFieldId = target.mode === 'mock' ? 'customfield_12345' : await getFirstCustomFieldId(target);
-  test.skip(!customFieldId, 'No Jira custom field is available for options persistence coverage.');
+  const form = optionsPageModel(optionsPage);
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
 
-  const showButton = optionsPage.getByRole('button', {name: 'Show'});
-  if (await showButton.isVisible().catch(() => false)) {
-    await showButton.click();
-  }
-
-  await configureExtension(optionsPage, {
-    ...baseConfig(servers, target),
-    hoverDepth: 'deep',
-    hoverModifierKey: 'shift',
-    displayFields: {
-      comments: false,
-      pullRequests: false,
-    },
-    customFields: [{fieldId: customFieldId, row: 2}],
-  });
+  await form.hoverDepthSelect.selectOption('deep');
+  await form.hoverModifierSelect.selectOption('shift');
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
 
   await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
 
-  const showButton2 = optionsPage.getByRole('button', {name: 'Show'});
-  if (await showButton2.isVisible().catch(() => false)) {
-    await showButton2.click();
-  }
+  await expect(form.hoverDepthSelect).toHaveValue('deep');
+  await expect(form.hoverModifierSelect).toHaveValue('shift');
 
-  await expect(optionsPage.getByLabel('Trigger depth')).toHaveValue('deep');
-  await expect(optionsPage.getByLabel('Modifier key')).toHaveValue('shift');
-  await expect(optionsPage.locator('#displayField_comments')).not.toBeChecked();
-  await expect(optionsPage.locator('#displayField_pullRequests')).not.toBeChecked();
-  await expect(optionsPage.locator('.customFieldRow').first().locator('input[placeholder="customfield_12345"]')).toHaveValue(customFieldId);
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['hoverDepth', 'hoverModifierKey']));
+  expect(stored.hoverDepth).toBe('deep');
+  expect(stored.hoverModifierKey).toBe('shift');
 });
