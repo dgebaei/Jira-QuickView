@@ -1534,14 +1534,15 @@ button:disabled {
     }
 
     &:checked::after {
-      content: '✓';
-      color: #fff;
-      font-size: 10px;
+      content: '';
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      line-height: 1;
+      top: 1px;
+      left: 4px;
+      width: 4px;
+      height: 8px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
     }
   }
 }
