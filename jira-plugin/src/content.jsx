@@ -4385,6 +4385,16 @@ async function mainAsyncLocal() {
     renderIssuePopup(popupState).catch(() => {});
   });
 
+  $(document.body).on('click', function (e) {
+    if (!container.html() || containerPinned) {
+      return;
+    }
+    if ($(e.target).closest('._JX_container').length) {
+      return;
+    }
+    hideContainer();
+  });
+
   $(document.body).on('click', '._JX_field_chip_edit', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -4931,16 +4941,26 @@ async function mainAsyncLocal() {
     }
     const element = document.elementFromPoint(e.clientX, e.clientY);
     const isOverContainer = element === container[0] || $.contains(container[0], element);
+    let isInPaddedZone = false;
     if (!isOverContainer && container.html()) {
       const rect = container[0].getBoundingClientRect();
       const margin = 40;
-      if (e.clientX >= rect.left - margin && e.clientX <= rect.right + margin &&
-          e.clientY >= rect.top - margin && e.clientY <= rect.bottom + margin) {
-        return;
-      }
+      isInPaddedZone = e.clientX >= rect.left - margin && e.clientX <= rect.right + margin &&
+          e.clientY >= rect.top - margin && e.clientY <= rect.bottom + margin;
     }
     if (isOverContainer) {
       showTip('tooltip_drag', 'Tip: You can pin the tooltip by dragging the title !');
+      return;
+    }
+    if (isInPaddedZone) {
+      clearTimeout(hideTimeOut);
+      return;
+    }
+    if (!containerPinned && container.html()) {
+      pendingHover = null;
+      clearTimeout(hoverDelayTimeout);
+      lastHoveredKey = '';
+      hideTimeOut = setTimeout(hideContainer, 250);
       return;
     }
     if (element) {
@@ -4959,25 +4979,7 @@ async function mainAsyncLocal() {
         pendingHover = null;
 
         clearTimeout(hideTimeOut);
-        if (lastHoveredKey === key && container.html()) {
-          if (popupState) {
-            popupState = {
-              ...popupState,
-              pointerX: e.pageX,
-              pointerY: e.pageY
-            };
-          }
-          if (!containerPinned) {
-            container.css(computeVisibleContainerPosition(e.pageX, e.pageY));
-          }
-          return;
-        }
         triggerPopupForKey(key, e.pageX, e.pageY, hoverModifierKey !== 'none');
-      } else if (!containerPinned) {
-        pendingHover = null;
-        clearTimeout(hoverDelayTimeout);
-        lastHoveredKey = '';
-        hideTimeOut = setTimeout(hideContainer, 250);
       }
     }
   }, 100));
