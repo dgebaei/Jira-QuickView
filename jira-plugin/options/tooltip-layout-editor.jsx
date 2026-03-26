@@ -165,7 +165,7 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
-            placeholder='Field ID (e.g. resolution)'
+            placeholder='Field ID (e.g. components)'
             autoFocus
           />
           {validationMsg && (

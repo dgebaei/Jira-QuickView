@@ -5,6 +5,13 @@ export const BUILT_IN_FIELD_IDS = new Set([
   'project', 'id'
 ]);
 
+export const BUILT_IN_FIELD_IDS = new Set([
+  'issuetype', 'status', 'priority', 'labels', 'environment',
+  'versions', 'fixVersions', 'parent', 'assignee', 'reporter',
+  'summary', 'description', 'attachment', 'comment', 'timetracking',
+  'project', 'id'
+]);
+
 export function normalizeInstanceUrl(instanceUrl) {
   let normalized = String(instanceUrl || '').trim();
   if (!normalized) {
