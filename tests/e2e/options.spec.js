@@ -1,3 +1,4 @@
+const fs = require('fs/promises');
 const {test, expect, configureExtension} = require('./helpers/extension-fixtures');
 const {getFirstCustomFieldId} = require('./helpers/live-jira-api');
 const {contentBlockItem, customFieldLibraryItem, openAdvancedSettings, optionsPageModel} = require('./helpers/options-page');
@@ -131,4 +132,29 @@ test('persists reordered content blocks through the options page', async ({optio
 
   const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['tooltipLayout']));
   expect(stored.tooltipLayout.contentBlocks.slice(0, 2)).toEqual(['description', 'pullRequests']);
+});
+
+test('exports the current settings as JSON', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    instanceUrl: 'https://example.atlassian.net/',
+    hoverDepth: 'deep',
+    hoverModifierKey: 'shift',
+  }));
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+
+  const downloadPromise = optionsPage.waitForEvent('download');
+  await optionsPage.getByTestId('options-export-settings').click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  expect(downloadPath).toBeTruthy();
+
+  const exported = JSON.parse(await fs.readFile(downloadPath, 'utf8'));
+  expect(exported.instanceUrl).toBe('https://example.atlassian.net/');
+  expect(exported.hoverDepth).toBe('deep');
+  expect(exported.hoverModifierKey).toBe('shift');
+  expect(exported.tooltipLayout.contentBlocks).toContain('pullRequests');
 });
