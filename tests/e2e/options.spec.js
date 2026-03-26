@@ -158,3 +158,21 @@ test('exports the current settings as JSON', async ({optionsPage, servers}) => {
   expect(exported.hoverModifierKey).toBe('shift');
   expect(exported.tooltipLayout.contentBlocks).toContain('pullRequests');
 });
+
+test('shows an error when importing an invalid settings file', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+
+  const fileChooserPromise = optionsPage.waitForEvent('filechooser');
+  await optionsPage.getByTestId('options-import-settings').click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles({
+    name: 'invalid-settings.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{not valid json', 'utf8'),
+  });
+
+  await expect(optionsPage.getByTestId('options-save-notice')).toContainText('Failed to import settings file.');
+});
