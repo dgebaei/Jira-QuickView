@@ -303,6 +303,8 @@ async function mainAsyncLocal() {
   const labelSuggestionCache = new Map();
   const labelLocalOptionsCache = new Map();
   const tempoAccountSearchCache = new Map();
+  const userPickerSearchCache = new Map();
+  const userPickerLocalOptionsCache = new Map();
   let labelSuggestionSupportPromise = null;
   let editSearchRequestCounter = 0;
   let labelSearchTimeoutId = null;
@@ -1979,6 +1981,60 @@ async function mainAsyncLocal() {
     return schemaType === 'account' || schemaCustom.includes('tempo-accounts');
   }
 
+  async function fetchUserPickerResults(query) {
+    const encodedQuery = encodeURIComponent(String(query || '').trim());
+    const urls = [
+      `${INSTANCE_URL}rest/api/2/user/search?username=${encodedQuery}&maxResults=20`,
+      `${INSTANCE_URL}rest/api/2/user/search?query=${encodedQuery}&maxResults=20`,
+      `${INSTANCE_URL}rest/api/2/user/picker?query=${encodedQuery}&maxResults=20`
+    ];
+    let lastError;
+    for (const url of urls) {
+      try {
+        const response = await get(url);
+        const users = Array.isArray(response)
+          ? response
+          : response?.users || response?.items || [];
+        if (Array.isArray(users)) {
+          return normalizeAssignableUsers(users);
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastError) {
+      throw lastError;
+    }
+    return [];
+  }
+
+  async function searchUserPicker(query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    const cacheKey = normalizedQuery;
+    return getCachedValue(userPickerSearchCache, cacheKey, async () => {
+      return fetchUserPickerResults(normalizedQuery);
+    });
+  }
+
+  function buildUserFieldOption(user) {
+    if (!user) {
+      return null;
+    }
+    const id = user.accountId || user.name || user.key;
+    if (!id) {
+      return null;
+    }
+    return buildEditOption(id, user.displayName || user.name || user.key, {
+      avatarUrl: user.avatarUrls?.['48x48'] || '',
+      metaText: user.name || user.key || '',
+      rawValue: {
+        accountId: user.accountId || '',
+        name: user.name || '',
+        key: user.key || ''
+      }
+    });
+  }
+
   function buildTempoAccountOption(account) {
     const id = account?.id;
     const key = String(account?.key || '').trim();
@@ -2049,31 +2105,43 @@ async function mainAsyncLocal() {
       return null;
     }
 
+    if (schemaType === 'user') {
+      return {
+        selectionMode: 'single',
+        valueKind: 'user',
+        optionSource: 'search'
+      };
+    }
+
     if (schemaType === 'option') {
       return {
         selectionMode: 'single',
-        valueKind: 'option'
+        valueKind: 'option',
+        optionSource: 'static'
       };
     }
 
     if (schemaType === 'string') {
       return {
         selectionMode: 'single',
-        valueKind: 'primitive'
+        valueKind: 'primitive',
+        optionSource: 'static'
       };
     }
 
     if (schemaType === 'array' && itemType === 'option') {
       return {
         selectionMode: 'multi',
-        valueKind: 'option'
+        valueKind: 'option',
+        optionSource: 'static'
       };
     }
 
     if (schemaType === 'array' && itemType === 'string') {
       return {
         selectionMode: 'multi',
-        valueKind: 'primitive'
+        valueKind: 'primitive',
+        optionSource: 'static'
       };
     }
 
@@ -2140,7 +2208,12 @@ async function mainAsyncLocal() {
     const fieldMeta = capability.fieldMeta;
     const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
 
-    if (capability.editable && fieldMeta && isTempoAccountField(fieldMeta)) {
+    if (!capability.editable || !fieldMeta) {
+      return null;
+    }
+
+    // Tempo accounts use a dedicated third-party API
+    if (isTempoAccountField(fieldMeta)) {
       const currentAccount = issueData?.fields?.[fieldId];
       const currentOption = currentAccount
         ? buildTempoAccountOption(currentAccount)
@@ -2169,23 +2242,92 @@ async function mainAsyncLocal() {
       };
     }
 
-    return getSupportedCustomFieldDefinition(fieldId, issueData);
-  }
-
-  async function getSupportedCustomFieldDefinition(fieldId, issueData) {
-    const capability = await getEditableFieldCapability(issueData, fieldId);
-    const fieldMeta = capability.fieldMeta;
-    const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    if (!capability.editable || !fieldMeta || !Array.isArray(capability.allowedValues) || !capability.allowedValues.length) {
-      return null;
-    }
-
     const supportDescriptor = getCustomFieldSupportDescriptor(fieldMeta);
     if (!supportDescriptor) {
       return null;
     }
 
+    // Search-based types (user, etc.) load options dynamically via API search
+    if (supportDescriptor.optionSource === 'search') {
+      return buildSearchBasedCustomFieldDefinition(fieldId, fieldName, fieldMeta, supportDescriptor, issueData);
+    }
+
+    // Static option types require allowedValues from editmeta
+    return buildStaticCustomFieldDefinition(fieldId, fieldName, fieldMeta, supportDescriptor, capability, issueData);
+  }
+
+  function getSearchEditorConfig(supportDescriptor) {
+    if (supportDescriptor.valueKind === 'user') {
+      return {
+        editorType: 'user-search',
+        inputPlaceholder: 'Search users',
+        buildCurrentOption: buildUserFieldOption,
+        search: searchUserPicker,
+        localOptionsCache: userPickerLocalOptionsCache
+      };
+    }
+    return null;
+  }
+
+  function buildSearchBasedCustomFieldDefinition(fieldId, fieldName, fieldMeta, supportDescriptor, issueData) {
+    const config = getSearchEditorConfig(supportDescriptor);
+    if (!config) {
+      return null;
+    }
+
+    const currentValue = issueData?.fields?.[fieldId];
+    const currentOption = currentValue ? config.buildCurrentOption(currentValue) : null;
+
+    return {
+      fieldKey: fieldId,
+      editorType: config.editorType,
+      label: fieldName,
+      fieldMeta,
+      supportDescriptor,
+      selectionMode: 'single',
+      currentText: currentValue ? buildCustomFieldValueText(fieldName, currentValue) : `${fieldName}: --`,
+      currentOptionId: currentOption?.id || null,
+      currentSelections: currentOption ? [currentOption] : [],
+      initialInputValue: '',
+      inputPlaceholder: config.inputPlaceholder,
+      loadOptions: async () => {
+        const searchedOptions = await config.search('');
+        const options = mergeEditOptions(currentOption ? [currentOption] : [], searchedOptions);
+        config.localOptionsCache.set(fieldId, options);
+        return options;
+      },
+      searchOptions: async query => {
+        const localBaselineOptions = config.localOptionsCache.get(fieldId) || [];
+        const searchedOptions = await config.search(query);
+        const merged = mergeEditOptions(searchedOptions, localBaselineOptions);
+        config.localOptionsCache.set(fieldId, merged);
+        return merged;
+      },
+      save: selectedOptions => {
+        const fieldValue = buildCustomFieldSaveValue(selectedOptions[0]?.rawValue, supportDescriptor);
+        return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+          fields: {[fieldId]: fieldValue ?? null}
+        });
+      },
+      successMessage: selectedOptions => {
+        const selectedOption = selectedOptions[0];
+        return selectedOption?.label
+          ? `${fieldName} set to ${selectedOption.label}`
+          : `${fieldName} cleared`;
+      }
+    };
+  }
+
+  function buildStaticCustomFieldDefinition(fieldId, fieldName, fieldMeta, supportDescriptor, capability, issueData) {
+    if (!Array.isArray(capability.allowedValues) || !capability.allowedValues.length) {
+      return null;
+    }
+
     const operations = capability.operations || [];
+    if (!operations.includes('set')) {
+      return null;
+    }
+
     const isMultiValue = supportDescriptor.selectionMode === 'multi';
     const currentValue = issueData?.fields?.[fieldId];
     const currentEntries = isMultiValue
@@ -2201,13 +2343,6 @@ async function mainAsyncLocal() {
     const allOptions = mergeEditOptions(currentSelections, allowedOptions);
 
     if (!allOptions.length) {
-      return null;
-    }
-
-    if (isMultiValue && !operations.includes('set')) {
-      return null;
-    }
-    if (!isMultiValue && !operations.includes('set')) {
       return null;
     }
 
@@ -3646,6 +3781,8 @@ async function mainAsyncLocal() {
     assigneeLocalOptionsCache.delete(popupState.key);
     labelLocalOptionsCache.delete(popupState.key);
     tempoAccountSearchCache.clear();
+    userPickerSearchCache.clear();
+    userPickerLocalOptionsCache.clear();
     issueSearchCache.clear();
     [...assigneeSearchCache.keys()].forEach(cacheKey => {
       if (String(cacheKey).startsWith(`${popupState.key}__`)) {
