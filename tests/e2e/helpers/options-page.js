@@ -6,10 +6,20 @@ function optionsPageModel(page) {
     advancedToggle: page.getByTestId('options-advanced-toggle'),
     hoverDepthSelect: page.getByTestId('options-hover-depth'),
     hoverModifierSelect: page.getByTestId('options-hover-modifier'),
+    fieldLibrary: page.getByTestId('options-field-library'),
+    fieldLibraryAddButton: page.getByTestId('options-field-library-add'),
+    fieldLibraryInput: page.getByTestId('options-field-library-input'),
+    fieldLibraryValidation: page.getByTestId('options-field-library-validation'),
+    fieldLibrarySaveButton: page.getByTestId('options-field-library-save'),
+    fieldLibraryCancelButton: page.getByTestId('options-field-library-cancel'),
     saveButton: page.getByTestId('options-save'),
     discardButton: page.getByTestId('options-discard'),
     saveNotice: page.getByTestId('options-save-notice'),
   };
+}
+
+function customFieldLibraryItem(page, fieldId) {
+  return page.getByTestId(`options-field-library-item-custom_${fieldId}`);
 }
 
 async function openAdvancedSettings(page) {
@@ -21,6 +31,7 @@ async function openAdvancedSettings(page) {
 }
 
 module.exports = {
+  customFieldLibraryItem,
   optionsPageModel,
   openAdvancedSettings,
 };

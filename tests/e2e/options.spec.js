@@ -1,6 +1,6 @@
 const {test, expect, configureExtension} = require('./helpers/extension-fixtures');
 const {getFirstCustomFieldId} = require('./helpers/live-jira-api');
-const {optionsPageModel} = require('./helpers/options-page');
+const {customFieldLibraryItem, openAdvancedSettings, optionsPageModel} = require('./helpers/options-page');
 const {buildExtensionConfig, requireJiraTestTarget} = require('./helpers/test-targets');
 
 function baseConfig(servers, target, overrides = {}) {
@@ -33,28 +33,31 @@ test('normalizes and persists a bare Jira hostname on save', async ({optionsPage
   expect(stored.domains).toContain('https://example.atlassian.net/');
 });
 
-test.skip('validates custom field ids and resolves their names from Jira metadata', async ({optionsPage, servers}) => {
+test('validates custom field ids and resolves their names from Jira metadata', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
 
-  const showButton = optionsPage.getByRole('button', {name: 'Show'});
-  if (await showButton.isVisible().catch(() => false)) {
-    await showButton.click();
-  }
+  await form.fieldLibraryAddButton.click();
 
-  await optionsPage.getByRole('button', {name: 'Add field'}).first().click();
-  const row = optionsPage.locator('.customFieldRow').first();
+  await form.fieldLibraryInput.fill('impact');
+  await expect(form.fieldLibraryValidation).toContainText('Format: customfield_12345');
+  await expect(form.fieldLibrarySaveButton).toBeDisabled();
 
-  await row.locator('input[placeholder="customfield_12345"]').fill('impact');
-  await expect(row.getByText('Use a Jira custom field ID in the form customfield_12345.')).toBeVisible();
-  await expect(optionsPage.getByRole('button', {name: 'Save'})).toBeDisabled();
+  await form.fieldLibraryInput.fill('customfield_99999');
+  await expect(form.fieldLibraryValidation).toContainText('Not found in Jira');
+  await expect(form.fieldLibrarySaveButton).toBeDisabled();
 
   const customFieldId = target.mode === 'mock' ? 'customfield_12345' : await getFirstCustomFieldId(target);
   test.skip(!customFieldId, 'No Jira custom field is available for metadata resolution.');
-  await row.locator('input[placeholder="customfield_12345"]').fill(customFieldId);
-  await expect(row.locator('.customFieldMeta')).toContainText(/Resolved field name:|Waiting for Jira field metadata\./);
-  await expect(optionsPage.getByRole('button', {name: 'Save'})).toBeEnabled();
+  await form.fieldLibraryInput.fill(customFieldId);
+  await expect(form.fieldLibraryValidation).toContainText(target.mode === 'mock' ? 'Customer Impact' : /\S+/);
+  await expect(form.fieldLibrarySaveButton).toBeEnabled();
+
+  await form.fieldLibrarySaveButton.click();
+  await expect(customFieldLibraryItem(optionsPage, customFieldId)).toContainText(target.mode === 'mock' ? 'Customer Impact' : customFieldId);
 });
 
 test.skip('persists hover behavior and layout settings through the options page', async ({optionsPage, servers}) => {

@@ -275,12 +275,12 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
   };
 
   return (
-    <div className='fieldLibrary'>
+    <div className='fieldLibrary' data-testid='options-field-library'>
       {fields.map(field => (
-        <div key={field.key} className='fieldLibraryItem'>
+        <div key={field.key} className='fieldLibraryItem' data-testid={`options-field-library-item-${field.key}`}>
           <DraggableLibraryField id={field.key} label={field.label} />
           {field.key.startsWith('custom_') && (
-            <button type='button' className='fieldLibraryRemove' onClick={() => onRemoveCustomField(field.key)} title='Remove field'>×</button>
+            <button type='button' data-testid={`options-field-library-remove-${field.key}`} className='fieldLibraryRemove' onClick={() => onRemoveCustomField(field.key)} title='Remove field'>×</button>
           )}
         </div>
       ))}
@@ -291,6 +291,7 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
         <div className='fieldLibraryAdd'>
           <input
             type='text'
+            data-testid='options-field-library-input'
             className='fieldLibraryInput'
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -299,15 +300,15 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
             autoFocus
           />
           {validationMsg && (
-            <div className={`fieldLibraryValidation fieldLibraryValidation--${validationTone}`}>{validationMsg}</div>
+            <div data-testid='options-field-library-validation' className={`fieldLibraryValidation fieldLibraryValidation--${validationTone}`}>{validationMsg}</div>
           )}
           <div className='fieldLibraryAddActions'>
-            <button type='button' className='fieldLibraryAddBtn' onClick={handleCancel} title='Cancel'>✕</button>
-            <button type='button' className='fieldLibraryAddBtn fieldLibraryAddBtnSave' onClick={handleSave} disabled={!canSave} title='Save'>✓</button>
+            <button type='button' data-testid='options-field-library-cancel' className='fieldLibraryAddBtn' onClick={handleCancel} title='Cancel'>✕</button>
+            <button type='button' data-testid='options-field-library-save' className='fieldLibraryAddBtn fieldLibraryAddBtnSave' onClick={handleSave} disabled={!canSave} title='Save'>✓</button>
           </div>
         </div>
       ) : (
-        <button type='button' className='fieldLibraryAddFieldBtn' onClick={() => setAdding(true)}>
+        <button type='button' data-testid='options-field-library-add' className='fieldLibraryAddFieldBtn' onClick={() => setAdding(true)}>
           + Add field
         </button>
       )}
