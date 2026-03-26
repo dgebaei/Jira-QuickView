@@ -917,11 +917,9 @@ export function createPopupEditing(deps) {
       };
     }
 
-    if (String(fieldKey || '').startsWith('customfield_')) {
-      const customFieldDefinition = await getCustomFieldEditorDefinition(fieldKey, issueData);
-      if (customFieldDefinition) {
-        return customFieldDefinition;
-      }
+    const fieldEditorDefinition = await getCustomFieldEditorDefinition(fieldKey, issueData);
+    if (fieldEditorDefinition) {
+      return fieldEditorDefinition;
     }
 
     return null;

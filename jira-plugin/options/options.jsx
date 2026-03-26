@@ -26,6 +26,13 @@ import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocum
 
 import 'options/options.scss';
 
+const BUILT_IN_FIELD_IDS = new Set([
+  'issuetype', 'status', 'priority', 'labels', 'environment',
+  'versions', 'fixVersions', 'parent', 'assignee', 'reporter',
+  'summary', 'description', 'attachment', 'comment', 'timetracking',
+  'project', 'id'
+]);
+
 const FIELD_OPTIONS = [
   {key: 'issueType', label: 'Issue Type'},
   {key: 'status', label: 'Status'},
@@ -151,8 +158,8 @@ function getCustomFieldError(fieldId, fieldCatalog) {
   if (!trimmed) {
     return '';
   }
-  if (!/^customfield_\d+$/i.test(trimmed)) {
-    return 'Use a Jira custom field ID in the form customfield_12345.';
+  if (BUILT_IN_FIELD_IDS.has(trimmed)) {
+    return 'This field is already part of the built-in layout.';
   }
   if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]) {
     return 'This field ID was not found in Jira.';
@@ -243,8 +250,8 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
   let validationMsg = '';
   let validationTone = '';
   if (trimmed) {
-    if (!/^customfield_\d+$/i.test(trimmed)) {
-      validationMsg = 'Format: customfield_12345';
+    if (BUILT_IN_FIELD_IDS.has(trimmed)) {
+      validationMsg = 'Built-in field';
       validationTone = 'error';
     } else if (existingCustomFieldIds.includes(trimmed)) {
       validationMsg = 'Already added';
@@ -295,7 +302,7 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
-            placeholder='customfield_12345'
+            placeholder='Field ID (e.g. components)'
             autoFocus
           />
           {validationMsg && (
