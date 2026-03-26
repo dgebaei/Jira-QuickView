@@ -18,6 +18,21 @@ test('shows validation for an empty Jira instance URL', async ({optionsPage}) =>
   await expect(form.saveNotice).toContainText('You must provide your Jira instance URL.');
 });
 
+test('normalizes and persists a bare Jira hostname on save', async ({optionsPage}) => {
+  const form = optionsPageModel(optionsPage);
+
+  await form.instanceUrlInput.fill('example.atlassian.net');
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+
+  await optionsPage.reload();
+  await expect(form.instanceUrlInput).toHaveValue('https://example.atlassian.net/');
+
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['instanceUrl', 'domains']));
+  expect(stored.instanceUrl).toBe('https://example.atlassian.net/');
+  expect(stored.domains).toContain('https://example.atlassian.net/');
+});
+
 test.skip('validates custom field ids and resolves their names from Jira metadata', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   await configureExtension(optionsPage, baseConfig(servers, target));
