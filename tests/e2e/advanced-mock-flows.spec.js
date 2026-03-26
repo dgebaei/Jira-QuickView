@@ -237,6 +237,45 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   await page.close();
 });
 
+test('updates time tracking estimates through the content block editor', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Time tracking persistence is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    tooltipLayout: {
+      row1: ['issueType', 'status', 'priority', 'epicParent'],
+      row2: ['sprint', 'affects', 'fixVersions'],
+      row3: ['environment', 'labels'],
+      contentBlocks: ['description', 'attachments', 'comments', 'pullRequests', 'timeTracking'],
+      people: ['reporter', 'assignee'],
+    },
+  }));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = page.locator('._JX_container');
+  const originalEstimateInput = page.locator('._JX_time_tracking_input[data-time-tracking-field="originalEstimateInput"]');
+  const remainingEstimateInput = page.locator('._JX_time_tracking_input[data-time-tracking-field="remainingEstimateInput"]');
+
+  await expect(originalEstimateInput).toHaveValue('1w');
+  await expect(remainingEstimateInput).toHaveValue('1d');
+
+  await originalEstimateInput.fill('2w');
+  await remainingEstimateInput.fill('3d');
+  await page.locator('._JX_time_tracking_save').click();
+
+  await expect(originalEstimateInput).toHaveValue('2w');
+  await expect(remainingEstimateInput).toHaveValue('3d');
+  await expect(popup).toContainText('Time Tracking');
+
+  await page.keyboard.press('Escape');
+  await hoverIssueKey(page, '#popup-key');
+  await expect(originalEstimateInput).toHaveValue('2w');
+  await expect(remainingEstimateInput).toHaveValue('3d');
+
+  await page.close();
+});
+
 test('shows grouped quick actions for assignment, transition, and sprint moves', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
