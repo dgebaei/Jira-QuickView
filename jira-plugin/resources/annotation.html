@@ -281,6 +281,42 @@
                     </div>
                     {{/watchersPanel.isOpen}}
                 </div>
+                {{#historyOpen}}
+                <div class="_JX_history_flyout">
+                    <div class="_JX_history_header">History</div>
+                    {{#changelogLoading}}
+                    <div class="_JX_history_loading">Loading changelog...</div>
+                    {{/changelogLoading}}
+                    {{#showChangelogEmpty}}
+                    <div class="_JX_history_empty">No changes recorded.</div>
+                    {{/showChangelogEmpty}}
+                    {{#hasChangelogEntries}}
+                    <div class="_JX_history_entries">
+                        {{#changelogEntries}}
+                        <div class="_JX_history_entry">
+                            <div class="_JX_history_entry_header">{{timestamp}} &middot; <strong>{{authorName}}</strong></div>
+                            {{#hasItems}}
+                            <div class="_JX_history_entry_items">
+                                {{#items}}
+                                {{#isShort}}
+                                <div class="_JX_history_change"><span class="_JX_history_field">{{field}}:</span> {{fromString}} &rarr; {{toString}}</div>
+                                {{/isShort}}
+                                {{#isLong}}
+                                <details class="_JX_history_change_details">
+                                    <summary class="_JX_history_change_summary">&#9654; {{field}} (changed)</summary>
+                                    <div class="_JX_history_change_full"><span class="_JX_history_field">From:</span> {{fromString}}</div>
+                                    <div class="_JX_history_change_full"><span class="_JX_history_field">To:</span> {{toString}}</div>
+                                </details>
+                                {{/isLong}}
+                                {{/items}}
+                            </div>
+                            {{/hasItems}}
+                        </div>
+                        {{/changelogEntries}}
+                    </div>
+                    {{/hasChangelogEntries}}
+                </div>
+                {{/historyOpen}}
             </div>
             {{/hasRow1Meta}}
         </div>
@@ -471,43 +507,6 @@
     {{#hasActionNotice}}
     <div class="_JX_action_notice {{actionNoticeClass}}">{{actionNoticeText}}</div>
     {{/hasActionNotice}}
-
-    {{#historyOpen}}
-    <div class="_JX_history_flyout">
-        <div class="_JX_history_header">History</div>
-        {{#changelogLoading}}
-        <div class="_JX_history_loading">Loading changelog...</div>
-        {{/changelogLoading}}
-        {{#showChangelogEmpty}}
-        <div class="_JX_history_empty">No changes recorded.</div>
-        {{/showChangelogEmpty}}
-        {{#hasChangelogEntries}}
-        <div class="_JX_history_entries">
-            {{#changelogEntries}}
-            <div class="_JX_history_entry">
-                <div class="_JX_history_entry_header">{{timestamp}} &middot; <strong>{{authorName}}</strong></div>
-                {{#hasItems}}
-                <div class="_JX_history_entry_items">
-                    {{#items}}
-                    {{#isShort}}
-                    <div class="_JX_history_change"><span class="_JX_history_field">{{field}}:</span> {{fromString}} &rarr; {{toString}}</div>
-                    {{/isShort}}
-                    {{#isLong}}
-                    <details class="_JX_history_change_details">
-                        <summary class="_JX_history_change_summary">&#9654; {{field}} (changed)</summary>
-                        <div class="_JX_history_change_full"><span class="_JX_history_field">From:</span> {{fromString}}</div>
-                        <div class="_JX_history_change_full"><span class="_JX_history_field">To:</span> {{toString}}</div>
-                    </details>
-                    {{/isLong}}
-                    {{/items}}
-                </div>
-                {{/hasItems}}
-            </div>
-            {{/changelogEntries}}
-        </div>
-        {{/hasChangelogEntries}}
-    </div>
-    {{/historyOpen}}
 
     <div class="_JX_content_blocks">
         {{#timeTrackingSection}}
