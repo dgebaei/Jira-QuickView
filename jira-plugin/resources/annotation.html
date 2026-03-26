@@ -588,7 +588,15 @@
                 {{#historyEntries}}
                 <div class="_JX_history_entry _JX_history_entry_{{type}}">
                     {{#isComment}}
+                    {{#isExpandable}}
+                    <details class="_JX_history_marker_details">
+                        <summary class="_JX_history_marker"><span class="_JX_history_marker_icon">{{markerIcon}}</span> <span class="_JX_history_marker_author">{{author}}</span> <span class="_JX_history_marker_snippet">{{snippet}}</span><span class="_JX_history_marker_date">{{date}}</span></summary>
+                        <div class="_JX_history_marker_full">{{fullText}}</div>
+                    </details>
+                    {{/isExpandable}}
+                    {{^isExpandable}}
                     <div class="_JX_history_marker"><span class="_JX_history_marker_icon">{{markerIcon}}</span> <span class="_JX_history_marker_author">{{author}}</span> <span class="_JX_history_marker_snippet">{{snippet}}</span><span class="_JX_history_marker_date">{{date}}</span></div>
+                    {{/isExpandable}}
                     {{/isComment}}
                     {{#isAttachment}}
                     <div class="_JX_history_marker"><span class="_JX_history_marker_icon">{{markerIcon}}</span> <span class="_JX_history_marker_filename">{{filename}}</span><span class="_JX_history_marker_date">{{date}}</span></div>
@@ -602,7 +610,7 @@
                     {{/isLargeValue}}
                     {{#isLargeValue}}
                     <details class="_JX_history_field_details">
-                        <summary class="_JX_history_field_summary">&#9654; {{collapsedLabel}}</summary>
+                        <summary class="_JX_history_field_summary">{{collapsedLabel}}</summary>
                         <div class="_JX_history_field_diff">{{changeLabel}}</div>
                     </details>
                     {{/isLargeValue}}

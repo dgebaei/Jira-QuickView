@@ -3332,13 +3332,17 @@ async function mainAsyncLocal() {
     if (Array.isArray(comments)) {
       for (const comment of comments) {
         const bodyText = String(comment.body || '').replace(/\{[^}]*\}/g, '').replace(/\[~[^\]]*\]/g, '');
+        const snippet = truncateText(bodyText, 60);
+        const isExpandable = bodyText.length > 60;
         entries.push({
           type: 'comment',
           isComment: true,
           timestamp: comment.created || '',
           date: formatHistoryDate(comment.created),
           author: comment.author?.displayName || comment.author?.name || 'Unknown',
-          snippet: truncateText(bodyText, 60),
+          snippet,
+          fullText: isExpandable ? bodyText : '',
+          isExpandable,
           markerIcon: '\ud83d\udcac'
         });
       }
@@ -3654,8 +3658,8 @@ async function mainAsyncLocal() {
       showHistorySection: showHistory,
       historyCollapsed: isBlockCollapsed('history'),
       historySectionTitle: isBlockCollapsed('history')
-        ? `\u25b6 History (${historyCount} changes)`
-        : `\u25bc History (${historyCount} changes)`,
+        ? '\u25b6 History' + (historyCount ? ` (${historyCount} changes)` : '')
+        : '\u25bc History' + (historyCount ? ` (${historyCount} changes)` : ''),
       historyEntries,
       historyLoading,
       historyCount,

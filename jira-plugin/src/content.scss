@@ -666,7 +666,12 @@ body ._JX {
     cursor: pointer;
     color: #5e6c84;
     font-size: 11px;
+    list-style: none;
     user-select: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
 
     &:hover {
       color: #42526e;
@@ -720,6 +725,30 @@ body ._JX {
     margin-left: auto;
     color: #b3bac5;
     font-size: 10px;
+  }
+
+  &_history_marker_details {
+    font-size: 11px;
+
+    > summary {
+      cursor: pointer;
+      list-style: none;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+    }
+  }
+
+  &_history_marker_full {
+    color: #5e6c84;
+    font-size: 11px;
+    font-style: normal;
+    line-height: 1.5;
+    margin-top: 4px;
+    padding-left: 20px;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   &_related_pr {
