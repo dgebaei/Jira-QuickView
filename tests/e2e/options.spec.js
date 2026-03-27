@@ -176,3 +176,30 @@ test('shows an error when importing an invalid settings file', async ({optionsPa
 
   await expect(optionsPage.getByTestId('options-save-notice')).toContainText('Failed to import settings file.');
 });
+
+test('shows an error when optional host permissions are denied', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+
+  await optionsPage.evaluate(() => {
+    const denyRequest = (_permissions, callback) => callback(false);
+    try {
+      chrome.permissions.request = denyRequest;
+    } catch (error) {
+      Object.defineProperty(chrome.permissions, 'request', {
+        configurable: true,
+        value: denyRequest,
+      });
+    }
+  });
+
+  await form.instanceUrlInput.fill(target.instanceUrl);
+  await form.domainsInput.fill(target.domains.join(', '));
+  await form.saveButton.click();
+
+  await expect(form.saveNotice).toContainText('Options not saved.');
+
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['instanceUrl', 'domains']));
+  expect(stored.instanceUrl || '').toBe('');
+  expect(Array.isArray(stored.domains) ? stored.domains : []).toEqual([]);
+});
