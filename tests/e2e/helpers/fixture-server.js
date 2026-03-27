@@ -83,6 +83,21 @@ function defaultRouteContent(origin) {
         </section>
       </div>
     `),
+    '/repeated-key-list': createHtml('Repeated Key List', `
+      <h1>Repeated Key List</h1>
+      <div class="stack" style="gap: 14px; max-width: 640px;">
+        <div class="card" id="repeated-row-1" style="display:grid; grid-template-columns: 120px 1fr 70px; gap: 12px; align-items: center;">
+          <span class="row-author">alice@example.com</span>
+          <span class="row-subject" id="repeated-row-1-subject">Investigate JRACLOUD-97846 rollout issue</span>
+          <span class="row-count" id="repeated-row-1-count">123</span>
+        </div>
+        <div class="card" id="repeated-row-2" style="display:grid; grid-template-columns: 120px 1fr 70px; gap: 12px; align-items: center;">
+          <span class="row-author" id="repeated-row-2-author">bob@example.com</span>
+          <span class="row-subject" id="repeated-row-2-subject">Follow-up for JRACLOUD-98123 report</span>
+          <span class="row-count" id="repeated-row-2-count">445</span>
+        </div>
+      </div>
+    `),
   };
 }
 

@@ -5834,7 +5834,9 @@ async function mainAsyncLocal() {
 
         clearTimeout(hideTimeOut);
         triggerPopupForKey(key, e.pageX, e.pageY, hoverModifierKey !== 'none');
+        return;
       }
+      pendingHover = null;
     }
   }, 100));
 }

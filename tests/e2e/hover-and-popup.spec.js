@@ -108,6 +108,25 @@ test('does not open the popup when the pointer has moved away before pressing th
   await page.close();
 });
 
+test('clears a stale pending Jira key when moving to a non-resolvable row before pressing the modifier', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: targetModeRequiresAuth(), minimumIssueCount: 2});
+  await configureExtension(optionsPage, baseConfig(servers, target, {hoverModifierKey: 'shift', hoverDepth: 'exact'}));
+  const {page} = await openAllowedPage(extensionApp, servers, target, '/repeated-key-list');
+
+  await hoverIssueKey(page, '#repeated-row-1-subject');
+  await expect(page.locator('._JX_container')).toBeEmpty();
+
+  const countBox = await page.locator('#repeated-row-2-count').boundingBox();
+  await page.mouse.move(Math.round(countBox.x + (countBox.width / 2)), Math.round(countBox.y + (countBox.height / 2)));
+  await expect(page.locator('._JX_container')).toBeEmpty();
+  await page.waitForTimeout(150);
+
+  await page.keyboard.press('Shift');
+  await expect(page.locator('._JX_container')).toBeEmpty();
+
+  await page.close();
+});
+
 test('supports pinning and closing the popup', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: targetModeRequiresAuth()});
   await configureExtension(optionsPage, baseConfig(servers, target));
