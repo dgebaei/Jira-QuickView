@@ -76,7 +76,6 @@
             {{/isEditing}}
             {{#isEditing}}
             <div class="_JX_title_edit_row">
-                <span class="_JX_title_edit_prefix">{{keyPrefix}}</span>
                 <div class="_JX_title_edit_form">
                     <div class="_JX_edit_input_shell _JX_title_edit_input_shell">
                         {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-testid="jira-popup-edit-input-summary" data-field-key="summary" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
@@ -98,10 +97,11 @@
             </div>
             {{/isEditing}}
             {{#isEditable}}
+            {{^isEditing}}
             <button class="_JX_field_chip_edit _JX_title_edit_button" data-testid="jira-popup-edit-button-summary" type="button" data-field-key="summary" title="{{editTitle}}" aria-label="{{editTitle}}">
-                {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
-                {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
+                <svg width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>
             </button>
+            {{/isEditing}}
             {{/isEditable}}
         </div>
         {{/titleView}}

@@ -76,31 +76,21 @@ body ._JX {
       align-items: center;
       display: flex;
       flex: 1 1 auto;
-      gap: 6px;
+      gap: 3px;
       min-width: 0;
       position: relative;
     }
 
     &_summary_slot.is-editing {
-      align-items: flex-start;
+      align-items: center;
       z-index: 30;
     }
 
     &_edit_row {
-      align-items: flex-start;
+      align-items: center;
       display: flex;
       flex: 1 1 auto;
-      gap: 8px;
       min-width: 0;
-    }
-
-    &_edit_prefix {
-      color: #44546f;
-      flex: 0 0 auto;
-      font-size: 14px;
-      font-weight: 600;
-      line-height: 32px;
-      white-space: nowrap;
     }
 
     &_edit_form {
@@ -113,12 +103,15 @@ body ._JX {
 
     &_edit_input_shell {
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      margin-right: 10px;
     }
 
     &_edit_input {
       font-size: 13px;
-      min-height: 32px;
+      line-height: 14px;
+      min-height: 24px;
+      padding: 2px 6px;
     }
 
     &_edit_actions {
@@ -128,14 +121,27 @@ body ._JX {
     }
 
     &_edit_action {
-      min-width: 28px;
-      padding: 0;
-      width: 28px;
+      min-width: 0;
+      padding: 7px 10px;
+      width: auto;
+    }
+
+    &_edit_action._JX_edit_save:hover {
+      color: #fff;
     }
 
     &_summary_slot ._JX_title_edit_button {
       flex: 0 0 auto;
-      margin-top: 4px;
+      height: 30px;
+      margin-left: 0;
+      margin-top: 0;
+      min-width: 30px;
+      width: 30px;
+    }
+
+    &_summary_slot ._JX_title_edit_button svg {
+      height: 16px;
+      width: 16px;
     }
 
     &_assignee_slot.is-editing {
@@ -1518,7 +1524,7 @@ body ._JX {
   }
 
   &_edit_input_shell {
-    align-items: stretch;
+    align-items: center;
     display: flex;
     gap: 6px;
     min-width: 0;
