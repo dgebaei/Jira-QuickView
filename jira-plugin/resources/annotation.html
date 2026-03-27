@@ -204,6 +204,9 @@
             </div>
             {{#hasRow1Meta}}
             <div class="_JX_activity_strip">
+                {{#activityIndicators}}
+                <span class="_JX_activity_item" title="{{title}}">{{icon}} <strong>{{count}}</strong></span>
+                {{/activityIndicators}}
                 <div class="_JX_watchers_group">
                     <button class="_JX_watchers_trigger{{#watchersTrigger.isWatching}} is-watching{{/watchersTrigger.isWatching}}{{#watchersTrigger.isOpen}} is-open{{/watchersTrigger.isOpen}}" type="button" title="{{watchersTrigger.title}} {{watchersTrigger.watchingTitle}}" aria-label="{{watchersTrigger.title}} {{watchersTrigger.watchingTitle}}" aria-haspopup="dialog" aria-expanded="{{#watchersTrigger.isOpen}}true{{/watchersTrigger.isOpen}}{{^watchersTrigger.isOpen}}false{{/watchersTrigger.isOpen}}">
                         <span class="_JX_watchers_trigger_icon" aria-hidden="true">
@@ -226,10 +229,15 @@
                         </div>
                         {{#watchersPanel.errorMessage}}<div class="_JX_watchers_error">{{watchersPanel.errorMessage}}</div>{{/watchersPanel.errorMessage}}
                         {{#watchersPanel.isLoading}}<div class="_JX_watchers_loading">{{watchersPanel.loadingText}}</div>{{/watchersPanel.isLoading}}
-                        {{#watchersPanel.hasSearchResults}}
+                        {{#watchersPanel.hasSearchSection}}
                         <div class="_JX_watchers_section">
                             <div class="_JX_watchers_section_label">Add watchers</div>
                             <div class="_JX_watchers_list _JX_watchers_search_results">
+                                {{#watchersPanel.hasSearchFeedback}}
+                                <div class="_JX_watchers_feedback_row {{watchersPanel.searchFeedback.toneClass}}">
+                                    <span class="_JX_watchers_feedback_text">{{watchersPanel.searchFeedback.message}}</span>
+                                </div>
+                                {{/watchersPanel.hasSearchFeedback}}
                                 {{#watchersPanel.searchResults}}
                                 <button class="_JX_watchers_search_result{{#isPending}} is-pending{{/isPending}}" type="button" data-watcher-id="{{id}}" {{disabledAttr}}>
                                     {{#avatarUrl}}<img class="_JX_watchers_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
@@ -243,12 +251,17 @@
                                 {{/watchersPanel.searchResults}}
                             </div>
                         </div>
-                        {{/watchersPanel.hasSearchResults}}
+                        {{/watchersPanel.hasSearchSection}}
                         {{#watchersPanel.showSearchEmpty}}<div class="_JX_watchers_empty">{{watchersPanel.searchEmptyText}}</div>{{/watchersPanel.showSearchEmpty}}
                         <div class="_JX_watchers_section">
                             <div class="_JX_watchers_section_label">Watching now</div>
-                            {{#watchersPanel.hasWatchers}}
+                            {{#watchersPanel.hasWatcherSectionContent}}
                             <div class="_JX_watchers_list">
+                                {{#watchersPanel.hasWatcherFeedback}}
+                                <div class="_JX_watchers_feedback_row {{watchersPanel.watcherFeedback.toneClass}}">
+                                    <span class="_JX_watchers_feedback_text">{{watchersPanel.watcherFeedback.message}}</span>
+                                </div>
+                                {{/watchersPanel.hasWatcherFeedback}}
                                 {{#watchersPanel.watchers}}
                                 <div class="_JX_watchers_row{{#pendingRemove}} is-pending{{/pendingRemove}}" data-watcher-id="{{id}}">
                                     {{#avatarUrl}}<img class="_JX_watchers_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
@@ -261,15 +274,12 @@
                                 </div>
                                 {{/watchersPanel.watchers}}
                             </div>
-                            {{/watchersPanel.hasWatchers}}
-                            {{^watchersPanel.hasWatchers}}<div class="_JX_watchers_empty">{{watchersPanel.emptyText}}</div>{{/watchersPanel.hasWatchers}}
+                            {{/watchersPanel.hasWatcherSectionContent}}
+                            {{^watchersPanel.hasWatcherSectionContent}}<div class="_JX_watchers_empty">{{watchersPanel.emptyText}}</div>{{/watchersPanel.hasWatcherSectionContent}}
                         </div>
                     </div>
                     {{/watchersPanel.isOpen}}
                 </div>
-                {{#activityIndicators}}
-                <span class="_JX_activity_item" title="{{title}}">{{icon}} <strong>{{count}}</strong></span>
-                {{/activityIndicators}}
             </div>
             {{/hasRow1Meta}}
         </div>

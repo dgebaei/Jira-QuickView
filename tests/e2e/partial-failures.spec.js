@@ -139,7 +139,7 @@ test('keeps the watchers panel usable when adding a watcher fails', async ({exte
   await expect(result).toBeVisible();
   await result.click();
 
-  await expect(page.locator('._JX_watchers_error')).toContainText(/Could not add watcher|HTTP 500/);
+  await expect(page.locator('._JX_watchers_search_results')).toContainText(/Could not add watcher|HTTP 500/);
   await expect(searchInput).toHaveValue('Darko');
   await expect(page.locator('._JX_watchers_row[data-watcher-id="user-darko"]')).toHaveCount(0);
   await expect(trigger).toContainText('2');
@@ -162,7 +162,7 @@ test('restores watcher rows when removing a watcher fails', async ({extensionApp
   await alexRow.hover();
   await alexRow.locator('._JX_watchers_remove').click();
 
-  await expect(page.locator('._JX_watchers_error')).toContainText(/Could not remove watcher|HTTP 500/);
+  await expect(page.locator('._JX_watchers_section').filter({hasText: 'Watching now'})).toContainText(/Could not remove watcher|HTTP 500/);
   await expect(page.locator('._JX_watchers_row[data-watcher-id="user-alex"]')).toBeVisible();
   await expect(trigger).toContainText('2');
   await page.close();

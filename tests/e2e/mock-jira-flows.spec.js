@@ -151,7 +151,10 @@ test('adds and removes watchers from the popup panel in mocked mode', async ({ex
 
   await expect(trigger).toContainText('2');
   await expect(trigger).toHaveClass(/is-watching/);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent added to watchers'})).toBeVisible();
   await expect(page.locator('._JX_watchers_row[data-watcher-id="user-me"]')).toBeVisible();
+  await page.waitForTimeout(5200);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent added to watchers'})).toHaveCount(0);
 
   await searchInput.fill('Alex');
   await expect(page.locator('._JX_watchers_search_result[data-watcher-id="user-alex"]')).toHaveCount(0);
@@ -162,7 +165,10 @@ test('adds and removes watchers from the popup panel in mocked mode', async ({ex
 
   await expect(trigger).toContainText('1');
   await expect(trigger).not.toHaveClass(/is-watching/);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent removed from watchers'})).toBeVisible();
   await expect(page.locator('._JX_watchers_row[data-watcher-id="user-me"]')).toHaveCount(0);
+  await page.waitForTimeout(5200);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent removed from watchers'})).toHaveCount(0);
   await page.close();
 });
 
