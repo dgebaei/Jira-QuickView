@@ -85,7 +85,7 @@ async function jiraApiRequest(apiPath, options = {}, config = getLiveJiraConfig(
 }
 
 async function getLiveIssue(issueKey, config = getLiveJiraConfig()) {
-  return jiraApiRequest(`/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=summary,description,attachment,comment,issuetype,status,priority,labels,environment,versions,parent,fixVersions,assignee,reporter&expand=renderedFields,names`, {}, config);
+  return jiraApiRequest(`/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=summary,description,attachment,comment,issuetype,status,priority,labels,environment,versions,parent,fixVersions,assignee,reporter,watches&expand=renderedFields,names`, {}, config);
 }
 
 async function getLiveFields(config = getLiveJiraConfig()) {

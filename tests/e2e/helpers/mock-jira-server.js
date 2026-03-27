@@ -62,6 +62,22 @@ function createState(origin) {
         emailAddress: 'alex@example.com',
         avatarUrls: {'48x48': `${origin}/assets/avatar-alex.png`},
       },
+      {
+        accountId: 'user-casey',
+        name: 'casey',
+        key: 'casey',
+        displayName: 'Casey Commenter',
+        emailAddress: 'casey@example.com',
+        avatarUrls: {'48x48': `${origin}/assets/avatar-commenter.png`},
+      },
+      {
+        accountId: 'user-darko',
+        name: 'darko',
+        key: 'darko',
+        displayName: 'Darko Gebaei',
+        emailAddress: 'darko@example.com',
+        avatarUrls: {'48x48': `${origin}/assets/avatar-darko.png`},
+      },
     ],
     labels: ['needs-triage', 'ux-bug', 'release-candidate'],
     boards: [{id: 77, name: 'Mock Board'}],
@@ -135,6 +151,24 @@ function createState(origin) {
         remainingEstimate: '1d',
         timeSpent: '2h',
       },
+      watchers: [
+        {
+          accountId: 'user-me',
+          name: 'me',
+          key: 'me',
+          displayName: 'Morgan Agent',
+          emailAddress: 'morgan@example.com',
+          avatarUrls: {'48x48': `${origin}/assets/avatar-me.png`},
+        },
+        {
+          accountId: 'user-alex',
+          name: 'alex',
+          key: 'alex',
+          displayName: 'Alex Reviewer',
+          emailAddress: 'alex@example.com',
+          avatarUrls: {'48x48': `${origin}/assets/avatar-alex.png`},
+        },
+      ],
       customFields: {
         customfield_12345: 'Customer impact: High',
       },
@@ -231,6 +265,10 @@ function buildIssueResponse(origin, state) {
     customfield_10020: issue.sprintEntries,
     customfield_12345: issue.customFields.customfield_12345,
     timetracking: issue.timetracking,
+    watches: {
+      watchCount: issue.watchers.length,
+      isWatching: issue.watchers.some(user => user.accountId === state.currentUser.accountId),
+    },
   };
   return {
     id: issue.id,
@@ -388,6 +426,9 @@ async function createMockJiraServer() {
       state.labels = [];
       state.issueSearchCatalog = [];
     }
+    if (state.scenario === 'watcher-self-off') {
+      state.issue.watchers = state.issue.watchers.filter(user => user.accountId !== state.currentUser.accountId);
+    }
   };
 
   const scenarioIn = (...names) => names.includes(state.scenario);
@@ -485,6 +526,50 @@ async function createMockJiraServer() {
         return user.accountId === body?.accountId || user.name === body?.name || user.key === body?.key;
       }) || null;
       state.issue.assignee = nextAssignee;
+      noContent(res);
+      return;
+    }
+
+    if (pathname === `/rest/api/2/issue/${state.issue.key}/watchers` && req.method === 'GET') {
+      json(res, 200, {
+        watchCount: state.issue.watchers.length,
+        isWatching: state.issue.watchers.some(user => user.accountId === state.currentUser.accountId),
+        watchers: state.issue.watchers,
+      });
+      return;
+    }
+
+    if (pathname === `/rest/api/2/issue/${state.issue.key}/watchers` && req.method === 'POST') {
+      if (scenarioIn('watchers-add-fails')) {
+        json(res, 500, {errorMessages: ['Could not add watcher']});
+        return;
+      }
+      const body = await parseJsonBody(req);
+      const nextWatcher = state.assignableUsers.find(user => {
+        return user.accountId === body || user.name === body || user.key === body;
+      });
+      if (!nextWatcher) {
+        json(res, 400, {errorMessages: ['Unknown watcher']});
+        return;
+      }
+      if (!state.issue.watchers.some(user => user.accountId === nextWatcher.accountId)) {
+        state.issue.watchers.push(nextWatcher);
+      }
+      noContent(res);
+      return;
+    }
+
+    if (pathname === `/rest/api/2/issue/${state.issue.key}/watchers` && req.method === 'DELETE') {
+      if (scenarioIn('watchers-remove-fails')) {
+        json(res, 500, {errorMessages: ['Could not remove watcher']});
+        return;
+      }
+      const accountId = String(url.searchParams.get('accountId') || '');
+      const username = String(url.searchParams.get('username') || '');
+      const key = String(url.searchParams.get('key') || '');
+      state.issue.watchers = state.issue.watchers.filter(user => {
+        return user.accountId !== accountId && user.name !== username && user.key !== key;
+      });
       noContent(res);
       return;
     }
