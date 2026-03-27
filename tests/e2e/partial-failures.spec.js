@@ -220,7 +220,7 @@ test('renders graceful empty states for labels, parent, and fix versions', async
   await expect(popup).toContainText(/Labels\s*:\s*--/);
 
   await page.locator('._JX_field_chip_edit[data-field-key="parentLink"]').click();
-  await expect(page.locator('._JX_edit_popover').last()).toContainText('No matching values');
+  await expect(page.locator('._JX_edit_popover[data-field-key="parentLink"]')).toContainText('No matching values');
   await page.locator('._JX_edit_cancel[data-field-key="parentLink"]').click();
 
   await page.locator('._JX_field_chip_edit[data-field-key="fixVersions"]').click();
@@ -228,7 +228,7 @@ test('renders graceful empty states for labels, parent, and fix versions', async
   await page.locator('._JX_edit_discard[data-field-key="fixVersions"]').click();
 
   await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
-  await expect(page.locator('._JX_edit_popover').last()).toContainText('No matching values');
+  await expect(page.locator('._JX_edit_popover[data-field-key="labels"]')).toContainText('No matching values');
   await page.locator('._JX_edit_discard[data-field-key="labels"]').click();
 
   await page.close();
