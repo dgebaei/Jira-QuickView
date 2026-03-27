@@ -1,5 +1,6 @@
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
 const {getCurrentUser} = require('./helpers/live-jira-api');
+const {popupModel} = require('./helpers/popup');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
 const {patchJsonResponse} = require('./helpers/jira-route-mocks');
 
@@ -67,14 +68,15 @@ test('shows assignee and parent search results inside their editors', async ({ex
   await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page, target: resolvedTarget} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
 
-  await page.locator('._JX_assignee_edit_button').click();
-  await page.locator('._JX_edit_input[data-field-key="assignee"]').fill(target.mode === 'mock' ? 'Morgan' : '');
-  await expect(page.locator('._JX_edit_option[data-field-key="assignee"]').first()).toBeVisible();
-  await page.locator('._JX_edit_cancel[data-field-key="assignee"]').click();
+  await popup.editButton('assignee').click();
+  await popup.editInput('assignee').fill(target.mode === 'mock' ? 'Morgan' : '');
+  await expect(popup.editOptions('assignee').first()).toBeVisible();
+  await popup.editCancel('assignee').click();
 
-  await page.locator('._JX_field_chip_edit[data-field-key="parentLink"]').click();
-  await page.locator('._JX_edit_input[data-field-key="parentLink"]').fill(resolvedTarget.secondaryIssueKey.split('-')[1]);
+  await popup.editButton('parentLink').click();
+  await popup.editInput('parentLink').fill(resolvedTarget.secondaryIssueKey.split('-')[1]);
   await expect(page.locator(`._JX_edit_option[data-field-key="parentLink"][data-option-id="${resolvedTarget.secondaryIssueKey}"]`).first()).toBeVisible();
 
   await page.close();
@@ -134,28 +136,28 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
-  const popup = page.locator('._JX_container');
+  const popup = popupModel(page);
 
   if (target.mode === 'live') {
-    await page.locator('._JX_field_chip_edit[data-field-key="sprint"]').click();
-    const sprintOptions = page.locator('._JX_edit_option[data-field-key="sprint"]');
+    await popup.editButton('sprint').click();
+    const sprintOptions = popup.editOptions('sprint');
     await waitForOptions(sprintOptions, 1);
     await expect(sprintOptions.first()).toBeVisible();
     await page.keyboard.press('Escape');
 
-    const affectsEditButton = page.locator('._JX_field_chip_edit[data-field-key="versions"]');
+    const affectsEditButton = popup.editButton('versions');
     if (await affectsEditButton.count()) {
       await affectsEditButton.click();
-      const versionOptions = page.locator('._JX_edit_option[data-field-key="versions"]');
+      const versionOptions = popup.editOptions('versions');
       await waitForOptions(versionOptions, 1);
       await expect(versionOptions.first()).toBeVisible();
       await page.keyboard.press('Escape');
     } else {
-      await expect(popup).toContainText('Affects: --');
+      await expect(popup.root).toContainText('Affects: --');
     }
 
-    await page.locator('._JX_field_chip_edit[data-field-key="fixVersions"]').click();
-    const fixVersionOptions = page.locator('._JX_edit_option[data-field-key="fixVersions"]');
+    await popup.editButton('fixVersions').click();
+    const fixVersionOptions = popup.editOptions('fixVersions');
     await waitForOptions(fixVersionOptions, 1);
     await expect(fixVersionOptions.first()).toBeVisible();
     await page.keyboard.press('Escape');
@@ -164,8 +166,8 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     return;
   }
 
-  await page.locator('._JX_field_chip_edit[data-field-key="sprint"]').click();
-  const sprintOptions = page.locator('._JX_edit_option[data-field-key="sprint"]');
+  await popup.editButton('sprint').click();
+  const sprintOptions = popup.editOptions('sprint');
   await waitForOptions(sprintOptions, 1);
   const currentSprintOptionId = await page.locator('._JX_edit_option[data-field-key="sprint"].is-selected').first().getAttribute('data-option-id');
   const sprintOptionCount = await sprintOptions.count();
@@ -178,19 +180,19 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     }
   }
   await page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${nextSprintOptionId}"]`).click();
-  await page.locator('._JX_edit_input[data-field-key="sprint"]').press('Enter');
-  await expect(popup).toContainText(/Sprint/i);
-  await page.locator('._JX_field_chip_edit[data-field-key="sprint"]').click();
+  await popup.editInput('sprint').press('Enter');
+  await expect(popup.root).toContainText(/Sprint/i);
+  await popup.editButton('sprint').click();
   await waitForOptions(sprintOptions, 1);
   if (currentSprintOptionId) {
     await page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).click();
-    await page.locator('._JX_edit_input[data-field-key="sprint"]').press('Enter');
+    await popup.editInput('sprint').press('Enter');
   }
 
-  const affectsEditButton = page.locator('._JX_field_chip_edit[data-field-key="versions"]');
+  const affectsEditButton = popup.editButton('versions');
   if (await affectsEditButton.count()) {
     await affectsEditButton.click();
-    const versionOptions = page.locator('._JX_edit_option[data-field-key="versions"]');
+    const versionOptions = popup.editOptions('versions');
     await waitForOptions(versionOptions, 1);
     const originalVersionIds = await getSelectedOptionIds(versionOptions);
     const versionOptionCount = await versionOptions.count();
@@ -203,18 +205,18 @@ test('updates sprint and version fields through edit popovers', async ({extensio
       }
     }
     await page.locator(`._JX_edit_option[data-field-key="versions"][data-option-id="${nextVersionOptionId}"]`).click();
-    await page.locator('._JX_edit_save[data-field-key="versions"]').click();
-    await expect(popup).toContainText(/Affects versions updated|version/i);
+    await popup.editSave('versions').click();
+    await expect(popup.root).toContainText(/Affects versions updated|version/i);
     await affectsEditButton.click();
     await waitForOptions(versionOptions, 1);
     await setSelectedOptionIds(versionOptions, originalVersionIds);
-    await page.locator('._JX_edit_save[data-field-key="versions"]').click();
+    await popup.editSave('versions').click();
   } else {
-    await expect(popup).toContainText('Affects: --');
+    await expect(popup.root).toContainText('Affects: --');
   }
 
-  await page.locator('._JX_field_chip_edit[data-field-key="fixVersions"]').click();
-  const fixVersionOptions = page.locator('._JX_edit_option[data-field-key="fixVersions"]');
+  await popup.editButton('fixVersions').click();
+  const fixVersionOptions = popup.editOptions('fixVersions');
   await waitForOptions(fixVersionOptions, 1);
   const originalFixVersionIds = await getSelectedOptionIds(fixVersionOptions);
   const fixVersionOptionCount = await fixVersionOptions.count();
@@ -227,12 +229,12 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     }
   }
   await page.locator(`._JX_edit_option[data-field-key="fixVersions"][data-option-id="${nextFixVersionOptionId}"]`).click();
-  await page.locator('._JX_edit_save[data-field-key="fixVersions"]').click();
-  await expect(popup).toContainText(/Fix version/i);
-  await page.locator('._JX_field_chip_edit[data-field-key="fixVersions"]').click();
+  await popup.editSave('fixVersions').click();
+  await expect(popup.root).toContainText(/Fix version/i);
+  await popup.editButton('fixVersions').click();
   await waitForOptions(fixVersionOptions, 1);
   await setSelectedOptionIds(fixVersionOptions, originalFixVersionIds);
-  await page.locator('._JX_edit_save[data-field-key="fixVersions"]').click();
+  await popup.editSave('fixVersions').click();
 
   await page.close();
 });
@@ -253,7 +255,7 @@ test('updates time tracking estimates through the content block editor', async (
   }));
 
   const {page} = await openPopup(extensionApp, servers, target);
-  const popup = page.locator('._JX_container');
+  const popup = popupModel(page);
   const originalEstimateInput = page.locator('._JX_time_tracking_input[data-time-tracking-field="originalEstimateInput"]');
   const remainingEstimateInput = page.locator('._JX_time_tracking_input[data-time-tracking-field="remainingEstimateInput"]');
 
@@ -266,7 +268,7 @@ test('updates time tracking estimates through the content block editor', async (
 
   await expect(originalEstimateInput).toHaveValue('2w');
   await expect(remainingEstimateInput).toHaveValue('3d');
-  await expect(popup).toContainText('Time Tracking');
+  await expect(popup.root).toContainText('Time Tracking');
 
   await page.keyboard.press('Escape');
   await hoverIssueKey(page, '#popup-key');
