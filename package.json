@@ -11,7 +11,7 @@
     "test": "npm run test:e2e",
     "test:e2e": "npm run test:e2e:mock-edge",
     "test:e2e:all": "node scripts/playwright/run-all-suites.js",
-    "test:e2e:mock-edge": "node scripts/playwright/run-with-blob.js --project=mock-edge",
+    "test:e2e:mock-edge": "node scripts/playwright/run-with-blob.js --project=mock-edge --project=mock-popup",
     "test:e2e:public-smoke": "node scripts/playwright/run-with-blob.js --project=public-smoke",
     "test:e2e:live-authenticated": "node scripts/playwright/run-with-blob.js --project=live-authenticated",
     "test:e2e:extension": "npm run test:e2e:live-authenticated",

@@ -190,8 +190,12 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   if (currentSprintOptionLabel) {
     await expect(popup.editInput('sprint')).toBeEnabled();
     await popup.editInput('sprint').fill('');
-    await expect(page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).first()).toBeVisible();
-    await page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).first().click();
+    const originalSprintOption = page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).first();
+    await expect(originalSprintOption).toBeVisible();
+    const isOriginalSprintSelected = await originalSprintOption.evaluate(node => node.classList.contains('is-selected'));
+    if (!isOriginalSprintSelected) {
+      await originalSprintOption.click();
+    }
     await popup.editInput('sprint').press('Enter');
   }
 
@@ -247,7 +251,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   await page.close();
 });
 
-test('updates time tracking estimates through the content block editor', async ({extensionApp, optionsPage, servers}) => {
+test('updates time tracking estimates through the content block editor @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Time tracking persistence is deterministic in mocked mode only.');
 
@@ -274,6 +278,7 @@ test('updates time tracking estimates through the content block editor', async (
   await remainingEstimateInput.fill('3d');
   await page.locator('._JX_time_tracking_save').click();
 
+  await expect(page.locator('body')).toContainText(/Time tracking updated|Estimates updated/);
   await expect(originalEstimateInput).toHaveValue('2w');
   await expect(remainingEstimateInput).toHaveValue('3d');
   await expect(popup.root).toContainText('Time Tracking');
