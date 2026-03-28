@@ -2237,6 +2237,9 @@ async function mainAsyncLocal() {
     if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
       return String(entry);
     }
+    if (entry.accountId || entry.avatarUrls || entry.emailAddress) {
+      return String(entry.displayName || entry.name || entry.value || entry.key || entry.id || '');
+    }
     return String(entry.name || entry.value || entry.displayName || entry.key || entry.id || '');
   }
 
@@ -2274,6 +2277,9 @@ async function mainAsyncLocal() {
     if (isTempoAccountField(fieldMeta)) {
       const accountId = value?.id || value;
       return String(accountId || '').trim();
+    }
+    if (supportDescriptor?.valueKind === 'user') {
+      return String(value?.accountId || value?.key || value?.name || value?.displayName || '').trim();
     }
     if (supportDescriptor?.valueKind === 'primitive') {
       return encodeJqlValue(String(value));
@@ -2657,13 +2663,10 @@ async function mainAsyncLocal() {
         ? rawValue.some(value => value !== undefined && value !== null && value !== '')
         : !(rawValue === undefined || rawValue === null || rawValue === '');
       if (supportedDefinition) {
-        chipsByRow[row].push(buildEditableFieldChip(fieldId, buildCustomFieldChipData(
-          fieldId,
-          fieldName,
-          rawValue,
-          supportedDefinition.fieldMeta,
-          supportedDefinition.supportDescriptor
-        ), state, {
+        const baseChip = hasDisplayValue
+          ? buildCustomFieldChipData(fieldId, fieldName, rawValue, supportedDefinition.fieldMeta, supportedDefinition.supportDescriptor)
+          : buildFilterChip(`${fieldName}: --`, '');
+        chipsByRow[row].push(buildEditableFieldChip(fieldId, baseChip, state, {
           canEdit: true,
           editTitle: `Edit ${fieldName}`
         }));
