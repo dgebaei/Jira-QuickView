@@ -171,6 +171,14 @@ function createState(origin) {
       ],
       customFields: {
         customfield_12345: 'Customer impact: High',
+        customfield_67890: {
+          accountId: 'user-alex',
+          name: 'alex',
+          key: 'alex',
+          displayName: 'Alex Reviewer',
+          emailAddress: 'alex@example.com',
+          avatarUrls: {'48x48': `${origin}/assets/avatar-alex.png`},
+        },
       },
     },
     issueSearchCatalog: [
@@ -240,6 +248,7 @@ function buildIssueResponse(origin, state) {
   const names = {
     customfield_10020: 'Sprint',
     customfield_12345: 'Customer Impact',
+    customfield_67890: 'Reviewer',
   };
   const fields = {
     id: issue.id,
@@ -264,6 +273,7 @@ function buildIssueResponse(origin, state) {
     }))},
     customfield_10020: issue.sprintEntries,
     customfield_12345: issue.customFields.customfield_12345,
+    customfield_67890: issue.customFields.customfield_67890,
     timetracking: issue.timetracking,
     watches: {
       watchCount: issue.watchers.length,
@@ -341,6 +351,11 @@ function buildEditmeta(state) {
         name: 'Time Tracking',
         operations: ['set'],
         schema: {type: 'timetracking'},
+      },
+      customfield_67890: {
+        name: 'Reviewer',
+        operations: ['set'],
+        schema: {type: 'user', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker'},
       },
     },
   };
@@ -426,6 +441,9 @@ async function createMockJiraServer() {
       state.labels = [];
       state.issueSearchCatalog = [];
     }
+    if (state.scenario === 'empty-user-field') {
+      state.issue.customFields.customfield_67890 = null;
+    }
     if (state.scenario === 'watcher-self-off') {
       state.issue.watchers = state.issue.watchers.filter(user => user.accountId !== state.currentUser.accountId);
     }
@@ -462,6 +480,7 @@ async function createMockJiraServer() {
       json(res, 200, [
         {id: 'customfield_10020', name: 'Sprint', schema: {custom: 'com.pyxis.greenhopper.jira:gh-sprint', type: 'array'}},
         {id: 'customfield_12345', name: 'Customer Impact'},
+        {id: 'customfield_67890', name: 'Reviewer', schema: {type: 'user', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker'}},
       ]);
       return;
     }
@@ -670,6 +689,14 @@ async function createMockJiraServer() {
         state.issue.parent = match
           ? {key: match.key, fields: {summary: match.fields.summary}}
           : {key: fields.parent.key, fields: {summary: fields.parent.key}};
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'customfield_67890')) {
+        if (fields.customfield_67890 === null) {
+          state.issue.customFields.customfield_67890 = null;
+        } else {
+          const userId = fields.customfield_67890?.accountId || fields.customfield_67890?.name || fields.customfield_67890?.key;
+          state.issue.customFields.customfield_67890 = state.assignableUsers.find(u => u.accountId === userId || u.name === userId || u.key === userId) || null;
+        }
       }
       if (fields.timetracking) {
         const tt = fields.timetracking;

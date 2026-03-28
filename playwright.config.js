@@ -31,7 +31,7 @@ module.exports = {
   projects: [
     {
       name: 'mock-edge',
-      testMatch: /(?:^|\/)(?:error-states|partial-failures)\.spec\.js$/,
+      testMatch: /(?:^|\/)(?:error-states|partial-failures|user-field-editing)\.spec\.js$/,
     },
     {
       name: 'public-smoke',
