@@ -167,9 +167,11 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   }
 
   await popup.editButton('sprint').click();
-  const sprintOptions = popup.editOptions('sprint');
+  let sprintOptions = popup.editOptions('sprint');
   await waitForOptions(sprintOptions, 1);
-  const currentSprintOptionId = await page.locator('._JX_edit_option[data-field-key="sprint"].is-selected').first().getAttribute('data-option-id');
+  const currentSprintOption = page.locator('._JX_edit_option[data-field-key="sprint"].is-selected').first();
+  const currentSprintOptionId = await currentSprintOption.getAttribute('data-option-id');
+  const currentSprintOptionLabel = String(await currentSprintOption.textContent() || '').trim();
   const sprintOptionCount = await sprintOptions.count();
   let nextSprintOptionId = '';
   for (let index = 0; index < sprintOptionCount; index += 1) {
@@ -183,16 +185,20 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   await popup.editInput('sprint').press('Enter');
   await expect(popup.root).toContainText(/Sprint/i);
   await popup.editButton('sprint').click();
+  sprintOptions = popup.editOptions('sprint');
   await waitForOptions(sprintOptions, 1);
-  if (currentSprintOptionId) {
-    await page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).click();
+  if (currentSprintOptionLabel) {
+    await expect(popup.editInput('sprint')).toBeEnabled();
+    await popup.editInput('sprint').fill('');
+    await expect(page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).first()).toBeVisible();
+    await page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).first().click();
     await popup.editInput('sprint').press('Enter');
   }
 
   const affectsEditButton = popup.editButton('versions');
   if (await affectsEditButton.count()) {
     await affectsEditButton.click();
-    const versionOptions = popup.editOptions('versions');
+    let versionOptions = popup.editOptions('versions');
     await waitForOptions(versionOptions, 1);
     const originalVersionIds = await getSelectedOptionIds(versionOptions);
     const versionOptionCount = await versionOptions.count();
@@ -208,6 +214,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     await popup.editSave('versions').click();
     await expect(popup.root).toContainText(/Affects versions updated|version/i);
     await affectsEditButton.click();
+    versionOptions = popup.editOptions('versions');
     await waitForOptions(versionOptions, 1);
     await setSelectedOptionIds(versionOptions, originalVersionIds);
     await popup.editSave('versions').click();
@@ -216,7 +223,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   }
 
   await popup.editButton('fixVersions').click();
-  const fixVersionOptions = popup.editOptions('fixVersions');
+  let fixVersionOptions = popup.editOptions('fixVersions');
   await waitForOptions(fixVersionOptions, 1);
   const originalFixVersionIds = await getSelectedOptionIds(fixVersionOptions);
   const fixVersionOptionCount = await fixVersionOptions.count();
@@ -232,6 +239,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   await popup.editSave('fixVersions').click();
   await expect(popup.root).toContainText(/Fix version/i);
   await popup.editButton('fixVersions').click();
+  fixVersionOptions = popup.editOptions('fixVersions');
   await waitForOptions(fixVersionOptions, 1);
   await setSelectedOptionIds(fixVersionOptions, originalFixVersionIds);
   await popup.editSave('fixVersions').click();

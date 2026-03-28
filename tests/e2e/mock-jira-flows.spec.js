@@ -2,6 +2,7 @@ const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = r
 const {popupModel} = require('./helpers/popup');
 const {deleteIssueComment, getIssueComments, getLiveIssue, getMentionUsers} = require('./helpers/live-jira-api');
 const {ensurePreviewAttachment} = require('./helpers/live-jira-seed');
+const {patchJsonResponse} = require('./helpers/jira-route-mocks');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
 
 const TEST_PNG_BYTES = Array.from(Buffer.from(
@@ -80,6 +81,103 @@ test('renders Jira metadata, comments, attachments, pull requests, and custom fi
       await expect(page.locator('._JX_attachment, ._JX_thumb').first()).toBeVisible();
     }
   }
+  await page.close();
+});
+
+test('keeps editable custom fields visible when they are currently empty', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Empty custom field placeholder coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^?]+(?:\\?.*)?$', payload => ({
+    ...payload,
+    names: {
+      ...payload.names,
+      customfield_22222: 'Customer Tier',
+    },
+    fields: {
+      ...payload.fields,
+      customfield_22222: null,
+    },
+  }));
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      customfield_22222: {
+        required: false,
+        name: 'Customer Tier',
+        key: 'customfield_22222',
+        schema: {
+          type: 'option',
+          custom: 'com.atlassian.jira.plugin.system.customfieldtypes:select',
+        },
+        operations: ['set'],
+        allowedValues: [
+          {id: '20001', value: 'Gold'},
+          {id: '20002', value: 'Silver'},
+        ],
+      },
+    },
+  }));
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    customFields: [{fieldId: 'customfield_22222', row: 2}],
+  }, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await expect(popup.root).toContainText('Customer Tier: --');
+  await expect(page.locator('button[data-field-key="customfield_22222"]')).toBeVisible();
+
+  await page.close();
+});
+
+test('supports search-based editing for user picker custom fields', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'User-picker custom field coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^?]+(?:\\?.*)?$', payload => ({
+    ...payload,
+    names: {
+      ...payload.names,
+      customfield_54321: 'Approver',
+    },
+    fields: {
+      ...payload.fields,
+      customfield_54321: null,
+    },
+  }));
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      customfield_54321: {
+        required: false,
+        name: 'Approver',
+        key: 'customfield_54321',
+        schema: {
+          type: 'user',
+          custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker',
+        },
+        operations: ['set'],
+      },
+    },
+  }));
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    customFields: [{fieldId: 'customfield_54321', row: 2}],
+  }, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await expect(popup.root).toContainText('Approver: --');
+  await page.locator('button[data-field-key="customfield_54321"]').click();
+  await page.locator('input[data-field-key="customfield_54321"]').fill('Alex');
+  const alexOption = page.locator('button[data-field-key="customfield_54321"]').filter({hasText: 'Alex Reviewer'}).first();
+  await expect(alexOption).toBeVisible();
+
   await page.close();
 });
 

@@ -98,6 +98,36 @@ function defaultRouteContent(origin) {
         </div>
       </div>
     `),
+    '/modifier-same-container': createHtml('Modifier Same Container Fixture', `
+      <h1>Modifier Same Container Fixture</h1>
+      <div class="card" id="same-container-parent" style="display: flex; align-items: center; gap: 32px; min-height: 120px;">
+        <span id="same-container-key" class="marker">JRACLOUD-97846</span>
+        <span id="same-container-blank" style="display: inline-block; min-width: 260px; min-height: 48px; border: 1px dashed #ccd; border-radius: 8px; padding: 12px;">blank zone</span>
+      </div>
+    `),
+    '/adjacent-message-list': createHtml('Adjacent Message List Fixture', `
+      <h1>Adjacent Message List Fixture</h1>
+      <div class="stack" style="gap: 0; max-width: 720px; border: 1px solid #ccd; border-radius: 12px; overflow: hidden;">
+        <div id="message-row-top" style="display:grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #eef; background: #fff;">
+          <span>top@example.com</span>
+          <span>No Jira reference here</span>
+        </div>
+        <div id="message-row-middle" style="display:grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #eef; background: #f9fbff;">
+          <span>jira@example.com</span>
+          <span id="message-row-middle-subject">Release note for JRACLOUD-97846</span>
+        </div>
+        <div id="message-row-bottom" style="display:grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 20px; background: #fff;">
+          <span>bottom@example.com</span>
+          <span>No Jira reference here either</span>
+        </div>
+      </div>
+    `),
+    '/modifier-near-token': createHtml('Modifier Near Token Fixture', `
+      <h1>Modifier Near Token Fixture</h1>
+      <div class="card" style="font-size: 18px; line-height: 1.8;">
+        <span id="near-token-key" class="marker">JRACLOUD-97846</span><span id="near-token-gap" style="display:inline-block; width: 28px; height: 1.8em;"></span><span>adjacent blank area</span>
+      </div>
+    `),
   };
 }
 
