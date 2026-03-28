@@ -1601,11 +1601,23 @@ async function mainAsyncLocal() {
   }
 
   async function proxyUserAvatars(users) {
+    const beforeUrls = new Map();
+    (users || []).forEach(user => {
+      const url = user?.avatarUrls?.['48x48'];
+      if (url) beforeUrls.set(user, url);
+    });
     await Promise.all((users || []).map(user => {
       const url = user?.avatarUrls?.['48x48'];
       if (!url) return Promise.resolve();
       return getDisplayImageUrl(url).then(src => { user.avatarUrls['48x48'] = src; }).catch(() => {});
     }));
+    // Propagate shared-avatar status from raw URLs to their proxied data URIs
+    for (const [user, rawUrl] of beforeUrls) {
+      const proxiedUrl = user?.avatarUrls?.['48x48'];
+      if (proxiedUrl && proxiedUrl !== rawUrl && sharedAvatarUrls.has(rawUrl)) {
+        sharedAvatarUrls.add(proxiedUrl);
+      }
+    }
     return users;
   }
 
@@ -2295,14 +2307,26 @@ async function mainAsyncLocal() {
     if (!label) {
       return null;
     }
+    if (entry && typeof entry === 'object' && (entry.accountId || entry.avatarUrls || entry.emailAddress)) {
+      const view = buildUserView(entry);
+      const id = view.accountId || view.name || view.key;
+      if (!id) {
+        return null;
+      }
+      return buildEditOption(id, label, {
+        avatarUrl: view.avatarUrl,
+        initials: view.initials,
+        metaText: view.emailAddress || view.name || view.key || '',
+        rawValue: entry
+      });
+    }
     const optionId = String(entry?.id || entry?.value || entry?.name || entry?.key || label).trim();
     if (!optionId) {
       return null;
     }
-    const metaText = entry?.description || entry?.emailAddress || entry?.child?.value || '';
+    const metaText = entry?.description || entry?.child?.value || '';
     return buildEditOption(optionId, label, {
       iconUrl: entry?.iconUrl || '',
-      avatarUrl: entry?.avatarUrls?.['48x48'] || '',
       metaText,
       rawValue: entry
     });
@@ -3412,7 +3436,6 @@ async function mainAsyncLocal() {
     return {
       displayName,
       avatarUrl: useInitials ? '' : rawAvatarUrl,
-      rawAvatarUrl,
       initials: getUserInitials(displayName, '--'),
       accountId: user?.accountId || '',
       name: user?.name || user?.username || '',
@@ -4163,6 +4186,7 @@ async function mainAsyncLocal() {
     tempoAccountSearchCache.clear();
     userPickerSearchCache.clear();
     userPickerLocalOptionsCache.clear();
+    sharedAvatarUrls.clear();
     watcherSearchCache.clear();
     issueSearchCache.clear();
     [...assigneeSearchCache.keys()].forEach(cacheKey => {
