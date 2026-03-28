@@ -44,7 +44,7 @@
                         {{#options}}
                         <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="assignee" data-option-id="{{id}}" title="{{title}}">
                             {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
                             {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
                             <span class="_JX_edit_option_text">
                                 <span class="_JX_edit_option_label">{{label}}</span>
@@ -172,7 +172,7 @@
                             {{#options}}
                             <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
                                 {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                                {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                                {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
                                 {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
                                 <span class="_JX_edit_option_text">
                                     <span class="_JX_edit_option_label">{{label}}</span>
@@ -336,7 +336,7 @@
                         {{^isGroupLabel}}
                         <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
                             {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
                             {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
                             <span class="_JX_edit_option_text">
                                 <span class="_JX_edit_option_label">{{label}}</span>
@@ -418,7 +418,7 @@
                         {{#options}}
                         <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
                             {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}
+                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
                             {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
                             <span class="_JX_edit_option_text">
                                 <span class="_JX_edit_option_label">{{label}}</span>

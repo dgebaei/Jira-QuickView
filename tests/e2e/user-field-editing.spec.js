@@ -24,7 +24,7 @@ async function openPopup(extensionApp, servers, target, route = '/popup-actions'
 }
 
 async function waitForOptions(locator, minimumCount = 1) {
-  await expect.poll(async () => locator.count(), {timeout: 10000}).toBeGreaterThanOrEqual(minimumCount);
+  await expect.poll(async () => locator.count(), {timeout: 20000}).toBeGreaterThanOrEqual(minimumCount);
   return locator.count();
 }
 

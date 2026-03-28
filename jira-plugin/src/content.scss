@@ -2026,6 +2026,17 @@ body ._JX {
     width: 16px;
   }
 
+  &_edit_option_avatar_placeholder {
+    align-items: center;
+    background: #c1c7d0;
+    color: #fff;
+    display: inline-flex;
+    font-size: 9px;
+    font-weight: 700;
+    justify-content: center;
+    line-height: 1;
+  }
+
   &_edit_option_text {
     display: flex;
     flex: 1 1 auto;

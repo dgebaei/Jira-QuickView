@@ -1583,7 +1583,8 @@ async function mainAsyncLocal() {
         return;
       }
       const option = buildEditOption(id, view.displayName || id, {
-        avatarUrl: view.rawAvatarUrl,
+        avatarUrl: view.avatarUrl,
+        initials: view.initials,
         metaText: view.emailAddress || view.name || view.key || '',
         searchText: `${view.displayName} ${view.name} ${view.key} ${view.emailAddress}`,
         rawValue: {
@@ -1597,6 +1598,15 @@ async function mainAsyncLocal() {
       }
     });
     return [...uniqueById.values()];
+  }
+
+  async function proxyUserAvatars(users) {
+    await Promise.all((users || []).map(user => {
+      const url = user?.avatarUrls?.['48x48'];
+      if (!url) return Promise.resolve();
+      return getDisplayImageUrl(url).then(src => { user.avatarUrls['48x48'] = src; }).catch(() => {});
+    }));
+    return users;
   }
 
   async function fetchAssignableUsers(query, issueData) {
@@ -1618,7 +1628,7 @@ async function mainAsyncLocal() {
         const response = await get(url);
         if (Array.isArray(response)) {
           detectSharedAvatarUrls(response);
-          return response;
+          return proxyUserAvatars(response);
         }
       } catch (error) {
         lastError = error;
@@ -1659,6 +1669,7 @@ async function mainAsyncLocal() {
           : response?.users || response?.items || [];
         if (Array.isArray(users)) {
           detectSharedAvatarUrls(users);
+          await proxyUserAvatars(users);
           return normalizeAssignableUsers(users);
         }
       } catch (error) {
@@ -1756,15 +1767,7 @@ async function mainAsyncLocal() {
       ]);
       const rawWatchers = response?.watchers || [];
       detectSharedAvatarUrls(rawWatchers);
-      await Promise.all(rawWatchers.map(watcher => {
-        const avatarUrl = watcher?.avatarUrls?.['48x48'];
-        if (!avatarUrl) {
-          return Promise.resolve();
-        }
-        return getDisplayImageUrl(avatarUrl).then(src => {
-          watcher.avatarUrls['48x48'] = src;
-        }).catch(() => {});
-      }));
+      await proxyUserAvatars(rawWatchers);
       const normalizedWatchers = normalizeWatcherUsers(rawWatchers, currentUser);
       const responseWatchCount = Number(response?.watchCount);
       return {
