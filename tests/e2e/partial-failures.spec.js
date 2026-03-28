@@ -2,6 +2,11 @@ const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = r
 const {failWithJson, fulfillMalformedJson} = require('./helpers/jira-route-mocks');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
 
+const TEST_PNG_BYTES = Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0wAAAABJRU5ErkJggg==',
+  'base64'
+));
+
 function baseConfig(servers, target) {
   return buildExtensionConfig(servers, {
     customFields: target.mode === 'mock' ? [{fieldId: 'customfield_12345', row: 2}] : [],
@@ -21,6 +26,20 @@ async function openPopup(extensionApp, servers, target) {
   await hoverIssueKey(page, '#popup-key');
   await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
   return {page, target: resolvedTarget};
+}
+
+async function pasteImageIntoComment(page) {
+  await page.locator('._JX_comment_input').evaluate((element, bytes) => {
+    const file = new File([new Uint8Array(bytes)], 'paste.png', {type: 'image/png'});
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    const event = typeof ClipboardEvent === 'function'
+      ? new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: dataTransfer})
+      : new Event('paste', {bubbles: true, cancelable: true});
+    Object.defineProperty(event, 'clipboardData', {value: dataTransfer});
+    Object.defineProperty(event, 'originalEvent', {value: {clipboardData: dataTransfer}});
+    element.dispatchEvent(event);
+  }, TEST_PNG_BYTES);
 }
 
 test('keeps core issue rendering when pull request endpoints fail', async ({extensionApp, optionsPage, servers}) => {
@@ -201,7 +220,7 @@ test('renders graceful empty states for labels, parent, and fix versions', async
   await expect(popup).toContainText(/Labels\s*:\s*--/);
 
   await page.locator('._JX_field_chip_edit[data-field-key="parentLink"]').click();
-  await expect(page.locator('._JX_edit_popover').last()).toContainText('No matching values');
+  await expect(page.locator('._JX_edit_popover[data-field-key="parentLink"]')).toContainText('No matching values');
   await page.locator('._JX_edit_cancel[data-field-key="parentLink"]').click();
 
   await page.locator('._JX_field_chip_edit[data-field-key="fixVersions"]').click();
@@ -209,8 +228,24 @@ test('renders graceful empty states for labels, parent, and fix versions', async
   await page.locator('._JX_edit_discard[data-field-key="fixVersions"]').click();
 
   await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
-  await expect(page.locator('._JX_edit_popover').last()).toContainText('No matching values');
+  await expect(page.locator('._JX_edit_popover[data-field-key="labels"]')).toContainText('No matching values');
   await page.locator('._JX_edit_discard[data-field-key="labels"]').click();
+
+  await page.close();
+});
+
+test('shows a composer error when pasted image upload fails', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Pasted-image failure coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('attachment-upload-fails');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  await pasteImageIntoComment(page);
+
+  await expect(page.locator('._JX_comment_error')).toContainText(/HTTP 500|Could not upload pasted image/);
+  await expect(page.locator('._JX_comment_upload_status')).toContainText(/HTTP 500|Could not upload pasted image/);
 
   await page.close();
 });

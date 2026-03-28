@@ -98,6 +98,14 @@ async function configureExtension(optionsPage, config) {
     normalizedUrl += '/';
   }
 
+  const tooltipLayout = config.tooltipLayout || {
+    row1: ['issueType', 'status', 'priority', 'epicParent'],
+    row2: ['sprint', 'affects', 'fixVersions'],
+    row3: ['environment', 'labels'],
+    contentBlocks: ['description', 'attachments', 'comments', 'pullRequests'],
+    people: ['reporter', 'assignee']
+  };
+
   const storageData = {
     instanceUrl: normalizedUrl,
     domains: config.domains,
@@ -105,13 +113,7 @@ async function configureExtension(optionsPage, config) {
     hoverModifierKey: config.hoverModifierKey || 'none',
     displayFields: config.displayFields || {},
     customFields: config.customFields || [],
-    tooltipLayout: {
-      row1: ['issueType', 'status', 'priority', 'epicParent'],
-      row2: ['sprint', 'affects', 'fixVersions'],
-      row3: ['environment', 'labels'],
-      contentBlocks: ['description', 'attachments', 'comments', 'pullRequests'],
-      people: ['reporter', 'assignee']
-    },
+    tooltipLayout,
     v15upgrade: true
   };
 

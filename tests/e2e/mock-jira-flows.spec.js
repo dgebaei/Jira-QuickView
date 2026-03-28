@@ -1,7 +1,14 @@
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
+const {popupModel} = require('./helpers/popup');
 const {deleteIssueComment, getIssueComments, getLiveIssue, getMentionUsers} = require('./helpers/live-jira-api');
 const {ensurePreviewAttachment} = require('./helpers/live-jira-seed');
+const {patchJsonResponse} = require('./helpers/jira-route-mocks');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
+
+const TEST_PNG_BYTES = Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0wAAAABJRU5ErkJggg==',
+  'base64'
+));
 
 function baseConfig(servers, target) {
   return buildExtensionConfig(servers, {
@@ -23,6 +30,24 @@ async function openPopup(extensionApp, servers, target) {
   await hoverIssueKey(page, '#popup-key');
   await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
   return {page, target: resolvedTarget};
+}
+
+async function pasteImageIntoComment(page) {
+  await page.locator('._JX_comment_input').evaluate((element, bytes) => {
+    const file = new File([new Uint8Array(bytes)], 'paste.png', {type: 'image/png'});
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    const event = typeof ClipboardEvent === 'function'
+      ? new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: dataTransfer})
+      : new Event('paste', {bubbles: true, cancelable: true});
+    Object.defineProperty(event, 'clipboardData', {
+      value: dataTransfer,
+    });
+    Object.defineProperty(event, 'originalEvent', {
+      value: {clipboardData: dataTransfer},
+    });
+    element.dispatchEvent(event);
+  }, TEST_PNG_BYTES);
 }
 
 test('renders Jira metadata, comments, attachments, pull requests, and custom fields', async ({extensionApp, optionsPage, servers}) => {
@@ -59,6 +84,103 @@ test('renders Jira metadata, comments, attachments, pull requests, and custom fi
   await page.close();
 });
 
+test('keeps editable custom fields visible when they are currently empty', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Empty custom field placeholder coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^?]+(?:\\?.*)?$', payload => ({
+    ...payload,
+    names: {
+      ...payload.names,
+      customfield_22222: 'Customer Tier',
+    },
+    fields: {
+      ...payload.fields,
+      customfield_22222: null,
+    },
+  }));
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      customfield_22222: {
+        required: false,
+        name: 'Customer Tier',
+        key: 'customfield_22222',
+        schema: {
+          type: 'option',
+          custom: 'com.atlassian.jira.plugin.system.customfieldtypes:select',
+        },
+        operations: ['set'],
+        allowedValues: [
+          {id: '20001', value: 'Gold'},
+          {id: '20002', value: 'Silver'},
+        ],
+      },
+    },
+  }));
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    customFields: [{fieldId: 'customfield_22222', row: 2}],
+  }, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await expect(popup.root).toContainText('Customer Tier: --');
+  await expect(page.locator('button[data-field-key="customfield_22222"]')).toBeVisible();
+
+  await page.close();
+});
+
+test('supports search-based editing for user picker custom fields', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'User-picker custom field coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^?]+(?:\\?.*)?$', payload => ({
+    ...payload,
+    names: {
+      ...payload.names,
+      customfield_54321: 'Approver',
+    },
+    fields: {
+      ...payload.fields,
+      customfield_54321: null,
+    },
+  }));
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      customfield_54321: {
+        required: false,
+        name: 'Approver',
+        key: 'customfield_54321',
+        schema: {
+          type: 'user',
+          custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker',
+        },
+        operations: ['set'],
+      },
+    },
+  }));
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    customFields: [{fieldId: 'customfield_54321', row: 2}],
+  }, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await expect(popup.root).toContainText('Approver: --');
+  await page.locator('button[data-field-key="customfield_54321"]').click();
+  await page.locator('input[data-field-key="customfield_54321"]').fill('Alex');
+  const alexOption = page.locator('button[data-field-key="customfield_54321"]').filter({hasText: 'Alex Reviewer'}).first();
+  await expect(alexOption).toBeVisible();
+
+  await page.close();
+});
+
 test('copies the Jira issue link and previews attachment images', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
@@ -76,8 +198,9 @@ test('copies the Jira issue link and previews attachment images', async ({extens
   const previewable = page.locator('._JX_previewable');
   await expect.poll(async () => previewable.count(), {timeout: 10000}).toBeGreaterThan(0);
   await previewable.first().click();
-  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
-  await expect(page.locator('._JX_preview_image')).toHaveAttribute('src', /\S+/);
+  const popup = popupModel(page);
+  await expect(popup.previewOverlay).toHaveClass(/is-open/);
+  await expect(popup.previewImage).toHaveAttribute('src', /\S+/);
   await page.keyboard.press('Escape');
   await page.close();
 });
@@ -209,5 +332,21 @@ test('supports mentions and saving new comments in mocked mode', async ({extensi
       await deleteIssueComment(resolvedTarget.primaryIssueKey, createdComment.id, resolvedTarget);
     }
   }
+  await page.close();
+});
+
+test('uploads a pasted image into the comment composer in mocked mode', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Pasted-image upload coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  await pasteImageIntoComment(page);
+
+  await expect(page.locator('._JX_comment_upload_status')).toContainText('Attached to issue');
+  await expect(page.locator('._JX_comment_input')).toHaveValue(/!pasted-image.*\.png!/);
+
   await page.close();
 });

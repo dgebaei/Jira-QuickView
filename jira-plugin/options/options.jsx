@@ -198,7 +198,7 @@ function SortableField({ id, label, onRemove }) {
   };
 
   return (
-    <div ref={setNodeRef} style={style} className='fieldPill' {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} className='fieldPill' data-testid={`options-tooltip-row-item-${id}`} tabIndex={0} {...attributes} {...listeners}>
       <span className='fieldPillLabel'>{label}</span>
       {onRemove && (
         <button
@@ -275,12 +275,12 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
   };
 
   return (
-    <div className='fieldLibrary'>
+    <div className='fieldLibrary' data-testid='options-field-library'>
       {fields.map(field => (
-        <div key={field.key} className='fieldLibraryItem'>
+        <div key={field.key} className='fieldLibraryItem' data-testid={`options-field-library-item-${field.key}`}>
           <DraggableLibraryField id={field.key} label={field.label} />
           {field.key.startsWith('custom_') && (
-            <button type='button' className='fieldLibraryRemove' onClick={() => onRemoveCustomField(field.key)} title='Remove field'>×</button>
+            <button type='button' data-testid={`options-field-library-remove-${field.key}`} className='fieldLibraryRemove' onClick={() => onRemoveCustomField(field.key)} title='Remove field'>×</button>
           )}
         </div>
       ))}
@@ -291,6 +291,7 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
         <div className='fieldLibraryAdd'>
           <input
             type='text'
+            data-testid='options-field-library-input'
             className='fieldLibraryInput'
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -299,15 +300,15 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
             autoFocus
           />
           {validationMsg && (
-            <div className={`fieldLibraryValidation fieldLibraryValidation--${validationTone}`}>{validationMsg}</div>
+            <div data-testid='options-field-library-validation' className={`fieldLibraryValidation fieldLibraryValidation--${validationTone}`}>{validationMsg}</div>
           )}
           <div className='fieldLibraryAddActions'>
-            <button type='button' className='fieldLibraryAddBtn' onClick={handleCancel} title='Cancel'>✕</button>
-            <button type='button' className='fieldLibraryAddBtn fieldLibraryAddBtnSave' onClick={handleSave} disabled={!canSave} title='Save'>✓</button>
+            <button type='button' data-testid='options-field-library-cancel' className='fieldLibraryAddBtn' onClick={handleCancel} title='Cancel'>✕</button>
+            <button type='button' data-testid='options-field-library-save' className='fieldLibraryAddBtn fieldLibraryAddBtnSave' onClick={handleSave} disabled={!canSave} title='Save'>✓</button>
           </div>
         </div>
       ) : (
-        <button type='button' className='fieldLibraryAddFieldBtn' onClick={() => setAdding(true)}>
+        <button type='button' data-testid='options-field-library-add' className='fieldLibraryAddFieldBtn' onClick={() => setAdding(true)}>
           + Add field
         </button>
       )}
@@ -335,6 +336,8 @@ function DroppableZone({ id, title, fields, onRemove, isOver }) {
   return (
     <div
       ref={setNodeRef}
+      data-testid={`options-tooltip-row-${id}`}
+      data-layout-order={fields.map(field => field.key).join(',')}
       className={`tooltipPreviewRow ${isOver ? 'tooltipPreviewRowOver' : ''}`}
     >
       <span className='tooltipPreviewRowLabel'>{title}</span>
@@ -374,7 +377,7 @@ function SortableContentBlock({ id, label, onRemove }) {
   };
 
   return (
-    <div ref={setNodeRef} style={style} className='contentBlockItem' {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} className='contentBlockItem' data-testid={`options-content-block-item-${id}`} tabIndex={0} {...attributes} {...listeners}>
       <span className='contentBlockDragHandle'>⋮⋮</span>
       <span>{label}</span>
       <button
@@ -399,6 +402,8 @@ function DraggableContentBlock({ id, label }) {
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={`options-content-block-library-item-${id}`}
+      tabIndex={0}
       className={`contentBlockItem ${isDragging ? 'contentBlockItemDragging' : ''}`}
       {...listeners}
       {...attributes}
@@ -409,11 +414,11 @@ function DraggableContentBlock({ id, label }) {
   );
 }
 
-function DroppableContentBlocks({ id, isOver, children }) {
+function DroppableContentBlocks({ id, isOver, children, order }) {
   const { setNodeRef } = useDroppable({ id });
 
   return (
-    <div ref={setNodeRef} className={`tooltipPreviewContentList ${isOver ? 'tooltipPreviewContentListOver' : ''}`}>
+    <div ref={setNodeRef} data-testid='options-content-blocks-dropzone' data-content-order={order.join(',')} className={`tooltipPreviewContentList ${isOver ? 'tooltipPreviewContentListOver' : ''}`}>
       {children}
     </div>
   );
@@ -700,7 +705,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
               <div className='tooltipPreview'>
                 <div className='tooltipPreviewContentBlocks'>
                   <span className='tooltipPreviewContentLabel'>Content Blocks</span>
-                  <DroppableContentBlocks id={CONTENT_BLOCKS_DROPPABLE} isOver={overId === CONTENT_BLOCKS_DROPPABLE}>
+                  <DroppableContentBlocks id={CONTENT_BLOCKS_DROPPABLE} isOver={overId === CONTENT_BLOCKS_DROPPABLE} order={tooltipLayout.contentBlocks}>
                     <div className='contentBlockItem contentBlockItemRequired'>
                       <span>Description</span>
                       <span className='contentBlockAlways'>Always shown</span>
@@ -732,7 +737,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
 
           <DragOverlay>
             {activeId ? (
-              <div className='fieldPill fieldPillDragging'>
+              <div className='fieldPill fieldPillDragging' data-testid='options-drag-overlay'>
                 <span className='fieldPillLabel'>
                   {allFields[activeId] || (CONTENT_BLOCK_KEYS.find(b => b.key === activeId)?.label) || activeId}
                 </span>
@@ -843,6 +848,35 @@ function ConfigPage(props) {
   const handleThemeChange = (mode) => {
     setThemeMode(normalizeThemeMode(mode));
   };
+
+  const moveContentBlock = useCallback((blockKey, toIndex) => {
+    setTooltipLayout(prev => {
+      const currentBlocks = Array.isArray(prev.contentBlocks) ? [...prev.contentBlocks] : [];
+      const currentIndex = currentBlocks.indexOf(blockKey);
+      if (currentIndex === -1) {
+        return prev;
+      }
+
+      currentBlocks.splice(currentIndex, 1);
+      const nextIndex = Math.max(0, Math.min(Number(toIndex) || 0, currentBlocks.length));
+      currentBlocks.splice(nextIndex, 0, blockKey);
+      return {
+        ...prev,
+        contentBlocks: currentBlocks,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    window.__JHL_TEST_API__ = {
+      moveContentBlock,
+      getTooltipLayout: () => tooltipLayout,
+    };
+
+    return () => {
+      delete window.__JHL_TEST_API__;
+    };
+  }, [moveContentBlock, tooltipLayout]);
 
   const exportSettings = () => {
     const config = {
@@ -1003,7 +1037,7 @@ function ConfigPage(props) {
   const statusMessage = status || (hasInvalidCustomFields ? 'Fix invalid custom field IDs before saving.' : 'Changes are local until you save them.');
 
   return (
-    <div className='optionsPage'>
+    <div className='optionsPage' data-testid='options-root'>
       {/* ── Hero ─────────────────────────────────────────── */}
       <header className='heroCard'>
         <div className='heroLeft'>
@@ -1014,7 +1048,7 @@ function ConfigPage(props) {
           </p>
         </div>
         <div className='heroRight'>
-          <div className='statusPill'>
+          <div className='statusPill' data-testid='options-status-pill'>
             <span className={`statusPillDot ${statusTone === 'success' ? 'statusPillDotActive' : ''}`} />
             {statusMessage}
           </div>
@@ -1034,8 +1068,9 @@ function ConfigPage(props) {
           <div className='cardBody'>
             <label className='formField'>
               <span className='fieldLabel'>Jira instance URL</span>
-              <input
-                id='instanceUrl'
+                <input
+                  data-testid='options-instance-url'
+                  id='instanceUrl'
                 type='text'
                 value={instanceUrl}
                 onChange={event => setInstanceUrl(event.target.value)}
@@ -1045,8 +1080,9 @@ function ConfigPage(props) {
 
             <label className='formField'>
               <span className='fieldLabel'>Allowed pages</span>
-              <textarea
-                id='domains'
+                <textarea
+                  data-testid='options-domains'
+                  id='domains'
                 value={domainsText}
                 onChange={event => setDomainsText(event.target.value)}
                 placeholder='github.com, outlook.office.com' />
@@ -1071,10 +1107,11 @@ function ConfigPage(props) {
             <span className='fieldLabel'>Color mode</span>
             <div className='themePills'>
               {SUPPORTED_THEME_MODES.map(mode => (
-                <button
-                  key={mode}
-                  type='button'
-                  className={`themePill ${themeMode === mode ? 'themePillSelected' : 'themePillUnselected'}`}
+                  <button
+                    key={mode}
+                    type='button'
+                    data-testid={`options-theme-mode-${mode}`}
+                    className={`themePill ${themeMode === mode ? 'themePillSelected' : 'themePillUnselected'}`}
                   onClick={() => handleThemeChange(mode)}
                 >
                   {mode === 'system' ? 'System' : mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -1098,6 +1135,7 @@ function ConfigPage(props) {
         </div>
         <button
           type='button'
+          data-testid='options-advanced-toggle'
           className='advToggleBtn'
           onClick={toggleAdvanced}
           aria-expanded={showAdvanced}
@@ -1120,7 +1158,7 @@ function ConfigPage(props) {
               <div className='hoverRow'>
                 <label className='formField'>
                   <span className='fieldLabel'>Trigger depth</span>
-                  <select value={hoverDepth} onChange={event => setHoverDepth(event.target.value)}>
+                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)}>
                     <option value='exact'>Exact — only the hovered element itself</option>
                     <option value='shallow'>Shallow — hovered element + immediate parent</option>
                     <option value='deep'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
@@ -1133,7 +1171,7 @@ function ConfigPage(props) {
 
                 <label className='formField'>
                   <span className='fieldLabel'>Modifier key</span>
-                  <select value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
+                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
                     <option value='none'>None — hover alone triggers the tooltip</option>
                     <option value='alt'>Alt — press Alt after hovering</option>
                     <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
@@ -1176,13 +1214,13 @@ function ConfigPage(props) {
             </div>
             <div className='cardBody'>
               <div className='syncButtons'>
-                <button type='button' className='syncBtn' onClick={exportSettings}>
+                <button type='button' data-testid='options-export-settings' className='syncBtn' onClick={exportSettings}>
                   &#10132; Export Settings (.json)
                 </button>
-                <button type='button' className='syncBtn' onClick={importSettings}>
+                <button type='button' data-testid='options-import-settings' className='syncBtn' onClick={importSettings}>
                   &#10132; Import Settings (.json)
                 </button>
-                <button type='button' className='syncBtn proButton' onClick={showProModal}>
+                <button type='button' data-testid='options-team-sync' className='syncBtn proButton' onClick={showProModal}>
                   &#10022; Team Sync (Pro)
                 </button>
               </div>
@@ -1201,15 +1239,16 @@ function ConfigPage(props) {
         </div>
         <div className='actionControlsRow'>
           {(status || hasInvalidCustomFields) && (
-            <span className={`saveNotice saveNotice${statusTone.charAt(0).toUpperCase() + statusTone.slice(1)}`}>
-              {status || 'Fix invalid custom field IDs before saving.'}
-            </span>
-          )}
-          <button type='button' className='ghostButton' onClick={discardOptions} disabled={isSaving}>
+              <span data-testid='options-save-notice' className={`saveNotice saveNotice${statusTone.charAt(0).toUpperCase() + statusTone.slice(1)}`}>
+                {status || 'Fix invalid custom field IDs before saving.'}
+              </span>
+            )}
+          <button type='button' data-testid='options-discard' className='ghostButton' onClick={discardOptions} disabled={isSaving}>
             Discard
           </button>
           <button
             type='button'
+            data-testid='options-save'
             className={`saveBtn primaryButton${isDirty ? ' saveBtnDirty' : ''}`}
             onClick={saveOptions}
             disabled={isSaving || hasInvalidCustomFields}

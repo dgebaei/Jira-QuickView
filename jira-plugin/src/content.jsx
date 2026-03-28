@@ -303,6 +303,7 @@ async function mainAsyncLocal() {
   const editMetaCache = new Map();
   const transitionOptionsCache = new Map();
   const assigneeSearchCache = new Map();
+  const genericUserSearchCache = new Map();
   const assigneeLocalOptionsCache = new Map();
   const watcherListCache = new Map();
   const watcherSearchCache = new Map();
@@ -1920,6 +1921,17 @@ async function mainAsyncLocal() {
     }, 5000);
   }
 
+  async function searchGenericUsers(query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    const cacheKey = `picker__${normalizedQuery}`;
+    return getCachedValue(genericUserSearchCache, cacheKey, async () => {
+      const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(normalizedQuery)}`);
+      const users = Array.isArray(response)
+        ? response
+        : response?.users || response?.items || [];
+      return normalizeAssignableUsers(users);
+    });
+  }
   function getPullRequestDataCached(issueId, applicationType) {
     const cacheKey = `${issueId}__${applicationType}`;
     return getCachedValue(pullRequestCache, cacheKey, () => {
@@ -2341,6 +2353,88 @@ async function mainAsyncLocal() {
     return `${fieldName}: ${primitive || '--'}`;
   }
 
+  function buildUserFieldOption(user) {
+    const optionId = String(user?.accountId || user?.name || user?.key || '').trim();
+    const label = String(user?.displayName || user?.name || user?.key || '').trim();
+    if (!optionId || !label) {
+      return null;
+    }
+    return buildEditOption(optionId, label, {
+      avatarUrl: user?.avatarUrls?.['48x48'] || '',
+      metaText: user?.emailAddress || user?.name || user?.key || '',
+      rawValue: {
+        accountId: user?.accountId || '',
+        displayName: user?.displayName || label,
+        name: user?.name || '',
+        key: user?.key || '',
+      }
+    });
+  }
+
+  function buildUserFieldPayloadCandidates(rawUser) {
+    if (!rawUser) {
+      return [];
+    }
+    const candidates = [];
+    const accountId = String(rawUser.accountId || '').trim();
+    const name = String(rawUser.name || '').trim();
+    const key = String(rawUser.key || '').trim();
+    if (accountId) {
+      candidates.push({accountId});
+    }
+    if (name) {
+      candidates.push({name});
+    }
+    if (key) {
+      candidates.push({key});
+    }
+    return candidates;
+  }
+
+  async function saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue) {
+    if (!issueData?.key || !fieldId) {
+      throw new Error('Missing issue key or field id');
+    }
+
+    if (isMultiValue) {
+      const fieldValue = selectedOptions
+        .map(option => buildUserFieldPayloadCandidates(option?.rawValue || option)[0])
+        .filter(Boolean);
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+        fields: {
+          [fieldId]: fieldValue
+        }
+      });
+      return;
+    }
+
+    const selectedOption = selectedOptions[0];
+    if (!selectedOption) {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+        fields: {
+          [fieldId]: null
+        }
+      });
+      return;
+    }
+
+    const payloadCandidates = buildUserFieldPayloadCandidates(selectedOption.rawValue || selectedOption);
+    let lastError = null;
+    for (const payload of payloadCandidates) {
+      try {
+        await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
+          fields: {
+            [fieldId]: payload
+          }
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Could not update user field');
+  }
+
   function buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta) {
     if (value === undefined || value === null || value === '') {
       return '';
@@ -2571,6 +2665,8 @@ async function mainAsyncLocal() {
     const capability = await getEditableFieldCapability(issueData, fieldId);
     const fieldMeta = capability.fieldMeta;
     const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
+    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
+    const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
 
     if (capability.editable && fieldMeta && isTempoAccountField(fieldMeta)) {
       const currentAccount = issueData?.fields?.[fieldId];
@@ -2597,6 +2693,48 @@ async function mainAsyncLocal() {
           return selectedOption?.label
             ? `${fieldName} set to ${selectedOption.label}`
             : `${fieldName} updated`;
+        }
+      };
+    }
+
+    if (capability.editable && fieldMeta && (schemaType === 'user' || (schemaType === 'array' && itemType === 'user'))) {
+      const operations = capability.operations || [];
+      if (!operations.includes('set')) {
+        return null;
+      }
+
+      const isMultiValue = schemaType === 'array' && itemType === 'user';
+      const currentValue = issueData?.fields?.[fieldId];
+      const currentEntries = isMultiValue
+        ? (Array.isArray(currentValue) ? currentValue : [])
+        : (currentValue ? [currentValue] : []);
+      const currentSelections = currentEntries
+        .map(buildUserFieldOption)
+        .filter(Boolean);
+
+      const mergeUserOptions = searchedOptions => mergeEditOptions(currentSelections, searchedOptions);
+      return {
+        fieldKey: fieldId,
+        editorType: 'user-search',
+        label: fieldName,
+        fieldMeta,
+        supportDescriptor: {selectionMode: isMultiValue ? 'multi' : 'single', valueKind: 'user'},
+        selectionMode: isMultiValue ? 'multi' : 'single',
+        currentText: buildCustomFieldValueText(fieldName, currentValue),
+        currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
+        currentSelections,
+        initialInputValue: '',
+        inputPlaceholder: 'Search users',
+        loadOptions: async () => mergeUserOptions(await searchGenericUsers('')),
+        searchOptions: async query => mergeUserOptions(await searchGenericUsers(query)),
+        save: selectedOptions => saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue),
+        successMessage: selectedOptions => {
+          if (!selectedOptions.length) {
+            return `${fieldName} cleared`;
+          }
+          return isMultiValue
+            ? `${fieldName} updated`
+            : `${fieldName} set to ${selectedOptions[0].label}`;
         }
       };
     }
@@ -4074,8 +4212,8 @@ async function mainAsyncLocal() {
   // ── Popup Rendering & State ────────────────────────────────
   const container = $('<div class="_JX_container" data-testid="jira-popup-root">');
   const previewOverlay = $(`
-    <div class="_JX_preview_overlay">
-      <img class="_JX_preview_image" />
+    <div class="_JX_preview_overlay" data-testid="jira-popup-preview-overlay">
+      <img class="_JX_preview_image" data-testid="jira-popup-preview-image" />
     </div>
   `);
   $(document.body).append(container);
@@ -5653,7 +5791,38 @@ async function mainAsyncLocal() {
     return [];
   }
 
-  let pendingHover = null;
+  let currentPointer = {
+    clientX: Number.NaN,
+    clientY: Number.NaN,
+    pageX: Number.NaN,
+    pageY: Number.NaN,
+  };
+
+  document.addEventListener('mousemove', function (e) {
+    currentPointer = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      pageX: e.pageX,
+      pageY: e.pageY,
+    };
+  }, {passive: true});
+
+  function isTypingTarget(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+    if (node.matches('input, textarea, select')) {
+      return true;
+    }
+    if (node.closest('input, textarea, select, [role="textbox"]')) {
+      return true;
+    }
+    if (node.isContentEditable) {
+      return true;
+    }
+    const editableAncestor = node.closest('[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]');
+    return !!editableAncestor;
+  }
 
   function isModifierSatisfied(e) {
     if (hoverModifierKey === 'alt') return e.altKey;
@@ -5661,6 +5830,167 @@ async function mainAsyncLocal() {
     if (hoverModifierKey === 'shift') return e.shiftKey;
     if (hoverModifierKey === 'any') return e.altKey || e.ctrlKey || e.shiftKey;
     return true;
+  }
+
+  function getUniqueResolvedKeys(keys) {
+    return Array.from(new Set((Array.isArray(keys) ? keys : [])
+      .map(key => String(key || '').replace(' ', '-').trim())
+      .filter(Boolean)));
+  }
+
+  function getSingleResolvedKey(keys) {
+    const uniqueKeys = getUniqueResolvedKeys(keys);
+    return uniqueKeys.length === 1 ? uniqueKeys[0] : '';
+  }
+
+  function getKeyMatches(text) {
+    return Array.from(String(text || '').matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g)).map(match => ({
+      key: match[0].replace(' ', '-'),
+      start: match.index || 0,
+      end: (match.index || 0) + match[0].length,
+    }));
+  }
+
+  function getKeyAtTextOffset(text, offset) {
+    if (!Number.isFinite(offset)) {
+      return '';
+    }
+    const matches = getKeyMatches(text);
+    const directMatch = matches.find(match => offset >= match.start && offset <= match.end);
+    return directMatch ? directMatch.key : '';
+  }
+
+  function getVisibleKeyInTextNodeAtPoint(textNode, clientX, clientY) {
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+      return '';
+    }
+
+    const matches = getKeyMatches(textNode.textContent || '');
+    for (const match of matches) {
+      try {
+        const range = document.createRange();
+        range.setStart(textNode, match.start);
+        range.setEnd(textNode, match.end);
+        const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
+        if (rects.some(rect => isPointInsideRect(clientX, clientY, rect, 0))) {
+          return match.key;
+        }
+      } catch (error) {
+        // Ignore transient DOM/range failures while the host page updates.
+      }
+    }
+
+    return '';
+  }
+
+  function getPreciseKeyAtClientPoint(clientX, clientY) {
+    let pointNode = null;
+    let pointOffset = null;
+
+    if (typeof document.caretPositionFromPoint === 'function') {
+      const caretPosition = document.caretPositionFromPoint(clientX, clientY);
+      pointNode = caretPosition?.offsetNode || null;
+      pointOffset = caretPosition?.offset ?? null;
+    } else if (typeof document.caretRangeFromPoint === 'function') {
+      const caretRange = document.caretRangeFromPoint(clientX, clientY);
+      pointNode = caretRange?.startContainer || null;
+      pointOffset = caretRange?.startOffset ?? null;
+    }
+
+    if (pointNode?.nodeType === Node.TEXT_NODE) {
+      return getVisibleKeyInTextNodeAtPoint(pointNode, clientX, clientY);
+    }
+
+    return '';
+  }
+
+  function isPointInsideRect(clientX, clientY, rect, padding = 0) {
+    if (!rect) {
+      return false;
+    }
+    return clientX >= rect.left - padding && clientX <= rect.right + padding &&
+      clientY >= rect.top - padding && clientY <= rect.bottom + padding;
+  }
+
+  function findVisibleKeyInElementAtPoint(rootElement, clientX, clientY) {
+    if (!rootElement || rootElement.nodeType !== Node.ELEMENT_NODE) {
+      return '';
+    }
+
+    const walker = document.createTreeWalker(rootElement, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return /\b[A-Z][A-Z0-9]+-\d+\b/.test(node.textContent || '')
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_SKIP;
+      }
+    });
+
+    let textNode = walker.nextNode();
+    while (textNode) {
+      const matches = getKeyMatches(textNode.textContent || '');
+      for (const match of matches) {
+        try {
+          const range = document.createRange();
+          range.setStart(textNode, match.start);
+          range.setEnd(textNode, match.end);
+          const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
+          if (rects.some(rect => isPointInsideRect(clientX, clientY, rect, 1))) {
+            return match.key;
+          }
+        } catch (error) {
+          // Ignore transient DOM/range failures while the host page updates.
+        }
+      }
+      textNode = walker.nextNode();
+    }
+
+    return '';
+  }
+
+  function getStrictKeyAtClientPoint(clientX, clientY) {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+      return '';
+    }
+
+    const preciseKey = getPreciseKeyAtClientPoint(clientX, clientY);
+    if (preciseKey) {
+      return preciseKey;
+    }
+
+    if (!isOfficeOverlaySite() && typeof document.elementsFromPoint === 'function') {
+      const layeredElements = document.elementsFromPoint(clientX, clientY).filter(Boolean);
+      for (const layeredElement of layeredElements) {
+        if (!layeredElement || layeredElement === container[0] || $.contains(container[0], layeredElement)) {
+          continue;
+        }
+        const layeredKey = findVisibleKeyInElementAtPoint(layeredElement, clientX, clientY);
+        if (layeredKey) {
+          return layeredKey;
+        }
+      }
+      return '';
+    }
+
+    const element = document.elementFromPoint(clientX, clientY);
+    if (!element || element === container[0] || $.contains(container[0], element)) {
+      return '';
+    }
+    return findVisibleKeyInElementAtPoint(element, clientX, clientY);
+  }
+
+  function resolveKeyAtClientPoint(clientX, clientY) {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+      return '';
+    }
+    const element = document.elementFromPoint(clientX, clientY);
+    if (!element) {
+      return '';
+    }
+    let keys = detectJiraKeysAtPoint(element);
+    if (!size(keys)) {
+      keys = detectLayeredJiraKeysFromPoint(clientX, clientY);
+    }
+    return size(keys) ? keys[0].replace(' ', '-') : '';
   }
 
   function fetchAndShowPopup(key, pointerX, pointerY) {
@@ -5725,7 +6055,6 @@ async function mainAsyncLocal() {
   function triggerPopupForKey(key, pointerX, pointerY, immediate) {
     clearTimeout(hoverDelayTimeout);
     lastHoveredKey = key;
-    pendingHover = null;
     if (immediate) {
       fetchAndShowPopup(key, pointerX, pointerY);
     } else {
@@ -5737,11 +6066,16 @@ async function mainAsyncLocal() {
 
   if (hoverModifierKey !== 'none') {
     document.addEventListener('keydown', function (e) {
-      if (!pendingHover || containerPinned) {
+      if (containerPinned || isTypingTarget(document.activeElement)) {
         return;
       }
       if (isModifierSatisfied(e)) {
-        triggerPopupForKey(pendingHover.key, pendingHover.pointerX, pendingHover.pointerY, true);
+        const currentKey = getStrictKeyAtClientPoint(currentPointer.clientX, currentPointer.clientY);
+        if (currentKey) {
+          const pointerX = Number.isFinite(currentPointer.pageX) ? currentPointer.pageX : 0;
+          const pointerY = Number.isFinite(currentPointer.pageY) ? currentPointer.pageY : 0;
+          triggerPopupForKey(currentKey, pointerX, pointerY, true);
+        }
       }
     });
   }
@@ -5750,6 +6084,12 @@ async function mainAsyncLocal() {
     if (e.buttons || cancelToken.cancel) {
       return;
     }
+    currentPointer = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      pageX: e.pageX,
+      pageY: e.pageY,
+    };
     const element = document.elementFromPoint(e.clientX, e.clientY);
     const isOverContainer = element === container[0] || $.contains(container[0], element);
     let isInPaddedZone = false;
@@ -5768,13 +6108,26 @@ async function mainAsyncLocal() {
       return;
     }
     if (!containerPinned && container.html()) {
-      pendingHover = null;
       clearTimeout(hoverDelayTimeout);
       lastHoveredKey = '';
       hideTimeOut = setTimeout(hideContainer, 250);
       return;
     }
     if (element) {
+      if (hoverModifierKey !== 'none') {
+        const strictKey = getStrictKeyAtClientPoint(e.clientX, e.clientY);
+        if (!strictKey) {
+          return;
+        }
+        if (!isModifierSatisfied(e)) {
+          clearTimeout(hideTimeOut);
+          return;
+        }
+        clearTimeout(hideTimeOut);
+        triggerPopupForKey(strictKey, e.pageX, e.pageY, true);
+        return;
+      }
+
       let keys = detectJiraKeysAtPoint(element);
       if (!size(keys)) {
         keys = detectLayeredJiraKeysFromPoint(e.clientX, e.clientY);
@@ -5782,15 +6135,8 @@ async function mainAsyncLocal() {
 
       if (size(keys)) {
         const key = keys[0].replace(' ', '-');
-
-        if (hoverModifierKey !== 'none' && !isModifierSatisfied(e)) {
-          pendingHover = {key, pointerX: e.pageX, pointerY: e.pageY};
-          return;
-        }
-        pendingHover = null;
-
         clearTimeout(hideTimeOut);
-        triggerPopupForKey(key, e.pageX, e.pageY, hoverModifierKey !== 'none');
+        triggerPopupForKey(key, e.pageX, e.pageY, false);
       }
     }
   }, 100));

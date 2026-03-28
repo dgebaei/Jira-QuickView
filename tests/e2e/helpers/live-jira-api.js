@@ -102,6 +102,19 @@ async function getFirstCustomFieldId(config = getLiveJiraConfig()) {
   return match ? match.id : null;
 }
 
+async function getFirstSupportedCustomField(config = getLiveJiraConfig()) {
+  // Keep this list aligned with the explicitly approved live-test custom fields.
+  const supportedIds = ['customfield_10105', 'customfield_10106', 'customfield_10033'];
+  const fields = await getLiveFields(config);
+  const list = Array.isArray(fields) ? fields : [];
+  const preferredMatch = supportedIds
+    .map(id => list.find(field => String(field?.id || '') === id))
+    .find(Boolean);
+  return preferredMatch
+    ? {id: preferredMatch.id, name: preferredMatch.name || preferredMatch.id}
+    : null;
+}
+
 async function getIssueComments(issueKey, config = getLiveJiraConfig()) {
   const data = await jiraApiRequest(`/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=comment`, {}, config);
   return data?.fields?.comment?.comments || [];
@@ -182,6 +195,7 @@ module.exports = {
   getCurrentUser,
   deleteIssueComment,
   getFirstCustomFieldId,
+  getFirstSupportedCustomField,
   getIssueEditmeta,
   getIssueComments,
   getLabelSuggestions,

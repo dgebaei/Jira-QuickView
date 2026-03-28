@@ -71,6 +71,63 @@ function defaultRouteContent(origin) {
         </div>
       </div>
     `),
+    '/modifier-input': createHtml('Modifier Input Fixture', `
+      <h1>Modifier Input Fixture</h1>
+      <div style="display: grid; grid-template-columns: 220px 1fr; gap: 32px; align-items: start; min-height: 360px;">
+        <aside class="card">
+          <p>Sidebar ticket: <span id="sidebar-key" class="marker">JRACLOUD-97846</span></p>
+        </aside>
+        <section class="card">
+          <label for="subject-input" style="display:block; font-weight:700; margin-bottom:8px;">Subject</label>
+          <input id="subject-input" type="text" value="Typing here should not open the popup" style="width: 100%; padding: 10px 12px; border: 1px solid #99a; border-radius: 8px;" />
+        </section>
+      </div>
+    `),
+    '/repeated-key-list': createHtml('Repeated Key List', `
+      <h1>Repeated Key List</h1>
+      <div class="stack" style="gap: 14px; max-width: 640px;">
+        <div class="card" id="repeated-row-1" style="display:grid; grid-template-columns: 120px 1fr 70px; gap: 12px; align-items: center;">
+          <span class="row-author">alice@example.com</span>
+          <span class="row-subject" id="repeated-row-1-subject">Investigate JRACLOUD-97846 rollout issue</span>
+          <span class="row-count" id="repeated-row-1-count">123</span>
+        </div>
+        <div class="card" id="repeated-row-2" style="display:grid; grid-template-columns: 120px 1fr 70px; gap: 12px; align-items: center;">
+          <span class="row-author" id="repeated-row-2-author">bob@example.com</span>
+          <span class="row-subject" id="repeated-row-2-subject">Follow-up for JRACLOUD-98123 report</span>
+          <span class="row-count" id="repeated-row-2-count">445</span>
+        </div>
+      </div>
+    `),
+    '/modifier-same-container': createHtml('Modifier Same Container Fixture', `
+      <h1>Modifier Same Container Fixture</h1>
+      <div class="card" id="same-container-parent" style="display: flex; align-items: center; gap: 32px; min-height: 120px;">
+        <span id="same-container-key" class="marker">JRACLOUD-97846</span>
+        <span id="same-container-blank" style="display: inline-block; min-width: 260px; min-height: 48px; border: 1px dashed #ccd; border-radius: 8px; padding: 12px;">blank zone</span>
+      </div>
+    `),
+    '/adjacent-message-list': createHtml('Adjacent Message List Fixture', `
+      <h1>Adjacent Message List Fixture</h1>
+      <div class="stack" style="gap: 0; max-width: 720px; border: 1px solid #ccd; border-radius: 12px; overflow: hidden;">
+        <div id="message-row-top" style="display:grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #eef; background: #fff;">
+          <span>top@example.com</span>
+          <span>No Jira reference here</span>
+        </div>
+        <div id="message-row-middle" style="display:grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #eef; background: #f9fbff;">
+          <span>jira@example.com</span>
+          <span id="message-row-middle-subject">Release note for JRACLOUD-97846</span>
+        </div>
+        <div id="message-row-bottom" style="display:grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 18px 20px; background: #fff;">
+          <span>bottom@example.com</span>
+          <span>No Jira reference here either</span>
+        </div>
+      </div>
+    `),
+    '/modifier-near-token': createHtml('Modifier Near Token Fixture', `
+      <h1>Modifier Near Token Fixture</h1>
+      <div class="card" style="font-size: 18px; line-height: 1.8;">
+        <span id="near-token-key" class="marker">JRACLOUD-97846</span><span id="near-token-gap" style="display:inline-block; width: 28px; height: 1.8em;"></span><span>adjacent blank area</span>
+      </div>
+    `),
   };
 }
 

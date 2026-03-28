@@ -28,6 +28,21 @@ async function waitForOptions(locator, minimumCount = 1) {
   return locator.count();
 }
 
+async function selectUserOptionAndSubmit(popup, fieldKey, optionText) {
+  const options = popup.locator(`._JX_edit_option[data-field-key="${fieldKey}"]`);
+  const matchingOption = options.filter({hasText: optionText});
+  const editPopover = popup.locator(`._JX_edit_popover[data-field-key="${fieldKey}"]`);
+  await waitForOptions(options);
+  await expect(matchingOption).toHaveCount(1);
+  await matchingOption.click();
+
+  const input = popup.locator(`._JX_edit_input[data-field-key="${fieldKey}"]`);
+  await expect(input).toHaveValue(optionText);
+  await expect(matchingOption).toHaveClass(/is-selected/);
+  await expect(editPopover).not.toContainText('Searching');
+  await input.press('Enter');
+}
+
 test('renders user-type custom field and allows editing via user search', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
@@ -48,13 +63,7 @@ test('renders user-type custom field and allows editing via user search', async 
   const input = popup.locator('._JX_edit_input[data-field-key="customfield_67890"]');
   await expect(input).toBeVisible();
   await input.fill('Morgan');
-  const options = popup.locator('._JX_edit_option[data-field-key="customfield_67890"]');
-  await waitForOptions(options);
-
-  const morganOption = options.filter({hasText: 'Morgan Agent'});
-  await expect(morganOption).toHaveCount(1);
-  await morganOption.click();
-  await input.press('Enter');
+  await selectUserOptionAndSubmit(popup, 'customfield_67890', 'Morgan Agent');
 
   await expect(popup).toContainText('Reviewer: Morgan Agent');
   await page.close();
@@ -80,13 +89,7 @@ test('shows empty user custom field as editable placeholder chip', async ({exten
   const input = popup.locator('._JX_edit_input[data-field-key="customfield_67890"]');
   await expect(input).toBeVisible();
   await input.fill('Alex');
-  const options = popup.locator('._JX_edit_option[data-field-key="customfield_67890"]');
-  await waitForOptions(options);
-
-  const alexOption = options.filter({hasText: 'Alex Reviewer'});
-  await expect(alexOption).toHaveCount(1);
-  await alexOption.click();
-  await input.press('Enter');
+  await selectUserOptionAndSubmit(popup, 'customfield_67890', 'Alex Reviewer');
 
   await expect(popup).toContainText('Reviewer: Alex Reviewer');
   await page.close();
