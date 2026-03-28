@@ -1660,7 +1660,7 @@ async function mainAsyncLocal() {
       name: view.name,
       key: view.key,
       displayName,
-      avatarUrl: view.rawAvatarUrl,
+      avatarUrl: view.avatarUrl,
       initials: view.initials,
       metaText: view.emailAddress || view.name || view.key || '',
       titleText: `Watcher: ${displayName}`,
