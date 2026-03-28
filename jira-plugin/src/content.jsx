@@ -2589,10 +2589,14 @@ async function mainAsyncLocal() {
       inputPlaceholder: isUserField ? 'Search users' : undefined,
       loadOptions: async () => isUserField ? mergeEditOptions([clearUserOption], currentSelections) : allOptions,
       searchOptions: isUserField ? (async query => {
-        const searchResults = await searchUserPicker(query);
-        const merged = mergeEditOptions(searchResults, userPickerLocalOptionsCache.get(fieldId) || []);
+        const [pickerResults, assignableResults] = await Promise.all([
+          searchUserPicker(query),
+          searchAssignableUsers(query, issueData).catch(() => [])
+        ]);
+        const baseline = userPickerLocalOptionsCache.get(fieldId) || currentSelections;
+        const merged = mergeEditOptions(pickerResults, mergeEditOptions(assignableResults, baseline));
         userPickerLocalOptionsCache.set(fieldId, merged);
-        return mergeEditOptions([clearUserOption], mergeEditOptions(currentSelections, merged));
+        return mergeEditOptions([clearUserOption], merged);
       }) : undefined,
       save: selectedOptions => {
         const fieldValue = isMultiValue
