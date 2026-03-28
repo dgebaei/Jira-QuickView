@@ -18,13 +18,13 @@
                 <span class="_JX_title_user _JX_title_user_assignee _JX_title_user_placeholder" title="{{titleText}}">{{initials}}</span>
                 {{/avatarUrl}}
                 {{#isEditable}}
-                <button class="_JX_field_chip_edit _JX_assignee_edit_button" type="button" data-field-key="assignee" title="{{editTitle}}" aria-label="{{editTitle}}">
+                <button class="_JX_field_chip_edit _JX_assignee_edit_button" data-testid="jira-popup-edit-button-assignee" type="button" data-field-key="assignee" title="{{editTitle}}" aria-label="{{editTitle}}">
                     {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
                     {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{/isEditable}}
                 {{#isEditing}}
-                <div class="_JX_edit_popover _JX_assignee_edit_popover" data-field-key="assignee">
+                <div class="_JX_edit_popover _JX_assignee_edit_popover" data-testid="jira-popup-edit-popover-assignee" data-field-key="assignee">
                     <div class="_JX_edit_field_label">{{editLabel}}</div>
                     <div class="_JX_edit_input_shell">
                         {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-field-key="assignee" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
@@ -114,7 +114,7 @@
             </button>
             {{#hasQuickActions}}
             <div class="_JX_actions">
-                <button class="_JX_control_button _JX_actions_toggle{{#actionsOpen}} is-open{{/actionsOpen}}" type="button" title="Quick actions" aria-label="Quick actions" aria-haspopup="menu" aria-expanded="{{#actionsOpen}}true{{/actionsOpen}}{{^actionsOpen}}false{{/actionsOpen}}">
+                <button class="_JX_control_button _JX_actions_toggle{{#actionsOpen}} is-open{{/actionsOpen}}" data-testid="jira-popup-actions-toggle" type="button" title="Quick actions" aria-label="Quick actions" aria-haspopup="menu" aria-expanded="{{#actionsOpen}}true{{/actionsOpen}}{{^actionsOpen}}false{{/actionsOpen}}">
                     <svg class="_JX_actions_toggle_icon" width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><circle cx="6" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="18" cy="12" r="1.8"></circle></g></svg>
                     <svg class="_JX_actions_toggle_chevron" width="12" height="12" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"></path></svg>
                 </button>
@@ -152,7 +152,7 @@
                     </button>
                     {{/hideInlineEditButton}}
                     {{#isEditing}}
-                    <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
+                    <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
                         <div class="_JX_edit_field_label">{{editLabel}}</div>
                         <div class="_JX_edit_input_shell">
                             {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
@@ -314,7 +314,7 @@
                     {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{#isEditing}}
-                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
+                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
                     <div class="_JX_edit_field_label">{{editLabel}}</div>
                     <div class="_JX_edit_input_shell">
                         {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
@@ -398,7 +398,7 @@
                     {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
                 </button>
                 {{#isEditing}}
-                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-field-key="{{fieldKey}}">
+                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
                     <div class="_JX_edit_field_label">{{editLabel}}</div>
                     <div class="_JX_edit_input_shell">
                         {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
