@@ -121,6 +121,53 @@ test('shows a mention lookup error when people search fails', async ({extensionA
   await page.close();
 });
 
+test('keeps the watchers panel usable when adding a watcher fails', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Watcher failure coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('watchers-add-fails');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const trigger = page.locator('._JX_watchers_trigger');
+  await expect(trigger).toContainText('2');
+
+  await trigger.click();
+  const searchInput = page.locator('._JX_watchers_search_input');
+  await searchInput.fill('Darko');
+  const result = page.locator('._JX_watchers_search_result[data-watcher-id="user-darko"]');
+  await expect(result).toBeVisible();
+  await result.click();
+
+  await expect(page.locator('._JX_watchers_search_results')).toContainText(/Could not add watcher|HTTP 500/);
+  await expect(searchInput).toHaveValue('Darko');
+  await expect(page.locator('._JX_watchers_row[data-watcher-id="user-darko"]')).toHaveCount(0);
+  await expect(trigger).toContainText('2');
+  await page.close();
+});
+
+test('restores watcher rows when removing a watcher fails', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Watcher failure coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('watchers-remove-fails');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const trigger = page.locator('._JX_watchers_trigger');
+  await trigger.click();
+
+  const alexRow = page.locator('._JX_watchers_row[data-watcher-id="user-alex"]');
+  await expect(alexRow).toBeVisible();
+  await alexRow.hover();
+  await alexRow.locator('._JX_watchers_remove').click();
+
+  await expect(page.locator('._JX_watchers_section').filter({hasText: 'Watching now'})).toContainText(/Could not remove watcher|HTTP 500/);
+  await expect(page.locator('._JX_watchers_row[data-watcher-id="user-alex"]')).toBeVisible();
+  await expect(trigger).toContainText('2');
+  await page.close();
+});
+
 test('discards comment drafts and clears the composer state', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {

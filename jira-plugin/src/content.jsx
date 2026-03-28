@@ -284,11 +284,28 @@ async function mainAsyncLocal() {
   const emptyCommentUploadState = () => ({
     items: []
   });
+  const emptyWatchersState = () => ({
+    open: false,
+    loading: false,
+    errorMessage: '',
+    searchValue: '',
+    searchLoading: false,
+    searchRequestId: 0,
+    watchers: [],
+    searchResults: [],
+    pendingAddIds: [],
+    pendingRemoveIds: [],
+    addFeedback: null,
+    removeFeedback: null,
+    focusSearch: false,
+  });
   const projectSprintOptionsPromises = new Map();
   const editMetaCache = new Map();
   const transitionOptionsCache = new Map();
   const assigneeSearchCache = new Map();
   const assigneeLocalOptionsCache = new Map();
+  const watcherListCache = new Map();
+  const watcherSearchCache = new Map();
   const issueSearchCache = new Map();
   const issueSearchRecentCache = new Map();
   const labelSuggestionCache = new Map();
@@ -297,6 +314,7 @@ async function mainAsyncLocal() {
   let labelSuggestionSupportPromise = null;
   let editSearchRequestCounter = 0;
   let labelSearchTimeoutId = null;
+  let watchersFeedbackTimeoutId = null;
   let popupState = null;
   let activeCommentContext = null;
   let commentMentionState = emptyCommentMentionState();
@@ -1431,6 +1449,7 @@ async function mainAsyncLocal() {
         'versions',
         'parent',
         'fixVersions',
+        'watches',
         ...sprintFieldIds,
         ...epicLinkFieldIds,
         ...customFields.map(({fieldId}) => fieldId)
@@ -1587,6 +1606,224 @@ async function mainAsyncLocal() {
       const users = await fetchAssignableUsers(normalizedQuery, issueData);
       return normalizeAssignableUsers(users);
     });
+  }
+
+  function getJiraUserIdentityCandidates(user) {
+    return [user?.accountId, user?.name, user?.username, user?.key]
+      .map(value => String(value || '').trim())
+      .filter((value, index, array) => value && array.indexOf(value) === index);
+  }
+
+  function buildWatcherUserView(user, currentUser = null) {
+    const displayName = user?.displayName || user?.name || user?.username || user?.emailAddress || 'Unknown user';
+    const avatarUrl = user?.avatarUrls?.['48x48'] || '';
+    const identityCandidates = getJiraUserIdentityCandidates(user);
+    const id = identityCandidates[0] || '';
+    return {
+      id,
+      accountId: user?.accountId || '',
+      name: user?.name || user?.username || '',
+      key: user?.key || '',
+      displayName,
+      avatarUrl,
+      initials: getUserInitials(displayName, '--'),
+      metaText: user?.emailAddress || user?.name || user?.username || user?.key || '',
+      titleText: `Watcher: ${displayName}`,
+      isCurrentUser: areSameJiraUser(user, currentUser),
+      rawValue: {
+        accountId: user?.accountId || '',
+        name: user?.name || user?.username || '',
+        key: user?.key || '',
+      }
+    };
+  }
+
+  function buildClearUserOption(label = 'Clear value') {
+    return buildEditOption('__clear__', label, {
+      metaText: 'Remove the current user',
+      rawValue: null,
+    });
+  }
+
+  function compareWatcherUsers(left, right) {
+    if (!!left?.isCurrentUser !== !!right?.isCurrentUser) {
+      return left?.isCurrentUser ? -1 : 1;
+    }
+
+    const displayNameComparison = String(left?.displayName || '').localeCompare(
+      String(right?.displayName || ''),
+      undefined,
+      {sensitivity: 'base'}
+    );
+    if (displayNameComparison !== 0) {
+      return displayNameComparison;
+    }
+
+    return String(left?.id || '').localeCompare(String(right?.id || ''), undefined, {sensitivity: 'base'});
+  }
+
+  function normalizeWatcherUsers(users, currentUser = null) {
+    const uniqueById = new Map();
+    (Array.isArray(users) ? users : []).forEach(user => {
+      const watcher = buildWatcherUserView(user, currentUser);
+      if (watcher.id && !uniqueById.has(watcher.id)) {
+        uniqueById.set(watcher.id, watcher);
+      }
+    });
+    return [...uniqueById.values()].sort(compareWatcherUsers);
+  }
+
+  async function getIssueWatchers(issueKey) {
+    if (!issueKey) {
+      return {
+        isWatching: false,
+        watchCount: 0,
+        watchers: []
+      };
+    }
+    return getCachedValue(watcherListCache, issueKey, async () => {
+      const [response, currentUser] = await Promise.all([
+        get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers`),
+        getCurrentUserInfo().catch(() => null)
+      ]);
+      const normalizedWatchers = normalizeWatcherUsers(response?.watchers || [], currentUser);
+      const responseWatchCount = Number(response?.watchCount);
+      return {
+        isWatching: typeof response?.isWatching === 'boolean'
+          ? response.isWatching
+          : normalizedWatchers.some(watcher => watcher.isCurrentUser),
+        watchCount: Number.isFinite(responseWatchCount) ? responseWatchCount : normalizedWatchers.length,
+        watchers: normalizedWatchers
+      };
+    });
+  }
+
+  async function searchWatcherCandidates(query) {
+    const normalizedQuery = String(query || '').trim();
+    const cacheKey = normalizedQuery.toLowerCase();
+    return getCachedValue(watcherSearchCache, cacheKey, async () => {
+      const [response, currentUser] = await Promise.all([
+        get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(normalizedQuery)}`),
+        getCurrentUserInfo().catch(() => null)
+      ]);
+      const rawUsers = Array.isArray(response)
+        ? response
+        : response?.users || response?.items || [];
+      return normalizeWatcherUsers(rawUsers, currentUser);
+    });
+  }
+
+  function getWatcherIdentifierCandidates(user) {
+    const candidates = [
+      {type: 'accountId', value: user?.accountId || user?.rawValue?.accountId || ''},
+      {type: 'name', value: user?.name || user?.rawValue?.name || ''},
+      {type: 'key', value: user?.key || user?.rawValue?.key || ''}
+    ];
+    return candidates.filter((candidate, index, array) => {
+      return candidate.value && array.findIndex(other => other.type === candidate.type && other.value === candidate.value) === index;
+    });
+  }
+
+  async function addWatcher(issueKey, user) {
+    const candidates = getWatcherIdentifierCandidates(user);
+    let lastError;
+    for (const candidate of candidates) {
+      try {
+        await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers`, candidate.value);
+        return candidate;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Could not add watcher');
+  }
+
+  async function removeWatcher(issueKey, user) {
+    const candidates = getWatcherIdentifierCandidates(user);
+    let lastError;
+    for (const candidate of candidates) {
+      const queryKey = candidate.type === 'accountId'
+        ? 'accountId'
+        : (candidate.type === 'key' ? 'key' : 'username');
+      try {
+        await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers?${queryKey}=${encodeURIComponent(candidate.value)}`);
+        return candidate;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Could not remove watcher');
+  }
+
+  function buildWatchersPanelView(state) {
+    const watcherState = state?.watchersState || emptyWatchersState();
+    const watchers = Array.isArray(watcherState.watchers) ? watcherState.watchers : [];
+    const pendingAddIds = new Set(watcherState.pendingAddIds || []);
+    const pendingRemoveIds = new Set(watcherState.pendingRemoveIds || []);
+    const watcherIds = new Set(watchers.map(watcher => watcher.id));
+    const addFeedback = watcherState.addFeedback;
+    const removeFeedback = watcherState.removeFeedback;
+    const searchResults = (watcherState.searchResults || [])
+      .filter(result => result?.id && !watcherIds.has(result.id))
+      .map(result => ({
+        ...result,
+        isPending: pendingAddIds.has(result.id),
+        disabledAttr: pendingAddIds.has(result.id) ? 'disabled' : ''
+      }));
+    return {
+      isOpen: !!watcherState.open,
+      isLoading: !!watcherState.loading,
+      loadingText: watcherState.loading ? 'Loading watchers...' : '',
+      errorMessage: watcherState.errorMessage || '',
+      searchValue: watcherState.searchValue || '',
+      searchLoading: !!watcherState.searchLoading,
+      searchHintText: watcherState.searchValue
+        ? ''
+        : 'Start typing to find users.',
+      watchers: watchers.map(watcher => ({
+        ...watcher,
+        hasAvatar: !!watcher.avatarUrl,
+        pendingRemove: pendingRemoveIds.has(watcher.id),
+        pendingAction: pendingRemoveIds.has(watcher.id) ? 'Removing...' : '',
+        removeDisabled: pendingRemoveIds.has(watcher.id) ? 'disabled' : ''
+      })),
+      hasWatchers: watchers.length > 0,
+      emptyText: watcherState.loading ? '' : 'No watchers yet.',
+      searchResults,
+      hasSearchSection: searchResults.length > 0 || !!addFeedback,
+      hasSearchResults: searchResults.length > 0,
+      searchFeedback: addFeedback,
+      hasSearchFeedback: !!addFeedback,
+      showSearchEmpty: !!(watcherState.searchValue && !watcherState.searchLoading && searchResults.length === 0 && !addFeedback),
+      searchEmptyText: 'No matching users.',
+      hasWatcherSectionContent: watchers.length > 0 || !!removeFeedback,
+      watcherFeedback: removeFeedback,
+      hasWatcherFeedback: !!removeFeedback,
+    };
+  }
+
+  function clearWatchersFeedbackTimer() {
+    if (watchersFeedbackTimeoutId) {
+      clearTimeout(watchersFeedbackTimeoutId);
+      watchersFeedbackTimeoutId = null;
+    }
+  }
+
+  function scheduleWatchersFeedbackClear() {
+    clearWatchersFeedbackTimer();
+    watchersFeedbackTimeoutId = setTimeout(() => {
+      watchersFeedbackTimeoutId = null;
+      if (!popupState?.watchersState) {
+        return;
+      }
+      renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          addFeedback: null,
+          removeFeedback: null,
+        })
+      })).catch(() => {});
+    }, 5000);
   }
 
   function getPullRequestDataCached(issueId, applicationType) {
@@ -1977,9 +2214,10 @@ async function mainAsyncLocal() {
     if (!optionId) {
       return null;
     }
-    const metaText = entry?.description || entry?.child?.value || '';
+    const metaText = entry?.description || entry?.emailAddress || entry?.child?.value || '';
     return buildEditOption(optionId, label, {
       iconUrl: entry?.iconUrl || '',
+      avatarUrl: entry?.avatarUrls?.['48x48'] || '',
       metaText,
       rawValue: entry
     });
@@ -2117,6 +2355,13 @@ async function mainAsyncLocal() {
       };
     }
 
+    if (schemaType === 'user') {
+      return {
+        selectionMode: 'single',
+        valueKind: 'user'
+      };
+    }
+
     if (schemaType === 'array' && itemType === 'option') {
       return {
         selectionMode: 'multi',
@@ -2128,6 +2373,13 @@ async function mainAsyncLocal() {
       return {
         selectionMode: 'multi',
         valueKind: 'primitive'
+      };
+    }
+
+    if (schemaType === 'array' && itemType === 'user') {
+      return {
+        selectionMode: 'multi',
+        valueKind: 'user'
       };
     }
 
@@ -2144,6 +2396,9 @@ async function mainAsyncLocal() {
     if (!entry || typeof entry !== 'object') {
       return false;
     }
+    if (supportDescriptor.valueKind === 'user') {
+      return !!(entry.accountId || entry.name || entry.key || entry.displayName);
+    }
     return !!(entry.id || entry.value || entry.name);
   }
 
@@ -2153,6 +2408,17 @@ async function mainAsyncLocal() {
     }
     if (supportDescriptor?.valueKind === 'primitive') {
       return rawValue;
+    }
+    if (supportDescriptor?.valueKind === 'user' && rawValue && typeof rawValue === 'object') {
+      if (rawValue.accountId) {
+        return {accountId: String(rawValue.accountId)};
+      }
+      if (rawValue.name) {
+        return {name: String(rawValue.name)};
+      }
+      if (rawValue.key) {
+        return {key: String(rawValue.key)};
+      }
     }
     if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
       return rawValue;
@@ -2230,7 +2496,7 @@ async function mainAsyncLocal() {
     const capability = await getEditableFieldCapability(issueData, fieldId);
     const fieldMeta = capability.fieldMeta;
     const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    if (!capability.editable || !fieldMeta || !Array.isArray(capability.allowedValues) || !capability.allowedValues.length) {
+    if (!capability.editable || !fieldMeta) {
       return null;
     }
 
@@ -2248,13 +2514,13 @@ async function mainAsyncLocal() {
     const currentSelections = currentEntries
       .map(entry => buildCustomFieldOption(fieldName, entry))
       .filter(Boolean);
-    const allowedOptions = capability.allowedValues
+    const allowedOptions = (Array.isArray(capability.allowedValues) ? capability.allowedValues : [])
       .filter(entry => isSupportedCustomFieldAllowedValue(entry, supportDescriptor))
       .map(entry => buildCustomFieldOption(fieldName, entry))
       .filter(Boolean);
     const allOptions = mergeEditOptions(currentSelections, allowedOptions);
 
-    if (!allOptions.length) {
+    if (!allOptions.length && supportDescriptor.valueKind !== 'user') {
       return null;
     }
 
@@ -2265,9 +2531,12 @@ async function mainAsyncLocal() {
       return null;
     }
 
+    const isUserField = supportDescriptor.valueKind === 'user';
+    const clearUserOption = isUserField ? buildClearUserOption(`Clear ${fieldName}`) : null;
+
     return {
       fieldKey: fieldId,
-      editorType: isMultiValue ? 'multi-select' : 'single-select',
+      editorType: isUserField ? 'user-search' : (isMultiValue ? 'multi-select' : 'single-select'),
       label: fieldName,
       fieldMeta,
       supportDescriptor,
@@ -2276,7 +2545,12 @@ async function mainAsyncLocal() {
       currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
       currentSelections,
       initialInputValue: isMultiValue ? '' : '',
-      loadOptions: async () => allOptions,
+      inputPlaceholder: isUserField ? 'Search users' : undefined,
+      loadOptions: async () => isUserField ? mergeEditOptions([clearUserOption], currentSelections) : allOptions,
+      searchOptions: isUserField ? (async query => {
+        const searchResults = await searchAssignableUsers(query, issueData);
+        return mergeEditOptions([clearUserOption], mergeEditOptions(currentSelections, searchResults));
+      }) : undefined,
       save: selectedOptions => {
         const fieldValue = isMultiValue
           ? selectedOptions.map(option => buildCustomFieldSaveValue(option.rawValue, supportDescriptor))
@@ -2287,7 +2561,9 @@ async function mainAsyncLocal() {
           }
         });
       },
-      successMessage: () => `${fieldName} updated`
+      successMessage: selectedOptions => selectedOptions[0]?.id === '__clear__'
+        ? `${fieldName} cleared`
+        : `${fieldName} updated`
     };
   }
 
@@ -2338,11 +2614,11 @@ async function mainAsyncLocal() {
     const chipsByRow = {1: [], 2: [], 3: []};
     for (const {fieldId, row} of customFields) {
       const rawValue = fields[fieldId];
-      if (rawValue === undefined || rawValue === null || rawValue === '') {
-        continue;
-      }
       const fieldName = String(names[fieldId] || fieldId);
       const supportedDefinition = await getCustomFieldEditorDefinition(fieldId, issueData).catch(() => null);
+      const hasDisplayValue = Array.isArray(rawValue)
+        ? rawValue.some(value => value !== undefined && value !== null && value !== '')
+        : !(rawValue === undefined || rawValue === null || rawValue === '');
       if (supportedDefinition) {
         chipsByRow[row].push(buildEditableFieldChip(fieldId, buildCustomFieldChipData(
           fieldId,
@@ -2354,6 +2630,9 @@ async function mainAsyncLocal() {
           canEdit: true,
           editTitle: `Edit ${fieldName}`
         }));
+        continue;
+      }
+      if (!hasDisplayValue) {
         continue;
       }
       const entries = Array.isArray(rawValue) ? rawValue : [rawValue];
@@ -3478,6 +3757,9 @@ async function mainAsyncLocal() {
       ? buildAssigneeAvatarView(state, issueData, assigneeEditable)
       : null;
     const titleView = buildTitleView(state, issueData, summaryEditable);
+    const watches = issueData.fields.watches || {};
+    const watcherCount = Number.isFinite(Number(watches.watchCount)) ? Number(watches.watchCount) : 0;
+    const watchersPanel = buildWatchersPanelView(state);
     const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
     const displayData = {
       urlTitle: titleView.urlTitle,
@@ -3520,6 +3802,16 @@ async function mainAsyncLocal() {
       assignee: displayFields.assignee ? issueData.fields.assignee : null,
       assigneeView,
       titleView,
+      watchersTrigger: {
+        count: watcherCount,
+        title: watcherCount === 1 ? '1 watcher' : `${watcherCount} watchers`,
+        watchingTitle: watches.isWatching ? 'You are watching this issue.' : 'You are not watching this issue.',
+        isWatching: !!watches.isWatching,
+        isOpen: watchersPanel.isOpen,
+        isLoading: watchersPanel.isLoading,
+        hasCount: true,
+      },
+      watchersPanel,
       commentUrl: issueUrl,
       hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
       activityIndicators: [],
@@ -3554,6 +3846,8 @@ async function mainAsyncLocal() {
       visibleCommentsTotal,
       displayData.prs.length
     );
+    displayData.hasRow1Meta = !!displayData.watchersTrigger || displayData.activityIndicators.length > 0;
+    displayData.hasPrimaryStatusRow = row1Chips.length > 0 || displayData.hasRow1Meta;
     return displayData;
   }
   // ── Popup Positioning ──────────────────────────────────────
@@ -3689,18 +3983,25 @@ async function mainAsyncLocal() {
         const selectionEnd = Math.min(maxIndex, Number.isInteger(state.editState.selectionEnd) ? state.editState.selectionEnd : maxIndex);
         input.setSelectionRange(selectionStart, selectionEnd);
       }
-    } else if (state.timeTrackingEditState?.activeInputField) {
-      const input = container.find(`._JX_time_tracking_input[data-time-tracking-field="${state.timeTrackingEditState.activeInputField}"]`)[0];
-      if (input) {
-        input.focus();
+      } else if (state.timeTrackingEditState?.activeInputField) {
+        const input = container.find(`._JX_time_tracking_input[data-time-tracking-field="${state.timeTrackingEditState.activeInputField}"]`)[0];
+        if (input) {
+          input.focus();
         if (typeof input.setSelectionRange === 'function' && input.type !== 'date') {
           const maxIndex = input.value.length;
           const selectionStart = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionStart) ? state.timeTrackingEditState.selectionStart : maxIndex);
           const selectionEnd = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionEnd) ? state.timeTrackingEditState.selectionEnd : maxIndex);
           input.setSelectionRange(selectionStart, selectionEnd);
+          }
+        }
+      } else if (state.watchersState?.open && state.watchersState.focusSearch) {
+        const input = container.find('._JX_watchers_search_input')[0];
+        if (input) {
+          input.focus();
+          const maxIndex = input.value.length;
+          input.setSelectionRange(maxIndex, maxIndex);
         }
       }
-    }
     if (state.commentSession?.mode === 'edit' && state.commentSession.commentId) {
       const commentInput = container.find(`._JX_comment_edit_input[data-comment-id="${state.commentSession.commentId}"]`)[0];
       if (commentInput) {
@@ -3718,11 +4019,13 @@ async function mainAsyncLocal() {
       return;
     }
     issueCache.delete(popupState.key);
+    watcherListCache.delete(popupState.key);
     editMetaCache.delete(popupState.key);
     transitionOptionsCache.delete(popupState.key);
     assigneeLocalOptionsCache.delete(popupState.key);
     labelLocalOptionsCache.delete(popupState.key);
     tempoAccountSearchCache.clear();
+    watcherSearchCache.clear();
     issueSearchCache.clear();
     [...assigneeSearchCache.keys()].forEach(cacheKey => {
       if (String(cacheKey).startsWith(`${popupState.key}__`)) {
@@ -3758,6 +4061,143 @@ async function mainAsyncLocal() {
     };
   }
 
+  function buildNextWatchersState(currentState = emptyWatchersState(), changes = {}) {
+    return {
+      ...emptyWatchersState(),
+      ...currentState,
+      ...changes,
+    };
+  }
+
+  async function runWatcherSearch(queryText, requestId) {
+    const normalizedQuery = String(queryText || '').trim();
+    try {
+      const results = normalizedQuery ? await searchWatcherCandidates(normalizedQuery) : [];
+      if (!popupState?.watchersState?.open || popupState.watchersState.searchRequestId !== requestId) {
+        return;
+      }
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          searchLoading: false,
+          searchResults: results,
+        })
+      }));
+    } catch (error) {
+      if (!popupState?.watchersState?.open || popupState.watchersState.searchRequestId !== requestId) {
+        return;
+      }
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          searchLoading: false,
+          errorMessage: buildEditFieldError(error),
+        })
+      }));
+    }
+  }
+
+  async function openWatchersPanel() {
+    if (!popupState?.issueData?.key) {
+      return;
+    }
+    await renderUpdatedPopupState(currentState => ({
+      ...currentState,
+      watchersState: buildNextWatchersState(currentState.watchersState, {
+        open: true,
+        loading: true,
+        errorMessage: '',
+        addFeedback: null,
+        removeFeedback: null,
+        focusSearch: true,
+      })
+    }));
+
+    try {
+      const watcherData = await getIssueWatchers(popupState.issueData.key);
+      if (!popupState?.watchersState?.open) {
+        return;
+      }
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          loading: false,
+          errorMessage: '',
+          watchers: watcherData.watchers,
+        })
+      }));
+    } catch (error) {
+      if (!popupState?.watchersState?.open) {
+        return;
+      }
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          loading: false,
+          errorMessage: buildEditFieldError(error),
+        })
+      }));
+    }
+  }
+
+  function closeWatchersPanel() {
+    if (!popupState?.watchersState?.open) {
+      return;
+    }
+    clearWatchersFeedbackTimer();
+    renderUpdatedPopupState(currentState => ({
+      ...currentState,
+      watchersState: buildNextWatchersState(currentState.watchersState, {
+        open: false,
+        loading: false,
+        errorMessage: '',
+        searchValue: '',
+        searchLoading: false,
+        searchRequestId: 0,
+        searchResults: [],
+        pendingAddIds: [],
+        pendingRemoveIds: [],
+        addFeedback: null,
+        removeFeedback: null,
+        focusSearch: false,
+      })
+    })).catch(() => {});
+  }
+
+  function updateWatchersSearch(nextValue) {
+    if (!popupState?.watchersState?.open) {
+      return;
+    }
+    const searchValue = String(nextValue || '');
+    if (!searchValue.trim()) {
+      renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          searchValue,
+          searchLoading: false,
+          searchRequestId: 0,
+          searchResults: [],
+          errorMessage: '',
+          focusSearch: true,
+        })
+      })).catch(() => {});
+      return;
+    }
+    const searchRequestId = popupState.watchersState.searchRequestId + 1;
+    renderUpdatedPopupState(currentState => ({
+      ...currentState,
+      watchersState: buildNextWatchersState(currentState.watchersState, {
+        searchValue,
+        searchLoading: true,
+        searchRequestId,
+        errorMessage: '',
+        focusSearch: true,
+      })
+    })).then(() => {
+      runWatcherSearch(searchValue, searchRequestId).catch(() => {});
+    }).catch(() => {});
+  }
+
   async function renderUpdatedPopupState(nextStateOrUpdater) {
     const nextState = updatePopupState(nextStateOrUpdater);
     await renderIssuePopup(nextState);
@@ -3768,10 +4208,14 @@ async function mainAsyncLocal() {
     if (!popupState?.key) {
       return;
     }
-    const {showSnackBar = false, nextTimeTrackingEditState} = options;
+    const {showSnackBar = false, nextTimeTrackingEditState, refreshWatchersPanel = false, nextWatchersStateChanges = {}, scheduleWatchersFeedbackReset = false} = options;
     const popupKey = popupState.key;
+    const shouldRefreshWatchersPanel = !!(refreshWatchersPanel || popupState?.watchersState?.open);
     invalidatePopupCaches();
-    const refreshedIssueData = await getIssueMetaData(popupKey);
+    const [refreshedIssueData, refreshedWatcherData] = await Promise.all([
+      getIssueMetaData(popupKey),
+      shouldRefreshWatchersPanel ? getIssueWatchers(popupKey).catch(() => null) : Promise.resolve(null)
+    ]);
     await normalizeIssueImages(refreshedIssueData);
 
     let refreshedPullRequests = [];
@@ -3804,9 +4248,125 @@ async function mainAsyncLocal() {
         lastActionSuccess: showSnackBar ? '' : successMessage,
       }),
       timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
+      watchersState: refreshedWatcherData
+        ? buildNextWatchersState(currentState.watchersState, {
+            loading: false,
+            errorMessage: '',
+            watchers: refreshedWatcherData.watchers,
+            pendingAddIds: [],
+            pendingRemoveIds: [],
+            searchResults: (currentState.watchersState?.searchResults || []).filter(result => {
+              return !refreshedWatcherData.watchers.some(watcher => watcher.id === result.id);
+            }),
+            focusSearch: !!currentState.watchersState?.open,
+            ...nextWatchersStateChanges,
+          })
+        : currentState.watchersState,
     }));
+    if (scheduleWatchersFeedbackReset) {
+      scheduleWatchersFeedbackClear();
+    }
     if (showSnackBar && successMessage) {
       snackBar(successMessage);
+    }
+  }
+
+  async function addWatcherFromPanel(watcherId) {
+    const watcherState = popupState?.watchersState;
+    if (!popupState?.issueData?.key || !watcherState) {
+      return;
+    }
+    const user = (watcherState.searchResults || []).find(candidate => candidate.id === watcherId);
+    if (!user || watcherState.pendingAddIds.includes(watcherId)) {
+      return;
+    }
+
+    await renderUpdatedPopupState(currentState => ({
+      ...currentState,
+      watchersState: buildNextWatchersState(currentState.watchersState, {
+        pendingAddIds: [...new Set([...(currentState.watchersState?.pendingAddIds || []), watcherId])],
+        errorMessage: '',
+        addFeedback: null,
+      })
+    }));
+
+    try {
+      await addWatcher(popupState.issueData.key, user);
+      await refreshPopupIssueState('', {
+        refreshWatchersPanel: true,
+        scheduleWatchersFeedbackReset: true,
+        nextWatchersStateChanges: {
+          addFeedback: {
+            id: watcherId,
+            message: `${user.displayName} added to watchers`,
+            toneClass: '_JX_watchers_feedback_row_success'
+          },
+        }
+      });
+    } catch (error) {
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          pendingAddIds: (currentState.watchersState?.pendingAddIds || []).filter(id => id !== watcherId),
+          errorMessage: '',
+          addFeedback: {
+            id: watcherId,
+            message: buildEditFieldError(error),
+            toneClass: '_JX_watchers_feedback_row_error'
+          },
+          focusSearch: true,
+        })
+      }));
+      scheduleWatchersFeedbackClear();
+    }
+  }
+
+  async function removeWatcherFromPanel(watcherId) {
+    const watcherState = popupState?.watchersState;
+    if (!popupState?.issueData?.key || !watcherState) {
+      return;
+    }
+    const user = (watcherState.watchers || []).find(candidate => candidate.id === watcherId);
+    if (!user || watcherState.pendingRemoveIds.includes(watcherId)) {
+      return;
+    }
+
+    await renderUpdatedPopupState(currentState => ({
+      ...currentState,
+      watchersState: buildNextWatchersState(currentState.watchersState, {
+        pendingRemoveIds: [...new Set([...(currentState.watchersState?.pendingRemoveIds || []), watcherId])],
+        errorMessage: '',
+        removeFeedback: null,
+      })
+    }));
+
+    try {
+      await removeWatcher(popupState.issueData.key, user);
+      await refreshPopupIssueState('', {
+        refreshWatchersPanel: true,
+        scheduleWatchersFeedbackReset: true,
+        nextWatchersStateChanges: {
+          removeFeedback: {
+            id: watcherId,
+            message: `${user.displayName} removed from watchers`,
+            toneClass: '_JX_watchers_feedback_row_neutral'
+          },
+        }
+      });
+    } catch (error) {
+      await renderUpdatedPopupState(currentState => ({
+        ...currentState,
+        watchersState: buildNextWatchersState(currentState.watchersState, {
+          pendingRemoveIds: (currentState.watchersState?.pendingRemoveIds || []).filter(id => id !== watcherId),
+          errorMessage: '',
+          removeFeedback: {
+            id: watcherId,
+            message: buildEditFieldError(error),
+            toneClass: '_JX_watchers_feedback_row_error'
+          },
+        })
+      }));
+      scheduleWatchersFeedbackClear();
     }
   }
   // ── Field Editing ─────────────────────────────────────────
@@ -4441,6 +5001,39 @@ async function mainAsyncLocal() {
     renderIssuePopup(popupState).catch(() => {});
   });
 
+  $(document.body).on('click', '._JX_watchers_trigger', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (popupState?.watchersState?.open) {
+      closeWatchersPanel();
+      return;
+    }
+    openWatchersPanel().catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_watchers_close', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeWatchersPanel();
+  });
+
+  $(document.body).on('click', '._JX_watchers_search_result', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    addWatcherFromPanel(e.currentTarget.getAttribute('data-watcher-id') || '').catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_watchers_remove', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    removeWatcherFromPanel(e.currentTarget.getAttribute('data-watcher-id') || '').catch(() => {});
+  });
+
+  $(document.body).on('input', '._JX_watchers_search_input', function (e) {
+    e.stopPropagation();
+    updateWatchersSearch(e.currentTarget.value);
+  });
+
   $(document.body).on('click', '._JX_action_item', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -4460,6 +5053,16 @@ async function mainAsyncLocal() {
       actionsOpen: false
     };
     renderIssuePopup(popupState).catch(() => {});
+  });
+
+  $(document.body).on('mousedown', function (e) {
+    if (!popupState?.watchersState?.open) {
+      return;
+    }
+    if ($(e.target).closest('._JX_watchers_group').length) {
+      return;
+    }
+    closeWatchersPanel();
   });
 
   $(document.body).on('click', function (e) {
@@ -4774,6 +5377,7 @@ async function mainAsyncLocal() {
   // ── Container Lifecycle ────────────────────────────────────
   function hideContainer() {
     lastHoveredKey = '';
+    clearWatchersFeedbackTimer();
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     activeCommentContext = null;
@@ -4947,6 +5551,7 @@ async function mainAsyncLocal() {
         quickActions,
         commentReactionState,
         ...buildPopupInteractionReset(),
+        watchersState: emptyWatchersState(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
       });
     })(cancelToken).catch((error) => {

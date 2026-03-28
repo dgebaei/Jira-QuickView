@@ -131,6 +131,47 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
   await page.close();
 });
 
+test('adds and removes watchers from the popup panel in mocked mode', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Watcher mutation coverage currently uses the mock Jira server only.');
+  await servers.jira.setScenario('watcher-self-off');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const trigger = page.locator('._JX_watchers_trigger');
+  await expect(trigger).toContainText('1');
+  await expect(trigger).not.toHaveClass(/is-watching/);
+
+  await trigger.click();
+  const searchInput = page.locator('._JX_watchers_search_input');
+  await expect(searchInput).toBeVisible();
+  await searchInput.fill('Morgan');
+  await expect(page.locator('._JX_watchers_search_result[data-watcher-id="user-me"]')).toBeVisible();
+  await page.locator('._JX_watchers_search_result[data-watcher-id="user-me"]').click();
+
+  await expect(trigger).toContainText('2');
+  await expect(trigger).toHaveClass(/is-watching/);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent added to watchers'})).toBeVisible();
+  await expect(page.locator('._JX_watchers_row[data-watcher-id="user-me"]')).toBeVisible();
+  await page.waitForTimeout(5200);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent added to watchers'})).toHaveCount(0);
+
+  await searchInput.fill('Alex');
+  await expect(page.locator('._JX_watchers_search_result[data-watcher-id="user-alex"]')).toHaveCount(0);
+
+  const myRow = page.locator('._JX_watchers_row[data-watcher-id="user-me"]');
+  await myRow.hover();
+  await myRow.locator('._JX_watchers_remove').click();
+
+  await expect(trigger).toContainText('1');
+  await expect(trigger).not.toHaveClass(/is-watching/);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent removed from watchers'})).toBeVisible();
+  await expect(page.locator('._JX_watchers_row[data-watcher-id="user-me"]')).toHaveCount(0);
+  await page.waitForTimeout(5200);
+  await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent removed from watchers'})).toHaveCount(0);
+  await page.close();
+});
+
 test('supports mentions and saving new comments in mocked mode', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
