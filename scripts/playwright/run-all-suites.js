@@ -14,7 +14,7 @@ const parentRunId = `all-tests-${timestamp()}`;
 const parentRunLabel = 'Test Run';
 
 const suites = [
-  {label: 'mock-edge', args: ['--project=mock-edge']},
+  {label: 'mock-edge', args: ['--project=mock-edge', '--project=mock-popup']},
   {label: 'public-smoke', args: ['--project=public-smoke']},
   {label: 'live-authenticated', args: ['--project=live-authenticated']},
 ];

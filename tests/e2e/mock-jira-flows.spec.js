@@ -84,7 +84,7 @@ test('renders Jira metadata, comments, attachments, pull requests, and custom fi
   await page.close();
 });
 
-test('keeps editable custom fields visible when they are currently empty', async ({extensionApp, optionsPage, servers}) => {
+test('keeps editable custom fields visible when they are currently empty @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Empty custom field placeholder coverage is deterministic in mocked mode only.');
 
@@ -133,7 +133,7 @@ test('keeps editable custom fields visible when they are currently empty', async
   await page.close();
 });
 
-test('supports search-based editing for user picker custom fields', async ({extensionApp, optionsPage, servers}) => {
+test('supports search-based editing for user picker custom fields @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'User-picker custom field coverage is deterministic in mocked mode only.');
 
@@ -254,7 +254,7 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
   await page.close();
 });
 
-test('adds and removes watchers from the popup panel in mocked mode', async ({extensionApp, optionsPage, servers}) => {
+test('adds and removes watchers from the popup panel in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Watcher mutation coverage currently uses the mock Jira server only.');
   await servers.jira.setScenario('watcher-self-off');
@@ -335,7 +335,7 @@ test('supports mentions and saving new comments in mocked mode', async ({extensi
   await page.close();
 });
 
-test('uploads a pasted image into the comment composer in mocked mode', async ({extensionApp, optionsPage, servers}) => {
+test('uploads a pasted image into the comment composer in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Pasted-image upload coverage is deterministic in mocked mode only.');
 

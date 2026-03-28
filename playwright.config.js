@@ -34,12 +34,18 @@ module.exports = {
       testMatch: /(?:^|\/)(?:error-states|partial-failures|user-field-editing)\.spec\.js$/,
     },
     {
+      name: 'mock-popup',
+      testMatch: /(?:^|\/)(?:mock-jira-flows|advanced-mock-flows)\.spec\.js$/,
+      grep: /@mock-only/,
+    },
+    {
       name: 'public-smoke',
       testMatch: /(?:^|\/)public-jira\.spec\.js$/,
     },
     {
       name: 'live-authenticated',
       testMatch: /(?:^|\/)(?:options|hover-and-popup|mock-jira-flows|advanced-mock-flows|live-jira)\.spec\.js$/,
+      grepInvert: /@mock-only/,
     },
   ],
 };
