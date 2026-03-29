@@ -358,6 +358,30 @@ test('groups history entries and nests referenced attachments inside expanded co
   await page.close();
 });
 
+test('reopens history after closing it while changelog is still loading in mocked mode', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'History flyout loading coverage currently uses the mock Jira server only.');
+  await servers.jira.setScenario('editable-slow-changelog');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const historyTrigger = page.locator('._JX_history_toggle');
+
+  await historyTrigger.click();
+  await expect(page.locator('._JX_history_loading')).toBeVisible();
+
+  await page.locator('body').click({position: {x: 10, y: 10}});
+  await expect(page.locator('._JX_history_flyout')).toHaveCount(0);
+
+  await page.waitForTimeout(350);
+
+  await historyTrigger.click();
+  await expect(page.locator('._JX_history_entry')).toHaveCount(3);
+  await expect(page.locator('._JX_history_loading')).toHaveCount(0);
+
+  await page.close();
+});
+
 test('supports mentions and saving new comments in mocked mode', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
