@@ -1,4 +1,4 @@
-<div class="_JX_annotation">
+<div class="_JX_annotation{{#useWideAnnotation}} _JX_annotation_wide{{/useWideAnnotation}}">
     <div class="_JX_title">
         <div class="_JX_title_users">
             {{#reporterView}}
@@ -205,7 +205,98 @@
             {{#hasRow1Meta}}
             <div class="_JX_activity_strip">
                 {{#activityIndicators}}
-                <span class="_JX_activity_item" title="{{title}}">{{icon}} <strong>{{count}}</strong></span>
+                <div class="_JX_history_group">
+                    {{#clickable}}<button class="_JX_activity_item _JX_history_toggle{{#isHistory}}{{#historyOpen}} is-active{{/historyOpen}}{{/isHistory}}" type="button" title="{{title}}" aria-label="{{ariaLabel}}" aria-haspopup="dialog" aria-expanded="{{#historyOpen}}true{{/historyOpen}}{{^historyOpen}}false{{/historyOpen}}">{{{iconHtml}}}{{#hasCount}} <strong>{{count}}</strong>{{/hasCount}}</button>{{/clickable}}
+                    {{^clickable}}<span class="_JX_activity_item" title="{{title}}">{{{iconHtml}}}{{#hasCount}} <strong>{{count}}</strong>{{/hasCount}}</span>{{/clickable}}
+                    {{#isHistory}}
+                    {{#historyOpen}}
+                    <div class="_JX_history_flyout" role="dialog" aria-label="History">
+                        <div class="_JX_history_header">History</div>
+                        {{#changelogLoading}}
+                        <div class="_JX_history_loading">Loading changelog...</div>
+                        {{/changelogLoading}}
+                        {{#showChangelogEmpty}}
+                        <div class="_JX_history_empty">No changes recorded.</div>
+                        {{/showChangelogEmpty}}
+                        {{#hasChangelogEntries}}
+                        <div class="_JX_history_entries">
+                            {{#changelogEntries}}
+                            <div class="_JX_history_entry">
+                                <div class="_JX_history_entry_header">{{timestamp}} &middot; <strong>{{authorName}}</strong></div>
+                                {{#hasEvents}}
+                                <div class="_JX_history_entry_items">
+                                    {{#events}}
+                                    {{#isRichTextEvent}}
+                                    <details class="_JX_history_rich_event _JX_history_rich_event_{{richKind}}">
+                                        <summary class="_JX_history_rich_summary">
+                                            <span class="_JX_history_rich_summary_main">
+                                                <span class="_JX_history_field">{{field}}:</span>
+                                                <span class="_JX_history_rich_preview">{{previewText}}</span>
+                                                <span class="_JX_history_rich_summary_icon" aria-hidden="true">{{richIcon}}</span>
+                                            </span>
+                                            <span class="_JX_history_rich_summary_meta">
+                                                {{#hasAttachments}}<span class="_JX_history_rich_attachment_count">{{attachmentCountLabel}}</span>{{/hasAttachments}}
+                                                {{#showSubTimestamp}}<span class="_JX_history_event_time">{{subTimestamp}}</span>{{/showSubTimestamp}}
+                                            </span>
+                                        </summary>
+                                        <div class="_JX_history_rich_body">
+                                            {{#hasSections}}
+                                            {{#sections}}
+                                            <div class="_JX_history_rich_section">
+                                                {{#showLabel}}<div class="_JX_history_rich_section_label">{{label}}</div>{{/showLabel}}
+                                                <div class="_JX_history_rich_section_body">{{{bodyHtml}}}</div>
+                                            </div>
+                                            {{/sections}}
+                                            {{/hasSections}}
+                                            {{#hasAttachments}}
+                                            <div class="_JX_history_rich_attachments">
+                                                <div class="_JX_history_rich_section_label">Attachments</div>
+                                                <div class="_JX_history_attachment_list">
+                                                    {{#attachments}}
+                                                    <div class="_JX_history_attachment_item{{#isImage}} is-image{{/isImage}}">
+                                                        {{#isImage}}
+                                                        {{#isPreviewable}}<button class="_JX_history_attachment_thumb _JX_history_attachment_preview" type="button" data-jx-preview-src="{{previewSrc}}" title="{{previewTitle}}"><img class="_JX_previewable" src="{{thumbnail}}" data-jx-preview-src="{{previewSrc}}" alt="{{filename}}"></button>{{/isPreviewable}}
+                                                        {{/isImage}}
+                                                        {{#isPreviewable}}<button class="_JX_history_attachment_preview _JX_history_attachment_link" type="button" data-jx-preview-src="{{previewSrc}}" title="{{previewTitle}}">{{filename}}</button>{{/isPreviewable}}
+                                                        {{^isPreviewable}}{{#hasUrl}}<a class="_JX_history_attachment_link" href="{{url}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">{{filename}}</a>{{/hasUrl}}{{/isPreviewable}}
+                                                        {{^hasUrl}}<span class="_JX_history_attachment_name">{{filename}}</span>{{/hasUrl}}
+                                                    </div>
+                                                    {{/attachments}}
+                                                </div>
+                                            </div>
+                                            {{/hasAttachments}}
+                                        </div>
+                                    </details>
+                                    {{/isRichTextEvent}}
+                                    {{#isGenericEvent}}
+                                    {{#isShort}}
+                                    <div class="_JX_history_change_row">
+                                        <div class="_JX_history_change"><span class="_JX_history_field">{{field}}:</span> {{{fromHtml}}} &rarr; {{{toHtml}}}</div>
+                                        {{#showSubTimestamp}}<div class="_JX_history_event_time">{{subTimestamp}}</div>{{/showSubTimestamp}}
+                                    </div>
+                                    {{/isShort}}
+                                    {{#isLong}}
+                                    <div class="_JX_history_change_row _JX_history_change_row_details">
+                                        <details class="_JX_history_change_details">
+                                            <summary class="_JX_history_change_summary">&#9654; {{field}} (changed)</summary>
+                                            <div class="_JX_history_change_full"><span class="_JX_history_field">From:</span> {{{fromHtml}}}</div>
+                                            <div class="_JX_history_change_full"><span class="_JX_history_field">To:</span> {{{toHtml}}}</div>
+                                        </details>
+                                        {{#showSubTimestamp}}<div class="_JX_history_event_time">{{subTimestamp}}</div>{{/showSubTimestamp}}
+                                    </div>
+                                    {{/isLong}}
+                                    {{/isGenericEvent}}
+                                    {{/events}}
+                                </div>
+                                {{/hasEvents}}
+                            </div>
+                            {{/changelogEntries}}
+                        </div>
+                        {{/hasChangelogEntries}}
+                    </div>
+                    {{/historyOpen}}
+                    {{/isHistory}}
+                </div>
                 {{/activityIndicators}}
                 <div class="_JX_watchers_group">
                     <button class="_JX_watchers_trigger{{#watchersTrigger.isWatching}} is-watching{{/watchersTrigger.isWatching}}{{#watchersTrigger.isOpen}} is-open{{/watchersTrigger.isOpen}}" type="button" title="{{watchersTrigger.title}} {{watchersTrigger.watchingTitle}}" aria-label="{{watchersTrigger.title}} {{watchersTrigger.watchingTitle}}" aria-haspopup="dialog" aria-expanded="{{#watchersTrigger.isOpen}}true{{/watchersTrigger.isOpen}}{{^watchersTrigger.isOpen}}false{{/watchersTrigger.isOpen}}">
@@ -476,6 +567,7 @@
         <div class="_JX_content_block" data-content-block="timeTracking">
         <div class="_JX_time_tracking">
             <div class="_JX_section_title">Time Tracking</div>
+            <div class="_JX_section_content">
             <div class="_JX_time_tracking_layout">
                 <div class="_JX_time_tracking_row _JX_time_tracking_row_metrics">
                     <div class="_JX_time_tracking_field">
@@ -509,6 +601,7 @@
             </div>
             {{#showEstimateHint}}<div class="_JX_time_tracking_hint">{{estimateHintText}}</div>{{/showEstimateHint}}
             {{#errorMessage}}<div class="_JX_time_tracking_error">{{errorMessage}}</div>{{/errorMessage}}
+            </div>
         </div>
         </div>
         {{/timeTrackingSection}}
@@ -517,8 +610,10 @@
         <div class="_JX_description">
         {{#description}}
         <div class="_JX_section_title">Description</div>
+        <div class="_JX_section_content">
         <div class="_JX_description_text">
             {{{description}}}
+        </div>
         </div>
         {{/description}}
         </div>
@@ -528,6 +623,7 @@
         <div class="_JX_content_block" data-content-block="attachments">
         <div class="_JX_description_attachments">
             <div class="_JX_section_title">Attachments</div>
+            <div class="_JX_section_content">
             {{#previewAttachments}}
             <div data-mime-type="{{mimeType}}" data-url="{{content}}" data-preview-src="{{content}}" class="_JX_thumb">
                 <a href="{{content}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">
@@ -537,6 +633,7 @@
                 </a>
             </div>
             {{/previewAttachments}}
+            </div>
         </div>
         </div>
         {{/previewAttachments.length}}
@@ -545,6 +642,7 @@
         <div class="_JX_content_block" data-content-block="pullRequests">
         <div class="_JX_related_pr">
             <div class="_JX_section_title">Pull Requests</div>
+            <div class="_JX_section_content">
             <table>
                 <thead>
                 <tr>
@@ -565,6 +663,7 @@
                 {{/prs}}
                 </tbody>
             </table>
+            </div>
         </div>
         </div>
         {{/prs.length}}
@@ -573,6 +672,7 @@
         <div class="_JX_content_block" data-content-block="comments">
         <div class="_JX_comments">
             <div class="_JX_section_title">Comments</div>
+            <div class="_JX_section_content">
             <div class="_JX_comment_list">
             {{#commentsForDisplay}}
             <div class="_JX_comment" data-comment-id="{{id}}">
@@ -668,6 +768,7 @@
                 </div>
             </div>
             {{/showCommentComposer}}
+            </div>
         </div>
         </div>
         {{/showCommentsSection}}

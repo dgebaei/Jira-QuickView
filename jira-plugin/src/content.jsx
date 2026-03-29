@@ -73,6 +73,8 @@ function buildRegexMatcher(regex) {
   };
 }
 
+const FALLBACK_JIRA_KEY_PATTERN = '\\b[A-Z][A-Z0-9]{1,14}[- ]\\d+\\b';
+
 /**
  * Returns a function that will return an array of jira tickets for any given string
  * @param projectKeys project keys to match
@@ -92,7 +94,7 @@ function buildJiraKeyMatcher(projectKeys) {
 }
 
 function buildFallbackJiraKeyMatcher() {
-  return buildRegexMatcher(/\b[A-Z][A-Z0-9]{1,14}[- ]\d+\b/g);
+  return buildRegexMatcher(new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g'));
 }
 
 // ── Tips & Notifications ────────────────────────────────────────
@@ -271,6 +273,7 @@ async function mainAsyncLocal() {
   const cacheTtlMs = 60 * 1000;
   const issueCache = new Map();
   const pullRequestCache = new Map();
+  const changelogCache = new Map();
   const fieldOptionsCache = new Map();
   const emptyCommentMentionState = () => ({
     error: '',
@@ -557,6 +560,10 @@ async function mainAsyncLocal() {
     const node = document.createElement('div');
     node.textContent = input || '';
     return node.innerHTML;
+  }
+
+  function normalizeIssueKey(issueKey) {
+    return String(issueKey || '').trim().replace(/\s+/g, '-').toUpperCase();
   }
 
   function getMentionDisplayText(rawValue) {
@@ -1455,6 +1462,715 @@ async function mainAsyncLocal() {
       value
     });
     return value;
+  }
+
+  // ── Changelog ────────────────────────────────────────────
+
+  async function getIssueChangelog(issueKey) {
+    return getCachedValue(changelogCache, issueKey, async () => {
+      const response = await get(`${INSTANCE_URL}rest/api/2/issue/${encodeURIComponent(issueKey)}?expand=changelog&fields=id`);
+      return response?.changelog || {histories: []};
+    });
+  }
+
+  const HISTORY_GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+  function normalizeHistoryFieldName(fieldName) {
+    return String(fieldName || '').trim().toLowerCase();
+  }
+
+  function toHistoryTitleCase(value) {
+    return String(value || '')
+      .split(' ')
+      .filter(Boolean)
+      .map(word => {
+        const lowerWord = word.toLowerCase();
+        if (lowerWord === 'id') {
+          return 'ID';
+        }
+        return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
+      })
+      .join(' ');
+  }
+
+  function buildHistoryFieldLabel(fieldName, fieldId, fieldNames = {}) {
+    const normalizedFieldId = normalizeHistoryFieldName(fieldId).replace(/[\s_-]+/g, '');
+    const mappedFieldNames = {
+      attachment: 'Attachment',
+      comment: 'Comment',
+      description: 'Description',
+      epiclink: 'Epic Link',
+      fixversions: 'Fix versions',
+      issuetype: 'Issue type',
+      link: 'Link',
+      priority: 'Priority',
+      resolution: 'Resolution',
+      sprint: 'Sprint',
+      status: 'Status',
+      timeestimate: 'Time estimate',
+      timeoriginalestimate: 'Original estimate',
+      timespent: 'Time spent',
+      version: 'Version',
+      versions: 'Versions',
+      worklogid: 'Worklog ID'
+    };
+    const explicitFieldName = fieldNames?.[fieldId] || fieldNames?.[fieldName];
+    if (explicitFieldName) {
+      return explicitFieldName;
+    }
+    if (mappedFieldNames[normalizedFieldId]) {
+      return mappedFieldNames[normalizedFieldId];
+    }
+    const rawLabel = String(fieldName || fieldId || 'Unknown field')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return toHistoryTitleCase(rawLabel || 'Unknown field');
+  }
+
+  function normalizeHistoryAttachmentName(fileName) {
+    return String(fileName || '').trim().toLowerCase();
+  }
+
+  function isHistoryCommentField(fieldName) {
+    return normalizeHistoryFieldName(fieldName) === 'comment';
+  }
+
+  function isHistoryDescriptionField(fieldName) {
+    return normalizeHistoryFieldName(fieldName) === 'description';
+  }
+
+  function isHistoryAttachmentField(fieldName) {
+    return normalizeHistoryFieldName(fieldName) === 'attachment';
+  }
+
+  function isHistorySuppressedField(fieldName) {
+    const normalized = normalizeHistoryFieldName(fieldName).replace(/\s+/g, '');
+    return normalized === 'worklogid';
+  }
+
+  function looksLikeHtmlFragment(value) {
+    return /<\/?[a-z][\s\S]*>/i.test(String(value || ''));
+  }
+
+  function stripHistoryAttachmentMarkup(value) {
+    return String(value || '')
+      .replace(/!\s*([^!\r\n]+?)(?:\|[^!\r\n]*)?!/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function buildHistoryTimestampParts(created) {
+    const createdAt = new Date(created);
+    if (Number.isNaN(createdAt.getTime())) {
+      return {
+        createdAt,
+        createdMs: 0,
+        full: '--',
+        short: '--'
+      };
+    }
+    const dateStr = createdAt.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+    const timeStr = createdAt.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: false});
+    return {
+      createdAt,
+      createdMs: createdAt.getTime(),
+      full: `${dateStr}, ${timeStr}`,
+      short: timeStr
+    };
+  }
+
+  function buildHistoryAttachmentView(attachment, fallbackName = '') {
+    const filename = String(attachment?.filename || fallbackName || '').trim();
+    const url = attachment?.content || '';
+    const previewSrc = attachment?.content || '';
+    const thumbnail = attachment?.thumbnail || previewSrc;
+    const mimeType = String(attachment?.mimeType || '').toLowerCase();
+    return {
+      filename,
+      hasUrl: !!url,
+      url,
+      previewSrc,
+      thumbnail,
+      mimeType,
+      isImage: mimeType.startsWith('image') && !!thumbnail,
+      isPreviewable: mimeType.startsWith('image') && !!previewSrc,
+      linkTitle: url ? buildLinkHoverTitle('Open attachment', filename || 'Attachment', url) : '',
+      previewTitle: previewSrc ? buildLinkHoverTitle('Preview attachment', filename || 'Attachment', url || previewSrc) : ''
+    };
+  }
+
+  function buildHistoryAttachmentActionHtml(attachmentView, options = {}) {
+    const {className = '_JX_history_attachment_link'} = options;
+    const filename = String(attachmentView?.filename || '').trim();
+    if (!filename) {
+      return '--';
+    }
+    if (attachmentView?.isPreviewable) {
+      return `<button class="_JX_history_attachment_preview ${escapeHtml(className)}" type="button" data-jx-preview-src="${escapeHtml(attachmentView.previewSrc)}" title="${escapeHtml(attachmentView.previewTitle)}">${escapeHtml(filename)}</button>`;
+    }
+    if (attachmentView?.hasUrl) {
+      return `<a class="${escapeHtml(className)}" href="${escapeHtml(attachmentView.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(attachmentView.linkTitle)}">${escapeHtml(filename)}</a>`;
+    }
+    return `<span class="_JX_history_attachment_name">${escapeHtml(filename)}</span>`;
+  }
+
+  function buildHistoryAttachmentLookup(attachments) {
+    const attachmentLookup = new Map();
+    (attachments || []).forEach(attachment => {
+      const filename = String(attachment?.filename || '').trim();
+      const normalizedName = normalizeHistoryAttachmentName(filename);
+      if (!normalizedName || attachmentLookup.has(normalizedName)) {
+        return;
+      }
+      attachmentLookup.set(normalizedName, buildHistoryAttachmentView(attachment));
+    });
+    return attachmentLookup;
+  }
+
+  function dedupeHistoryAttachments(attachments) {
+    const deduped = new Map();
+    (attachments || []).forEach(attachment => {
+      const normalizedName = normalizeHistoryAttachmentName(attachment?.filename);
+      if (!normalizedName || deduped.has(normalizedName)) {
+        return;
+      }
+      deduped.set(normalizedName, attachment);
+    });
+    return [...deduped.values()];
+  }
+
+  function collectReferencedHistoryAttachmentNames(value, attachmentLookup) {
+    const normalizedText = normalizeHistoryAttachmentName(value);
+    if (!normalizedText) {
+      return new Set();
+    }
+    return new Set([...attachmentLookup.keys()].filter(fileName => {
+      return normalizedText.includes(fileName);
+    }));
+  }
+
+  function buildHistoryPreviewText(value, options = {}) {
+    const {attachments = [], fallbackText = 'View details'} = options;
+    const text = String(value || '')
+      .split(/\r?\n/)
+      .map(line => line.replace(/\s+/g, ' ').trim())
+      .find(Boolean);
+    if (text) {
+      return text.length > 140 ? `${text.slice(0, 137)}...` : text;
+    }
+    if (attachments.length === 1) {
+      return attachments[0].filename;
+    }
+    if (attachments.length > 1) {
+      return `${attachments.length} attachments`;
+    }
+    return fallbackText;
+  }
+
+  async function renderHistoryRichTextHtml(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return '';
+    }
+    const baseHtml = looksLikeHtmlFragment(normalizedValue)
+      ? await normalizeRichHtml(normalizedValue, {imageMaxHeight: 120})
+      : textToLinkedHtml(normalizedValue || '');
+    return linkifyHistoryIssueKeysInHtml(baseHtml);
+  }
+
+  function isChangelogTimeField(fieldName) {
+    const normalizedFieldName = String(fieldName || '').toLowerCase().replace(/[\s_]+/g, '');
+    return [
+      'timeestimate',
+      'timeoriginalestimate',
+      'timespent',
+      'aggregatetimeestimate',
+      'aggregatetimeoriginalestimate',
+      'aggregatetimespent'
+    ].includes(normalizedFieldName);
+  }
+
+  function formatChangelogDuration(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!/^-?\d+$/.test(normalizedValue)) {
+      return normalizedValue;
+    }
+    const totalSeconds = Number(normalizedValue);
+    if (!Number.isFinite(totalSeconds)) {
+      return normalizedValue;
+    }
+    if (totalSeconds === 0) {
+      return '0h';
+    }
+    const absoluteSeconds = Math.abs(totalSeconds);
+    const totalMinutes = Math.round(absoluteSeconds / 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (hours) {
+      parts.push(`${hours}h`);
+    }
+    if (minutes || !parts.length) {
+      parts.push(`${minutes}m`);
+    }
+    return `${totalSeconds < 0 ? '-' : ''}${parts.join(' ')}`;
+  }
+
+  function formatChangelogFieldValue(fieldName, value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return '';
+    }
+    return isChangelogTimeField(fieldName)
+      ? formatChangelogDuration(normalizedValue)
+      : normalizedValue;
+  }
+
+  function buildHistoryAttachmentHtml(value, attachmentLookup) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return '--';
+    }
+    const attachmentView = attachmentLookup.get(normalizeHistoryAttachmentName(normalizedValue));
+    if (!attachmentView?.hasUrl) {
+      return historyTextToHtml(normalizedValue);
+    }
+    return buildHistoryAttachmentActionHtml(attachmentView);
+  }
+
+  function formatHistoryFieldHtml(fieldName, value, attachmentLookup) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return '--';
+    }
+    if (isHistoryAttachmentField(fieldName)) {
+      return buildHistoryAttachmentHtml(normalizedValue, attachmentLookup);
+    }
+    return historyTextToHtml(normalizedValue);
+  }
+
+  function historyTextToHtml(input) {
+    const rawText = String(input || '');
+    const issueKeyPattern = new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g');
+    let html = '';
+    let lastIndex = 0;
+    let match;
+    while ((match = issueKeyPattern.exec(rawText)) !== null) {
+      const matchedText = match[0];
+      const normalizedIssueKey = normalizeIssueKey(matchedText);
+      const issueUrl = `${INSTANCE_URL}browse/${normalizedIssueKey}`;
+      html += escapeHtml(rawText.slice(lastIndex, match.index));
+      html += `<a class="_JX_history_issue_link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(buildLinkHoverTitle('Open issue in Jira', normalizedIssueKey, issueUrl))}">${escapeHtml(matchedText)}</a>`;
+      lastIndex = match.index + matchedText.length;
+    }
+    html += escapeHtml(rawText.slice(lastIndex));
+    return html.replace(/\n/g, '<br/>');
+  }
+
+  function linkifyHistoryIssueKeysInHtml(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    const textNodes = [];
+    const walker = document.createTreeWalker(temp, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node?.nodeValue || !node.nodeValue.trim()) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (node.parentElement?.closest('a')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g').test(node.nodeValue)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      }
+    });
+    let nextNode = walker.nextNode();
+    while (nextNode) {
+      textNodes.push(nextNode);
+      nextNode = walker.nextNode();
+    }
+    textNodes.forEach(textNode => {
+      const rawText = textNode.nodeValue || '';
+      const issueKeyPattern = new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g');
+      const fragment = document.createDocumentFragment();
+      let lastIndex = 0;
+      let match;
+      while ((match = issueKeyPattern.exec(rawText)) !== null) {
+        const matchedText = match[0];
+        const normalizedIssueKey = normalizeIssueKey(matchedText);
+        const issueUrl = `${INSTANCE_URL}browse/${normalizedIssueKey}`;
+        fragment.appendChild(document.createTextNode(rawText.slice(lastIndex, match.index)));
+        const anchor = document.createElement('a');
+        anchor.className = '_JX_history_issue_link';
+        anchor.href = issueUrl;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        anchor.title = buildLinkHoverTitle('Open issue in Jira', normalizedIssueKey, issueUrl);
+        anchor.textContent = matchedText;
+        fragment.appendChild(anchor);
+        lastIndex = match.index + matchedText.length;
+      }
+      fragment.appendChild(document.createTextNode(rawText.slice(lastIndex)));
+      textNode.parentNode?.replaceChild(fragment, textNode);
+    });
+    return temp.innerHTML;
+  }
+
+  async function buildHistoryRichSections(fieldLabel, fromValue, toValue) {
+    const hasFromValue = !!fromValue;
+    const hasToValue = !!toValue;
+    const sectionSpecs = [];
+    if (hasFromValue && hasToValue && fromValue !== toValue) {
+      sectionSpecs.push({label: 'Before', showLabel: true, value: fromValue});
+      sectionSpecs.push({label: 'After', showLabel: true, value: toValue});
+    } else if (hasToValue || hasFromValue) {
+      sectionSpecs.push({label: fieldLabel, showLabel: false, value: toValue || fromValue});
+    }
+    return Promise.all(sectionSpecs.map(async section => {
+      return {
+        ...section,
+        bodyHtml: await renderHistoryRichTextHtml(section.value)
+      };
+    }));
+  }
+
+  async function buildHistoryEvent(item, entryMeta, attachmentLookup, itemIndex, fieldNames = {}) {
+    const fieldKey = item.fieldId || item.field || 'Unknown field';
+    const field = buildHistoryFieldLabel(item.field, fieldKey, fieldNames);
+    if (isHistorySuppressedField(fieldKey)) {
+      return null;
+    }
+    const rawFromString = String(item.fromString || '').trim();
+    const rawToString = String(item.toString || '').trim();
+    const eventId = `${entryMeta.createdMs}-${itemIndex}-${normalizeHistoryFieldName(fieldKey)}`;
+    if (isHistoryCommentField(fieldKey) || isHistoryDescriptionField(fieldKey)) {
+      const richKind = isHistoryCommentField(fieldKey) ? 'comment' : 'description';
+      const referencedAttachmentNames = richKind === 'comment'
+        ? collectReferencedHistoryAttachmentNames([rawToString, rawFromString].filter(Boolean).join('\n'), attachmentLookup)
+        : new Set();
+      const attachments = dedupeHistoryAttachments([...referencedAttachmentNames].map(fileName => {
+        return attachmentLookup.get(fileName) || buildHistoryAttachmentView(null, fileName);
+      }).filter(Boolean));
+      const cleanedFromValue = richKind === 'comment'
+        ? stripHistoryAttachmentMarkup(rawFromString)
+        : rawFromString;
+      const cleanedToValue = richKind === 'comment'
+        ? stripHistoryAttachmentMarkup(rawToString)
+        : rawToString;
+      const previewValue = cleanedToValue || cleanedFromValue;
+      return {
+        eventId,
+        eventCreatedMs: entryMeta.createdMs,
+        field,
+        subTimestamp: entryMeta.timestamp.short,
+        isRichTextEvent: true,
+        isGenericEvent: false,
+        richKind,
+        richIcon: richKind === 'comment' ? '💬' : '📝',
+        previewSourceText: previewValue,
+        previewFallbackText: richKind === 'comment' ? 'View comment' : 'View description',
+        previewText: buildHistoryPreviewText(previewValue, {
+          attachments,
+          fallbackText: richKind === 'comment' ? 'View comment' : 'View description'
+        }),
+        sections: await buildHistoryRichSections(field, cleanedFromValue, cleanedToValue),
+        hasSections: !!((cleanedFromValue || cleanedToValue)),
+        attachments,
+        hasAttachments: attachments.length > 0,
+        attachmentCountLabel: attachments.length === 1 ? '1 attachment' : `${attachments.length} attachments`,
+        referencedAttachmentNames
+      };
+    }
+
+    const fromString = formatChangelogFieldValue(fieldKey, rawFromString);
+    const toString = formatChangelogFieldValue(fieldKey, rawToString);
+    const attachmentName = isHistoryAttachmentField(fieldKey)
+      ? normalizeHistoryAttachmentName(toString || fromString)
+      : '';
+    return {
+      eventId,
+      eventCreatedMs: entryMeta.createdMs,
+      field,
+      subTimestamp: entryMeta.timestamp.short,
+      isRichTextEvent: false,
+      isGenericEvent: true,
+      isAttachmentEvent: isHistoryAttachmentField(fieldKey),
+      attachmentName,
+      attachmentView: attachmentName
+        ? (attachmentLookup.get(attachmentName) || buildHistoryAttachmentView(null, toString || fromString))
+        : null,
+      fromString: fromString || '--',
+      toString: toString || '--',
+      fromHtml: formatHistoryFieldHtml(fieldKey, fromString, attachmentLookup),
+      toHtml: formatHistoryFieldHtml(fieldKey, toString, attachmentLookup),
+      isLong: fromString.length > 80 || toString.length > 80,
+      isShort: !(fromString.length > 80 || toString.length > 80)
+    };
+  }
+
+  function mergeHistoryAttachmentEventsIntoComments(events, attachmentLookup) {
+    const nextEvents = [...(events || [])];
+    const commentEvents = nextEvents.filter(event => event.isRichTextEvent && event.richKind === 'comment');
+    const attachedEventIds = new Set();
+    commentEvents.forEach(commentEvent => {
+      commentEvent.attachments = dedupeHistoryAttachments(commentEvent.attachments || []);
+    });
+    nextEvents.forEach(event => {
+      if (!event.isAttachmentEvent || !event.attachmentName) {
+        return;
+      }
+      const matchingComment = commentEvents.find(commentEvent => {
+        return commentEvent.referencedAttachmentNames?.has(event.attachmentName);
+      });
+      if (!matchingComment) {
+        return;
+      }
+      matchingComment.attachments = dedupeHistoryAttachments([
+        ...(matchingComment.attachments || []),
+        event.attachmentView || buildHistoryAttachmentView(null, event.attachmentName)
+      ]);
+      matchingComment.hasAttachments = matchingComment.attachments.length > 0;
+      matchingComment.attachmentCountLabel = matchingComment.attachments.length === 1
+        ? '1 attachment'
+        : `${matchingComment.attachments.length} attachments`;
+      matchingComment.previewText = buildHistoryPreviewText(matchingComment.previewSourceText, {
+        attachments: matchingComment.attachments,
+        fallbackText: matchingComment.previewFallbackText
+      });
+      attachedEventIds.add(event.eventId);
+    });
+    return nextEvents.filter(event => !attachedEventIds.has(event.eventId));
+  }
+
+  function buildCurrentHistoryCommentCandidates(issueData, attachmentLookup) {
+    return (issueData?.fields?.comment?.comments || []).map(comment => {
+      const body = String(comment?.body || '').trim();
+      return {
+        id: String(comment?.id || ''),
+        author: comment?.author || null,
+        created: comment?.created || '',
+        createdMs: new Date(comment?.created).getTime(),
+        body,
+        strippedBody: stripHistoryAttachmentMarkup(body),
+        referencedAttachmentNames: collectReferencedHistoryAttachmentNames(body, attachmentLookup)
+      };
+    }).filter(candidate => {
+      return !!candidate.id && !!candidate.body && Number.isFinite(candidate.createdMs);
+    });
+  }
+
+  function countHistoryAttachmentMatches(leftSet, rightSet) {
+    let count = 0;
+    leftSet.forEach(value => {
+      if (rightSet.has(value)) {
+        count += 1;
+      }
+    });
+    return count;
+  }
+
+  function normalizeHistoryComparableText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function historyCommentEventMatchesCandidate(event, candidate) {
+    const eventText = normalizeHistoryComparableText(event?.previewSourceText || '');
+    const candidateText = normalizeHistoryComparableText(candidate?.strippedBody || candidate?.body || '');
+    if (!eventText || !candidateText) {
+      return false;
+    }
+    return eventText === candidateText || eventText.includes(candidateText) || candidateText.includes(eventText);
+  }
+
+  function groupRepresentsCommentCandidate(group, candidate) {
+    if (!group || !candidate) {
+      return false;
+    }
+    if (!areSameJiraUser(candidate.author, group.author) && String(candidate.author?.displayName || '') !== String(group.authorName || '')) {
+      return false;
+    }
+    if (candidate.createdMs < group.earliestCreatedMs - HISTORY_GROUP_WINDOW_MS || candidate.createdMs > group.latestCreatedMs + HISTORY_GROUP_WINDOW_MS) {
+      return false;
+    }
+    const commentEvents = group.events.filter(event => event.isRichTextEvent && event.richKind === 'comment');
+    if (!commentEvents.length) {
+      return false;
+    }
+    return commentEvents.some(event => historyCommentEventMatchesCandidate(event, candidate));
+  }
+
+  async function buildSyntheticHistoryCommentEvent(commentCandidate, attachmentLookup) {
+    const attachments = dedupeHistoryAttachments([...commentCandidate.referencedAttachmentNames].map(fileName => {
+      return attachmentLookup.get(fileName) || buildHistoryAttachmentView(null, fileName);
+    }).filter(Boolean));
+    const previewSourceText = commentCandidate.strippedBody || commentCandidate.body;
+    return {
+      eventId: `synthetic-comment-${commentCandidate.id}`,
+      eventCreatedMs: commentCandidate.createdMs,
+      field: 'Comment',
+      subTimestamp: buildHistoryTimestampParts(commentCandidate.created).short,
+      isRichTextEvent: true,
+      isGenericEvent: false,
+      richKind: 'comment',
+      richIcon: '💬',
+      previewSourceText,
+      previewFallbackText: 'View comment',
+      previewText: buildHistoryPreviewText(previewSourceText, {
+        attachments,
+        fallbackText: 'View comment'
+      }),
+      sections: await buildHistoryRichSections('Comment', '', previewSourceText),
+      hasSections: !!previewSourceText,
+      attachments,
+      hasAttachments: attachments.length > 0,
+      attachmentCountLabel: attachments.length === 1 ? '1 attachment' : `${attachments.length} attachments`,
+      referencedAttachmentNames: commentCandidate.referencedAttachmentNames
+    };
+  }
+
+  async function buildSyntheticHistoryCommentGroup(commentCandidate, attachmentLookup) {
+    const timestamp = buildHistoryTimestampParts(commentCandidate.created);
+    return {
+      authorKey: String(commentCandidate.author?.accountId || commentCandidate.author?.key || commentCandidate.author?.name || commentCandidate.author?.displayName || commentCandidate.id),
+      author: commentCandidate.author || null,
+      authorName: commentCandidate.author?.displayName || commentCandidate.author?.name || 'Unknown',
+      latestCreatedMs: commentCandidate.createdMs,
+      earliestCreatedMs: commentCandidate.createdMs,
+      timestamp: timestamp.full,
+      events: [await buildSyntheticHistoryCommentEvent(commentCandidate, attachmentLookup)]
+    };
+  }
+
+  async function injectSyntheticHistoryComment(group, commentCandidates, attachmentLookup, usedCommentIds) {
+    const hasCommentEvent = group.events.some(event => event.isRichTextEvent && event.richKind === 'comment');
+    if (hasCommentEvent) {
+      return;
+    }
+    const groupAttachmentNames = new Set(group.events
+      .filter(event => event.isAttachmentEvent && event.attachmentName)
+      .map(event => event.attachmentName));
+    if (!groupAttachmentNames.size) {
+      return;
+    }
+    const matchingComment = commentCandidates
+      .filter(candidate => {
+        if (usedCommentIds.has(candidate.id)) {
+          return false;
+        }
+        if (!areSameJiraUser(candidate.author, group.author) && String(candidate.author?.displayName || '') !== String(group.authorName || '')) {
+          return false;
+        }
+        if (candidate.createdMs < group.earliestCreatedMs - HISTORY_GROUP_WINDOW_MS || candidate.createdMs > group.latestCreatedMs + HISTORY_GROUP_WINDOW_MS) {
+          return false;
+        }
+        return countHistoryAttachmentMatches(candidate.referencedAttachmentNames, groupAttachmentNames) > 0;
+      })
+      .sort((left, right) => {
+        const rightMatches = countHistoryAttachmentMatches(right.referencedAttachmentNames, groupAttachmentNames);
+        const leftMatches = countHistoryAttachmentMatches(left.referencedAttachmentNames, groupAttachmentNames);
+        if (rightMatches !== leftMatches) {
+          return rightMatches - leftMatches;
+        }
+        return Math.abs(left.createdMs - group.latestCreatedMs) - Math.abs(right.createdMs - group.latestCreatedMs);
+      })[0];
+    if (!matchingComment) {
+      return;
+    }
+    group.events.unshift(await buildSyntheticHistoryCommentEvent(matchingComment, attachmentLookup));
+    usedCommentIds.add(matchingComment.id);
+  }
+
+  function coalesceHistoryGroups(groups) {
+    const sortedGroups = [...groups].sort((left, right) => right.latestCreatedMs - left.latestCreatedMs);
+    return sortedGroups.reduce((mergedGroups, group) => {
+      const previousGroup = mergedGroups[mergedGroups.length - 1];
+      const shouldMerge = !!previousGroup && previousGroup.authorKey === group.authorKey && (previousGroup.earliestCreatedMs - group.latestCreatedMs) <= HISTORY_GROUP_WINDOW_MS;
+      if (!shouldMerge) {
+        mergedGroups.push({...group, events: [...group.events]});
+        return mergedGroups;
+      }
+      previousGroup.earliestCreatedMs = Math.min(previousGroup.earliestCreatedMs, group.earliestCreatedMs);
+      previousGroup.latestCreatedMs = Math.max(previousGroup.latestCreatedMs, group.latestCreatedMs);
+      previousGroup.events.push(...group.events);
+      return mergedGroups;
+    }, []);
+  }
+
+  async function formatChangelogForDisplay(changelog, issueData) {
+    const histories = changelog?.histories || [];
+    const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
+    const commentCandidates = buildCurrentHistoryCommentCandidates(issueData, attachmentLookup);
+    const usedCommentIds = new Set();
+    const sorted = histories.slice().sort((a, b) => {
+      return new Date(b.created) - new Date(a.created);
+    });
+    const groups = [];
+    for (const entry of sorted) {
+      const timestamp = buildHistoryTimestampParts(entry.created);
+      const authorName = entry.author?.displayName || entry.author?.name || 'Unknown';
+      const authorKey = String(entry.author?.accountId || entry.author?.key || entry.author?.name || authorName);
+      const events = (await Promise.all((entry.items || []).map((item, itemIndex) => {
+        return buildHistoryEvent(item, {
+          createdMs: timestamp.createdMs,
+          timestamp,
+          authorName
+        }, attachmentLookup, itemIndex, issueData?.names || {});
+      }))).filter(Boolean);
+      if (!events.length) {
+        continue;
+      }
+      const currentGroup = groups[groups.length - 1];
+      const shouldMerge = !!currentGroup && currentGroup.authorKey === authorKey && (currentGroup.earliestCreatedMs - timestamp.createdMs) <= HISTORY_GROUP_WINDOW_MS;
+      if (shouldMerge) {
+        currentGroup.earliestCreatedMs = timestamp.createdMs;
+        currentGroup.events.push(...events);
+        continue;
+      }
+      groups.push({
+        authorKey,
+        author: entry.author || null,
+        authorName,
+        latestCreatedMs: timestamp.createdMs,
+        earliestCreatedMs: timestamp.createdMs,
+        timestamp: timestamp.full,
+        events
+      });
+    }
+    commentCandidates.forEach(candidate => {
+      if (groups.some(group => groupRepresentsCommentCandidate(group, candidate))) {
+        usedCommentIds.add(candidate.id);
+      }
+    });
+    for (const group of groups) {
+      await injectSyntheticHistoryComment(group, commentCandidates, attachmentLookup, usedCommentIds);
+    }
+    const syntheticGroups = [];
+    for (const candidate of commentCandidates) {
+      if (usedCommentIds.has(candidate.id)) {
+        continue;
+      }
+      syntheticGroups.push(await buildSyntheticHistoryCommentGroup(candidate, attachmentLookup));
+      usedCommentIds.add(candidate.id);
+    }
+    const normalizedGroups = coalesceHistoryGroups([...groups, ...syntheticGroups]);
+    return normalizedGroups.map(group => {
+      const events = mergeHistoryAttachmentEventsIntoComments(
+        [...group.events].sort((left, right) => (right.eventCreatedMs || 0) - (left.eventCreatedMs || 0)),
+        attachmentLookup
+      );
+      const distinctTimes = new Set(events.map(event => event.subTimestamp).filter(Boolean)).size;
+      return {
+        timestamp: group.timestamp,
+        authorName: group.authorName,
+        events: events.map(event => ({
+          ...event,
+          showSubTimestamp: distinctTimes > 1
+        })),
+        hasEvents: events.length > 0
+      };
+    });
   }
 
   // ── Issue Data & Metadata ──────────────────────────────────
@@ -3225,17 +3941,20 @@ async function mainAsyncLocal() {
   }
 
 
-  function buildActivityIndicators(attachments, commentsTotal, pullRequestsTotal) {
-    const attachmentCount = Array.isArray(attachments) ? attachments.length : 0;
-    const commentCount = Number(commentsTotal) || 0;
-    const pullRequestCount = Number(pullRequestsTotal) || 0;
+  function buildActivityIndicators() {
     return [
-      {icon: '📎', count: attachmentCount, label: 'Attachments'},
-      {icon: '💬', count: commentCount, label: 'Comments'},
-      {icon: '🔀', count: pullRequestCount, label: 'Pull requests'}
+      {
+        iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
+        label: 'History',
+        isHistory: true,
+        clickable: true,
+        title: 'View change history',
+        ariaLabel: 'View change history'
+      }
     ].map(item => ({
       ...item,
-      title: item.count + ' ' + item.label.toLowerCase()
+      title: item.title || (item.hasCount ? item.count + ' ' + item.label.toLowerCase() : item.label),
+      ariaLabel: item.ariaLabel || item.title || item.label
     }));
   }
 
@@ -3857,7 +4576,7 @@ async function mainAsyncLocal() {
   // ── Popup Data & Rendering ─────────────────────────────────
 
   async function buildPopupDisplayData(state) {
-    const {key, issueData, pullRequests, actionLoadingKey, actionError, lastActionSuccess, actionsOpen, quickActions} = state;
+    const {key, issueData, pullRequests, actionLoadingKey, actionError, lastActionSuccess, actionsOpen, quickActions, historyOpen, changelogData, changelogLoading} = state;
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
       imageMaxHeight: 180
     });
@@ -4033,6 +4752,7 @@ async function mainAsyncLocal() {
     const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]);
     const row2Chips = layoutRow2.map(buildRow2Chip).filter(Boolean).concat(customFieldChips[2]);
     const row3Chips = layoutRow3.map(buildRow3Chip).filter(Boolean).concat(customFieldChips[3]);
+    const maxMetaFieldsPerRow = Math.max(row2Chips.length, row3Chips.length);
 
     const copyTicketMeta = ticket => ({
       copyUrl: ticket.url,
@@ -4087,6 +4807,7 @@ async function mainAsyncLocal() {
       statusText: displayFields.status ? (statusName || 'No status') : '',
       sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
       fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
+      useWideAnnotation: maxMetaFieldsPerRow > 3,
       row1Chips,
       row2Chips,
       row3Chips,
@@ -4138,13 +4859,15 @@ async function mainAsyncLocal() {
         };
       });
     }
-    displayData.activityIndicators = buildActivityIndicators(
-      displayFields.attachments ? attachments : [],
-      visibleCommentsTotal,
-      displayData.prs.length
-    );
+    const changelogHistories = changelogData?.histories || [];
+    displayData.activityIndicators = buildActivityIndicators();
     displayData.hasRow1Meta = !!displayData.watchersTrigger || displayData.activityIndicators.length > 0;
     displayData.hasPrimaryStatusRow = row1Chips.length > 0 || displayData.hasRow1Meta;
+    displayData.historyOpen = !!historyOpen;
+    displayData.changelogLoading = !!changelogLoading;
+    displayData.changelogEntries = historyOpen ? await formatChangelogForDisplay(changelogData, issueData) : [];
+    displayData.hasChangelogEntries = historyOpen && displayData.changelogEntries.length > 0;
+    displayData.showChangelogEmpty = historyOpen && !changelogLoading && displayData.changelogEntries.length === 0;
     return displayData;
   }
   // ── Popup Positioning ──────────────────────────────────────
@@ -4317,6 +5040,7 @@ async function mainAsyncLocal() {
     }
     issueCache.delete(popupState.key);
     watcherListCache.delete(popupState.key);
+    changelogCache.delete(popupState.key);
     editMetaCache.delete(popupState.key);
     transitionOptionsCache.delete(popupState.key);
     assigneeLocalOptionsCache.delete(popupState.key);
@@ -4355,6 +5079,9 @@ async function mainAsyncLocal() {
       actionError: '',
       lastActionSuccess: '',
       actionsOpen: false,
+      historyOpen: false,
+      changelogData: null,
+      changelogLoading: false,
       editState: null,
       commentSession: null,
       ...overrides,
@@ -5188,7 +5915,7 @@ async function mainAsyncLocal() {
   }
   new draggable({
     handle: '._JX_title, ._JX_status',
-    cancel: 'a, button, input, textarea, img, ._JX_description, ._JX_comments, ._JX_comment_body, ._JX_description_text, ._JX_related_pr'
+    cancel: 'a, button, input, textarea, img, ._JX_description, ._JX_comments, ._JX_comment_body, ._JX_description_text, ._JX_related_pr, ._JX_history_flyout, ._JX_watchers_panel'
   }, container);
   
   // ── Clipboard & Copy ──────────────────────────────────────
@@ -5272,20 +5999,31 @@ async function mainAsyncLocal() {
     passiveCancel(200);
   });
 
+  function pinContainer(options = {}) {
+    const {showNotice = true} = options;
+    if (containerPinned || !container.html()) {
+      clearTimeout(hideTimeOut);
+      return false;
+    }
+    const scrollingElement = document.scrollingElement || document.documentElement;
+    if (showNotice) {
+      snackBar('Ticket Pinned! Hit esc to close !');
+    }
+    container.addClass('container-pinned');
+    const position = container.position();
+    container.css({
+      left: position.left - scrollingElement.scrollLeft,
+      top: position.top - scrollingElement.scrollTop,
+    });
+    containerPinned = true;
+    clearTimeout(hideTimeOut);
+    return true;
+  }
+
   $(document.body).on('click', '._JX_pin_button', function (e) {
     e.preventDefault();
     e.stopPropagation();
-    if (!containerPinned) {
-      snackBar('Ticket Pinned! Hit esc to close !');
-      container.addClass('container-pinned');
-      const position = container.position();
-      container.css({
-        left: position.left - document.scrollingElement.scrollLeft,
-        top: position.top - document.scrollingElement.scrollTop,
-      });
-      containerPinned = true;
-      clearTimeout(hideTimeOut);
-    }
+    pinContainer();
   });
 
   $(document.body).on('click', '._JX_actions_toggle', function (e) {
@@ -5304,6 +6042,12 @@ async function mainAsyncLocal() {
   $(document.body).on('click', '._JX_watchers_trigger', function (e) {
     e.preventDefault();
     e.stopPropagation();
+    if (popupState?.historyOpen) {
+      popupState = {
+        ...popupState,
+        historyOpen: false
+      };
+    }
     if (popupState?.watchersState?.open) {
       closeWatchersPanel();
       return;
@@ -5355,14 +6099,72 @@ async function mainAsyncLocal() {
     renderIssuePopup(popupState).catch(() => {});
   });
 
-  $(document.body).on('mousedown', function (e) {
-    if (!popupState?.watchersState?.open) {
+    $(document.body).on('mousedown', function (e) {
+      if (!popupState?.watchersState?.open) {
+        return;
+      }
+      if ($(e.target).closest('._JX_watchers_group').length) {
+        return;
+      }
+      closeWatchersPanel();
+  });
+
+  $(document.body).on('click', '._JX_history_toggle', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!popupState) {
       return;
     }
-    if ($(e.target).closest('._JX_watchers_group').length) {
+    if (popupState.watchersState?.open) {
+      closeWatchersPanel();
+    }
+    const nextOpen = !popupState.historyOpen;
+    popupState = {
+      ...popupState,
+      historyOpen: nextOpen
+    };
+    if (nextOpen && !popupState.changelogData && !popupState.changelogLoading) {
+      popupState.changelogLoading = true;
+      renderIssuePopup(popupState).catch(() => {});
+      const issueKey = popupState.key;
+      getIssueChangelog(issueKey).then(changelog => {
+        if (!popupState || popupState.key !== issueKey || !popupState.historyOpen) {
+          return;
+        }
+        popupState = {
+          ...popupState,
+          changelogData: changelog,
+          changelogLoading: false
+        };
+        renderIssuePopup(popupState).catch(() => {});
+      }).catch(() => {
+        if (!popupState || popupState.key !== issueKey) {
+          return;
+        }
+        popupState = {
+          ...popupState,
+          changelogData: {histories: []},
+          changelogLoading: false
+        };
+        renderIssuePopup(popupState).catch(() => {});
+      });
+    } else {
+      renderIssuePopup(popupState).catch(() => {});
+    }
+  });
+
+  $(document.body).on('click', function (e) {
+    if (!popupState?.historyOpen) {
       return;
     }
-    closeWatchersPanel();
+    if ($(e.target).closest('._JX_history_flyout').length || $(e.target).closest('._JX_history_toggle').length) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      historyOpen: false
+    };
+    renderIssuePopup(popupState).catch(() => {});
   });
 
   $(document.body).on('click', function (e) {
@@ -5646,13 +6448,17 @@ async function mainAsyncLocal() {
     if (!imageUrl) {
       return;
     }
+    clearTimeout(hideTimeOut);
+    pinContainer({showNotice: false});
     const displaySrc = await getDisplayImageUrl(imageUrl);
     previewOverlay.find('img').attr('src', displaySrc || imageUrl);
     previewOverlay.addClass('is-open');
   }
 
   previewOverlay.on('click', function (e) {
+    e.stopPropagation();
     if (e.target === previewOverlay[0]) {
+      e.preventDefault();
       closePreviewOverlay();
     }
   });
@@ -5674,10 +6480,18 @@ async function mainAsyncLocal() {
     openPreviewOverlay(source).catch(() => {});
   });
 
+  $(document.body).on('click', '._JX_history_attachment_preview', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const source = e.currentTarget.getAttribute('data-jx-preview-src');
+    openPreviewOverlay(source).catch(() => {});
+  });
+
   // ── Container Lifecycle ────────────────────────────────────
   function hideContainer() {
     lastHoveredKey = '';
     clearWatchersFeedbackTimer();
+    closePreviewOverlay();
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     activeCommentContext = null;
@@ -5698,6 +6512,14 @@ async function mainAsyncLocal() {
     if (e.keyCode === ESCAPE_KEY_CODE) {
       if (previewOverlay.hasClass('is-open')) {
         closePreviewOverlay();
+        return;
+      }
+      if (popupState?.historyOpen) {
+        popupState = {
+          ...popupState,
+          historyOpen: false
+        };
+        renderIssuePopup(popupState).catch(() => {});
         return;
       }
       hideContainer();
@@ -5721,17 +6543,7 @@ async function mainAsyncLocal() {
   let containerPinned = false;
   let lastHoveredKey = '';
   container.on('dragstop', () => {
-    if (!containerPinned) {
-      snackBar('Ticket Pinned! Hit esc to close !');
-      container.addClass('container-pinned');
-      const position = container.position();
-      container.css({
-        left: position.left - document.scrollingElement.scrollLeft,
-        top: position.top - document.scrollingElement.scrollTop,
-      });
-      containerPinned = true;
-      clearTimeout(hideTimeOut);
-    }
+    pinContainer();
   });
   function extractKeysFromNode(node) {
     let keys = getJiraKeysFromTexts(getNodeSearchTexts(node));
@@ -6090,6 +6902,10 @@ async function mainAsyncLocal() {
       pageX: e.pageX,
       pageY: e.pageY,
     };
+    if (previewOverlay.hasClass('is-open')) {
+      clearTimeout(hideTimeOut);
+      return;
+    }
     const element = document.elementFromPoint(e.clientX, e.clientY);
     const isOverContainer = element === container[0] || $.contains(container[0], element);
     let isInPaddedZone = false;

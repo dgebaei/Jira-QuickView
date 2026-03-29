@@ -67,7 +67,7 @@ test('renders Jira metadata, comments, attachments, pull requests, and custom fi
     await expect(popup).toContainText('Customer impact: High');
     await expect(popup).toContainText('Initial comment with a link');
     await expect(popup).toContainText('Fix slash command cursor behavior');
-    await expect(page.locator('._JX_thumb')).toHaveCount(1);
+    await expect(page.locator('._JX_thumb').first()).toBeVisible();
   } else {
     const issue = await getLiveIssue(resolvedTarget.primaryIssueKey, resolvedTarget);
     await expect(popup).toContainText(issue.fields.summary);
@@ -292,6 +292,69 @@ test('adds and removes watchers from the popup panel in mocked mode @mock-only',
   await expect(page.locator('._JX_watchers_row[data-watcher-id="user-me"]')).toHaveCount(0);
   await page.waitForTimeout(5200);
   await expect(page.locator('._JX_watchers_feedback_row').filter({hasText: 'Morgan Agent removed from watchers'})).toHaveCount(0);
+  await page.close();
+});
+
+test('groups history entries and nests referenced attachments inside expanded comments in mocked mode', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'History flyout coverage currently uses the mock Jira server only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const activityStrip = page.locator('._JX_activity_strip');
+  await expect(activityStrip.locator('._JX_activity_item')).toHaveCount(1);
+  await expect(activityStrip.locator('._JX_watchers_trigger')).toHaveCount(1);
+
+  const historyTrigger = page.locator('._JX_history_toggle');
+  await expect(historyTrigger).toHaveAttribute('title', 'View change history');
+
+  await historyTrigger.click();
+
+  const flyout = page.locator('._JX_history_flyout');
+  await expect(flyout).toBeVisible();
+  await expect(historyTrigger.locator('strong')).toHaveCount(0);
+
+  await expect(flyout.locator('._JX_history_entry')).toHaveCount(3);
+  const plainCommentEvent = flyout.locator('._JX_history_rich_event_comment').filter({hasText: 'Initial comment with a link'});
+  await expect(plainCommentEvent).toHaveCount(1);
+  const attachmentCommentEvent = flyout.locator('._JX_history_rich_event_comment').filter({hasText: 'Testirano na internom testnom okruzenju'});
+  await expect(attachmentCommentEvent).toHaveCount(1);
+  await expect(attachmentCommentEvent.locator('._JX_history_rich_preview')).toContainText('Testirano na internom testnom okruzenju');
+  await expect(attachmentCommentEvent).toContainText('2 attachments');
+  await expect(flyout).not.toContainText('Worklog ID');
+  await expect(flyout).toContainText('Time estimate:');
+  await expect(flyout).not.toContainText('timeestimate:');
+
+  await expect(flyout.locator('._JX_history_change').filter({hasText: 'image-2026-03-17-10-47-20-728.png'})).toHaveCount(0);
+  await expect(flyout.locator('._JX_history_change').filter({hasText: 'image-2026-03-17-10-48-30-600.png'})).toHaveCount(0);
+  await expect(flyout.locator('._JX_history_change').filter({hasText: 'standalone-graph.png'})).toHaveCount(1);
+
+  await attachmentCommentEvent.locator('summary').click();
+  await expect(attachmentCommentEvent.locator('._JX_history_attachment_item')).toHaveCount(2);
+  await expect(attachmentCommentEvent.locator('._JX_history_rich_section_body')).toContainText('Prikaz bi trebao biti izjednacen');
+  await expect(flyout).toContainText('10m');
+
+  const descriptionEvent = flyout.locator('._JX_history_rich_event_description').first();
+  await descriptionEvent.locator('summary').click();
+  await expect(descriptionEvent.locator('._JX_history_rich_section_body')).toContainText('Updated rollout checklist for JRACLOUD-97000');
+  await expect(flyout.locator('a._JX_history_issue_link', {hasText: 'JRACLOUD-97000'}).first()).toHaveAttribute('href', /browse\/JRACLOUD-97000$/);
+
+  await flyout.locator('button._JX_history_attachment_preview', {hasText: 'standalone-graph.png'}).click();
+  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
+  await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
+
+  await page.locator('._JX_preview_overlay').click({position: {x: 8, y: 8}});
+  await expect(page.locator('._JX_preview_overlay')).not.toHaveClass(/is-open/);
+  await expect(page.locator('._JX_history_flyout')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('._JX_history_flyout')).toHaveCount(0);
+  await expect(page.locator('._JX_title')).toHaveCount(1);
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('._JX_title')).toHaveCount(0);
+
   await page.close();
 });
 

@@ -133,6 +133,27 @@ function createState(origin) {
           content: `${origin}/assets/evidence.png`,
           thumbnail: `${origin}/assets/evidence.png`,
         },
+        {
+          id: '901',
+          filename: 'image-2026-03-17-10-47-20-728.png',
+          mimeType: 'image/png',
+          content: `${origin}/assets/history-image-1.png`,
+          thumbnail: `${origin}/assets/history-image-1.png`,
+        },
+        {
+          id: '902',
+          filename: 'image-2026-03-17-10-48-30-600.png',
+          mimeType: 'image/png',
+          content: `${origin}/assets/history-image-2.png`,
+          thumbnail: `${origin}/assets/history-image-2.png`,
+        },
+        {
+          id: '903',
+          filename: 'standalone-graph.png',
+          mimeType: 'image/png',
+          content: `${origin}/assets/standalone-graph.png`,
+          thumbnail: `${origin}/assets/standalone-graph.png`,
+        },
       ],
       comments: [
         {
@@ -145,7 +166,90 @@ function createState(origin) {
           body: 'Initial comment with a link https://example.com/docs',
           renderedBody: '<p>Initial comment with a link <a href="https://example.com/docs">https://example.com/docs</a></p>',
         },
+        {
+          id: '5002',
+          author: {
+            accountId: 'user-alex',
+            name: 'alex',
+            key: 'alex',
+            displayName: 'Alex Reviewer',
+            avatarUrls: {'48x48': `${origin}/assets/avatar-alex.png`},
+          },
+          created: '2026-03-17T10:48:00.000Z',
+          body: 'Testirano na internom testnom okruzenju. Sada se report moze generirati, ali prikaz nije dobar.\n!image-2026-03-17-10-47-20-728.png|width=590,height=575!\nPrikaz bi trebao biti izjednacen s ostalim opcijama (npr. Email)\n!image-2026-03-17-10-48-30-600.png|width=1051,height=225!',
+          renderedBody: '<p>Testirano na internom testnom okruzenju. Sada se report moze generirati, ali prikaz nije dobar.</p><p><img src="/assets/history-image-1.png" alt="image-2026-03-17-10-47-20-728.png" /></p><p>Prikaz bi trebao biti izjednacen s ostalim opcijama (npr. Email)</p><p><img src="/assets/history-image-2.png" alt="image-2026-03-17-10-48-30-600.png" /></p>',
+        },
       ],
+      changelog: {
+        histories: [
+          {
+            id: 'history-1',
+            created: '2026-03-17T10:48:00.000Z',
+            author: {
+              displayName: 'Alex Reviewer',
+              accountId: 'user-alex',
+            },
+            items: [
+              {
+                field: 'Worklog ID',
+                fieldId: 'worklogId',
+                fromString: '',
+                toString: '1940828',
+              },
+              {
+                field: 'Attachment',
+                fieldId: 'attachment',
+                fromString: '',
+                toString: 'image-2026-03-17-10-48-30-600.png',
+              },
+            ],
+          },
+          {
+            id: 'history-2',
+            created: '2026-03-17T10:47:00.000Z',
+            author: {
+              displayName: 'Alex Reviewer',
+              accountId: 'user-alex',
+            },
+            items: [
+              {
+                field: 'Attachment',
+                fieldId: 'attachment',
+                fromString: '',
+                toString: 'image-2026-03-17-10-47-20-728.png',
+              },
+              {
+                field: 'Description',
+                fieldId: 'description',
+                fromString: '',
+                toString: 'Updated rollout checklist for JRACLOUD-97000.\nCapture final screenshots before release.',
+              },
+            ],
+          },
+          {
+            id: 'history-3',
+            created: '2026-03-17T10:30:00.000Z',
+            author: {
+              displayName: 'Morgan Agent',
+              accountId: 'user-me',
+            },
+            items: [
+              {
+                field: 'timeestimate',
+                fieldId: 'timeestimate',
+                fromString: '',
+                toString: '600',
+              },
+              {
+                field: 'Attachment',
+                fieldId: 'attachment',
+                fromString: '',
+                toString: 'standalone-graph.png',
+              },
+            ],
+          },
+        ],
+      },
       timetracking: {
         originalEstimate: '1w',
         remainingEstimate: '1d',
@@ -243,7 +347,7 @@ function createState(origin) {
   };
 }
 
-function buildIssueResponse(origin, state) {
+function buildIssueResponse(origin, state, options = {}) {
   const issue = state.issue;
   const names = {
     customfield_10020: 'Sprint',
@@ -285,6 +389,7 @@ function buildIssueResponse(origin, state) {
     key: issue.key,
     fields,
     names,
+    ...(options.includeChangelog ? {changelog: issue.changelog} : {}),
     renderedFields: {
       description: issueDescriptionHtml(origin),
       comment: {
@@ -508,7 +613,10 @@ async function createMockJiraServer() {
         json(res, 401, {errorMessages: ['Unauthorized']});
         return;
       }
-      json(res, 200, buildIssueResponse(origin, state));
+      const expand = String(url.searchParams.get('expand') || '');
+      json(res, 200, buildIssueResponse(origin, state, {
+        includeChangelog: expand.split(',').includes('changelog'),
+      }));
       return;
     }
 
