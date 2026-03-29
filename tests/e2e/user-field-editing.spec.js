@@ -94,3 +94,45 @@ test('shows empty user custom field as editable placeholder chip', async ({exten
   await expect(popup).toContainText('Reviewer: Alex Reviewer');
   await page.close();
 });
+
+test('prepopulates assignable users for an empty editable user custom field', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'This regression is modeled deterministically in mocked mode only.');
+  await servers.jira.setScenario('empty-user-field-empty-picker-defaults');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    customFields: [{fieldId: 'customfield_67890', row: 2}],
+  }));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = page.locator('._JX_container');
+  await expect(popup).toContainText('Reviewer: --');
+
+  const editButton = popup.locator('._JX_field_chip_edit[data-field-key="customfield_67890"]');
+  await expect(editButton).toHaveCount(1);
+  await editButton.click();
+
+  const input = popup.locator('._JX_edit_input[data-field-key="customfield_67890"]');
+  const options = popup.locator('._JX_edit_option[data-field-key="customfield_67890"]');
+  await expect(input).toBeVisible();
+  await waitForOptions(options, 2);
+  await expect(options.filter({hasText: 'Alex Reviewer'})).toHaveCount(1);
+  await expect(options.filter({hasText: 'Morgan Agent'})).toHaveCount(1);
+  await page.close();
+});
+
+test('shows empty user custom field as a non-editable placeholder when Jira omits edit metadata', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'This regression is modeled deterministically in mocked mode only.');
+  await servers.jira.setScenario('empty-user-field-missing-editmeta');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    customFields: [{fieldId: 'customfield_67890', row: 2}],
+  }));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = page.locator('._JX_container');
+  await expect(popup).toContainText('Reviewer: --');
+
+  const editButton = popup.locator('._JX_field_chip_edit[data-field-key="customfield_67890"]');
+  await expect(editButton).toHaveCount(0);
+  await page.close();
+});

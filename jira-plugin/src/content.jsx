@@ -241,7 +241,7 @@ async function mainAsyncLocal() {
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
   const hoverModifierKey = config.hoverModifierKey || 'any';
-  const customFields = normalizeCustomFields(config.customFields);
+  const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
   let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
   let getJiraKeys = buildFallbackJiraKeyMatcher();
@@ -2648,6 +2648,21 @@ async function mainAsyncLocal() {
       return normalizeAssignableUsers(users);
     });
   }
+
+  async function loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query = '') {
+    const normalizedQuery = String(query || '').trim();
+    const [assignableResults, pickerResults] = await Promise.all([
+      searchAssignableUsers(normalizedQuery, issueData).catch(() => []),
+      searchGenericUsers(normalizedQuery).catch(() => [])
+    ]);
+    const baseline = userPickerLocalOptionsCache.get(fieldId) || currentSelections;
+    const merged = mergeEditOptions(
+      currentSelections,
+      mergeEditOptions(assignableResults, mergeEditOptions(pickerResults, baseline))
+    );
+    userPickerLocalOptionsCache.set(fieldId, merged);
+    return merged;
+  }
   function getPullRequestDataCached(issueId, applicationType) {
     const cacheKey = `${issueId}__${applicationType}`;
     return getCachedValue(pullRequestCache, cacheKey, () => {
@@ -3427,8 +3442,6 @@ async function mainAsyncLocal() {
       const currentSelections = currentEntries
         .map(buildUserFieldOption)
         .filter(Boolean);
-
-      const mergeUserOptions = searchedOptions => mergeEditOptions(currentSelections, searchedOptions);
       return {
         fieldKey: fieldId,
         editorType: 'user-search',
@@ -3441,8 +3454,8 @@ async function mainAsyncLocal() {
         currentSelections,
         initialInputValue: '',
         inputPlaceholder: 'Search users',
-        loadOptions: async () => mergeUserOptions(await searchGenericUsers('')),
-        searchOptions: async query => mergeUserOptions(await searchGenericUsers(query)),
+        loadOptions: async () => loadCustomUserFieldOptions(fieldId, issueData, currentSelections),
+        searchOptions: async query => loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query),
         save: selectedOptions => saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue),
         successMessage: selectedOptions => {
           if (!selectedOptions.length) {
@@ -3539,7 +3552,24 @@ async function mainAsyncLocal() {
     };
   }
 
-  function normalizeCustomFields(customFields) {
+  function getCustomFieldRowFromLayout(fieldId, tooltipLayout) {
+    const layoutKey = fieldId ? `custom_${fieldId}` : '';
+    if (!layoutKey) {
+      return null;
+    }
+    if (tooltipLayout?.row1?.includes(layoutKey)) {
+      return 1;
+    }
+    if (tooltipLayout?.row2?.includes(layoutKey)) {
+      return 2;
+    }
+    if (tooltipLayout?.row3?.includes(layoutKey)) {
+      return 3;
+    }
+    return null;
+  }
+
+  function normalizeCustomFields(customFields, tooltipLayout) {
     if (!Array.isArray(customFields)) {
       return [];
     }
@@ -3547,7 +3577,8 @@ async function mainAsyncLocal() {
     return customFields
       .map(field => {
         const fieldId = String(field?.fieldId || '').trim();
-        const row = Math.min(3, Math.max(1, Number(field?.row) || 3));
+        const rowFromLayout = getCustomFieldRowFromLayout(fieldId, tooltipLayout);
+        const row = rowFromLayout || Math.min(3, Math.max(1, Number(field?.row) || 3));
         return {fieldId, row};
       })
       .filter(field => {
@@ -3602,6 +3633,9 @@ async function mainAsyncLocal() {
         continue;
       }
       if (!hasDisplayValue) {
+        chipsByRow[row].push(buildEditableFieldChip(fieldId, buildFilterChip(`${fieldName}: --`, ''), state, {
+          canEdit: false
+        }));
         continue;
       }
       const entries = Array.isArray(rawValue) ? rawValue : [rawValue];

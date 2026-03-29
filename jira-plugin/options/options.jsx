@@ -101,16 +101,48 @@ function normalizeInstanceUrl(instanceUrl) {
   return normalized;
 }
 
-function normalizeCustomFields(customFields) {
+function getCustomFieldLayoutKey(field) {
+  const fieldId = typeof field === 'string'
+    ? String(field || '').trim()
+    : String(field?.fieldId || '').trim();
+  if (fieldId) {
+    return `custom_${fieldId}`;
+  }
+  const uid = typeof field === 'string' ? '' : String(field?._uid || '').trim();
+  return uid ? `custom_${uid}` : '';
+}
+
+function getCustomFieldRowFromLayout(fieldId, tooltipLayout) {
+  const layoutKey = getCustomFieldLayoutKey(fieldId);
+  if (!layoutKey) {
+    return null;
+  }
+  if (tooltipLayout?.row1?.includes(layoutKey)) {
+    return 1;
+  }
+  if (tooltipLayout?.row2?.includes(layoutKey)) {
+    return 2;
+  }
+  if (tooltipLayout?.row3?.includes(layoutKey)) {
+    return 3;
+  }
+  return null;
+}
+
+function normalizeCustomFields(customFields, tooltipLayout) {
   if (!Array.isArray(customFields)) {
     return [];
   }
   const seen = {};
   return customFields
-    .map(field => ({
-      fieldId: String(field && field.fieldId || '').trim(),
-      row: Math.min(3, Math.max(1, Number(field && field.row) || 3))
-    }))
+    .map(field => {
+      const fieldId = String(field && field.fieldId || '').trim();
+      const rowFromLayout = getCustomFieldRowFromLayout(fieldId, tooltipLayout);
+      return {
+        fieldId,
+        row: rowFromLayout || Math.min(3, Math.max(1, Number(field && field.row) || 3))
+      };
+    })
     .filter(field => {
       if (!field.fieldId || seen[field.fieldId]) {
         return false;
@@ -118,6 +150,34 @@ function normalizeCustomFields(customFields) {
       seen[field.fieldId] = true;
       return true;
     });
+}
+
+function updateCustomFieldRow(customFields, layoutKey, zone) {
+  const row = Number(String(zone || '').replace('row', ''));
+  if (!layoutKey?.startsWith('custom_') || ![1, 2, 3].includes(row)) {
+    return customFields;
+  }
+  return customFields.map(field => {
+    if (getCustomFieldLayoutKey(field) !== layoutKey) {
+      return field;
+    }
+    return {
+      ...field,
+      row,
+    };
+  });
+}
+
+function buildOptionsSnapshot({ instanceUrl, domainsText, themeMode, hoverDepth, hoverModifierKey, tooltipLayout, customFields }) {
+  return JSON.stringify({
+    instanceUrl,
+    domainsText,
+    themeMode,
+    hoverDepth,
+    hoverModifierKey,
+    tooltipLayout,
+    customFields: normalizeCustomFields(customFields, tooltipLayout),
+  });
 }
 
 async function fetchFieldCatalog(instanceUrl) {
@@ -446,7 +506,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
     }
   });
   customFields.forEach(cf => {
-    const key = cf.fieldId ? `custom_${cf.fieldId}` : `custom_${cf._uid}`;
+    const key = getCustomFieldLayoutKey(cf);
     const name = cf.fieldId ? (fieldCatalog[cf.fieldId] || cf.fieldId) : '(unsaved)';
     allFields[key] = name;
   });
@@ -496,6 +556,10 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
     } else {
       setOverId(null);
     }
+  };
+
+  const syncCustomFieldRow = (layoutKey, zone) => {
+    setCustomFields(current => updateCustomFieldRow(current, layoutKey, zone));
   };
 
   const handleDragEnd = (event) => {
@@ -574,6 +638,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
 
         return newLayout;
       });
+      syncCustomFieldRow(activeKey, toZone);
     } else if (DRAGGABLE_ZONES.includes(toZone)) {
       const overIndex = tooltipLayout[toZone].indexOf(overId);
       if (overIndex >= 0) {
@@ -588,6 +653,7 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
           [toZone]: [...prev[toZone], activeKey]
         }));
       }
+      syncCustomFieldRow(activeKey, toZone);
     }
   };
 
@@ -751,6 +817,10 @@ function TooltipLayoutEditor({ tooltipLayout, setTooltipLayout, customFields, se
 }
 
 function ConfigPage(props) {
+  const initialTooltipLayout = props.tooltipLayout || buildTooltipLayoutFromDisplayFields({
+    ...defaultConfig.displayFields,
+    ...(props.displayFields || {})
+  });
   const [instanceUrl, setInstanceUrl] = useState(props.instanceUrl || '');
   const [domainsText, setDomainsText] = useState((props.domains || []).join(', '));
   const [themeMode, setThemeMode] = useState(normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE));
@@ -761,17 +831,9 @@ function ConfigPage(props) {
   const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || 'shallow');
   const [hoverModifierKey, setHoverModifierKey] = useState(props.hoverModifierKey || 'none');
   const [customFields, setCustomFields] = useState(() =>
-    normalizeCustomFields(props.customFields).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
+    normalizeCustomFields(props.customFields, initialTooltipLayout).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
   );
-  const [tooltipLayout, setTooltipLayout] = useState(() => {
-    if (props.tooltipLayout) {
-      return props.tooltipLayout;
-    }
-    return buildTooltipLayoutFromDisplayFields({
-      ...defaultConfig.displayFields,
-      ...(props.displayFields || {})
-    });
-  });
+  const [tooltipLayout, setTooltipLayout] = useState(initialTooltipLayout);
   const [fieldCatalog, setFieldCatalog] = useState({});
   const [status, setStatus] = useState('');
   const [statusTone, setStatusTone] = useState('neutral');
@@ -782,19 +844,23 @@ function ConfigPage(props) {
   const customFieldErrors = customFields.map(field => getCustomFieldError(field.fieldId, fieldCatalog));
   const hasInvalidCustomFields = customFieldErrors.some(Boolean);
 
-  const savedJsonRef = useRef(JSON.stringify({
+  const savedJsonRef = useRef(buildOptionsSnapshot({
     instanceUrl: props.instanceUrl || '',
     domainsText: (props.domains || []).join(', '),
     themeMode: normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE),
     hoverDepth: props.hoverDepth || 'shallow',
     hoverModifierKey: props.hoverModifierKey || 'none',
-    tooltipLayout: tooltipLayout,
-    customFields: customFields.map(f => f.fieldId),
-  }));
-  const currentJson = JSON.stringify({
-    instanceUrl, domainsText, themeMode, hoverDepth, hoverModifierKey,
     tooltipLayout,
-    customFields: customFields.map(f => f.fieldId),
+    customFields,
+  }));
+  const currentJson = buildOptionsSnapshot({
+    instanceUrl,
+    domainsText,
+    themeMode,
+    hoverDepth,
+    hoverModifierKey,
+    tooltipLayout,
+    customFields,
   });
   const isDirty = currentJson !== savedJsonRef.current;
 
@@ -867,16 +933,46 @@ function ConfigPage(props) {
     });
   }, []);
 
+  const moveTooltipField = useCallback((fieldKey, toZone, toIndex) => {
+    if (!DRAGGABLE_ZONES.includes(toZone)) {
+      return;
+    }
+
+    setTooltipLayout(prev => {
+      const nextLayout = {
+        ...prev,
+        row1: [...(prev.row1 || [])],
+        row2: [...(prev.row2 || [])],
+        row3: [...(prev.row3 || [])],
+      };
+
+      DRAGGABLE_ZONES.forEach(zone => {
+        nextLayout[zone] = nextLayout[zone].filter(key => key !== fieldKey);
+      });
+
+      const requestedIndex = Number(toIndex);
+      const nextIndex = Number.isInteger(requestedIndex)
+        ? Math.max(0, Math.min(requestedIndex, nextLayout[toZone].length))
+        : nextLayout[toZone].length;
+      nextLayout[toZone].splice(nextIndex, 0, fieldKey);
+      return nextLayout;
+    });
+
+    setCustomFields(current => updateCustomFieldRow(current, fieldKey, toZone));
+  }, []);
+
   useEffect(() => {
     window.__JHL_TEST_API__ = {
       moveContentBlock,
+      moveTooltipField,
       getTooltipLayout: () => tooltipLayout,
+      getCustomFields: () => normalizeCustomFields(customFields, tooltipLayout),
     };
 
     return () => {
       delete window.__JHL_TEST_API__;
     };
-  }, [moveContentBlock, tooltipLayout]);
+  }, [customFields, moveContentBlock, moveTooltipField, tooltipLayout]);
 
   const exportSettings = () => {
     const config = {
@@ -889,7 +985,7 @@ function ConfigPage(props) {
       hoverModifierKey,
       displayFields,
       tooltipLayout,
-      customFields: normalizeCustomFields(customFields)
+      customFields: normalizeCustomFields(customFields, tooltipLayout)
     };
 
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
@@ -927,8 +1023,9 @@ function ConfigPage(props) {
         setHoverDepth(config.hoverDepth || 'shallow');
         setHoverModifierKey(config.hoverModifierKey || 'none');
         setDisplayFields(config.displayFields || defaultConfig.displayFields);
-        setTooltipLayout(config.tooltipLayout || defaultConfig.tooltipLayout);
-        setCustomFields((config.customFields || []).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`})));
+        const nextTooltipLayout = config.tooltipLayout || defaultConfig.tooltipLayout;
+        setTooltipLayout(nextTooltipLayout);
+        setCustomFields(normalizeCustomFields(config.customFields, nextTooltipLayout).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`})));
 
         setStatusTone('success');
         setStatus('Settings imported. Click Save to apply.');
@@ -1009,17 +1106,18 @@ function ConfigPage(props) {
       hoverModifierKey,
       displayFields,
       tooltipLayout,
-      customFields: normalizeCustomFields(customFields)
+      customFields: normalizeCustomFields(customFields, tooltipLayout)
     });
     resetDeclarativeMapping();
     setDomainsText(domains.join(', '));
-    savedJsonRef.current = JSON.stringify({
+    savedJsonRef.current = buildOptionsSnapshot({
       instanceUrl: normalizedInstanceUrl,
       domainsText: domains.join(', '),
       themeMode: normalizeThemeMode(themeMode),
-      hoverDepth, hoverModifierKey,
+      hoverDepth,
+      hoverModifierKey,
       tooltipLayout,
-      customFields: customFields.map(f => f.fieldId),
+      customFields,
     });
     setIsSaving(false);
     setStatusTone('success');

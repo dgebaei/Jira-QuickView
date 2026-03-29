@@ -92,6 +92,37 @@ test('persists custom fields added through the options page', async ({optionsPag
   expect(stored.customFields).toEqual(expect.arrayContaining([{fieldId: customFieldId, row: 3}]));
 });
 
+test('persists custom field row changes when moving a field into row 2', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+  const customFieldId = target.mode === 'mock' ? 'customfield_12345' : await getFirstCustomFieldId(target);
+  test.skip(!customFieldId, 'No Jira custom field is available for row persistence coverage.');
+
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    customFields: [{fieldId: customFieldId, row: 3}],
+  }));
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+
+  await expect(customFieldLibraryItem(optionsPage, customFieldId)).toBeVisible();
+
+  await optionsPage.evaluate(({fieldKey}) => {
+    window.__JHL_TEST_API__.moveTooltipField(fieldKey, 'row2');
+  }, {fieldKey: `custom_${customFieldId}`});
+
+  await expect(optionsPage.getByTestId('options-tooltip-row-row2')).toHaveAttribute(
+    'data-layout-order',
+    new RegExp(`(^|,)custom_${customFieldId}($|,)`)
+  );
+
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['customFields', 'tooltipLayout']));
+  expect(stored.customFields).toEqual(expect.arrayContaining([{fieldId: customFieldId, row: 2}]));
+  expect(stored.tooltipLayout.row2).toContain(`custom_${customFieldId}`);
+});
+
 test('persists hover behavior settings through the options page', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
