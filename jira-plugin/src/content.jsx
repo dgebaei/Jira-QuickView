@@ -6128,7 +6128,7 @@ async function mainAsyncLocal() {
       renderIssuePopup(popupState).catch(() => {});
       const issueKey = popupState.key;
       getIssueChangelog(issueKey).then(changelog => {
-        if (!popupState || popupState.key !== issueKey || !popupState.historyOpen) {
+        if (!popupState || popupState.key !== issueKey) {
           return;
         }
         popupState = {
@@ -6136,7 +6136,9 @@ async function mainAsyncLocal() {
           changelogData: changelog,
           changelogLoading: false
         };
-        renderIssuePopup(popupState).catch(() => {});
+        if (popupState.historyOpen) {
+          renderIssuePopup(popupState).catch(() => {});
+        }
       }).catch(() => {
         if (!popupState || popupState.key !== issueKey) {
           return;

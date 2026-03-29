@@ -26,6 +26,10 @@ function noContent(res) {
   res.end();
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function issueDescriptionHtml(origin) {
   return `
     <p>The mock issue exercises rich rendering, quick actions, and edit flows.</p>
@@ -614,6 +618,9 @@ async function createMockJiraServer() {
         return;
       }
       const expand = String(url.searchParams.get('expand') || '');
+      if (state.scenario === 'editable-slow-changelog' && expand.split(',').includes('changelog')) {
+        await sleep(300);
+      }
       json(res, 200, buildIssueResponse(origin, state, {
         includeChangelog: expand.split(',').includes('changelog'),
       }));

@@ -15,7 +15,7 @@ export function buildTooltipLayoutFromDisplayFields(displayFields) {
 }
 
 export default {
-  domains: [],
+  domains: ['https://github.com/'],
   instanceUrl: '',
   themeMode: 'system',
   v15upgrade: false,
