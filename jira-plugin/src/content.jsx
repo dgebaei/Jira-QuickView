@@ -4752,6 +4752,7 @@ async function mainAsyncLocal() {
     const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]);
     const row2Chips = layoutRow2.map(buildRow2Chip).filter(Boolean).concat(customFieldChips[2]);
     const row3Chips = layoutRow3.map(buildRow3Chip).filter(Boolean).concat(customFieldChips[3]);
+    const maxMetaFieldsPerRow = Math.max(row2Chips.length, row3Chips.length);
 
     const copyTicketMeta = ticket => ({
       copyUrl: ticket.url,
@@ -4806,6 +4807,7 @@ async function mainAsyncLocal() {
       statusText: displayFields.status ? (statusName || 'No status') : '',
       sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
       fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
+      useWideAnnotation: maxMetaFieldsPerRow > 3,
       row1Chips,
       row2Chips,
       row3Chips,

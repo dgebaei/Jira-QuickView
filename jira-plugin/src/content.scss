@@ -786,6 +786,11 @@ body ._JX {
     }
   }
 
+  &_annotation_wide {
+    max-width: 700px;
+    width: min(700px, calc(100vw - 24px));
+  }
+
   &_history_flyout {
     background: #fff;
     border: 1px solid #c7d5e3;
