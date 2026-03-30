@@ -744,27 +744,127 @@ async function mainAsyncLocal() {
     return String(value || '').trim().split('|')[0].trim();
   }
 
+  function countSharedPrefixLength(left, right) {
+    const leftText = String(left || '');
+    const rightText = String(right || '');
+    const maxLength = Math.min(leftText.length, rightText.length);
+    let index = 0;
+    while (index < maxLength && leftText[index] === rightText[index]) {
+      index += 1;
+    }
+    return index;
+  }
+
+  function countSharedSuffixLength(left, right) {
+    const leftText = String(left || '');
+    const rightText = String(right || '');
+    const maxLength = Math.min(leftText.length, rightText.length);
+    let index = 0;
+    while (
+      index < maxLength &&
+      leftText[leftText.length - 1 - index] === rightText[rightText.length - 1 - index]
+    ) {
+      index += 1;
+    }
+    return index;
+  }
+
   function buildEditableCommentDraft(rawText) {
+    const sourceText = String(rawText || '');
     const mentionMappings = [];
-    const draft = String(rawText || '').replace(/\[~([^[\]\r\n]+?)\]/g, (match, mentionValue) => {
+    const mentionPattern = /\[~([^[\]\r\n]+?)\]/g;
+    let draft = '';
+    let lastIndex = 0;
+    let match = mentionPattern.exec(sourceText);
+    while (match) {
+      const matchText = String(match[0] || '');
+      const mentionValue = String(match[1] || '');
+      const matchOffset = Number(match.index || 0);
       const displayText = getMentionDisplayText(mentionValue);
+      draft += sourceText.slice(lastIndex, matchOffset);
+      const start = draft.length;
+      draft += displayText;
       mentionMappings.push({
         displayText,
-        markup: match,
+        markup: matchText,
+        start,
       });
-      return displayText;
+      lastIndex = matchOffset + matchText.length;
+      match = mentionPattern.exec(sourceText);
+    }
+    draft += sourceText.slice(lastIndex);
+    mentionMappings.forEach(mapping => {
+      const start = Number.isFinite(Number(mapping.start)) ? Number(mapping.start) : draft.indexOf(mapping.displayText);
+      const end = start + String(mapping.displayText || '').length;
+      mapping.start = start;
+      mapping.beforeContext = draft.slice(Math.max(0, start - 24), start);
+      mapping.afterContext = draft.slice(end, end + 24);
     });
     return {draft, mentionMappings};
   }
 
   function restoreEditableCommentMentions(draftText, mentionMappings = []) {
-    let restored = String(draftText || '');
-    const mappings = [...(Array.isArray(mentionMappings) ? mentionMappings : [])]
+    const sourceText = String(draftText || '');
+    const replacements = [];
+    let searchFloor = 0;
+    [...(Array.isArray(mentionMappings) ? mentionMappings : [])]
       .filter(mapping => mapping?.displayText && mapping?.markup)
-      .sort((left, right) => String(right.displayText).length - String(left.displayText).length);
-    mappings.forEach(mapping => {
-      restored = restored.split(mapping.displayText).join(mapping.markup);
+      .forEach(mapping => {
+        const displayText = String(mapping.displayText || '');
+        const markup = String(mapping.markup || '');
+        if (!displayText || !markup) {
+          return;
+        }
+        let bestMatch = null;
+        let nextIndex = Math.max(0, searchFloor);
+        while (nextIndex <= sourceText.length) {
+          const matchIndex = sourceText.indexOf(displayText, nextIndex);
+          if (matchIndex === -1) {
+            break;
+          }
+          const beforeContext = String(mapping.beforeContext || '');
+          const afterContext = String(mapping.afterContext || '');
+          const beforeSample = sourceText.slice(Math.max(0, matchIndex - beforeContext.length), matchIndex);
+          const afterStart = matchIndex + displayText.length;
+          const afterSample = sourceText.slice(afterStart, afterStart + afterContext.length);
+          const contextScore = countSharedSuffixLength(beforeSample, beforeContext) + countSharedPrefixLength(afterSample, afterContext);
+          const preferredStart = Number.isFinite(Number(mapping.start)) ? Number(mapping.start) : matchIndex;
+          const candidate = {
+            start: matchIndex,
+            end: afterStart,
+            markup,
+            contextScore,
+            distanceScore: Math.abs(matchIndex - preferredStart),
+          };
+          if (
+            !bestMatch ||
+            candidate.contextScore > bestMatch.contextScore ||
+            (candidate.contextScore === bestMatch.contextScore && candidate.distanceScore < bestMatch.distanceScore)
+          ) {
+            bestMatch = candidate;
+          }
+          nextIndex = matchIndex + displayText.length;
+        }
+        if (!bestMatch) {
+          return;
+        }
+        if (!bestMatch.contextScore && (mapping.beforeContext || mapping.afterContext)) {
+          return;
+        }
+        replacements.push(bestMatch);
+        searchFloor = bestMatch.end;
+      });
+    if (!replacements.length) {
+      return sourceText;
+    }
+    let restored = '';
+    let cursor = 0;
+    replacements.forEach(replacement => {
+      restored += sourceText.slice(cursor, replacement.start);
+      restored += replacement.markup;
+      cursor = replacement.end;
     });
+    restored += sourceText.slice(cursor);
     return restored;
   }
 

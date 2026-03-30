@@ -26,6 +26,19 @@ function noContent(res) {
   res.end();
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildRenderedCommentBody(body) {
+  return `<p>${escapeHtml(body).replace(/\n/g, '<br/>')}</p>`;
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -737,10 +750,28 @@ async function createMockJiraServer() {
         author: {displayName: state.currentUser.displayName},
         created: new Date().toISOString(),
         body: body?.body || '',
-        renderedBody: `<p>${String(body?.body || '').replace(/\n/g, '<br/>')}</p>`,
+        renderedBody: buildRenderedCommentBody(body?.body || ''),
       };
       state.issue.comments.push(newComment);
       json(res, 201, {id: newComment.id});
+      return;
+    }
+
+    if (pathname.startsWith(`/rest/api/2/issue/${state.issue.key}/comment/`) && req.method === 'PUT') {
+      if (state.scenario === 'anonymous-readonly' || state.scenario === 'logged-out') {
+        json(res, 401, {errorMessages: ['Login required']});
+        return;
+      }
+      const commentId = pathname.split('/').pop();
+      const comment = state.issue.comments.find(entry => String(entry.id || '') === String(commentId || ''));
+      if (!comment) {
+        json(res, 404, {errorMessages: ['Comment not found']});
+        return;
+      }
+      const body = await parseJsonBody(req);
+      comment.body = String(body?.body || '');
+      comment.renderedBody = buildRenderedCommentBody(comment.body);
+      json(res, 200, {id: comment.id});
       return;
     }
 

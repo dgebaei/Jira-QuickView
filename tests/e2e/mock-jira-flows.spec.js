@@ -482,6 +482,40 @@ test('supports mentions and saving new comments in mocked mode', async ({extensi
   await page.close();
 });
 
+test('preserves literal text when editing comments that already contain mentions in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Mention edit coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const commentInput = page.locator('._JX_comment_input');
+  await commentInput.fill('@mor');
+  await expect(page.locator('._JX_comment_mention_option').first()).toBeVisible();
+  await commentInput.press('ArrowDown');
+  await commentInput.press('Enter');
+  await commentInput.type(' mentioned once.');
+  await page.locator('._JX_comment_save').click();
+
+  const newestComment = page.locator('._JX_comment').last();
+  await expect(newestComment.locator('._JX_mention')).toHaveCount(1);
+
+  await newestComment.locator('._JX_comment_edit_button').click();
+  const editInput = newestComment.locator('._JX_comment_edit_input');
+  const originalDraft = await editInput.inputValue();
+  await expect(editInput).toHaveValue(/@Morgan Agent/);
+  await editInput.fill(`Literal @Morgan Agent\n${originalDraft}`);
+  await newestComment.locator('._JX_comment_edit_save').click();
+
+  const savedComment = page.locator('._JX_comment').last();
+  await expect(savedComment.locator('._JX_mention')).toHaveCount(1);
+  await expect(savedComment.locator('._JX_comment_body')).toContainText('Literal @Morgan Agent');
+  await expect(savedComment.locator('._JX_comment_body')).toContainText('mentioned once.');
+
+  await page.close();
+});
+
 test('uploads a pasted image into the comment composer in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Pasted-image upload coverage is deterministic in mocked mode only.');
