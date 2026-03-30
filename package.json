@@ -1,6 +1,6 @@
 {
   "name": "jira-hot-linker",
-  "version": "2.2.1",
+  "version": "2.3.0-beta",
   "description": "Jira HotLinker, quick access to Jira metadata when hovering over ticket numbers!",
   "main": " ",
   "scripts": {

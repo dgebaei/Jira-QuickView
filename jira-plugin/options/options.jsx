@@ -976,7 +976,7 @@ function ConfigPage(props) {
 
   const exportSettings = () => {
     const config = {
-      version: '2.2.1',
+      version: '2.3.0-beta',
       exportedAt: new Date().toISOString(),
       instanceUrl,
       domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
