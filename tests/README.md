@@ -170,25 +170,20 @@ npm run test:e2e:auth:live
 
 ## Reports And Artifacts
 
-All generated Playwright output now lives under `tests/output/playwright/`.
+All generated Playwright output lives under `tests/output/playwright/`.
 
 Important paths:
 
-- run explorer: `tests/output/playwright/index.html`
-- merged HTML report: `tests/output/playwright/report/index.html`
-- per-run HTML reports: `tests/output/playwright/runs/<run-id>/index.html`
-- accumulated blob reports: `tests/output/playwright/blob-report`
+- Playwright HTML report: `tests/output/playwright/report/index.html`
 - run artifacts: `tests/output/playwright/test-results`
 
-Open the merged report with:
+Open the local HTML report with:
 
 ```bash
 npm run test:e2e:show-report
 ```
 
-The run explorer includes a summary view plus a sidebar of saved runs. The merged HTML report remains cumulative because each environment writes a blob report and the summary is rebuilt from all saved blobs.
-
-If you want a clean report before the next run:
+If you want a clean report and fresh artifacts before the next run:
 
 ```bash
 npm run test:e2e:reset-report-data
@@ -240,12 +235,6 @@ Open Playwright UI mode:
 npm run test:e2e:ui
 ```
 
-Merge reports again without rerunning tests:
-
-```bash
-npm run test:e2e:merge-report
-```
-
 Reset saved reports and artifacts:
 
 ```bash
@@ -266,6 +255,7 @@ CI behavior:
 - pull requests: `mock-edge` and `public-smoke`
 - scheduled runs and manual dispatch: `live-authenticated` when Jira secrets are configured
 - pushes to `master`: `mock-edge`, `public-smoke`, and `live-authenticated` when Jira secrets are configured
+- GitHub job status is the source of truth for pass/fail in CI; deeper debugging comes from the uploaded Playwright artifacts for each suite
 
 Required GitHub Actions secrets for `live-authenticated`:
 
@@ -278,8 +268,7 @@ Required GitHub Actions secrets for `live-authenticated`:
 
 Uploaded CI artifacts include:
 
-- merged HTML report data
-- blob reports
+- the Playwright HTML report for that suite run
 - failure traces, screenshots, and videos when present
 
 ## Current Coverage Areas
