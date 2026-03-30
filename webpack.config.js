@@ -20,7 +20,25 @@ module.exports = {
         test: /\.(js|jsx)$/,
         exclude: /node_modules/,
         use: [
-          'babel-loader'
+          {
+            loader: 'babel-loader',
+            options: {
+              presets: [
+                [
+                  '@babel/preset-env',
+                  {
+                    targets: {
+                      chrome: 73
+                    },
+                    modules: false,
+                    loose: true,
+                    useBuiltIns: false
+                  }
+                ],
+                '@babel/preset-react'
+              ]
+            }
+          }
         ]
       }, {
         test: /\.(css|scss)$/,

@@ -163,7 +163,7 @@ export function createContentIssueLinkageHelpers(options) {
         const escapedToken = token
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"');
-        return `summary ~ \"${escapedToken}*\"`;
+        return `summary ~ "${escapedToken}*"`;
       });
 
     if (tokenClauses.length === 1) {
