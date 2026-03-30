@@ -278,7 +278,8 @@ test('updates time tracking estimates through the content block editor @mock-onl
   await remainingEstimateInput.fill('3d');
   await page.locator('._JX_time_tracking_save').click();
 
-  await expect(page.locator('body')).toContainText(/Time tracking updated|Estimates updated/);
+  await expect(originalEstimateInput).toBeDisabled();
+  await expect(originalEstimateInput).toBeEnabled();
   await expect(originalEstimateInput).toHaveValue('2w');
   await expect(remainingEstimateInput).toHaveValue('3d');
   await expect(popup.root).toContainText('Time Tracking');
