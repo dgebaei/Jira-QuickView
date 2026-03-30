@@ -202,6 +202,18 @@ Run the default suite:
 npm test
 ```
 
+Validate extension manifest/version metadata quickly:
+
+```bash
+npm run validate:manifest
+```
+
+Confirm the Chromium extension boots and the MV3 service worker starts:
+
+```bash
+npm run test:e2e:startup-smoke
+```
+
 Run everything configured by Playwright:
 
 ```bash
@@ -250,6 +262,7 @@ Workflow:
 
 CI behavior:
 
+- preflight validates the manifest/version wiring and confirms the extension boots before longer suites start
 - pull requests: `mock-edge` and `public-smoke`
 - scheduled runs and manual dispatch: `live-authenticated` when Jira secrets are configured
 - pushes to `master`: `mock-edge`, `public-smoke`, and `live-authenticated` when Jira secrets are configured

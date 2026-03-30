@@ -1,5 +1,6 @@
 .idea/*
 .agents/
+.tools/
 .opencode/
 .worktrees/
 .env.playwright.local

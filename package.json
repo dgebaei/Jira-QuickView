@@ -2,12 +2,15 @@
   "name": "jira-hot-linker",
   "version": "2.3.0-beta",
   "description": "Jira HotLinker, quick access to Jira metadata when hovering over ticket numbers!",
-  "main": " ",
   "scripts": {
     "analyze": "webpack --mode=production --bail --profile --json > stats.json || webpack-bundle-analyzer stats.json",
-    "build": "webpack --mode=development",
+    "build": "node scripts/build-extension-and-reload.js",
+    "build:active-extension": "node scripts/build-extension-and-reload.js",
+    "build:bundle-only": "webpack --mode=development",
     "dev": "webpack --watch --mode=development",
     "pwcli": ".agents/skills/openai-skills-playwright/scripts/playwright_cli.sh",
+    "validate:manifest": "node scripts/validate-manifest.js",
+    "test:e2e:startup-smoke": "node scripts/playwright/check-extension-startup.js",
     "test": "npm run test:e2e",
     "test:e2e": "npm run test:e2e:mock-edge",
     "test:e2e:all": "node scripts/playwright/run-all-suites.js",
@@ -24,34 +27,33 @@
     "test:e2e:merge-report": "node scripts/playwright/merge-reports.js",
     "test:e2e:show-report": "node scripts/playwright/dashboard-server.js",
     "test:e2e:show-raw-report": "npm exec -- playwright show-report tests/output/playwright/report",
-    "test:e2e:reset-report-data": "node scripts/playwright/reset-reports.js"
+    "test:e2e:reset-report-data": "node scripts/playwright/reset-reports.js",
+    "release:check": "node scripts/release-check.js",
+    "tldr:setup": "node scripts/setup-llm-tldr.js",
+    "tldr:code": "node scripts/llm-tldr.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/helmus/Jira-Hot-Linker.git"
+    "url": "git+https://github.com/dgebaei/Jira-Hot-Linker.git"
   },
   "author": "Willem",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/helmus/Jira-Hot-Linker/issues"
+    "url": "https://github.com/dgebaei/Jira-Hot-Linker/issues"
   },
-  "homepage": "https://github.com/helmus/Jira-Hot-Linker#readme",
+  "homepage": "https://github.com/dgebaei/Jira-Hot-Linker#readme",
   "devDependencies": {
-    "@babel/cli": "7.17.3",
     "@babel/core": "7.17.5",
     "@babel/preset-env": "7.16.11",
     "@babel/preset-react": "7.16.7",
     "@playwright/test": "^1.58.2",
     "babel-eslint": "10.0.2",
     "babel-loader": "8.2.3",
-    "bluebird": "3.7.2",
-    "clipboard": "2.0.10",
     "css-loader": "6.6.0",
     "escape-string-regexp": "5.0.0",
     "eslint": "8.9.0",
     "eslint-plugin-react": "7.28.0",
     "jquery": "3.6.0",
-    "jquery-ui": "1.14.1",
     "lodash": "4.17.23",
     "mustache": "4.2.0",
     "playwright": "^1.58.2",
