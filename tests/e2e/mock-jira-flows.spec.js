@@ -441,7 +441,12 @@ test('groups history entries and nests referenced attachments inside expanded co
 
   const descriptionEvent = flyout.locator('._JX_history_rich_event_description').first();
   await descriptionEvent.locator('summary').click();
-  await expect(descriptionEvent.locator('._JX_history_rich_section_body')).toContainText('Updated rollout checklist for JRACLOUD-97000');
+  const descriptionBody = descriptionEvent.locator('._JX_history_rich_section_body');
+  await expect(descriptionBody).toContainText('Updated rollout checklist for JRACLOUD-97000');
+  await expect(descriptionBody.locator('strong', {hasText: 'A DESCRIPTION'})).toHaveCount(1);
+  await expect(descriptionBody.locator('u em', {hasText: 'and a rich one!'})).toHaveCount(1);
+  await expect(descriptionBody.locator('code', {hasText: 'With images:'})).toHaveCount(1);
+  await expect(descriptionBody.locator('img._JX_previewable[alt="standalone-graph.png"]')).toHaveCount(1);
   await expect(flyout.locator('a._JX_history_issue_link', {hasText: 'JRACLOUD-97000'}).first()).toHaveAttribute('href', /browse\/JRACLOUD-97000$/);
 
   await page.keyboard.press('Escape');

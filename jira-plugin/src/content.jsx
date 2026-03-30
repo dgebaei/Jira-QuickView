@@ -893,7 +893,7 @@ async function mainAsyncLocal() {
           return NodeFilter.FILTER_SKIP;
         }
         const parentTag = String(node.parentElement?.tagName || '').toLowerCase();
-        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea') {
+        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea' || parentTag === 'code' || parentTag === 'pre') {
           return NodeFilter.FILTER_SKIP;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -943,7 +943,7 @@ async function mainAsyncLocal() {
           return NodeFilter.FILTER_SKIP;
         }
         const parentTag = String(node.parentElement?.tagName || '').toLowerCase();
-        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea') {
+        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea' || parentTag === 'code' || parentTag === 'pre') {
           return NodeFilter.FILTER_SKIP;
         }
         return NodeFilter.FILTER_ACCEPT;

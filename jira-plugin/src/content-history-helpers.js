@@ -13,7 +13,6 @@ export function createContentHistoryHelpers(options) {
   const normalizeHistoryAttachmentName = options?.normalizeHistoryAttachmentName;
   const normalizeIssueKey = options?.normalizeIssueKey;
   const normalizeRichHtml = options?.normalizeRichHtml;
-  const textToLinkedHtml = options?.textToLinkedHtml;
 
   const HISTORY_GROUP_WINDOW_MS = 5 * 60 * 1000;
   const HISTORY_ATTACHMENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -100,6 +99,180 @@ export function createContentHistoryHelpers(options) {
       .trim();
   }
 
+  function buildHistoryHtmlPlaceholderStore() {
+    const values = [];
+    return {
+      restore(text) {
+        return String(text || '').replace(/__JX_HISTORY_HTML_(\d+)__/g, (match, index) => {
+          return values[Number(index)] || '';
+        });
+      },
+      stash(html) {
+        const token = `__JX_HISTORY_HTML_${values.length}__`;
+        values.push(html);
+        return token;
+      }
+    };
+  }
+
+  function toAbsoluteHistoryHref(href) {
+    const normalizedHref = String(href || '').trim();
+    if (!normalizedHref) {
+      return '';
+    }
+    try {
+      return new URL(normalizedHref, instanceUrl).toString();
+    } catch (ex) {
+      return normalizedHref;
+    }
+  }
+
+  function buildHistoryExternalLinkHtml(label, href) {
+    const normalizedHref = toAbsoluteHistoryHref(href);
+    const linkText = String(label || normalizedHref).trim();
+    if (!normalizedHref || !linkText) {
+      return escapeHtml(linkText || href || '');
+    }
+    return `<a href="${escapeHtml(normalizedHref)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(buildLinkHoverTitle('Open link', linkText, normalizedHref))}">${escapeHtml(linkText)}</a>`;
+  }
+
+  function renderHistoryInlineWikiHtml(input) {
+    const placeholders = buildHistoryHtmlPlaceholderStore();
+    const withPlaceholders = String(input || '')
+      .replace(/\{noformat\}([\s\S]+?)\{noformat\}/gi, (match, value) => {
+        return placeholders.stash(`<code>${escapeHtml(value)}</code>`);
+      })
+      .replace(/\{code(?::[^}]*)?\}([\s\S]+?)\{code\}/gi, (match, value) => {
+        return placeholders.stash(`<code>${escapeHtml(value)}</code>`);
+      })
+      .replace(/\{\{([^{}\n]+)\}\}/g, (match, value) => {
+        return placeholders.stash(`<code>${escapeHtml(value)}</code>`);
+      })
+      .replace(/\[([^|\]\r\n]+?)\|([^]\r\n]+?)\]/g, (match, label, href) => {
+        return placeholders.stash(buildHistoryExternalLinkHtml(label, href));
+      })
+      .replace(/\[(https?:\/\/[^[\]\r\n]+?)\]/g, (match, href) => {
+        return placeholders.stash(buildHistoryExternalLinkHtml(href, href));
+      })
+      .replace(/(https?:\/\/[^\s<]+)/g, (match, href) => {
+        return placeholders.stash(buildHistoryExternalLinkHtml(href, href));
+      });
+
+    let html = escapeHtml(withPlaceholders);
+    const applyWrappedTag = (source, marker, tagName) => {
+      const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return source.replace(
+        new RegExp(`(^|[\\s([{"'])${escapedMarker}([^\\n]+?)${escapedMarker}(?=($|[\\s).,!?;:\\]}'"]))`, 'gm'),
+        (match, prefix, content, suffix) => `${prefix}<${tagName}>${content}</${tagName}>${suffix}`
+      );
+    };
+
+    html = applyWrappedTag(html, '*', 'strong');
+    html = applyWrappedTag(html, '_', 'em');
+    html = applyWrappedTag(html, '+', 'u');
+    html = applyWrappedTag(html, '-', 'del');
+    return placeholders.restore(html);
+  }
+
+  function renderHistoryWikiMarkupHtml(input) {
+    const lines = String(input || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n');
+    const blocks = [];
+    let paragraphLines = [];
+    let listType = '';
+    let listItems = [];
+    let preLines = null;
+
+    const flushParagraph = () => {
+      if (!paragraphLines.length) {
+        return;
+      }
+      blocks.push(`<p>${paragraphLines.map(renderHistoryInlineWikiHtml).join('<br/>')}</p>`);
+      paragraphLines = [];
+    };
+
+    const flushList = () => {
+      if (!listItems.length || !listType) {
+        return;
+      }
+      blocks.push(`<${listType}>${listItems.map(item => `<li>${renderHistoryInlineWikiHtml(item)}</li>`).join('')}</${listType}>`);
+      listItems = [];
+      listType = '';
+    };
+
+    const flushPre = () => {
+      if (!preLines) {
+        return;
+      }
+      blocks.push(`<pre>${escapeHtml(preLines.join('\n'))}</pre>`);
+      preLines = null;
+    };
+
+    lines.forEach(line => {
+      const trimmedLine = String(line || '').trim();
+
+      if (preLines) {
+        if (/^\{(?:noformat|code(?::[^}]*)?)\}$/i.test(trimmedLine)) {
+          flushPre();
+        } else {
+          preLines.push(String(line || ''));
+        }
+        return;
+      }
+
+      if (!trimmedLine) {
+        flushParagraph();
+        flushList();
+        return;
+      }
+
+      if (/^\{(?:noformat|code(?::[^}]*)?)\}$/i.test(trimmedLine)) {
+        flushParagraph();
+        flushList();
+        preLines = [];
+        return;
+      }
+
+      const headingMatch = trimmedLine.match(/^h([1-6])\.\s+([\s\S]+)$/i);
+      if (headingMatch) {
+        flushParagraph();
+        flushList();
+        blocks.push(`<h${headingMatch[1]}>${renderHistoryInlineWikiHtml(headingMatch[2])}</h${headingMatch[1]}>`);
+        return;
+      }
+
+      const quoteMatch = trimmedLine.match(/^bq\.\s+([\s\S]+)$/i);
+      if (quoteMatch) {
+        flushParagraph();
+        flushList();
+        blocks.push(`<blockquote>${renderHistoryInlineWikiHtml(quoteMatch[1])}</blockquote>`);
+        return;
+      }
+
+      const listMatch = trimmedLine.match(/^([*#]+)\s+([\s\S]+)$/);
+      if (listMatch) {
+        flushParagraph();
+        const nextListType = listMatch[1][0] === '#' ? 'ol' : 'ul';
+        if (listType && listType !== nextListType) {
+          flushList();
+        }
+        listType = nextListType;
+        listItems.push(listMatch[2]);
+        return;
+      }
+
+      flushList();
+      paragraphLines.push(String(line || ''));
+    });
+
+    flushParagraph();
+    flushList();
+    flushPre();
+    return blocks.join('');
+  }
+
   function buildHistoryTimestampParts(created) {
     const createdAt = new Date(created);
     if (Number.isNaN(createdAt.getTime())) {
@@ -141,10 +314,9 @@ export function createContentHistoryHelpers(options) {
     if (!normalizedValue) {
       return '';
     }
-    const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 120);
     const baseHtml = looksLikeHtmlFragment(normalizedValue)
       ? await normalizeRichHtml(normalizedValue, {imageMaxHeight: 120, attachmentLookup})
-      : textToLinkedHtml(normalizedValue || '', {attachmentImagesByName});
+      : await normalizeRichHtml(renderHistoryWikiMarkupHtml(normalizedValue), {imageMaxHeight: 120, attachmentLookup});
     return linkifyHistoryIssueKeysInHtml(baseHtml);
   }
 
