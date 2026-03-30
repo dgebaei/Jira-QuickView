@@ -30,6 +30,14 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function buildAttachmentContentUrl(origin, attachmentId) {
+  return `${origin}/rest/api/2/attachment/content/${attachmentId}`;
+}
+
+function buildAttachmentThumbnailUrl(origin, attachmentId) {
+  return `${origin}/rest/api/2/attachment/thumbnail/${attachmentId}`;
+}
+
 function issueDescriptionHtml(origin) {
   return `
     <p>The mock issue exercises rich rendering, quick actions, and edit flows.</p>
@@ -134,29 +142,29 @@ function createState(origin) {
           id: '900',
           filename: 'evidence.png',
           mimeType: 'image/png',
-          content: `${origin}/assets/evidence.png`,
-          thumbnail: `${origin}/assets/evidence.png`,
+          content: buildAttachmentContentUrl(origin, '900'),
+          thumbnail: buildAttachmentThumbnailUrl(origin, '900'),
         },
         {
           id: '901',
           filename: 'image-2026-03-17-10-47-20-728.png',
           mimeType: 'image/png',
-          content: `${origin}/assets/history-image-1.png`,
-          thumbnail: `${origin}/assets/history-image-1.png`,
+          content: buildAttachmentContentUrl(origin, '901'),
+          thumbnail: buildAttachmentThumbnailUrl(origin, '901'),
         },
         {
           id: '902',
           filename: 'image-2026-03-17-10-48-30-600.png',
           mimeType: 'image/png',
-          content: `${origin}/assets/history-image-2.png`,
-          thumbnail: `${origin}/assets/history-image-2.png`,
+          content: buildAttachmentContentUrl(origin, '902'),
+          thumbnail: buildAttachmentThumbnailUrl(origin, '902'),
         },
         {
           id: '903',
           filename: 'standalone-graph.png',
           mimeType: 'image/png',
-          content: `${origin}/assets/standalone-graph.png`,
-          thumbnail: `${origin}/assets/standalone-graph.png`,
+          content: buildAttachmentContentUrl(origin, '903'),
+          thumbnail: buildAttachmentThumbnailUrl(origin, '903'),
         },
       ],
       comments: [
@@ -745,15 +753,57 @@ async function createMockJiraServer() {
         json(res, 500, {errorMessages: ['Could not upload pasted image']});
         return;
       }
+      const fileNameHeader = String(req.headers['x-atlassian-token-filename'] || '').trim();
+      const requestBody = await new Promise(resolve => {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks).toString('latin1')));
+      });
+      const multipartFileNameMatch = requestBody.match(/filename="([^"]+)"/i);
+      const uploadedFileName = multipartFileNameMatch?.[1] || fileNameHeader || 'pasted-image.png';
+      const attachmentId = `attachment-${Date.now()}`;
       const attachment = {
-        id: `attachment-${Date.now()}`,
-        filename: 'pasted-image.png',
+        id: attachmentId,
+        filename: uploadedFileName,
         mimeType: 'image/png',
-        content: `${origin}/assets/uploaded-image.png`,
-        thumbnail: `${origin}/assets/uploaded-image.png`,
+        content: buildAttachmentContentUrl(origin, attachmentId),
+        thumbnail: buildAttachmentThumbnailUrl(origin, attachmentId),
       };
       state.uploadedAttachments.push(attachment);
+      state.issue.changelog.histories.unshift({
+        id: `history-upload-${Date.now()}`,
+        created: new Date().toISOString(),
+        author: {
+          displayName: state.currentUser.displayName,
+          accountId: state.currentUser.accountId,
+        },
+        items: [
+          {
+            field: 'Attachment',
+            fieldId: 'attachment',
+            fromString: '',
+            toString: uploadedFileName,
+          },
+        ],
+      });
       json(res, 200, [attachment]);
+      return;
+    }
+
+    if (/^\/rest\/api\/2\/attachment\/(?:content|thumbnail)\/[^/]+$/.test(pathname) && req.method === 'GET') {
+      const attachmentId = pathname.split('/').pop();
+      const attachment = state.issue.attachments.concat(state.uploadedAttachments).find(candidate => {
+        return String(candidate.id || '') === String(attachmentId || '');
+      });
+      if (!attachment) {
+        json(res, 404, {errorMessages: ['Attachment not found']});
+        return;
+      }
+      res.writeHead(200, {
+        'access-control-allow-origin': '*',
+        'content-type': attachment.mimeType || 'image/png',
+      });
+      res.end(PNG_BUFFER);
       return;
     }
 
@@ -940,7 +990,7 @@ async function createMockJiraServer() {
 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
-  origin = `http://127.0.0.1:${address.port}/`;
+  origin = `http://127.0.0.1:${address.port}`;
   reset('editable');
 
   return {

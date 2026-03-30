@@ -107,7 +107,7 @@ chrome.runtime.onMessage.addListener(function (msg) {
 
 let ui_tips_shown_local = [];
 const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
-const COMMENT_REACTION_OPTIONS = [
+  const COMMENT_REACTION_OPTIONS = [
   {emoji: '👍', emojiId: '1f44d', label: 'thumbs up'},
   {emoji: '👎', emojiId: '1f44e', label: 'thumbs down'},
   {emoji: '🔥', emojiId: '1f525', label: 'fire'},
@@ -155,9 +155,18 @@ async function get(url) {
   return unwrapResponse(await sendMessage({action: 'get', url: url}));
 }
 
-async function getImageDataUrl(url) {
-  return unwrapResponse(await sendMessage({action: 'getImageDataUrl', url}));
-}
+  async function getImageDataUrl(url, mimeType = '') {
+    return unwrapResponse(await sendMessage({action: 'getImageDataUrl', url, mimeType}));
+  }
+
+  async function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Could not read image blob'));
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.readAsDataURL(blob);
+    });
+  }
 
 async function requestJson(method, url, body, headers) {
   return unwrapResponse(await sendMessage({action: 'requestJson', method, url, body, headers}));
@@ -438,6 +447,8 @@ async function mainAsyncLocal() {
     getCommentUploadState: () => commentUploadState,
     getContainer: () => container,
     getDisplayImageUrl,
+    rememberDisplayImageUrl,
+    onAttachmentUploaded: handleDraftAttachmentUploaded,
     keepContainerVisible,
     requestJson,
     setActiveCommentContext: nextValue => { activeCommentContext = nextValue; },
@@ -471,21 +482,159 @@ async function mainAsyncLocal() {
     }
   }
 
-  async function getDisplayImageUrl(url) {
+  function isImageDataUrl(url) {
+    return /^data:image\//i.test(String(url || '').trim());
+  }
+
+  function buildAttachmentProxyUrl(url) {
     const absoluteUrl = toAbsoluteJiraUrl(url);
-    if (!absoluteUrl || !absoluteUrl.startsWith(INSTANCE_URL)) {
+    if (!absoluteUrl || isImageDataUrl(absoluteUrl)) {
       return absoluteUrl;
     }
-    if (imageProxyCache[absoluteUrl]) {
-      return imageProxyCache[absoluteUrl];
-    }
     try {
-      const dataUrl = await getImageDataUrl(absoluteUrl);
-      imageProxyCache[absoluteUrl] = dataUrl;
-      return dataUrl;
+      const parsedUrl = new URL(absoluteUrl);
+      const instanceUrl = new URL(INSTANCE_URL);
+      const isAttachmentApiUrl = parsedUrl.origin === instanceUrl.origin &&
+        /^\/rest\/api\/(?:2|3)\/attachment\/(?:content|thumbnail)\//i.test(parsedUrl.pathname);
+      if (!isAttachmentApiUrl) {
+        return absoluteUrl;
+      }
+      parsedUrl.searchParams.set('redirect', 'false');
+      return parsedUrl.toString();
     } catch (ex) {
       return absoluteUrl;
     }
+  }
+
+  function buildDisplayImageCacheKeys(url) {
+    const absoluteUrl = toAbsoluteJiraUrl(url);
+    if (!absoluteUrl) {
+      return [];
+    }
+    const proxyUrl = buildAttachmentProxyUrl(absoluteUrl);
+    return [...new Set([absoluteUrl, proxyUrl].filter(Boolean))];
+  }
+
+  function getCachedDisplayImageUrl(url) {
+    const cacheKeys = buildDisplayImageCacheKeys(url);
+    for (const cacheKey of cacheKeys) {
+      const cachedUrl = imageProxyCache[cacheKey];
+      if (isImageDataUrl(cachedUrl)) {
+        return cachedUrl;
+      }
+    }
+    return '';
+  }
+
+  function cacheDisplayImageUrl(dataUrl, ...urls) {
+    if (!isImageDataUrl(dataUrl)) {
+      return;
+    }
+    urls.forEach(url => {
+      buildDisplayImageCacheKeys(url).forEach(cacheKey => {
+        imageProxyCache[cacheKey] = dataUrl;
+      });
+    });
+  }
+
+  async function getDisplayImageUrl(url, mimeType = '') {
+    const absoluteUrl = toAbsoluteJiraUrl(url);
+    if (!absoluteUrl) {
+      return absoluteUrl;
+    }
+    if (isImageDataUrl(absoluteUrl)) {
+      return absoluteUrl;
+    }
+    try {
+      const imageUrl = new URL(absoluteUrl);
+      const instanceUrl = new URL(INSTANCE_URL);
+      if (imageUrl.origin !== instanceUrl.origin) {
+        return absoluteUrl;
+      }
+    } catch (ex) {
+      if (!absoluteUrl.startsWith(INSTANCE_URL)) {
+        return absoluteUrl;
+      }
+    }
+    const cachedDataUrl = getCachedDisplayImageUrl(absoluteUrl);
+    if (cachedDataUrl) {
+      return cachedDataUrl;
+    }
+    const fetchUrl = buildAttachmentProxyUrl(absoluteUrl);
+    try {
+      const dataUrl = await getImageDataUrl(fetchUrl, mimeType);
+      cacheDisplayImageUrl(dataUrl, absoluteUrl, fetchUrl);
+      return dataUrl;
+    } catch (ex) {
+      try {
+        const response = await fetch(fetchUrl, {credentials: 'include'});
+        if (response.ok) {
+          const responseBlob = await response.blob();
+          const effectiveMimeType = String(mimeType || responseBlob.type || response.headers.get('Content-Type') || '').trim().toLowerCase();
+          if (effectiveMimeType.startsWith('image/')) {
+            const normalizedBlob = responseBlob.type === effectiveMimeType
+              ? responseBlob
+              : new Blob([await responseBlob.arrayBuffer()], {type: effectiveMimeType});
+            const dataUrl = await blobToDataUrl(normalizedBlob);
+            cacheDisplayImageUrl(dataUrl, absoluteUrl, fetchUrl);
+            return dataUrl;
+          }
+        }
+      } catch (fallbackError) {
+        // Ignore and fall back to the original URL below.
+      }
+      return absoluteUrl;
+    }
+  }
+
+  function rememberDisplayImageUrl(url, dataUrl) {
+    cacheDisplayImageUrl(dataUrl, url);
+  }
+
+  async function resolveAttachmentDisplayImageUrl(mimeType, ...candidateUrls) {
+    for (const candidateUrl of candidateUrls) {
+      if (!candidateUrl) {
+        continue;
+      }
+      try {
+        const displayUrl = await getDisplayImageUrl(candidateUrl, mimeType);
+        if (isImageDataUrl(displayUrl)) {
+          return displayUrl;
+        }
+      } catch (ex) {
+        // Ignore and keep trying the next candidate.
+      }
+    }
+    return '';
+  }
+
+  async function normalizeIssueAttachmentImage(attachment) {
+    if (!attachment || typeof attachment !== 'object') {
+      return attachment;
+    }
+    const rawContentUrl = toAbsoluteJiraUrl(attachment.rawContentUrl || attachment.content);
+    const rawThumbnailUrl = toAbsoluteJiraUrl(attachment.rawThumbnailUrl || attachment.thumbnail);
+    const mimeType = String(attachment.mimeType || '').trim().toLowerCase();
+    const existingInlineDataUrl = isImageDataUrl(attachment.inlineDataUrl)
+      ? String(attachment.inlineDataUrl).trim()
+      : (isImageDataUrl(attachment.displayContent) ? String(attachment.displayContent).trim() : '');
+    const existingPreviewDataUrl = isImageDataUrl(attachment.previewDataUrl)
+      ? String(attachment.previewDataUrl).trim()
+      : '';
+    const inlineDataUrl = existingInlineDataUrl
+      || await resolveAttachmentDisplayImageUrl(mimeType, rawThumbnailUrl, rawContentUrl);
+    const previewDataUrl = existingPreviewDataUrl
+      || await resolveAttachmentDisplayImageUrl(mimeType, rawContentUrl, rawThumbnailUrl)
+      || inlineDataUrl;
+    attachment.rawContentUrl = rawContentUrl;
+    attachment.rawThumbnailUrl = rawThumbnailUrl || rawContentUrl;
+    attachment.content = rawContentUrl;
+    attachment.inlineDataUrl = inlineDataUrl;
+    attachment.previewDataUrl = previewDataUrl;
+    attachment.displayContent = inlineDataUrl;
+    attachment.previewDisplaySrc = previewDataUrl;
+    attachment.thumbnail = inlineDataUrl;
+    return attachment;
   }
 
   async function normalizeIssueImages(issueData) {
@@ -542,15 +691,7 @@ async function mainAsyncLocal() {
     });
 
     (issueData.fields.attachment || []).forEach(attachment => {
-      attachment.content = toAbsoluteJiraUrl(attachment.content);
-      attachment.thumbnail = toAbsoluteJiraUrl(attachment.thumbnail) || attachment.content;
-      if (attachment.thumbnail) {
-        imageLoads.push(
-          getDisplayImageUrl(attachment.thumbnail).then(src => {
-            attachment.thumbnail = src;
-          })
-        );
-      }
+      imageLoads.push(normalizeIssueAttachmentImage(attachment));
     });
 
     await Promise.all(imageLoads);
@@ -568,11 +709,129 @@ async function mainAsyncLocal() {
     return String(issueKey || '').trim().replace(/\s+/g, '-').toUpperCase();
   }
 
+  function cacheKnownJiraUser(user) {
+    if (!user || typeof user !== 'object') {
+      return;
+    }
+    const displayName = String(user.displayName || user.name || user.username || user.key || user.emailAddress || '').trim();
+    if (!displayName) {
+      return;
+    }
+    [user.accountId, user.name, user.username, user.key]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .forEach(identity => {
+        jiraUserDisplayNameCache.set(identity, displayName);
+      });
+  }
+
+  function cacheKnownJiraUsers(users) {
+    (Array.isArray(users) ? users : []).forEach(cacheKnownJiraUser);
+  }
+
   function getMentionDisplayText(rawValue) {
     const normalized = String(rawValue || '')
-      .trim()
-      .replace(/^accountid:/i, '');
-    return normalized ? `@${normalized}` : '@mention';
+      .trim();
+    const identity = normalized.replace(/^accountid:/i, '');
+    const displayName = jiraUserDisplayNameCache.get(identity) || jiraUserDisplayNameCache.get(normalized);
+    if (displayName) {
+      return `@${displayName}`;
+    }
+    return identity ? `@${identity}` : '@mention';
+  }
+
+  function normalizeCommentImageReference(value) {
+    return String(value || '').trim().split('|')[0].trim();
+  }
+
+  function buildEditableCommentDraft(rawText) {
+    const mentionMappings = [];
+    const draft = String(rawText || '').replace(/\[~([^[\]\r\n]+?)\]/g, (match, mentionValue) => {
+      const displayText = getMentionDisplayText(mentionValue);
+      mentionMappings.push({
+        displayText,
+        markup: match,
+      });
+      return displayText;
+    });
+    return {draft, mentionMappings};
+  }
+
+  function restoreEditableCommentMentions(draftText, mentionMappings = []) {
+    let restored = String(draftText || '');
+    const mappings = [...(Array.isArray(mentionMappings) ? mentionMappings : [])]
+      .filter(mapping => mapping?.displayText && mapping?.markup)
+      .sort((left, right) => String(right.displayText).length - String(left.displayText).length);
+    mappings.forEach(mapping => {
+      restored = restored.split(mapping.displayText).join(mapping.markup);
+    });
+    return restored;
+  }
+
+  function replaceMentionTextNodes(rootNode) {
+    if (!rootNode) {
+      return;
+    }
+    const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node?.textContent || !/\[~([^[\]\r\n]+?)\]/.test(node.textContent)) {
+          return NodeFilter.FILTER_SKIP;
+        }
+        const parentTag = String(node.parentElement?.tagName || '').toLowerCase();
+        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea') {
+          return NodeFilter.FILTER_SKIP;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    const textNodes = [];
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      textNodes.push(currentNode);
+      currentNode = walker.nextNode();
+    }
+
+    textNodes.forEach(textNode => {
+      const text = String(textNode.textContent || '');
+      const matches = [...text.matchAll(/\[~([^[\]\r\n]+?)\]/g)];
+      if (!matches.length) {
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      let lastIndex = 0;
+      matches.forEach(match => {
+        const matchIndex = Number(match.index || 0);
+        if (matchIndex > lastIndex) {
+          fragment.appendChild(document.createTextNode(text.slice(lastIndex, matchIndex)));
+        }
+        const mentionNode = document.createElement('span');
+        mentionNode.className = '_JX_mention';
+        mentionNode.textContent = getMentionDisplayText(match[1]);
+        fragment.appendChild(mentionNode);
+        lastIndex = matchIndex + match[0].length;
+      });
+      if (lastIndex < text.length) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+      }
+      textNode.parentNode?.replaceChild(fragment, textNode);
+    });
+  }
+
+  function buildAttachmentImagesByName(attachmentLookup = new Map(), imageMaxHeight = 100) {
+    const imagesByName = {};
+    attachmentLookup.forEach((attachmentView, normalizedName) => {
+      const fileName = String(attachmentView?.filename || '').trim();
+      const imageSrc = attachmentView?.inlineDisplaySrc || attachmentView?.thumbnail || '';
+      const previewSrc = attachmentView?.previewDisplaySrc || imageSrc;
+      if (!fileName || !imageSrc) {
+        return;
+      }
+      const markup = `<img class="_JX_previewable" src="${escapeHtml(imageSrc)}" data-jx-preview-src="${escapeHtml(previewSrc)}" alt="${escapeHtml(fileName)}" style="max-height: ${Number(imageMaxHeight) || 100}px;" />`;
+      imagesByName[normalizedName] = markup;
+      imagesByName[fileName] = markup;
+    });
+    return imagesByName;
   }
 
   function textToLinkedHtml(input, options = {}) {
@@ -585,7 +844,7 @@ async function mainAsyncLocal() {
     });
     const imageHtml = [];
     const inputWithImages = inputWithMentions.replace(/!([^!\r\n]+)!/g, function (match, imageName) {
-      const normalizedName = String(imageName || '').trim();
+      const normalizedName = normalizeCommentImageReference(imageName);
       const imageMarkup = attachmentImagesByName[normalizedName];
       if (!imageMarkup) {
         return match;
@@ -607,6 +866,10 @@ async function mainAsyncLocal() {
         return mentionHtml[Number(index)] || '';
       })
       .replace(/\n/g, '<br/>');
+  }
+
+  function hasAttachmentMarkup(input) {
+    return /!([^!\r\n]+)!/.test(String(input || ''));
   }
 
   function formatRelativeDate(created) {
@@ -689,19 +952,25 @@ async function mainAsyncLocal() {
     if (!html) {
       return '';
     }
-    const {imageMaxHeight} = options;
+    const {imageMaxHeight, attachmentLookup = null} = options;
     const temp = sanitizeRichHtml(html);
 
     const imageNodes = Array.from(temp.querySelectorAll('img[src]'));
     await Promise.all(imageNodes.map(async img => {
-      const src = img.getAttribute('src');
-      const absoluteSrc = toAbsoluteJiraUrl(src);
-      const displaySrc = await getDisplayImageUrl(absoluteSrc);
-      const resolvedSrc = displaySrc || absoluteSrc || src;
-      if (resolvedSrc) {
-        img.setAttribute('src', resolvedSrc);
-        img.setAttribute('data-jx-preview-src', resolvedSrc);
+      const altText = normalizeHistoryAttachmentName(img.getAttribute('alt') || '');
+      const linkedAttachment = altText && attachmentLookup?.get(altText)
+        ? attachmentLookup.get(altText)
+        : null;
+      const linkedInlineSrc = linkedAttachment?.inlineDisplaySrc || linkedAttachment?.thumbnail || '';
+      const linkedPreviewSrc = linkedAttachment?.previewDisplaySrc || linkedInlineSrc;
+      const rawSourceUrl = img.getAttribute('src');
+      const displaySrc = linkedInlineSrc || await getDisplayImageUrl(toAbsoluteJiraUrl(rawSourceUrl));
+      if (displaySrc) {
+        img.setAttribute('src', displaySrc);
+        img.setAttribute('data-jx-preview-src', linkedPreviewSrc || displaySrc);
         img.classList.add('_JX_previewable');
+      } else if (linkedAttachment) {
+        img.remove();
       }
       if (imageMaxHeight) {
         img.style.maxHeight = `${imageMaxHeight}px`;
@@ -724,6 +993,8 @@ async function mainAsyncLocal() {
       ));
     });
 
+    replaceMentionTextNodes(temp);
+
     return temp.innerHTML;
   }
 
@@ -735,7 +1006,13 @@ async function mainAsyncLocal() {
       return new Date(a.created).getTime() - new Date(b.created).getTime();
     });
     const renderedById = {};
+    const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
+    const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 100);
     const currentUser = await getCurrentUserInfo().catch(() => null);
+    cacheKnownJiraUser(currentUser);
+    cacheKnownJiraUser(issueData?.fields?.reporter);
+    cacheKnownJiraUser(issueData?.fields?.assignee);
+    cacheKnownJiraUsers(comments.map(comment => comment?.author).filter(Boolean));
     ((issueData.renderedFields?.comment?.comments) || []).forEach(comment => {
       if (comment && comment.id) {
         renderedById[comment.id] = comment.body;
@@ -744,8 +1021,10 @@ async function mainAsyncLocal() {
 
     return Promise.all(comments.map(async comment => {
       const rendered = renderedById[comment.id];
-      const baseHtml = rendered || textToLinkedHtml(comment.body || '');
-      const bodyHtml = await normalizeRichHtml(baseHtml, {imageMaxHeight: 100});
+      const prefersRawBodyRendering = hasAttachmentMarkup(comment.body || '');
+      const baseHtml = (!prefersRawBodyRendering && rendered)
+        || textToLinkedHtml(comment.body || '', {attachmentImagesByName});
+      const bodyHtml = await normalizeRichHtml(baseHtml, {imageMaxHeight: 100, attachmentLookup});
       const commentId = String(comment.id || '');
       const isOwnedByCurrentUser = areSameJiraUser(comment.author, currentUser);
       const isEditing = commentSession?.commentId === commentId && commentSession.mode === 'edit';
@@ -886,6 +1165,7 @@ async function mainAsyncLocal() {
     const rawCandidates = Array.isArray(response)
       ? response
       : response?.users || response?.items || [];
+    cacheKnownJiraUsers(rawCandidates);
     const seen = new Set();
     return rawCandidates
       .map(candidate => {
@@ -1129,6 +1409,39 @@ async function mainAsyncLocal() {
     updateCommentActivityCount(1);
   }
 
+  function addSavedCommentToPopupState(savedComment, commentText, fallbackAuthor = null) {
+    if (!popupState?.issueData?.fields) {
+      return;
+    }
+    const nextComment = {
+      ...savedComment,
+      id: String(savedComment?.id || ''),
+      body: commentText || savedComment?.body || '',
+      author: savedComment?.author || fallbackAuthor || null,
+      created: savedComment?.created || new Date().toISOString(),
+    };
+    const existingComments = Array.isArray(popupState.issueData.fields.comment?.comments)
+      ? popupState.issueData.fields.comment.comments
+      : [];
+    const nextComments = [
+      ...existingComments.filter(comment => String(comment?.id || '') !== nextComment.id),
+      nextComment,
+    ];
+    popupState = {
+      ...popupState,
+      issueData: {
+        ...popupState.issueData,
+        fields: {
+          ...popupState.issueData.fields,
+          comment: {
+            ...(popupState.issueData.fields.comment || {}),
+            comments: nextComments,
+          }
+        }
+      }
+    };
+  }
+
   async function handleCommentSave() {
     if (!activeCommentContext?.issueKey) {
       return;
@@ -1154,9 +1467,13 @@ async function mainAsyncLocal() {
 
     try {
       const uploadedAttachments = getUploadedCommentAttachments();
+      const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
       const savedComment = await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${activeCommentContext.issueKey}/comment`, {
         body: commentText
       });
+      addSavedCommentToPopupState(savedComment, commentText, currentUser);
+      setCachedValue(issueCache, activeCommentContext.issueKey, popupState?.issueData);
+      changelogCache.delete(activeCommentContext.issueKey);
       await appendCommentToPopup(savedComment, commentText, uploadedAttachments);
       elements.input.val('');
       commentComposerDraftValue = '';
@@ -1167,6 +1484,9 @@ async function mainAsyncLocal() {
       elements.root.attr('data-saving', 'false');
       setCommentComposerError('');
       syncCommentComposerState();
+      if (popupState?.historyOpen) {
+        await refreshPopupIssueState('Comment added', {preserveHistory: true});
+      }
     } catch (error) {
       elements.root.attr('data-saving', 'false');
       setCommentComposerError(error?.message || error?.inner || 'Could not save comment');
@@ -1214,13 +1534,15 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData || !commentId) {
       return;
     }
+    const {draft, mentionMappings} = buildEditableCommentDraft(commentBody);
     setCommentSession({
       commentId: String(commentId),
-      draft: String(commentBody || ''),
+      draft,
       error: '',
+      mentionMappings,
       mode: 'edit',
-      selectionEnd: String(commentBody || '').length,
-      selectionStart: String(commentBody || '').length,
+      selectionEnd: draft.length,
+      selectionStart: draft.length,
       saving: false
     });
     renderIssuePopup(popupState).catch(() => {});
@@ -1271,10 +1593,11 @@ async function mainAsyncLocal() {
     await renderIssuePopup(popupState);
 
     try {
+      const requestBody = restoreEditableCommentMentions(nextDraft, activeSession.mentionMappings);
       await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`, {
-        body: nextDraft
+        body: requestBody
       });
-      await refreshPopupIssueState('Comment updated');
+      await refreshPopupIssueState('Comment updated', {preserveHistory: !!popupState?.historyOpen});
     } catch (error) {
       const errorMessage = error?.message || error?.inner || 'Could not update comment';
       const latestSession = getActiveCommentSession();
@@ -1298,7 +1621,7 @@ async function mainAsyncLocal() {
 
     try {
       await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`);
-      await refreshPopupIssueState('Comment deleted');
+      await refreshPopupIssueState('Comment deleted', {preserveHistory: !!popupState?.historyOpen});
     } catch (error) {
       const errorMessage = error?.message || error?.inner || 'Could not delete comment';
       const latestSession = getActiveCommentSession();
@@ -1466,6 +1789,16 @@ async function mainAsyncLocal() {
     return value;
   }
 
+  function setCachedValue(cache, key, value) {
+    if (!key) {
+      return;
+    }
+    cache.set(key, {
+      createdAt: Date.now(),
+      value
+    });
+  }
+
   // ── Changelog ────────────────────────────────────────────
 
   async function getIssueChangelog(issueKey) {
@@ -1476,6 +1809,7 @@ async function mainAsyncLocal() {
   }
 
   const HISTORY_GROUP_WINDOW_MS = 5 * 60 * 1000;
+  const HISTORY_ATTACHMENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
   function normalizeHistoryFieldName(fieldName) {
     return String(fieldName || '').trim().toLowerCase();
@@ -1585,32 +1919,35 @@ async function mainAsyncLocal() {
 
   function buildHistoryAttachmentView(attachment, fallbackName = '') {
     const filename = String(attachment?.filename || fallbackName || '').trim();
-    const url = attachment?.content || '';
-    const previewSrc = attachment?.content || '';
-    const thumbnail = attachment?.thumbnail || previewSrc;
+    const url = attachment?.rawContentUrl || attachment?.content || '';
+    const inlineDisplaySrc = attachment?.inlineDataUrl || attachment?.displayContent || '';
+    const previewDisplaySrc = attachment?.previewDataUrl || attachment?.previewDisplaySrc || inlineDisplaySrc;
+    const thumbnail = inlineDisplaySrc;
     const mimeType = String(attachment?.mimeType || '').toLowerCase();
     return {
       filename,
       hasUrl: !!url,
       url,
-      previewSrc,
+      inlineDisplaySrc,
+      previewDisplaySrc,
       thumbnail,
       mimeType,
-      isImage: mimeType.startsWith('image') && !!thumbnail,
-      isPreviewable: mimeType.startsWith('image') && !!previewSrc,
+      isImage: mimeType.startsWith('image') && !!inlineDisplaySrc,
+      isPreviewable: mimeType.startsWith('image') && !!previewDisplaySrc,
       linkTitle: url ? buildLinkHoverTitle('Open attachment', filename || 'Attachment', url) : '',
-      previewTitle: previewSrc ? buildLinkHoverTitle('Preview attachment', filename || 'Attachment', url || previewSrc) : ''
+      previewTitle: previewDisplaySrc ? buildLinkHoverTitle('Preview attachment', filename || 'Attachment', url || previewDisplaySrc) : ''
     };
   }
 
   function buildHistoryAttachmentActionHtml(attachmentView, options = {}) {
     const {className = '_JX_history_attachment_link'} = options;
     const filename = String(attachmentView?.filename || '').trim();
+    const previewSrc = attachmentView?.previewDisplaySrc || attachmentView?.previewSrc || '';
     if (!filename) {
       return '--';
     }
     if (attachmentView?.isPreviewable) {
-      return `<button class="_JX_history_attachment_preview ${escapeHtml(className)}" type="button" data-jx-preview-src="${escapeHtml(attachmentView.previewSrc)}" title="${escapeHtml(attachmentView.previewTitle)}">${escapeHtml(filename)}</button>`;
+      return `<button class="_JX_history_attachment_preview ${escapeHtml(className)}" type="button" data-jx-preview-src="${escapeHtml(previewSrc)}" title="${escapeHtml(attachmentView.previewTitle)}">${escapeHtml(filename)}</button>`;
     }
     if (attachmentView?.hasUrl) {
       return `<a class="${escapeHtml(className)}" href="${escapeHtml(attachmentView.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(attachmentView.linkTitle)}">${escapeHtml(filename)}</a>`;
@@ -1671,14 +2008,15 @@ async function mainAsyncLocal() {
     return fallbackText;
   }
 
-  async function renderHistoryRichTextHtml(value) {
+  async function renderHistoryRichTextHtml(value, attachmentLookup = new Map()) {
     const normalizedValue = String(value || '').trim();
     if (!normalizedValue) {
       return '';
     }
+    const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 120);
     const baseHtml = looksLikeHtmlFragment(normalizedValue)
-      ? await normalizeRichHtml(normalizedValue, {imageMaxHeight: 120})
-      : textToLinkedHtml(normalizedValue || '');
+      ? await normalizeRichHtml(normalizedValue, {imageMaxHeight: 120, attachmentLookup})
+      : textToLinkedHtml(normalizedValue || '', {attachmentImagesByName});
     return linkifyHistoryIssueKeysInHtml(baseHtml);
   }
 
@@ -1820,7 +2158,7 @@ async function mainAsyncLocal() {
     return temp.innerHTML;
   }
 
-  async function buildHistoryRichSections(fieldLabel, fromValue, toValue) {
+  async function buildHistoryRichSections(fieldLabel, fromValue, toValue, attachmentLookup = new Map()) {
     const hasFromValue = !!fromValue;
     const hasToValue = !!toValue;
     const sectionSpecs = [];
@@ -1833,7 +2171,7 @@ async function mainAsyncLocal() {
     return Promise.all(sectionSpecs.map(async section => {
       return {
         ...section,
-        bodyHtml: await renderHistoryRichTextHtml(section.value)
+        bodyHtml: await renderHistoryRichTextHtml(section.value, attachmentLookup)
       };
     }));
   }
@@ -1877,7 +2215,7 @@ async function mainAsyncLocal() {
           attachments,
           fallbackText: richKind === 'comment' ? 'View comment' : 'View description'
         }),
-        sections: await buildHistoryRichSections(field, cleanedFromValue, cleanedToValue),
+        sections: await buildHistoryRichSections(field, cleanedFromValue, cleanedToValue, attachmentLookup),
         hasSections: !!((cleanedFromValue || cleanedToValue)),
         attachments,
         hasAttachments: attachments.length > 0,
@@ -1986,6 +2324,20 @@ async function mainAsyncLocal() {
     return eventText === candidateText || eventText.includes(candidateText) || candidateText.includes(eventText);
   }
 
+  function isHistoryCandidateWithinWindow(candidateCreatedMs, startMs, endMs, windowMs = HISTORY_GROUP_WINDOW_MS) {
+    return !(candidateCreatedMs < startMs - windowMs || candidateCreatedMs > endMs + windowMs);
+  }
+
+  function getGroupAttachmentNames(group) {
+    return new Set((group?.events || [])
+      .filter(event => event.isAttachmentEvent && event.attachmentName)
+      .map(event => event.attachmentName));
+  }
+
+  function countGroupCandidateAttachmentMatches(group, candidate) {
+    return countHistoryAttachmentMatches(candidate?.referencedAttachmentNames || new Set(), getGroupAttachmentNames(group));
+  }
+
   function groupRepresentsCommentCandidate(group, candidate) {
     if (!group || !candidate) {
       return false;
@@ -1993,7 +2345,11 @@ async function mainAsyncLocal() {
     if (!areSameJiraUser(candidate.author, group.author) && String(candidate.author?.displayName || '') !== String(group.authorName || '')) {
       return false;
     }
-    if (candidate.createdMs < group.earliestCreatedMs - HISTORY_GROUP_WINDOW_MS || candidate.createdMs > group.latestCreatedMs + HISTORY_GROUP_WINDOW_MS) {
+    const attachmentMatches = countGroupCandidateAttachmentMatches(group, candidate);
+    const isWithinStandardWindow = isHistoryCandidateWithinWindow(candidate.createdMs, group.earliestCreatedMs, group.latestCreatedMs);
+    const isWithinAttachmentWindow = attachmentMatches > 0 &&
+      isHistoryCandidateWithinWindow(candidate.createdMs, group.earliestCreatedMs, group.latestCreatedMs, HISTORY_ATTACHMENT_MATCH_WINDOW_MS);
+    if (!isWithinStandardWindow && !isWithinAttachmentWindow) {
       return false;
     }
     const commentEvents = group.events.filter(event => event.isRichTextEvent && event.richKind === 'comment');
@@ -2023,7 +2379,7 @@ async function mainAsyncLocal() {
         attachments,
         fallbackText: 'View comment'
       }),
-      sections: await buildHistoryRichSections('Comment', '', previewSourceText),
+      sections: await buildHistoryRichSections('Comment', '', previewSourceText, attachmentLookup),
       hasSections: !!previewSourceText,
       attachments,
       hasAttachments: attachments.length > 0,
@@ -2050,9 +2406,7 @@ async function mainAsyncLocal() {
     if (hasCommentEvent) {
       return;
     }
-    const groupAttachmentNames = new Set(group.events
-      .filter(event => event.isAttachmentEvent && event.attachmentName)
-      .map(event => event.attachmentName));
+    const groupAttachmentNames = getGroupAttachmentNames(group);
     if (!groupAttachmentNames.size) {
       return;
     }
@@ -2064,16 +2418,25 @@ async function mainAsyncLocal() {
         if (!areSameJiraUser(candidate.author, group.author) && String(candidate.author?.displayName || '') !== String(group.authorName || '')) {
           return false;
         }
-        if (candidate.createdMs < group.earliestCreatedMs - HISTORY_GROUP_WINDOW_MS || candidate.createdMs > group.latestCreatedMs + HISTORY_GROUP_WINDOW_MS) {
+        const attachmentMatches = countHistoryAttachmentMatches(candidate.referencedAttachmentNames, groupAttachmentNames);
+        if (!attachmentMatches) {
           return false;
         }
-        return countHistoryAttachmentMatches(candidate.referencedAttachmentNames, groupAttachmentNames) > 0;
+        if (!isHistoryCandidateWithinWindow(candidate.createdMs, group.earliestCreatedMs, group.latestCreatedMs, HISTORY_ATTACHMENT_MATCH_WINDOW_MS)) {
+          return false;
+        }
+        return true;
       })
       .sort((left, right) => {
         const rightMatches = countHistoryAttachmentMatches(right.referencedAttachmentNames, groupAttachmentNames);
         const leftMatches = countHistoryAttachmentMatches(left.referencedAttachmentNames, groupAttachmentNames);
         if (rightMatches !== leftMatches) {
           return rightMatches - leftMatches;
+        }
+        const leftWithinTightWindow = isHistoryCandidateWithinWindow(left.createdMs, group.earliestCreatedMs, group.latestCreatedMs);
+        const rightWithinTightWindow = isHistoryCandidateWithinWindow(right.createdMs, group.earliestCreatedMs, group.latestCreatedMs);
+        if (leftWithinTightWindow !== rightWithinTightWindow) {
+          return Number(rightWithinTightWindow) - Number(leftWithinTightWindow);
         }
         return Math.abs(left.createdMs - group.latestCreatedMs) - Math.abs(right.createdMs - group.latestCreatedMs);
       })[0];
@@ -2309,6 +2672,7 @@ async function mainAsyncLocal() {
 
   function normalizeAssignableUsers(users) {
     const uniqueById = new Map();
+    cacheKnownJiraUsers(users);
     (Array.isArray(users) ? users : []).forEach(user => {
       const view = buildUserView(user);
       const id = view.accountId || view.name || view.key;
@@ -2487,6 +2851,8 @@ async function mainAsyncLocal() {
   }
 
   function normalizeWatcherUsers(users, currentUser = null) {
+    cacheKnownJiraUsers(users);
+    cacheKnownJiraUser(currentUser);
     const uniqueById = new Map();
     (Array.isArray(users) ? users : []).forEach(user => {
       const watcher = buildWatcherUserView(user, currentUser);
@@ -4104,10 +4470,12 @@ async function mainAsyncLocal() {
         return !!attachment &&
           typeof attachment.mimeType === 'string' &&
           attachment.mimeType.toLowerCase().startsWith('image') &&
-          !!attachment.thumbnail;
+          !!(attachment.inlineDataUrl || attachment.displayContent);
       })
       .map(attachment => ({
         ...attachment,
+        thumbnail: attachment.inlineDataUrl || attachment.displayContent,
+        previewDisplaySrc: attachment.previewDataUrl || attachment.previewDisplaySrc || attachment.inlineDataUrl || attachment.displayContent,
         linkTitle: buildLinkHoverTitle('Open attachment', attachment.filename || 'Attachment', attachment.content)
       }));
   }
@@ -5357,13 +5725,15 @@ async function mainAsyncLocal() {
     if (!popupState?.key) {
       return;
     }
-    const {showSnackBar = false, nextTimeTrackingEditState, refreshWatchersPanel = false, nextWatchersStateChanges = {}, scheduleWatchersFeedbackReset = false} = options;
+    const {showSnackBar = false, nextTimeTrackingEditState, refreshWatchersPanel = false, nextWatchersStateChanges = {}, scheduleWatchersFeedbackReset = false, preserveHistory = false} = options;
     const popupKey = popupState.key;
     const shouldRefreshWatchersPanel = !!(refreshWatchersPanel || popupState?.watchersState?.open);
+    const shouldKeepHistoryOpen = !!(preserveHistory && popupState?.historyOpen);
     invalidatePopupCaches();
-    const [refreshedIssueData, refreshedWatcherData] = await Promise.all([
+    const [refreshedIssueData, refreshedWatcherData, refreshedChangelog] = await Promise.all([
       getIssueMetaData(popupKey),
-      shouldRefreshWatchersPanel ? getIssueWatchers(popupKey).catch(() => null) : Promise.resolve(null)
+      shouldRefreshWatchersPanel ? getIssueWatchers(popupKey).catch(() => null) : Promise.resolve(null),
+      shouldKeepHistoryOpen ? getIssueChangelog(popupKey).catch(() => ({histories: []})) : Promise.resolve(null)
     ]);
     await normalizeIssueImages(refreshedIssueData);
 
@@ -5397,6 +5767,9 @@ async function mainAsyncLocal() {
       quickActions,
       ...buildPopupInteractionReset({
         lastActionSuccess: showSnackBar ? '' : successMessage,
+        historyOpen: shouldKeepHistoryOpen,
+        changelogData: shouldKeepHistoryOpen ? (refreshedChangelog || {histories: []}) : null,
+        changelogLoading: false,
       }),
       timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
       watchersState: refreshedWatcherData
@@ -5423,6 +5796,53 @@ async function mainAsyncLocal() {
     if (showSnackBar && successMessage) {
       snackBar(successMessage);
     }
+  }
+
+  async function handleDraftAttachmentUploaded(uploadedAttachment) {
+    const popupKey = popupState?.key;
+    const currentIssueData = popupState?.issueData;
+    if (!popupKey || !currentIssueData?.fields || !uploadedAttachment) {
+      return;
+    }
+
+    const normalizedAttachment = await normalizeIssueAttachmentImage({...uploadedAttachment});
+    let refreshedChangelog = null;
+    if (popupState?.historyOpen) {
+      changelogCache.delete(popupKey);
+      refreshedChangelog = await getIssueChangelog(popupKey).catch(() => popupState?.changelogData || {histories: []});
+    }
+
+    if (!popupState || popupState.key !== popupKey) {
+      return;
+    }
+
+    await renderUpdatedPopupState(currentState => {
+      const existingAttachments = Array.isArray(currentState?.issueData?.fields?.attachment)
+        ? currentState.issueData.fields.attachment
+        : [];
+      const normalizedFileName = normalizeHistoryAttachmentName(normalizedAttachment.filename);
+      const nextAttachments = [
+        ...existingAttachments.filter(attachment => {
+          const sameId = normalizedAttachment.id && attachment?.id && String(attachment.id) === String(normalizedAttachment.id);
+          const sameName = normalizedFileName &&
+            normalizeHistoryAttachmentName(attachment?.filename) === normalizedFileName;
+          return !(sameId || sameName);
+        }),
+        normalizedAttachment,
+      ];
+      return {
+        ...currentState,
+        issueData: {
+          ...currentState.issueData,
+          fields: {
+            ...currentState.issueData.fields,
+            attachment: nextAttachments,
+          }
+        },
+        changelogData: refreshedChangelog || currentState.changelogData,
+        changelogLoading: false,
+      };
+    });
   }
 
   async function addWatcherFromPanel(watcherId) {
@@ -7092,7 +7512,7 @@ async function mainAsyncLocal() {
           return;
         }
         clearTimeout(hideTimeOut);
-        triggerPopupForKey(strictKey, e.pageX, e.pageY, true);
+        triggerPopupForKey(resolvedKey, e.pageX, e.pageY, true);
         return;
       }
 

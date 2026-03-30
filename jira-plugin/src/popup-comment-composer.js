@@ -20,6 +20,8 @@ export function createPopupCommentComposer(deps) {
     getCommentUploadState,
     getContainer,
     getDisplayImageUrl,
+    rememberDisplayImageUrl,
+    onAttachmentUploaded,
     keepContainerVisible,
     requestJson,
     setCommentComposerErrorMessage,
@@ -259,6 +261,15 @@ export function createPopupCommentComposer(deps) {
     }
   }
 
+  async function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function deleteCommentDraftAttachment(attachmentId) {
     if (!attachmentId) {
       return;
@@ -308,12 +319,12 @@ export function createPopupCommentComposer(deps) {
       if (!attachment?.fileName) {
         continue;
       }
-      const imageUrl = attachment.thumbnailUrl || attachment.contentUrl;
+      const imageUrl = attachment.displayUrl || attachment.thumbnailUrl || attachment.contentUrl;
       if (!imageUrl) {
         continue;
       }
       const displaySrc = await getDisplayImageUrl(imageUrl).catch(() => imageUrl);
-      const previewSrc = attachment.contentUrl || imageUrl;
+      const previewSrc = attachment.displayUrl || attachment.contentUrl || imageUrl;
       attachmentImagesByName[attachment.fileName] = `<img class="_JX_previewable" src="${escapeHtml(displaySrc || imageUrl)}" data-jx-preview-src="${escapeHtml(previewSrc)}" alt="${escapeHtml(attachment.fileName)}" style="max-height: 100px;" />`;
     }
     return textToLinkedHtml(commentText || '', {attachmentImagesByName});
@@ -330,11 +341,13 @@ export function createPopupCommentComposer(deps) {
     const markup = buildCommentImageMarkup(fileName);
     const localId = `upload-${Date.now()}-${getCommentUploadSequence()}`;
     const previewUrl = URL.createObjectURL(file);
+    const previewDataUrl = await fileToDataUrl(file).catch(() => '');
     const sessionId = getCommentUploadSessionId();
     setCommentUploadState({
       items: [...getCommentUploadState().items, {
         attachmentId: '',
         contentUrl: '',
+        displayUrl: previewDataUrl,
         errorMessage: '',
         fileName,
         localId,
@@ -369,11 +382,20 @@ export function createPopupCommentComposer(deps) {
       updateCommentUploadItem(localId, {
         attachmentId: uploadedAttachment.id,
         contentUrl: toAbsoluteJiraUrl(uploadedAttachment.content),
+        displayUrl: previewDataUrl,
         errorMessage: '',
         fileName: nextFileName,
         markup: nextMarkup,
         status: 'uploaded',
         thumbnailUrl: toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
+      });
+      rememberDisplayImageUrl(toAbsoluteJiraUrl(uploadedAttachment.content), previewDataUrl);
+      rememberDisplayImageUrl(toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content), previewDataUrl);
+      await onAttachmentUploaded?.({
+        ...uploadedAttachment,
+        content: toAbsoluteJiraUrl(uploadedAttachment.content),
+        displayContent: previewDataUrl,
+        thumbnail: previewDataUrl || toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
       });
     } catch (error) {
       if (sessionId !== getCommentUploadSessionId()) {

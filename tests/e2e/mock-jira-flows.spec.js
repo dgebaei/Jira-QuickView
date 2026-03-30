@@ -408,14 +408,6 @@ test('groups history entries and nests referenced attachments inside expanded co
   await expect(descriptionEvent.locator('._JX_history_rich_section_body')).toContainText('Updated rollout checklist for JRACLOUD-97000');
   await expect(flyout.locator('a._JX_history_issue_link', {hasText: 'JRACLOUD-97000'}).first()).toHaveAttribute('href', /browse\/JRACLOUD-97000$/);
 
-  await flyout.locator('button._JX_history_attachment_preview', {hasText: 'standalone-graph.png'}).click();
-  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
-  await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
-
-  await page.locator('._JX_preview_overlay').click({position: {x: 8, y: 8}});
-  await expect(page.locator('._JX_preview_overlay')).not.toHaveClass(/is-open/);
-  await expect(page.locator('._JX_history_flyout')).toBeVisible();
-
   await page.keyboard.press('Escape');
   await expect(page.locator('._JX_history_flyout')).toHaveCount(0);
   await expect(page.locator('._JX_title')).toHaveCount(1);
@@ -498,10 +490,89 @@ test('uploads a pasted image into the comment composer in mocked mode @mock-only
   await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
+  const persistedCommentText = `Persisted attachment preview ${Date.now()}`;
   await pasteImageIntoComment(page);
+  await page.locator('._JX_comment_input').type(`\n\n${persistedCommentText}`);
 
   await expect(page.locator('._JX_comment_upload_status')).toContainText('Attached to issue');
   await expect(page.locator('._JX_comment_input')).toHaveValue(/!pasted-image.*\.png!/);
+
+  const uploadedFileName = await page.locator('._JX_comment_upload_name').textContent();
+  const attachmentThumb = page.locator('._JX_thumb').filter({hasText: uploadedFileName || ''}).locator('img._JX_previewable');
+  await expect(attachmentThumb).toHaveCount(1);
+  await expect(attachmentThumb).toHaveAttribute('src', /^data:image\//);
+
+  await page.locator('._JX_comment_save').click();
+  const savedComment = page.locator('._JX_comment').last();
+  const savedCommentImage = savedComment.locator('img._JX_previewable');
+  await expect(savedComment).toContainText(persistedCommentText);
+  await expect(savedCommentImage).toHaveCount(1);
+  await expect(savedCommentImage).toHaveAttribute('src', /^data:image\//);
+
+  await savedCommentImage.click();
+  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
+  await expect(page.locator('._JX_preview_image')).toHaveAttribute('src', /^data:image\//);
+  await page.locator('._JX_preview_overlay').click({position: {x: 8, y: 8}});
+  await expect(page.locator('._JX_preview_overlay')).not.toHaveClass(/is-open/);
+
+  await page.locator('._JX_history_toggle').click();
+  const commentImageAfterHistoryOpen = page.locator(`._JX_comment img._JX_previewable[alt="${uploadedFileName || ''}"]`);
+  await expect(commentImageAfterHistoryOpen).toHaveCount(1);
+  const uploadedHistoryAttachment = page.locator('button._JX_history_attachment_preview', {hasText: uploadedFileName || ''}).first();
+  await expect(uploadedHistoryAttachment).toHaveCount(1);
+  await page.locator('._JX_history_flyout details').filter({hasText: persistedCommentText}).first().locator('summary').click();
+  const historyAttachmentInlinePreview = page.locator(`._JX_history_attachment_item img._JX_previewable[alt="${uploadedFileName || ''}"]`).first();
+  await expect(historyAttachmentInlinePreview).toHaveCount(1);
+  await expect(historyAttachmentInlinePreview).toHaveAttribute('src', /^data:image\//);
+  await uploadedHistoryAttachment.click();
+  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
+  await expect(page.locator('._JX_preview_image')).toHaveAttribute('src', /^data:image\//);
+  await page.locator('._JX_preview_overlay').click({position: {x: 8, y: 8}});
+
+  await page.locator('._JX_close_button').click();
+  await expect(page.locator('._JX_title')).toHaveCount(0);
+  await hoverIssueKey(page, '#popup-key');
+  await expect(page.locator('._JX_container')).toContainText('JRACLOUD-97846');
+
+  const samePageReopenedComment = page.locator('._JX_comment').filter({hasText: persistedCommentText}).last();
+  const samePageReopenedCommentImage = samePageReopenedComment.locator(`img._JX_previewable[alt="${uploadedFileName || ''}"]`);
+  await expect(samePageReopenedCommentImage).toHaveCount(1);
+  await expect(samePageReopenedCommentImage).toHaveAttribute('src', /^data:image\//);
+  await page.locator('._JX_history_toggle').click();
+  const samePageReopenedHistoryEvent = page.locator('._JX_history_rich_event_comment').filter({hasText: persistedCommentText}).first();
+  await expect(samePageReopenedHistoryEvent).toHaveCount(1);
+  await samePageReopenedHistoryEvent.locator('summary').click();
+  const samePageReopenedHistoryImage = samePageReopenedHistoryEvent.locator(`img._JX_previewable[alt="${uploadedFileName || ''}"]`);
+  await expect(samePageReopenedHistoryImage).toHaveCount(1);
+  await expect(samePageReopenedHistoryImage).toHaveAttribute('src', /^data:image\//);
+
+  await page.goto(`${servers.allowedPage.origin}/popup-actions`);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  await hoverIssueKey(page, '#popup-key');
+  await expect(page.locator('._JX_container')).toContainText('JRACLOUD-97846');
+
+  const reopenedComment = page.locator('._JX_comment').filter({hasText: persistedCommentText}).last();
+  const reopenedCommentImage = reopenedComment.locator(`img._JX_previewable[alt="${uploadedFileName || ''}"]`);
+  await expect(reopenedCommentImage).toHaveCount(1);
+  await expect(reopenedCommentImage).toHaveAttribute('src', /^data:image\//);
+  await reopenedCommentImage.click();
+  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
+  await expect(page.locator('._JX_preview_image')).toHaveAttribute('src', /^data:image\//);
+  await page.locator('._JX_preview_overlay').click({position: {x: 8, y: 8}});
+
+  await page.locator('._JX_history_toggle').click();
+  const reopenedHistoryEvent = page.locator('._JX_history_rich_event_comment').filter({hasText: persistedCommentText}).first();
+  await expect(reopenedHistoryEvent).toHaveCount(1);
+  await reopenedHistoryEvent.locator('summary').click();
+  const reopenedHistoryInlinePreview = reopenedHistoryEvent.locator(`img._JX_previewable[alt="${uploadedFileName || ''}"]`);
+  await expect(reopenedHistoryInlinePreview).toHaveCount(1);
+  await expect(reopenedHistoryInlinePreview).toHaveAttribute('src', /^data:image\//);
+  const reopenedHistoryAttachment = reopenedHistoryEvent.locator('button._JX_history_attachment_preview', {hasText: uploadedFileName || ''}).first();
+  await expect(reopenedHistoryAttachment).toHaveCount(1);
+  await reopenedHistoryAttachment.click();
+  await expect(page.locator('._JX_preview_overlay')).toHaveClass(/is-open/);
+  await expect(page.locator('._JX_preview_image')).toHaveAttribute('src', /^data:image\//);
 
   await page.close();
 });

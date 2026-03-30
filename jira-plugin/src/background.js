@@ -337,11 +337,20 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     assertAllowedRequestUrl(request.url)
       .then(fetchWithCredentials)
       .then(async response => {
-        const contentType = response.headers.get('Content-Type') || '';
-        if (!contentType.startsWith('image/')) {
-          throw new Error(`Expected image content but got: ${contentType || 'unknown'}`);
+        const fallbackMimeType = String(request.mimeType || '').trim().toLowerCase();
+        const responseContentType = String(response.headers.get('Content-Type') || '').trim().toLowerCase();
+        const responseBlob = await response.blob();
+        const blobMimeType = String(responseBlob.type || '').trim().toLowerCase();
+        const effectiveMimeType = responseContentType.startsWith('image/')
+          ? responseContentType
+          : (blobMimeType.startsWith('image/') ? blobMimeType : fallbackMimeType);
+        if (!effectiveMimeType.startsWith('image/')) {
+          throw new Error(`Expected image content but got: ${responseContentType || blobMimeType || 'unknown'}`);
         }
-        const dataUrl = await blobToDataUrl(await response.blob());
+        const normalizedBlob = responseBlob.type === effectiveMimeType
+          ? responseBlob
+          : new Blob([await responseBlob.arrayBuffer()], {type: effectiveMimeType});
+        const dataUrl = await blobToDataUrl(normalizedBlob);
         sendResponse({ result: dataUrl });
       })
       .catch(error => {

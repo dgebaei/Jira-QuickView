@@ -257,9 +257,9 @@
                                                     {{#attachments}}
                                                     <div class="_JX_history_attachment_item{{#isImage}} is-image{{/isImage}}">
                                                         {{#isImage}}
-                                                        {{#isPreviewable}}<button class="_JX_history_attachment_thumb _JX_history_attachment_preview" type="button" data-jx-preview-src="{{previewSrc}}" title="{{previewTitle}}"><img class="_JX_previewable" src="{{thumbnail}}" data-jx-preview-src="{{previewSrc}}" alt="{{filename}}"></button>{{/isPreviewable}}
+                                                        {{#isPreviewable}}<button class="_JX_history_attachment_thumb _JX_history_attachment_preview" type="button" data-jx-preview-src="{{previewDisplaySrc}}" title="{{previewTitle}}"><img class="_JX_previewable" src="{{thumbnail}}" data-jx-preview-src="{{previewDisplaySrc}}" alt="{{filename}}"></button>{{/isPreviewable}}
                                                         {{/isImage}}
-                                                        {{#isPreviewable}}<button class="_JX_history_attachment_preview _JX_history_attachment_link" type="button" data-jx-preview-src="{{previewSrc}}" title="{{previewTitle}}">{{filename}}</button>{{/isPreviewable}}
+                                                        {{#isPreviewable}}<button class="_JX_history_attachment_preview _JX_history_attachment_link" type="button" data-jx-preview-src="{{previewDisplaySrc}}" title="{{previewTitle}}">{{filename}}</button>{{/isPreviewable}}
                                                         {{^isPreviewable}}{{#hasUrl}}<a class="_JX_history_attachment_link" href="{{url}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">{{filename}}</a>{{/hasUrl}}{{/isPreviewable}}
                                                         {{^hasUrl}}<span class="_JX_history_attachment_name">{{filename}}</span>{{/hasUrl}}
                                                     </div>
@@ -560,10 +560,6 @@
         </div>
         {{/row3Chips.length}}
         </div>
-    {{#hasActionNotice}}
-    <div class="_JX_action_notice {{actionNoticeClass}}">{{actionNoticeText}}</div>
-    {{/hasActionNotice}}
-
     <div class="_JX_content_blocks">
         {{#timeTrackingSection}}
         <div class="_JX_content_block" data-content-block="timeTracking">
@@ -627,9 +623,9 @@
             <div class="_JX_section_title">Attachments</div>
             <div class="_JX_section_content">
             {{#previewAttachments}}
-            <div data-mime-type="{{mimeType}}" data-url="{{content}}" data-preview-src="{{content}}" class="_JX_thumb">
+            <div data-mime-type="{{mimeType}}" data-url="{{content}}" data-preview-src="{{previewDisplaySrc}}" class="_JX_thumb">
                 <a href="{{content}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">
-                    <img class="_JX_previewable" data-jx-preview-src="{{content}}" title="{{linkTitle}}" src="{{thumbnail}}">
+                    <img class="_JX_previewable" data-jx-preview-src="{{previewDisplaySrc}}" title="{{linkTitle}}" src="{{thumbnail}}">
                     <div class="_JX_thumb_filename">{{filename}}</div>
                     <img class="_JX_file_loader" src="{{loaderGifUrl}}">
                 </a>
