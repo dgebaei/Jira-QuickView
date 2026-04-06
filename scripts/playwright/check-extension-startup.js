@@ -3,10 +3,39 @@ require('./load-env-defaults');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const {spawnSync} = require('child_process');
 const {chromium} = require('playwright');
 
 const repoRoot = path.resolve(__dirname, '../..');
 const extensionPath = path.join(repoRoot, 'jira-plugin');
+const webpackConfigPath = path.join(repoRoot, 'webpack.config.js');
+const requiredBundlePaths = [
+  path.join(extensionPath, 'build', 'background.js'),
+  path.join(extensionPath, 'build', 'main.js'),
+  path.join(extensionPath, 'options', 'build', 'options.js'),
+];
+
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd || repoRoot,
+    stdio: 'inherit',
+    encoding: 'utf8',
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status}`);
+  }
+}
+
+async function ensureExtensionBundle() {
+  const bundleExists = await Promise.all(requiredBundlePaths.map(filePath => fs.access(filePath).then(() => true).catch(() => false)));
+  if (bundleExists.every(Boolean)) {
+    return;
+  }
+
+  console.log('Extension bundle missing; running webpack build for startup smoke...');
+  run('npx', ['webpack', '--mode=development', '--config', webpackConfigPath]);
+}
 
 async function createTestExtensionCopy() {
   const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-extension-'));
@@ -43,6 +72,7 @@ async function getExtensionId(context) {
 
 async function main() {
   const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-playwright-'));
+  await ensureExtensionBundle();
   const testExtensionPath = await createTestExtensionCopy();
   let context = null;
 
