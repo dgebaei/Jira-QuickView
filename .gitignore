@@ -1,7 +1,9 @@
 .idea/*
 .agents/
+.tools/
 .opencode/
 .worktrees/
+docs/mockups/
 .env.playwright.local
 .test.swp
 *.swp

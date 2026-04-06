@@ -377,9 +377,9 @@
             {{/hasRow1Meta}}
         </div>
         {{/hasPrimaryStatusRow}}
-        {{#row2Chips.length}}
-        <div class="_JX_status_row">
-            {{#row2Chips}}
+        {{#secondaryStatusRows}}
+        <div class="_JX_status_row{{#rowClass}} {{rowClass}}{{/rowClass}}">
+            {{#chips}}
             {{#isEditable}}
             <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
                 {{#isLabelsComposite}}
@@ -397,10 +397,10 @@
                 {{/isLabelsComposite}}
                 {{^isLabelsComposite}}
                 {{#linkUrl}}
-                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{chipTitle}}">{{text}}</a>{{/isEditing}}
-                {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{text}}</span>{{/isEditing}}
+                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{text}}</a>{{/isEditing}}
+                {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{text}}</span>{{/isEditing}}
                 {{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{text}}</span>{{/linkUrl}}
                 {{/isLabelsComposite}}
                 <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
                     {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
@@ -455,89 +455,8 @@
             </div>
             {{/isEditable}}
             {{^isEditable}}
-            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
-            {{/isEditable}}
-            {{/row2Chips}}
-        </div>
-        {{/row2Chips.length}}
-        {{#row3Chips.length}}
-        <div class="_JX_status_row _JX_status_row_lower">
-            {{#row3Chips}}
-            {{#isEditable}}
-            <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
-                {{#isLabelsComposite}}
-                <span class="_JX_field_chip_content _JX_labels_chip_content">
-                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
-                    {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
-                    <span>: </span>
-                    {{#labelsView.hasLabels}}
-                    {{#labelsView.labels}}
-                    <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
-                    {{/labelsView.labels}}
-                    {{/labelsView.hasLabels}}
-                    {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
-                </span>
-                {{/isLabelsComposite}}
-                {{^isLabelsComposite}}
-                {{#linkUrl}}
-                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/isEditing}}
-                {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}">{{text}}</span>{{/isEditing}}
-                {{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}">{{text}}</span>{{/linkUrl}}
-                {{/isLabelsComposite}}
-                <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
-                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
-                </button>
-                {{#isEditing}}
-                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
-                    <div class="_JX_edit_field_label">{{editLabel}}</div>
-                    <div class="_JX_edit_input_shell">
-                        {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
-                        {{^useTextarea}}<input class="_JX_edit_input" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>{{/useTextarea}}
-                        {{^showActionButtons}}<button class="_JX_edit_cancel" data-testid="jira-popup-edit-cancel-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
-                    </div>
-                    {{#showSelectedValues}}
-                    <div class="_JX_edit_selected_values">
-                        {{#selectedValues}}
-                        <span class="_JX_edit_selected_chip" title="{{title}}">{{label}}</span>
-                        {{/selectedValues}}
-                    </div>
-                    {{/showSelectedValues}}
-                    {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
-                    {{#showDropdown}}<div class="_JX_edit_dropdown">
-                        {{#hasOptions}}
-                        {{#options}}
-                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}" data-testid="jira-popup-edit-option-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
-                            {{#isMultiSelect}}<span class="_JX_edit_option_check">{{#isSelected}}✓{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
-                            {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
-                            <span class="_JX_edit_option_text">
-                                <span class="_JX_edit_option_label">{{label}}</span>
-                                {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
-                            </span>
-                        </button>
-                        {{/options}}
-                        {{/hasOptions}}
-                        {{^hasOptions}}
-                        <div class="_JX_edit_empty">{{editEmptyText}}</div>
-                        {{/hasOptions}}
-                    </div>{{/showDropdown}}
-                    {{#showActionButtons}}
-                    <div class="_JX_edit_actions">
-                        <button class="_JX_edit_discard" data-testid="jira-popup-edit-discard-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
-                        <button class="_JX_edit_save" data-testid="jira-popup-edit-save-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
-                    </div>
-                    {{/showActionButtons}}
-                    {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
-                </div>
-                {{/isEditing}}
-            </div>
-            {{/isEditable}}
-            {{^isEditable}}
             {{#isLabelsComposite}}
-            <span class="_JX_field_chip" title="{{chipTitle}}">
+            <span class="_JX_field_chip"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>
                 <span class="_JX_field_chip_content _JX_labels_chip_content">
                     {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
                     {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
@@ -552,13 +471,13 @@
             </span>
             {{/isLabelsComposite}}
             {{^isLabelsComposite}}
-            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{text}}</span>{{/linkUrl}}
+            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{text}}</a>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{text}}</span>{{/linkUrl}}
             {{/isLabelsComposite}}
             {{/isEditable}}
-            {{/row3Chips}}
+            {{/chips}}
         </div>
-        {{/row3Chips.length}}
+        {{/secondaryStatusRows}}
         </div>
     <div class="_JX_content_blocks">
         {{#timeTrackingSection}}

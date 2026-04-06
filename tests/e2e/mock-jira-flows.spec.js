@@ -313,7 +313,7 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
     await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
     const labelInput = page.locator('._JX_edit_input[data-field-key="labels"]');
     await labelInput.fill('release-candidate');
-    await page.locator('._JX_edit_option[data-field-key="labels"][data-option-id="release-candidate"]').click();
+    await labelInput.press('Enter');
     await page.locator('._JX_edit_save[data-field-key="labels"]').click();
     await expect(popup).toContainText('Labels updated');
     await expect(popup).toContainText('release-candidate');
@@ -332,6 +332,28 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
       await expect(assignToMe).toContainText(/Assign to me/i);
     }
   }
+
+  await page.close();
+});
+
+test('toggles the top filtered multi-select option with Enter in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Multi-select keyboard coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
+  const labelInput = page.locator('._JX_edit_input[data-field-key="labels"]');
+  await labelInput.fill('release-candidate');
+  await labelInput.press('Enter');
+  await page.locator('._JX_edit_save[data-field-key="labels"]').click();
+
+  await expect(popup.root).toContainText('Labels updated');
+  await expect(popup.root).toContainText('release-candidate');
 
   await page.close();
 });
@@ -419,7 +441,12 @@ test('groups history entries and nests referenced attachments inside expanded co
 
   const descriptionEvent = flyout.locator('._JX_history_rich_event_description').first();
   await descriptionEvent.locator('summary').click();
-  await expect(descriptionEvent.locator('._JX_history_rich_section_body')).toContainText('Updated rollout checklist for JRACLOUD-97000');
+  const descriptionBody = descriptionEvent.locator('._JX_history_rich_section_body');
+  await expect(descriptionBody).toContainText('Updated rollout checklist for JRACLOUD-97000');
+  await expect(descriptionBody.locator('strong', {hasText: 'A DESCRIPTION'})).toHaveCount(1);
+  await expect(descriptionBody.locator('u em', {hasText: 'and a rich one!'})).toHaveCount(1);
+  await expect(descriptionBody.locator('code', {hasText: 'With images:'})).toHaveCount(1);
+  await expect(descriptionBody.locator('img._JX_previewable[alt="standalone-graph.png"]')).toHaveCount(1);
   await expect(flyout.locator('a._JX_history_issue_link', {hasText: 'JRACLOUD-97000'}).first()).toHaveAttribute('href', /browse\/JRACLOUD-97000$/);
 
   await page.keyboard.press('Escape');
@@ -578,7 +605,12 @@ test('silently pins the popup when editing a comment so pointer exit does not di
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = popupModel(page).root;
-  const comment = page.locator('._JX_comment').first();
+  const composer = page.locator('._JX_comment_input');
+  await composer.fill('Owned comment that will enter edit mode');
+  await page.locator('._JX_comment_save').click();
+
+  const comment = page.locator('._JX_comment').last();
+  await expect(comment.locator('._JX_comment_edit_button')).toBeVisible();
 
   await comment.locator('._JX_comment_edit_button').click();
 

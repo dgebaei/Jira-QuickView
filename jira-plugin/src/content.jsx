@@ -6,7 +6,17 @@ import Mustache from 'mustache';
 import {waitForDocument} from 'src/utils';
 import {sendMessage, storageGet, storageSet} from 'src/chrome';
 import {snackBar} from 'src/snack';
+import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
+import {createContentFieldCapabilityHelpers} from 'src/content-field-capability-helpers';
+import {createContentHistoryHelpers} from 'src/content-history-helpers';
+import {createContentIssueDataHelpers} from 'src/content-issue-data-helpers';
+import {createContentIssueLinkageHelpers} from 'src/content-issue-linkage-helpers';
+import {createContentDisplayHelpers} from 'src/content-display-helpers';
+import {createContentPeopleHelpers} from 'src/content-people-helpers';
+import {createContentPopupStateHelpers} from 'src/content-popup-state-helpers';
+import {createContentShellHelpers} from 'src/content-shell-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
+import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 import {createPopupEditing} from 'src/popup-editing';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
@@ -329,6 +339,98 @@ async function mainAsyncLocal() {
   const userPickerSearchCache = new Map();
   const userPickerLocalOptionsCache = new Map();
   const jiraUserDisplayNameCache = new Map();
+  const sharedAvatarUrls = new Set();
+  let contentShellHelpers = null;
+  const {
+    buildHistoryAttachmentLookup,
+    buildHistoryAttachmentView,
+    buildPreviewAttachments,
+    collectReferencedHistoryAttachmentNames,
+    dedupeHistoryAttachments,
+    normalizeHistoryAttachmentName,
+  } = createContentAttachmentHelpers({
+    buildLinkHoverTitle,
+  });
+  const {
+    buildAttachmentImagesByName,
+    buildDraftMentionMapping,
+    buildEditableCommentDraft,
+    buildHistoryPreviewText,
+    formatRelativeDate,
+    getMentionDisplayText,
+    normalizeCommentImageReference,
+    replaceMentionMarkupWithDisplayText,
+    restoreEditableCommentMentions,
+    textToLinkedHtml,
+  } = createContentCommentHelpers({
+    mentionContextWindow: MENTION_CONTEXT_WINDOW,
+    jiraUserDisplayNameCache,
+    escapeHtml,
+    normalizeHistoryAttachmentName,
+  });
+  const {
+    getCachedValue,
+    getIssueChangelog,
+    getIssueMetaData,
+    getIssueSummary,
+    setCachedValue,
+  } = createContentIssueDataHelpers({
+    cacheTtlMs,
+    changelogCache,
+    customFields,
+    get,
+    getEpicLinkFieldIds,
+    getSprintFieldIds,
+    instanceUrl: INSTANCE_URL,
+    issueCache,
+  });
+  const {formatChangelogForDisplay} = createContentHistoryHelpers({
+    areSameJiraUser,
+    buildAttachmentImagesByName,
+    buildHistoryAttachmentLookup,
+    buildHistoryAttachmentView,
+    buildHistoryPreviewText,
+    buildLinkHoverTitle,
+    collectReferencedHistoryAttachmentNames,
+    dedupeHistoryAttachments,
+    escapeHtml,
+    fallbackJiraKeyPattern: FALLBACK_JIRA_KEY_PATTERN,
+    instanceUrl: INSTANCE_URL,
+    normalizeHistoryAttachmentName,
+    normalizeIssueKey,
+    normalizeRichHtml,
+    textToLinkedHtml,
+  });
+  const {
+    getEditableFieldCapability,
+    getIssueEditMeta,
+    getTransitionOptions,
+    pickSprintFieldId,
+  } = createContentFieldCapabilityHelpers({
+    editMetaCache,
+    get,
+    getBuildEditOption: () => buildEditOption,
+    getAllFields,
+    getCachedValue,
+    getSprintFieldIds,
+    instanceUrl: INSTANCE_URL,
+    transitionOptionsCache,
+  });
+  const {
+    getRecentIssueSearchOptions,
+    resolveIssueLinkage,
+    searchParentCandidates,
+  } = createContentIssueLinkageHelpers({
+    encodeJqlValue,
+    get,
+    getBuildEditOption: () => buildEditOption,
+    getCachedValue,
+    getIssueEditMeta: () => getIssueEditMeta,
+    getIssueSummary,
+    instanceUrl: INSTANCE_URL,
+    issueSearchCache,
+    issueSearchRecentCache,
+  });
   let labelSuggestionSupportPromise = null;
   let editSearchRequestCounter = 0;
   let labelSearchTimeoutId = null;
@@ -349,7 +451,67 @@ async function mainAsyncLocal() {
   let commentComposerHadFocus = false;
   let commentComposerSelectionStart = 0;
   let commentComposerSelectionEnd = 0;
+  const {
+    buildQuickActionError,
+    buildQuickActionViewData,
+    executeQuickAction,
+    getCurrentUserInfo,
+    resolveQuickActions,
+  } = createPopupQuickActions({
+    INSTANCE_URL,
+    formatSprintActionLabel,
+    get,
+    getProjectSprintOptions,
+    getSprintFieldIds,
+    pickSprintFieldId,
+    readSprintsFromIssue,
+    requestJson,
+  });
 
+  const {
+    buildNextWatchersState,
+    buildPopupInteractionReset,
+    handleDraftAttachmentUploaded,
+    invalidatePopupCaches,
+    refreshPopupIssueState,
+    renderUpdatedPopupState,
+  } = createContentPopupStateHelpers({
+    assigneeLocalOptionsCache,
+    assigneeSearchCache,
+    changelogCache,
+    clearActionNoticeTimer,
+    createTimeTrackingEditState,
+    editMetaCache,
+    emptyWatchersState,
+    getIssueChangelog,
+    getIssueMetaData,
+    getIssueWatchers,
+    getPopupState: () => popupState,
+    getPullRequestDataCached,
+    issueCache,
+    issueSearchCache,
+    labelLocalOptionsCache,
+    normalizeHistoryAttachmentName,
+    normalizeIssueAttachmentImage,
+    normalizeIssueImages,
+    normalizePullRequests,
+    pullRequestCache,
+    renderIssuePopup,
+    resolveQuickActions,
+    scheduleActionNoticeClear,
+    setPopupState: nextState => {
+      popupState = nextState;
+    },
+    sharedAvatarUrls,
+    showPullRequests,
+    snackBar,
+    tempoAccountSearchCache,
+    transitionOptionsCache,
+    userPickerLocalOptionsCache,
+    userPickerSearchCache,
+    watcherListCache,
+    watcherSearchCache,
+  });
 
   const {
     buildEditOption,
@@ -361,6 +523,7 @@ async function mainAsyncLocal() {
     normalizeMultiSelectOptionIds,
     resolveSelectedEditOptions,
     submitFieldEdit,
+    toggleMultiSelectOptionFromInput,
   } = createPopupEditing({
     INSTANCE_URL,
     assigneeLocalOptionsCache,
@@ -394,23 +557,6 @@ async function mainAsyncLocal() {
     setPopupState: nextState => {
       popupState = nextState;
     },
-  });
-
-  const {
-    buildQuickActionError,
-    buildQuickActionViewData,
-    executeQuickAction,
-    getCurrentUserInfo,
-    resolveQuickActions,
-  } = createPopupQuickActions({
-    INSTANCE_URL,
-    formatSprintActionLabel,
-    get,
-    getProjectSprintOptions,
-    getSprintFieldIds,
-    pickSprintFieldId,
-    readSprintsFromIssue,
-    requestJson,
   });
 
   const {
@@ -737,166 +883,6 @@ async function mainAsyncLocal() {
     (Array.isArray(users) ? users : []).forEach(cacheKnownJiraUser);
   }
 
-  function getMentionDisplayText(rawValue) {
-    const normalized = String(rawValue || '')
-      .trim();
-    const identity = normalized.replace(/^accountid:/i, '');
-    const displayName = jiraUserDisplayNameCache.get(identity) || jiraUserDisplayNameCache.get(normalized);
-    if (displayName) {
-      return `@${displayName}`;
-    }
-    return identity ? `@${identity}` : '@mention';
-  }
-
-  function replaceMentionMarkupWithDisplayText(input) {
-    return String(input || '').replace(/\[~([^[\]\r\n]+?)\]/g, (match, mentionValue) => {
-      return getMentionDisplayText(mentionValue);
-    });
-  }
-
-  function normalizeCommentImageReference(value) {
-    return String(value || '').trim().split('|')[0].trim();
-  }
-
-  function countSharedPrefixLength(left, right) {
-    const leftText = String(left || '');
-    const rightText = String(right || '');
-    const maxLength = Math.min(leftText.length, rightText.length);
-    let index = 0;
-    while (index < maxLength && leftText[index] === rightText[index]) {
-      index += 1;
-    }
-    return index;
-  }
-
-  function countSharedSuffixLength(left, right) {
-    const leftText = String(left || '');
-    const rightText = String(right || '');
-    const maxLength = Math.min(leftText.length, rightText.length);
-    let index = 0;
-    while (
-      index < maxLength &&
-      leftText[leftText.length - 1 - index] === rightText[rightText.length - 1 - index]
-    ) {
-      index += 1;
-    }
-    return index;
-  }
-
-  function buildEditableCommentDraft(rawText) {
-    const sourceText = String(rawText || '');
-    const mentionMappings = [];
-    const mentionPattern = /\[~([^[\]\r\n]+?)\]/g;
-    let draft = '';
-    let lastIndex = 0;
-    let match = mentionPattern.exec(sourceText);
-    while (match) {
-      const matchText = String(match[0] || '');
-      const mentionValue = String(match[1] || '');
-      const matchOffset = Number(match.index || 0);
-      const displayText = getMentionDisplayText(mentionValue);
-      draft += sourceText.slice(lastIndex, matchOffset);
-      const start = draft.length;
-      draft += displayText;
-      mentionMappings.push({
-        displayText,
-        markup: matchText,
-        start,
-      });
-      lastIndex = matchOffset + matchText.length;
-      match = mentionPattern.exec(sourceText);
-    }
-    draft += sourceText.slice(lastIndex);
-    mentionMappings.forEach(mapping => {
-      const start = Number.isFinite(Number(mapping.start)) ? Number(mapping.start) : draft.indexOf(mapping.displayText);
-      const end = start + String(mapping.displayText || '').length;
-      mapping.start = start;
-      mapping.beforeContext = draft.slice(Math.max(0, start - MENTION_CONTEXT_WINDOW), start);
-      mapping.afterContext = draft.slice(end, end + MENTION_CONTEXT_WINDOW);
-    });
-    return {draft, mentionMappings};
-  }
-
-  function buildDraftMentionMapping(draftText, start, displayText, markup) {
-    const normalizedDraftText = String(draftText || '');
-    const normalizedDisplayText = String(displayText || '');
-    const normalizedStart = Number.isFinite(Number(start)) ? Number(start) : normalizedDraftText.indexOf(normalizedDisplayText);
-    const safeStart = Math.max(0, normalizedStart);
-    const end = safeStart + normalizedDisplayText.length;
-    return {
-      afterContext: normalizedDraftText.slice(end, end + MENTION_CONTEXT_WINDOW),
-      beforeContext: normalizedDraftText.slice(Math.max(0, safeStart - MENTION_CONTEXT_WINDOW), safeStart),
-      displayText: normalizedDisplayText,
-      markup: String(markup || ''),
-      start: safeStart,
-    };
-  }
-
-  function restoreEditableCommentMentions(draftText, mentionMappings = []) {
-    const sourceText = String(draftText || '');
-    const replacements = [];
-    let searchFloor = 0;
-    [...(Array.isArray(mentionMappings) ? mentionMappings : [])]
-      .filter(mapping => mapping?.displayText && mapping?.markup)
-      .forEach(mapping => {
-        const displayText = String(mapping.displayText || '');
-        const markup = String(mapping.markup || '');
-        if (!displayText || !markup) {
-          return;
-        }
-        let bestMatch = null;
-        let nextIndex = Math.max(0, searchFloor);
-        while (nextIndex <= sourceText.length) {
-          const matchIndex = sourceText.indexOf(displayText, nextIndex);
-          if (matchIndex === -1) {
-            break;
-          }
-          const beforeContext = String(mapping.beforeContext || '');
-          const afterContext = String(mapping.afterContext || '');
-          const beforeSample = sourceText.slice(Math.max(0, matchIndex - beforeContext.length), matchIndex);
-          const afterStart = matchIndex + displayText.length;
-          const afterSample = sourceText.slice(afterStart, afterStart + afterContext.length);
-          const contextScore = countSharedSuffixLength(beforeSample, beforeContext) + countSharedPrefixLength(afterSample, afterContext);
-          const preferredStart = Number.isFinite(Number(mapping.start)) ? Number(mapping.start) : matchIndex;
-          const candidate = {
-            start: matchIndex,
-            end: afterStart,
-            markup,
-            contextScore,
-            distanceScore: Math.abs(matchIndex - preferredStart),
-          };
-          if (
-            !bestMatch ||
-            candidate.contextScore > bestMatch.contextScore ||
-            (candidate.contextScore === bestMatch.contextScore && candidate.distanceScore < bestMatch.distanceScore)
-          ) {
-            bestMatch = candidate;
-          }
-          nextIndex = matchIndex + displayText.length;
-        }
-        if (!bestMatch) {
-          return;
-        }
-        if (!bestMatch.contextScore && (mapping.beforeContext || mapping.afterContext)) {
-          return;
-        }
-        replacements.push(bestMatch);
-        searchFloor = bestMatch.end;
-      });
-    if (!replacements.length) {
-      return sourceText;
-    }
-    let restored = '';
-    let cursor = 0;
-    replacements.forEach(replacement => {
-      restored += sourceText.slice(cursor, replacement.start);
-      restored += replacement.markup;
-      cursor = replacement.end;
-    });
-    restored += sourceText.slice(cursor);
-    return restored;
-  }
-
   function replaceMentionTextNodes(rootNode) {
     if (!rootNode) {
       return;
@@ -907,7 +893,7 @@ async function mainAsyncLocal() {
           return NodeFilter.FILTER_SKIP;
         }
         const parentTag = String(node.parentElement?.tagName || '').toLowerCase();
-        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea') {
+        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea' || parentTag === 'code' || parentTag === 'pre') {
           return NodeFilter.FILTER_SKIP;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -957,7 +943,7 @@ async function mainAsyncLocal() {
           return NodeFilter.FILTER_SKIP;
         }
         const parentTag = String(node.parentElement?.tagName || '').toLowerCase();
-        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea') {
+        if (parentTag === 'script' || parentTag === 'style' || parentTag === 'textarea' || parentTag === 'code' || parentTag === 'pre') {
           return NodeFilter.FILTER_SKIP;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -1006,83 +992,6 @@ async function mainAsyncLocal() {
     });
   }
 
-  function buildAttachmentImagesByName(attachmentLookup = new Map(), imageMaxHeight = 100) {
-    const imagesByName = {};
-    attachmentLookup.forEach((attachmentView, normalizedName) => {
-      const fileName = String(attachmentView?.filename || '').trim();
-      const imageSrc = attachmentView?.inlineDisplaySrc || attachmentView?.thumbnail || '';
-      const previewSrc = attachmentView?.previewDisplaySrc || imageSrc;
-      if (!fileName || !imageSrc) {
-        return;
-      }
-      const markup = `<img class="_JX_previewable" src="${escapeHtml(imageSrc)}" data-jx-preview-src="${escapeHtml(previewSrc)}" alt="${escapeHtml(fileName)}" style="max-height: ${Number(imageMaxHeight) || 100}px;" />`;
-      imagesByName[normalizedName] = markup;
-      imagesByName[fileName] = markup;
-    });
-    return imagesByName;
-  }
-
-  function textToLinkedHtml(input, options = {}) {
-    const {attachmentImagesByName = {}} = options;
-    const mentionHtml = [];
-    const inputWithMentions = String(input || '').replace(/\[~([^[\]\r\n]+?)\]/g, function (match, mentionValue) {
-      const placeholderIndex = mentionHtml.length;
-      mentionHtml.push(`<span class="_JX_mention">${escapeHtml(getMentionDisplayText(mentionValue))}</span>`);
-      return `__JX_COMMENT_MENTION_${placeholderIndex}__`;
-    });
-    const imageHtml = [];
-    const inputWithImages = inputWithMentions.replace(/!([^!\r\n]+)!/g, function (match, imageName) {
-      const normalizedName = normalizeCommentImageReference(imageName);
-      const imageMarkup = attachmentImagesByName[normalizedName];
-      if (!imageMarkup) {
-        return match;
-      }
-      const placeholderIndex = imageHtml.length;
-      imageHtml.push(imageMarkup);
-      return `__JX_COMMENT_IMAGE_${placeholderIndex}__`;
-    });
-    const escaped = escapeHtml(inputWithImages);
-    const withLinks = escaped.replace(
-      /(https?:\/\/[^\s<]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    return withLinks
-      .replace(/__JX_COMMENT_IMAGE_(\d+)__/g, function (match, index) {
-        return imageHtml[Number(index)] || '';
-      })
-      .replace(/__JX_COMMENT_MENTION_(\d+)__/g, function (match, index) {
-        return mentionHtml[Number(index)] || '';
-      })
-      .replace(/\n/g, '<br/>');
-  }
-
-  function formatRelativeDate(created) {
-    const createdAt = new Date(created);
-    if (Number.isNaN(createdAt.getTime())) {
-      return '--';
-    }
-    const diffMs = Date.now() - createdAt.getTime();
-    const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
-    if (diffMs >= 0 && diffMs < twoDaysMs) {
-      const minuteMs = 60 * 1000;
-      const hourMs = 60 * minuteMs;
-      const dayMs = 24 * hourMs;
-      if (diffMs < hourMs) {
-        const minutes = Math.max(1, Math.floor(diffMs / minuteMs));
-        return `${minutes}m ago`;
-      }
-      if (diffMs < dayMs) {
-        const hours = Math.max(1, Math.floor(diffMs / hourMs));
-        return `${hours}h ago`;
-      }
-      const days = Math.max(1, Math.floor(diffMs / dayMs));
-      return `${days}d ago`;
-    }
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short'
-    }).format(createdAt);
-  }
 
   // ── HTML Sanitization ──────────────────────────────────────
 
@@ -2149,950 +2058,9 @@ async function mainAsyncLocal() {
     });
   }
 
-  // ── Caching ───────────────────────────────────────────────
-
-  async function getCachedValue(cache, key, buildValue) {
-    const existing = cache.get(key);
-    if (existing && (Date.now() - existing.createdAt) < cacheTtlMs) {
-      return existing.value;
-    }
-
-    const value = await buildValue();
-    cache.set(key, {
-      createdAt: Date.now(),
-      value
-    });
-    return value;
-  }
-
-  function setCachedValue(cache, key, value) {
-    if (!key) {
-      return;
-    }
-    cache.set(key, {
-      createdAt: Date.now(),
-      value
-    });
-  }
-
-  // ── Changelog ────────────────────────────────────────────
-
-  async function getIssueChangelog(issueKey) {
-    return getCachedValue(changelogCache, issueKey, async () => {
-      const response = await get(`${INSTANCE_URL}rest/api/2/issue/${encodeURIComponent(issueKey)}?expand=changelog&fields=id`);
-      return response?.changelog || {histories: []};
-    });
-  }
-
-  const HISTORY_GROUP_WINDOW_MS = 5 * 60 * 1000;
-  const HISTORY_ATTACHMENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-  function normalizeHistoryFieldName(fieldName) {
-    return String(fieldName || '').trim().toLowerCase();
-  }
-
-  function toHistoryTitleCase(value) {
-    return String(value || '')
-      .split(' ')
-      .filter(Boolean)
-      .map(word => {
-        const lowerWord = word.toLowerCase();
-        if (lowerWord === 'id') {
-          return 'ID';
-        }
-        return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
-      })
-      .join(' ');
-  }
-
-  function buildHistoryFieldLabel(fieldName, fieldId, fieldNames = {}) {
-    const normalizedFieldId = normalizeHistoryFieldName(fieldId).replace(/[\s_-]+/g, '');
-    const mappedFieldNames = {
-      attachment: 'Attachment',
-      comment: 'Comment',
-      description: 'Description',
-      epiclink: 'Epic Link',
-      fixversions: 'Fix versions',
-      issuetype: 'Issue type',
-      link: 'Link',
-      priority: 'Priority',
-      resolution: 'Resolution',
-      sprint: 'Sprint',
-      status: 'Status',
-      timeestimate: 'Time estimate',
-      timeoriginalestimate: 'Original estimate',
-      timespent: 'Time spent',
-      version: 'Version',
-      versions: 'Versions',
-      worklogid: 'Worklog ID'
-    };
-    const explicitFieldName = fieldNames?.[fieldId] || fieldNames?.[fieldName];
-    if (explicitFieldName) {
-      return explicitFieldName;
-    }
-    if (mappedFieldNames[normalizedFieldId]) {
-      return mappedFieldNames[normalizedFieldId];
-    }
-    const rawLabel = String(fieldName || fieldId || 'Unknown field')
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return toHistoryTitleCase(rawLabel || 'Unknown field');
-  }
-
-  function normalizeHistoryAttachmentName(fileName) {
-    return String(fileName || '').trim().toLowerCase();
-  }
-
-  function isHistoryCommentField(fieldName) {
-    return normalizeHistoryFieldName(fieldName) === 'comment';
-  }
-
-  function isHistoryDescriptionField(fieldName) {
-    return normalizeHistoryFieldName(fieldName) === 'description';
-  }
-
-  function isHistoryAttachmentField(fieldName) {
-    return normalizeHistoryFieldName(fieldName) === 'attachment';
-  }
-
-  function isHistorySuppressedField(fieldName) {
-    const normalized = normalizeHistoryFieldName(fieldName).replace(/\s+/g, '');
-    return normalized === 'worklogid';
-  }
-
-  function looksLikeHtmlFragment(value) {
-    return /<\/?[a-z][\s\S]*>/i.test(String(value || ''));
-  }
-
-  function stripHistoryAttachmentMarkup(value) {
-    return String(value || '')
-      .replace(/!\s*([^!\r\n]+?)(?:\|[^!\r\n]*)?!/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  }
-
-  function buildHistoryTimestampParts(created) {
-    const createdAt = new Date(created);
-    if (Number.isNaN(createdAt.getTime())) {
-      return {
-        createdAt,
-        createdMs: 0,
-        full: '--',
-        short: '--'
-      };
-    }
-    const dateStr = createdAt.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-    const timeStr = createdAt.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: false});
-    return {
-      createdAt,
-      createdMs: createdAt.getTime(),
-      full: `${dateStr}, ${timeStr}`,
-      short: timeStr
-    };
-  }
-
-  function buildHistoryAttachmentView(attachment, fallbackName = '') {
-    const filename = String(attachment?.filename || fallbackName || '').trim();
-    const url = attachment?.rawContentUrl || attachment?.content || '';
-    const inlineDisplaySrc = attachment?.inlineDataUrl || attachment?.displayContent || '';
-    const previewDisplaySrc = attachment?.previewDataUrl || attachment?.previewDisplaySrc || inlineDisplaySrc;
-    const thumbnail = inlineDisplaySrc;
-    const mimeType = String(attachment?.mimeType || '').toLowerCase();
-    return {
-      filename,
-      hasUrl: !!url,
-      url,
-      inlineDisplaySrc,
-      previewDisplaySrc,
-      thumbnail,
-      mimeType,
-      isImage: mimeType.startsWith('image') && !!inlineDisplaySrc,
-      isPreviewable: mimeType.startsWith('image') && !!previewDisplaySrc,
-      linkTitle: url ? buildLinkHoverTitle('Open attachment', filename || 'Attachment', url) : '',
-      previewTitle: previewDisplaySrc ? buildLinkHoverTitle('Preview attachment', filename || 'Attachment', url || previewDisplaySrc) : ''
-    };
-  }
-
-  function buildHistoryAttachmentActionHtml(attachmentView, options = {}) {
-    const {className = '_JX_history_attachment_link'} = options;
-    const filename = String(attachmentView?.filename || '').trim();
-    const previewSrc = attachmentView?.previewDisplaySrc || attachmentView?.previewSrc || '';
-    if (!filename) {
-      return '--';
-    }
-    if (attachmentView?.isPreviewable) {
-      return `<button class="_JX_history_attachment_preview ${escapeHtml(className)}" type="button" data-jx-preview-src="${escapeHtml(previewSrc)}" title="${escapeHtml(attachmentView.previewTitle)}">${escapeHtml(filename)}</button>`;
-    }
-    if (attachmentView?.hasUrl) {
-      return `<a class="${escapeHtml(className)}" href="${escapeHtml(attachmentView.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(attachmentView.linkTitle)}">${escapeHtml(filename)}</a>`;
-    }
-    return `<span class="_JX_history_attachment_name">${escapeHtml(filename)}</span>`;
-  }
-
-  function buildHistoryAttachmentLookup(attachments) {
-    const attachmentLookup = new Map();
-    (attachments || []).forEach(attachment => {
-      const filename = String(attachment?.filename || '').trim();
-      const normalizedName = normalizeHistoryAttachmentName(filename);
-      if (!normalizedName || attachmentLookup.has(normalizedName)) {
-        return;
-      }
-      attachmentLookup.set(normalizedName, buildHistoryAttachmentView(attachment));
-    });
-    return attachmentLookup;
-  }
-
-  function dedupeHistoryAttachments(attachments) {
-    const deduped = new Map();
-    (attachments || []).forEach(attachment => {
-      const normalizedName = normalizeHistoryAttachmentName(attachment?.filename);
-      if (!normalizedName || deduped.has(normalizedName)) {
-        return;
-      }
-      deduped.set(normalizedName, attachment);
-    });
-    return [...deduped.values()];
-  }
-
-  function collectReferencedHistoryAttachmentNames(value, attachmentLookup) {
-    const normalizedText = normalizeHistoryAttachmentName(value);
-    if (!normalizedText) {
-      return new Set();
-    }
-    return new Set([...attachmentLookup.keys()].filter(fileName => {
-      return normalizedText.includes(fileName);
-    }));
-  }
-
-  function buildHistoryPreviewText(value, options = {}) {
-    const {attachments = [], fallbackText = 'View details'} = options;
-    const text = replaceMentionMarkupWithDisplayText(value || '')
-      .split(/\r?\n/)
-      .map(line => line.replace(/\s+/g, ' ').trim())
-      .find(Boolean);
-    if (text) {
-      return text.length > 140 ? `${text.slice(0, 137)}...` : text;
-    }
-    if (attachments.length === 1) {
-      return attachments[0].filename;
-    }
-    if (attachments.length > 1) {
-      return `${attachments.length} attachments`;
-    }
-    return fallbackText;
-  }
-
-  async function renderHistoryRichTextHtml(value, attachmentLookup = new Map()) {
-    const normalizedValue = String(value || '').trim();
-    if (!normalizedValue) {
-      return '';
-    }
-    const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 120);
-    const baseHtml = looksLikeHtmlFragment(normalizedValue)
-      ? await normalizeRichHtml(normalizedValue, {imageMaxHeight: 120, attachmentLookup})
-      : textToLinkedHtml(normalizedValue || '', {attachmentImagesByName});
-    return linkifyHistoryIssueKeysInHtml(baseHtml);
-  }
-
-  function isChangelogTimeField(fieldName) {
-    const normalizedFieldName = String(fieldName || '').toLowerCase().replace(/[\s_]+/g, '');
-    return [
-      'timeestimate',
-      'timeoriginalestimate',
-      'timespent',
-      'aggregatetimeestimate',
-      'aggregatetimeoriginalestimate',
-      'aggregatetimespent'
-    ].includes(normalizedFieldName);
-  }
-
-  function formatChangelogDuration(value) {
-    const normalizedValue = String(value || '').trim();
-    if (!/^-?\d+$/.test(normalizedValue)) {
-      return normalizedValue;
-    }
-    const totalSeconds = Number(normalizedValue);
-    if (!Number.isFinite(totalSeconds)) {
-      return normalizedValue;
-    }
-    if (totalSeconds === 0) {
-      return '0h';
-    }
-    const absoluteSeconds = Math.abs(totalSeconds);
-    const totalMinutes = Math.round(absoluteSeconds / 60);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    const parts = [];
-    if (hours) {
-      parts.push(`${hours}h`);
-    }
-    if (minutes || !parts.length) {
-      parts.push(`${minutes}m`);
-    }
-    return `${totalSeconds < 0 ? '-' : ''}${parts.join(' ')}`;
-  }
-
-  function formatChangelogFieldValue(fieldName, value) {
-    const normalizedValue = String(value || '').trim();
-    if (!normalizedValue) {
-      return '';
-    }
-    return isChangelogTimeField(fieldName)
-      ? formatChangelogDuration(normalizedValue)
-      : normalizedValue;
-  }
-
-  function buildHistoryAttachmentHtml(value, attachmentLookup) {
-    const normalizedValue = String(value || '').trim();
-    if (!normalizedValue) {
-      return '--';
-    }
-    const attachmentView = attachmentLookup.get(normalizeHistoryAttachmentName(normalizedValue));
-    if (!attachmentView?.hasUrl) {
-      return historyTextToHtml(normalizedValue);
-    }
-    return buildHistoryAttachmentActionHtml(attachmentView);
-  }
-
-  function formatHistoryFieldHtml(fieldName, value, attachmentLookup) {
-    const normalizedValue = String(value || '').trim();
-    if (!normalizedValue) {
-      return '--';
-    }
-    if (isHistoryAttachmentField(fieldName)) {
-      return buildHistoryAttachmentHtml(normalizedValue, attachmentLookup);
-    }
-    return historyTextToHtml(normalizedValue);
-  }
-
-  function historyTextToHtml(input) {
-    const rawText = String(input || '');
-    const issueKeyPattern = new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g');
-    let html = '';
-    let lastIndex = 0;
-    let match;
-    while ((match = issueKeyPattern.exec(rawText)) !== null) {
-      const matchedText = match[0];
-      const normalizedIssueKey = normalizeIssueKey(matchedText);
-      const issueUrl = `${INSTANCE_URL}browse/${normalizedIssueKey}`;
-      html += escapeHtml(rawText.slice(lastIndex, match.index));
-      html += `<a class="_JX_history_issue_link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(buildLinkHoverTitle('Open issue in Jira', normalizedIssueKey, issueUrl))}">${escapeHtml(matchedText)}</a>`;
-      lastIndex = match.index + matchedText.length;
-    }
-    html += escapeHtml(rawText.slice(lastIndex));
-    return html.replace(/\n/g, '<br/>');
-  }
-
-  function linkifyHistoryIssueKeysInHtml(html) {
-    const temp = document.createElement('div');
-    temp.innerHTML = html || '';
-    const textNodes = [];
-    const walker = document.createTreeWalker(temp, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!node?.nodeValue || !node.nodeValue.trim()) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        if (node.parentElement?.closest('a')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g').test(node.nodeValue)
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT;
-      }
-    });
-    let nextNode = walker.nextNode();
-    while (nextNode) {
-      textNodes.push(nextNode);
-      nextNode = walker.nextNode();
-    }
-    textNodes.forEach(textNode => {
-      const rawText = textNode.nodeValue || '';
-      const issueKeyPattern = new RegExp(FALLBACK_JIRA_KEY_PATTERN, 'g');
-      const fragment = document.createDocumentFragment();
-      let lastIndex = 0;
-      let match;
-      while ((match = issueKeyPattern.exec(rawText)) !== null) {
-        const matchedText = match[0];
-        const normalizedIssueKey = normalizeIssueKey(matchedText);
-        const issueUrl = `${INSTANCE_URL}browse/${normalizedIssueKey}`;
-        fragment.appendChild(document.createTextNode(rawText.slice(lastIndex, match.index)));
-        const anchor = document.createElement('a');
-        anchor.className = '_JX_history_issue_link';
-        anchor.href = issueUrl;
-        anchor.target = '_blank';
-        anchor.rel = 'noopener noreferrer';
-        anchor.title = buildLinkHoverTitle('Open issue in Jira', normalizedIssueKey, issueUrl);
-        anchor.textContent = matchedText;
-        fragment.appendChild(anchor);
-        lastIndex = match.index + matchedText.length;
-      }
-      fragment.appendChild(document.createTextNode(rawText.slice(lastIndex)));
-      textNode.parentNode?.replaceChild(fragment, textNode);
-    });
-    return temp.innerHTML;
-  }
-
-  async function buildHistoryRichSections(fieldLabel, fromValue, toValue, attachmentLookup = new Map()) {
-    const hasFromValue = !!fromValue;
-    const hasToValue = !!toValue;
-    const sectionSpecs = [];
-    if (hasFromValue && hasToValue && fromValue !== toValue) {
-      sectionSpecs.push({label: 'Before', showLabel: true, value: fromValue});
-      sectionSpecs.push({label: 'After', showLabel: true, value: toValue});
-    } else if (hasToValue || hasFromValue) {
-      sectionSpecs.push({label: fieldLabel, showLabel: false, value: toValue || fromValue});
-    }
-    return Promise.all(sectionSpecs.map(async section => {
-      return {
-        ...section,
-        bodyHtml: await renderHistoryRichTextHtml(section.value, attachmentLookup)
-      };
-    }));
-  }
-
-  async function buildHistoryEvent(item, entryMeta, attachmentLookup, itemIndex, fieldNames = {}) {
-    const fieldKey = item.fieldId || item.field || 'Unknown field';
-    const field = buildHistoryFieldLabel(item.field, fieldKey, fieldNames);
-    if (isHistorySuppressedField(fieldKey)) {
-      return null;
-    }
-    const rawFromString = String(item.fromString || '').trim();
-    const rawToString = String(item.toString || '').trim();
-    const eventId = `${entryMeta.createdMs}-${itemIndex}-${normalizeHistoryFieldName(fieldKey)}`;
-    if (isHistoryCommentField(fieldKey) || isHistoryDescriptionField(fieldKey)) {
-      const richKind = isHistoryCommentField(fieldKey) ? 'comment' : 'description';
-      const referencedAttachmentNames = richKind === 'comment'
-        ? collectReferencedHistoryAttachmentNames([rawToString, rawFromString].filter(Boolean).join('\n'), attachmentLookup)
-        : new Set();
-      const attachments = dedupeHistoryAttachments([...referencedAttachmentNames].map(fileName => {
-        return attachmentLookup.get(fileName) || buildHistoryAttachmentView(null, fileName);
-      }).filter(Boolean));
-      const cleanedFromValue = richKind === 'comment'
-        ? stripHistoryAttachmentMarkup(rawFromString)
-        : rawFromString;
-      const cleanedToValue = richKind === 'comment'
-        ? stripHistoryAttachmentMarkup(rawToString)
-        : rawToString;
-      const previewValue = cleanedToValue || cleanedFromValue;
-      return {
-        eventId,
-        eventCreatedMs: entryMeta.createdMs,
-        field,
-        subTimestamp: entryMeta.timestamp.short,
-        isRichTextEvent: true,
-        isGenericEvent: false,
-        richKind,
-        richIcon: richKind === 'comment' ? '💬' : '📝',
-        previewSourceText: previewValue,
-        previewFallbackText: richKind === 'comment' ? 'View comment' : 'View description',
-        previewText: buildHistoryPreviewText(previewValue, {
-          attachments,
-          fallbackText: richKind === 'comment' ? 'View comment' : 'View description'
-        }),
-        sections: await buildHistoryRichSections(field, cleanedFromValue, cleanedToValue, attachmentLookup),
-        hasSections: !!((cleanedFromValue || cleanedToValue)),
-        attachments,
-        hasAttachments: attachments.length > 0,
-        attachmentCountLabel: attachments.length === 1 ? '1 attachment' : `${attachments.length} attachments`,
-        referencedAttachmentNames
-      };
-    }
-
-    const fromString = formatChangelogFieldValue(fieldKey, rawFromString);
-    const toString = formatChangelogFieldValue(fieldKey, rawToString);
-    const attachmentName = isHistoryAttachmentField(fieldKey)
-      ? normalizeHistoryAttachmentName(toString || fromString)
-      : '';
-    return {
-      eventId,
-      eventCreatedMs: entryMeta.createdMs,
-      field,
-      subTimestamp: entryMeta.timestamp.short,
-      isRichTextEvent: false,
-      isGenericEvent: true,
-      isAttachmentEvent: isHistoryAttachmentField(fieldKey),
-      attachmentName,
-      attachmentView: attachmentName
-        ? (attachmentLookup.get(attachmentName) || buildHistoryAttachmentView(null, toString || fromString))
-        : null,
-      fromString: fromString || '--',
-      toString: toString || '--',
-      fromHtml: formatHistoryFieldHtml(fieldKey, fromString, attachmentLookup),
-      toHtml: formatHistoryFieldHtml(fieldKey, toString, attachmentLookup),
-      isLong: fromString.length > 80 || toString.length > 80,
-      isShort: !(fromString.length > 80 || toString.length > 80)
-    };
-  }
-
-  function mergeHistoryAttachmentEventsIntoComments(events, attachmentLookup) {
-    const nextEvents = [...(events || [])];
-    const commentEvents = nextEvents.filter(event => event.isRichTextEvent && event.richKind === 'comment');
-    const attachedEventIds = new Set();
-    commentEvents.forEach(commentEvent => {
-      commentEvent.attachments = dedupeHistoryAttachments(commentEvent.attachments || []);
-    });
-    nextEvents.forEach(event => {
-      if (!event.isAttachmentEvent || !event.attachmentName) {
-        return;
-      }
-      const matchingComment = commentEvents.find(commentEvent => {
-        return commentEvent.referencedAttachmentNames?.has(event.attachmentName);
-      });
-      if (!matchingComment) {
-        return;
-      }
-      matchingComment.attachments = dedupeHistoryAttachments([
-        ...(matchingComment.attachments || []),
-        event.attachmentView || buildHistoryAttachmentView(null, event.attachmentName)
-      ]);
-      matchingComment.hasAttachments = matchingComment.attachments.length > 0;
-      matchingComment.attachmentCountLabel = matchingComment.attachments.length === 1
-        ? '1 attachment'
-        : `${matchingComment.attachments.length} attachments`;
-      matchingComment.previewText = buildHistoryPreviewText(matchingComment.previewSourceText, {
-        attachments: matchingComment.attachments,
-        fallbackText: matchingComment.previewFallbackText
-      });
-      attachedEventIds.add(event.eventId);
-    });
-    return nextEvents.filter(event => !attachedEventIds.has(event.eventId));
-  }
-
-  function buildCurrentHistoryCommentCandidates(issueData, attachmentLookup) {
-    return (issueData?.fields?.comment?.comments || []).map(comment => {
-      const body = String(comment?.body || '').trim();
-      return {
-        id: String(comment?.id || ''),
-        author: comment?.author || null,
-        created: comment?.created || '',
-        createdMs: new Date(comment?.created).getTime(),
-        body,
-        strippedBody: stripHistoryAttachmentMarkup(body),
-        referencedAttachmentNames: collectReferencedHistoryAttachmentNames(body, attachmentLookup)
-      };
-    }).filter(candidate => {
-      return !!candidate.id && !!candidate.body && Number.isFinite(candidate.createdMs);
-    });
-  }
-
-  function countHistoryAttachmentMatches(leftSet, rightSet) {
-    let count = 0;
-    leftSet.forEach(value => {
-      if (rightSet.has(value)) {
-        count += 1;
-      }
-    });
-    return count;
-  }
-
-  function normalizeHistoryComparableText(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-  }
-
-  function historyCommentEventMatchesCandidate(event, candidate) {
-    const eventText = normalizeHistoryComparableText(event?.previewSourceText || '');
-    const candidateText = normalizeHistoryComparableText(candidate?.strippedBody || candidate?.body || '');
-    if (!eventText || !candidateText) {
-      return false;
-    }
-    return eventText === candidateText || eventText.includes(candidateText) || candidateText.includes(eventText);
-  }
-
-  function isHistoryCandidateWithinWindow(candidateCreatedMs, startMs, endMs, windowMs = HISTORY_GROUP_WINDOW_MS) {
-    return !(candidateCreatedMs < startMs - windowMs || candidateCreatedMs > endMs + windowMs);
-  }
-
-  function getGroupAttachmentNames(group) {
-    return new Set((group?.events || [])
-      .filter(event => event.isAttachmentEvent && event.attachmentName)
-      .map(event => event.attachmentName));
-  }
-
-  function countGroupCandidateAttachmentMatches(group, candidate) {
-    return countHistoryAttachmentMatches(candidate?.referencedAttachmentNames || new Set(), getGroupAttachmentNames(group));
-  }
-
-  function groupRepresentsCommentCandidate(group, candidate) {
-    if (!group || !candidate) {
-      return false;
-    }
-    if (!areSameJiraUser(candidate.author, group.author) && String(candidate.author?.displayName || '') !== String(group.authorName || '')) {
-      return false;
-    }
-    const attachmentMatches = countGroupCandidateAttachmentMatches(group, candidate);
-    const isWithinStandardWindow = isHistoryCandidateWithinWindow(candidate.createdMs, group.earliestCreatedMs, group.latestCreatedMs);
-    const isWithinAttachmentWindow = attachmentMatches > 0 &&
-      isHistoryCandidateWithinWindow(candidate.createdMs, group.earliestCreatedMs, group.latestCreatedMs, HISTORY_ATTACHMENT_MATCH_WINDOW_MS);
-    if (!isWithinStandardWindow && !isWithinAttachmentWindow) {
-      return false;
-    }
-    const commentEvents = group.events.filter(event => event.isRichTextEvent && event.richKind === 'comment');
-    if (!commentEvents.length) {
-      return false;
-    }
-    return commentEvents.some(event => historyCommentEventMatchesCandidate(event, candidate));
-  }
-
-  async function buildSyntheticHistoryCommentEvent(commentCandidate, attachmentLookup) {
-    const attachments = dedupeHistoryAttachments([...commentCandidate.referencedAttachmentNames].map(fileName => {
-      return attachmentLookup.get(fileName) || buildHistoryAttachmentView(null, fileName);
-    }).filter(Boolean));
-    const previewSourceText = commentCandidate.strippedBody || commentCandidate.body;
-    return {
-      eventId: `synthetic-comment-${commentCandidate.id}`,
-      eventCreatedMs: commentCandidate.createdMs,
-      field: 'Comment',
-      subTimestamp: buildHistoryTimestampParts(commentCandidate.created).short,
-      isRichTextEvent: true,
-      isGenericEvent: false,
-      richKind: 'comment',
-      richIcon: '💬',
-      previewSourceText,
-      previewFallbackText: 'View comment',
-      previewText: buildHistoryPreviewText(previewSourceText, {
-        attachments,
-        fallbackText: 'View comment'
-      }),
-      sections: await buildHistoryRichSections('Comment', '', previewSourceText, attachmentLookup),
-      hasSections: !!previewSourceText,
-      attachments,
-      hasAttachments: attachments.length > 0,
-      attachmentCountLabel: attachments.length === 1 ? '1 attachment' : `${attachments.length} attachments`,
-      referencedAttachmentNames: commentCandidate.referencedAttachmentNames
-    };
-  }
-
-  async function buildSyntheticHistoryCommentGroup(commentCandidate, attachmentLookup) {
-    const timestamp = buildHistoryTimestampParts(commentCandidate.created);
-    return {
-      authorKey: String(commentCandidate.author?.accountId || commentCandidate.author?.key || commentCandidate.author?.name || commentCandidate.author?.displayName || commentCandidate.id),
-      author: commentCandidate.author || null,
-      authorName: commentCandidate.author?.displayName || commentCandidate.author?.name || 'Unknown',
-      latestCreatedMs: commentCandidate.createdMs,
-      earliestCreatedMs: commentCandidate.createdMs,
-      timestamp: timestamp.full,
-      events: [await buildSyntheticHistoryCommentEvent(commentCandidate, attachmentLookup)]
-    };
-  }
-
-  async function injectSyntheticHistoryComment(group, commentCandidates, attachmentLookup, usedCommentIds) {
-    const hasCommentEvent = group.events.some(event => event.isRichTextEvent && event.richKind === 'comment');
-    if (hasCommentEvent) {
-      return;
-    }
-    const groupAttachmentNames = getGroupAttachmentNames(group);
-    if (!groupAttachmentNames.size) {
-      return;
-    }
-    const matchingComment = commentCandidates
-      .filter(candidate => {
-        if (usedCommentIds.has(candidate.id)) {
-          return false;
-        }
-        if (!areSameJiraUser(candidate.author, group.author) && String(candidate.author?.displayName || '') !== String(group.authorName || '')) {
-          return false;
-        }
-        const attachmentMatches = countHistoryAttachmentMatches(candidate.referencedAttachmentNames, groupAttachmentNames);
-        if (!attachmentMatches) {
-          return false;
-        }
-        if (!isHistoryCandidateWithinWindow(candidate.createdMs, group.earliestCreatedMs, group.latestCreatedMs, HISTORY_ATTACHMENT_MATCH_WINDOW_MS)) {
-          return false;
-        }
-        return true;
-      })
-      .sort((left, right) => {
-        const rightMatches = countHistoryAttachmentMatches(right.referencedAttachmentNames, groupAttachmentNames);
-        const leftMatches = countHistoryAttachmentMatches(left.referencedAttachmentNames, groupAttachmentNames);
-        if (rightMatches !== leftMatches) {
-          return rightMatches - leftMatches;
-        }
-        const leftWithinTightWindow = isHistoryCandidateWithinWindow(left.createdMs, group.earliestCreatedMs, group.latestCreatedMs);
-        const rightWithinTightWindow = isHistoryCandidateWithinWindow(right.createdMs, group.earliestCreatedMs, group.latestCreatedMs);
-        if (leftWithinTightWindow !== rightWithinTightWindow) {
-          return Number(rightWithinTightWindow) - Number(leftWithinTightWindow);
-        }
-        return Math.abs(left.createdMs - group.latestCreatedMs) - Math.abs(right.createdMs - group.latestCreatedMs);
-      })[0];
-    if (!matchingComment) {
-      return;
-    }
-    group.events.unshift(await buildSyntheticHistoryCommentEvent(matchingComment, attachmentLookup));
-    usedCommentIds.add(matchingComment.id);
-  }
-
-  function coalesceHistoryGroups(groups) {
-    const sortedGroups = [...groups].sort((left, right) => right.latestCreatedMs - left.latestCreatedMs);
-    return sortedGroups.reduce((mergedGroups, group) => {
-      const previousGroup = mergedGroups[mergedGroups.length - 1];
-      const shouldMerge = !!previousGroup && previousGroup.authorKey === group.authorKey && (previousGroup.earliestCreatedMs - group.latestCreatedMs) <= HISTORY_GROUP_WINDOW_MS;
-      if (!shouldMerge) {
-        mergedGroups.push({...group, events: [...group.events]});
-        return mergedGroups;
-      }
-      previousGroup.earliestCreatedMs = Math.min(previousGroup.earliestCreatedMs, group.earliestCreatedMs);
-      previousGroup.latestCreatedMs = Math.max(previousGroup.latestCreatedMs, group.latestCreatedMs);
-      previousGroup.events.push(...group.events);
-      return mergedGroups;
-    }, []);
-  }
-
-  async function formatChangelogForDisplay(changelog, issueData) {
-    const histories = changelog?.histories || [];
-    const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
-    const commentCandidates = buildCurrentHistoryCommentCandidates(issueData, attachmentLookup);
-    const usedCommentIds = new Set();
-    const sorted = histories.slice().sort((a, b) => {
-      return new Date(b.created) - new Date(a.created);
-    });
-    const groups = [];
-    for (const entry of sorted) {
-      const timestamp = buildHistoryTimestampParts(entry.created);
-      const authorName = entry.author?.displayName || entry.author?.name || 'Unknown';
-      const authorKey = String(entry.author?.accountId || entry.author?.key || entry.author?.name || authorName);
-      const events = (await Promise.all((entry.items || []).map((item, itemIndex) => {
-        return buildHistoryEvent(item, {
-          createdMs: timestamp.createdMs,
-          timestamp,
-          authorName
-        }, attachmentLookup, itemIndex, issueData?.names || {});
-      }))).filter(Boolean);
-      if (!events.length) {
-        continue;
-      }
-      const currentGroup = groups[groups.length - 1];
-      const shouldMerge = !!currentGroup && currentGroup.authorKey === authorKey && (currentGroup.earliestCreatedMs - timestamp.createdMs) <= HISTORY_GROUP_WINDOW_MS;
-      if (shouldMerge) {
-        currentGroup.earliestCreatedMs = timestamp.createdMs;
-        currentGroup.events.push(...events);
-        continue;
-      }
-      groups.push({
-        authorKey,
-        author: entry.author || null,
-        authorName,
-        latestCreatedMs: timestamp.createdMs,
-        earliestCreatedMs: timestamp.createdMs,
-        timestamp: timestamp.full,
-        events
-      });
-    }
-    commentCandidates.forEach(candidate => {
-      if (groups.some(group => groupRepresentsCommentCandidate(group, candidate))) {
-        usedCommentIds.add(candidate.id);
-      }
-    });
-    for (const group of groups) {
-      await injectSyntheticHistoryComment(group, commentCandidates, attachmentLookup, usedCommentIds);
-    }
-    const syntheticGroups = [];
-    for (const candidate of commentCandidates) {
-      if (usedCommentIds.has(candidate.id)) {
-        continue;
-      }
-      syntheticGroups.push(await buildSyntheticHistoryCommentGroup(candidate, attachmentLookup));
-      usedCommentIds.add(candidate.id);
-    }
-    const normalizedGroups = coalesceHistoryGroups([...groups, ...syntheticGroups]);
-    return normalizedGroups.map(group => {
-      const events = mergeHistoryAttachmentEventsIntoComments(
-        [...group.events].sort((left, right) => (right.eventCreatedMs || 0) - (left.eventCreatedMs || 0)),
-        attachmentLookup
-      );
-      const distinctTimes = new Set(events.map(event => event.subTimestamp).filter(Boolean)).size;
-      return {
-        timestamp: group.timestamp,
-        authorName: group.authorName,
-        events: events.map(event => ({
-          ...event,
-          showSubTimestamp: distinctTimes > 1
-        })),
-        hasEvents: events.length > 0
-      };
-    });
-  }
-
   // ── Issue Data & Metadata ──────────────────────────────────
 
-  async function getIssueMetaData(issueKey) {
-    return getCachedValue(issueCache, issueKey, async () => {
-      const [sprintFieldIds, epicLinkFieldIds] = await Promise.all([
-        getSprintFieldIds(INSTANCE_URL),
-        getEpicLinkFieldIds(INSTANCE_URL)
-      ]);
-      const fields = [
-        'description',
-        'id',
-        'project',
-        'reporter',
-        'assignee',
-        'summary',
-        'timetracking',
-        'attachment',
-        'comment',
-        'issuetype',
-        'status',
-        'priority',
-        'labels',
-        'environment',
-        'versions',
-        'parent',
-        'fixVersions',
-        'watches',
-        ...sprintFieldIds,
-        ...epicLinkFieldIds,
-        ...customFields.map(({fieldId}) => fieldId)
-      ];
-      return get(INSTANCE_URL + 'rest/api/2/issue/' + issueKey + '?fields=' + fields.join(',') + '&expand=renderedFields,names');
-    });
-  }
-
-  async function getIssueEditMeta(issueKey) {
-    if (!issueKey) {
-      return {fields: {}};
-    }
-    return getCachedValue(editMetaCache, issueKey, async () => {
-      const data = await get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/editmeta`);
-      return {
-        fields: data?.fields || {}
-      };
-    });
-  }
-
-  async function getEditableFieldCapability(issueData, fieldKey) {
-    if (!issueData?.key || !fieldKey) {
-      return {
-        editable: false,
-        operations: [],
-        allowedValues: []
-      };
-    }
-    const editMeta = await getIssueEditMeta(issueData.key);
-    const names = issueData.names || {};
-    let resolvedFieldKey = fieldKey;
-    if (fieldKey === 'sprint') {
-      const sprintFieldIds = await getSprintFieldIds(INSTANCE_URL);
-      resolvedFieldKey = pickSprintFieldId(issueData, sprintFieldIds);
-    }
-    const editMetaField = editMeta.fields?.[resolvedFieldKey];
-    if (!editMetaField) {
-      return {
-        editable: false,
-        fieldKey: resolvedFieldKey,
-        operations: [],
-        allowedValues: []
-      };
-    }
-    const catalogField = (await getAllFields(INSTANCE_URL)).find(field => field?.id === resolvedFieldKey) || null;
-    const mergedFieldMeta = {
-      ...(catalogField || {}),
-      ...editMetaField,
-      schema: editMetaField?.schema || catalogField?.schema || {}
-    };
-    const schemaCustom = String(mergedFieldMeta?.schema?.custom || '').toLowerCase();
-    const schemaType = String(mergedFieldMeta?.schema?.type || '').toLowerCase();
-    const displayName = String(names[resolvedFieldKey] || mergedFieldMeta?.name || '').toLowerCase();
-    const looksLikeSprint = fieldKey === 'sprint' ||
-      schemaCustom.includes('gh-sprint') ||
-      schemaType === 'sprint' ||
-      displayName.includes('sprint');
-    if (fieldKey === 'sprint' && !looksLikeSprint) {
-      return {
-        editable: false,
-        fieldKey: resolvedFieldKey,
-        operations: [],
-        allowedValues: []
-      };
-    }
-    return {
-      editable: true,
-      fieldKey: resolvedFieldKey,
-      fieldMeta: mergedFieldMeta,
-      operations: Array.isArray(editMetaField.operations) ? editMetaField.operations : [],
-      allowedValues: Array.isArray(editMetaField.allowedValues) ? editMetaField.allowedValues : []
-    };
-  }
-
-  async function getTransitionOptions(issueKey) {
-    if (!issueKey) {
-      return [];
-    }
-    return getCachedValue(transitionOptionsCache, issueKey, async () => {
-      const response = await get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/transitions`);
-      const transitions = Array.isArray(response?.transitions) ? response.transitions : [];
-      return transitions
-        .filter(transition => transition?.id && transition?.to?.name)
-        .map(transition => {
-          const targetName = transition.to?.name || '';
-          const transitionName = transition.name && transition.name !== targetName
-            ? transition.name
-            : '';
-          const label = transitionName
-            ? `${transitionName} -> ${targetName}`
-            : targetName;
-          const metaText = transitionName || '';
-          return buildEditOption(transition.id, label, {
-            iconUrl: transition.to?.iconUrl || '',
-            metaText,
-            searchText: `${label} ${targetName} ${transitionName}`,
-            transitionName,
-            targetStatusName: targetName
-          });
-        });
-    });
-  }
-
   // ── Assignee Search ────────────────────────────────────────
-
-  function normalizeAssignableUsers(users) {
-    const uniqueById = new Map();
-    cacheKnownJiraUsers(users);
-    (Array.isArray(users) ? users : []).forEach(user => {
-      const view = buildUserView(user);
-      const id = view.accountId || view.name || view.key;
-      if (!id || uniqueById.has(id)) {
-        return;
-      }
-      const option = buildEditOption(id, view.displayName || id, {
-        avatarUrl: view.avatarUrl,
-        initials: view.initials,
-        metaText: view.emailAddress || view.name || view.key || '',
-        searchText: `${view.displayName} ${view.name} ${view.key} ${view.emailAddress}`,
-        rawValue: {
-          accountId: view.accountId,
-          name: view.name,
-          key: view.key
-        }
-      });
-      if (option.id && option.label) {
-        uniqueById.set(id, option);
-      }
-    });
-    return [...uniqueById.values()];
-  }
-
-  async function proxyUserAvatars(users) {
-    const beforeUrls = new Map();
-    (users || []).forEach(user => {
-      const url = user?.avatarUrls?.['48x48'];
-      if (url) beforeUrls.set(user, url);
-    });
-    await Promise.all((users || []).map(user => {
-      const url = user?.avatarUrls?.['48x48'];
-      if (!url) return Promise.resolve();
-      return getDisplayImageUrl(url).then(src => { user.avatarUrls['48x48'] = src; }).catch(() => {});
-    }));
-    // Propagate shared-avatar status from raw URLs to their proxied data URIs
-    for (const [user, rawUrl] of beforeUrls) {
-      const proxiedUrl = user?.avatarUrls?.['48x48'];
-      if (proxiedUrl && proxiedUrl !== rawUrl && sharedAvatarUrls.has(rawUrl)) {
-        sharedAvatarUrls.add(proxiedUrl);
-      }
-    }
-    return users;
-  }
 
   async function fetchAssignableUsers(query, issueData) {
     const issueKey = issueData?.key || '';
@@ -3172,36 +2140,6 @@ async function mainAsyncLocal() {
     return getCachedValue(userPickerSearchCache, normalizedQuery, () => fetchUserPickerResults(normalizedQuery));
   }
 
-  function getJiraUserIdentityCandidates(user) {
-    return [user?.accountId, user?.name, user?.username, user?.key]
-      .map(value => String(value || '').trim())
-      .filter((value, index, array) => value && array.indexOf(value) === index);
-  }
-
-  function buildWatcherUserView(user, currentUser = null) {
-    const view = buildUserView(user);
-    const displayName = view.displayName || 'Unknown user';
-    const identityCandidates = getJiraUserIdentityCandidates(user);
-    const id = identityCandidates[0] || '';
-    return {
-      id,
-      accountId: view.accountId,
-      name: view.name,
-      key: view.key,
-      displayName,
-      avatarUrl: view.avatarUrl,
-      initials: view.initials,
-      metaText: view.emailAddress || view.name || view.key || '',
-      titleText: `Watcher: ${displayName}`,
-      isCurrentUser: areSameJiraUser(user, currentUser),
-      rawValue: {
-        accountId: view.accountId,
-        name: view.name,
-        key: view.key,
-      }
-    };
-  }
-
   function buildClearUserOption(label = 'Clear value') {
     return buildEditOption('__clear__', label, {
       metaText: 'Remove the current user',
@@ -3209,35 +2147,6 @@ async function mainAsyncLocal() {
     });
   }
 
-  function compareWatcherUsers(left, right) {
-    if (!!left?.isCurrentUser !== !!right?.isCurrentUser) {
-      return left?.isCurrentUser ? -1 : 1;
-    }
-
-    const displayNameComparison = String(left?.displayName || '').localeCompare(
-      String(right?.displayName || ''),
-      undefined,
-      {sensitivity: 'base'}
-    );
-    if (displayNameComparison !== 0) {
-      return displayNameComparison;
-    }
-
-    return String(left?.id || '').localeCompare(String(right?.id || ''), undefined, {sensitivity: 'base'});
-  }
-
-  function normalizeWatcherUsers(users, currentUser = null) {
-    cacheKnownJiraUsers(users);
-    cacheKnownJiraUser(currentUser);
-    const uniqueById = new Map();
-    (Array.isArray(users) ? users : []).forEach(user => {
-      const watcher = buildWatcherUserView(user, currentUser);
-      if (watcher.id && !uniqueById.has(watcher.id)) {
-        uniqueById.set(watcher.id, watcher);
-      }
-    });
-    return [...uniqueById.values()].sort(compareWatcherUsers);
-  }
 
   async function getIssueWatchers(issueKey) {
     if (!issueKey) {
@@ -3322,53 +2231,6 @@ async function mainAsyncLocal() {
       }
     }
     throw lastError || new Error('Could not remove watcher');
-  }
-
-  function buildWatchersPanelView(state) {
-    const watcherState = state?.watchersState || emptyWatchersState();
-    const watchers = Array.isArray(watcherState.watchers) ? watcherState.watchers : [];
-    const pendingAddIds = new Set(watcherState.pendingAddIds || []);
-    const pendingRemoveIds = new Set(watcherState.pendingRemoveIds || []);
-    const watcherIds = new Set(watchers.map(watcher => watcher.id));
-    const addFeedback = watcherState.addFeedback;
-    const removeFeedback = watcherState.removeFeedback;
-    const searchResults = (watcherState.searchResults || [])
-      .filter(result => result?.id && !watcherIds.has(result.id))
-      .map(result => ({
-        ...result,
-        isPending: pendingAddIds.has(result.id),
-        disabledAttr: pendingAddIds.has(result.id) ? 'disabled' : ''
-      }));
-    return {
-      isOpen: !!watcherState.open,
-      isLoading: !!watcherState.loading,
-      loadingText: watcherState.loading ? 'Loading watchers...' : '',
-      errorMessage: watcherState.errorMessage || '',
-      searchValue: watcherState.searchValue || '',
-      searchLoading: !!watcherState.searchLoading,
-      searchHintText: watcherState.searchValue
-        ? ''
-        : 'Start typing to find users.',
-      watchers: watchers.map(watcher => ({
-        ...watcher,
-        hasAvatar: !!watcher.avatarUrl,
-        pendingRemove: pendingRemoveIds.has(watcher.id),
-        pendingAction: pendingRemoveIds.has(watcher.id) ? 'Removing...' : '',
-        removeDisabled: pendingRemoveIds.has(watcher.id) ? 'disabled' : ''
-      })),
-      hasWatchers: watchers.length > 0,
-      emptyText: watcherState.loading ? '' : 'No watchers yet.',
-      searchResults,
-      hasSearchSection: searchResults.length > 0 || !!addFeedback,
-      hasSearchResults: searchResults.length > 0,
-      searchFeedback: addFeedback,
-      hasSearchFeedback: !!addFeedback,
-      showSearchEmpty: !!(watcherState.searchValue && !watcherState.searchLoading && searchResults.length === 0 && !addFeedback),
-      searchEmptyText: 'No matching users.',
-      hasWatcherSectionContent: watchers.length > 0 || !!removeFeedback,
-      watcherFeedback: removeFeedback,
-      hasWatcherFeedback: !!removeFeedback,
-    };
   }
 
   function clearWatchersFeedbackTimer() {
@@ -3522,225 +2384,6 @@ async function mainAsyncLocal() {
         rawKeys: Object.keys(entry || {})
       }))
     };
-  }
-
-  async function getIssueSummary(issueKey) {
-    if (!issueKey) {
-      return null;
-    }
-    return getCachedValue(issueCache, `summary__${issueKey}`, async () => {
-      const data = await get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}?fields=summary`);
-      return {
-        key: issueKey,
-        summary: data?.fields?.summary || issueKey
-      };
-    });
-  }
-
-  // ── Issue Linkage & Hierarchy ──────────────────────────────
-
-  function extractIssueKeyFromLinkageValue(value) {
-    if (!value) {
-      return '';
-    }
-    if (typeof value === 'string') {
-      return value.trim();
-    }
-    if (typeof value === 'object') {
-      return String(value.key || value.value || value.id || '').trim();
-    }
-    return '';
-  }
-
-  function findEpicLinkFieldId(issueData, editMeta) {
-    const names = issueData?.names || {};
-    const editMetaFields = editMeta?.fields || {};
-    const fromNames = Object.keys(names).find(fieldId => {
-      const fieldName = String(names[fieldId] || '').toLowerCase();
-      return fieldName === 'epic link' || fieldName === 'epic';
-    });
-    if (fromNames) {
-      return fromNames;
-    }
-    return Object.keys(editMetaFields).find(fieldId => {
-      const fieldName = String(editMetaFields[fieldId]?.name || '').toLowerCase();
-      return fieldName === 'epic link' || fieldName === 'epic';
-    }) || '';
-  }
-
-  async function resolveIssueLinkage(issueData) {
-    if (!issueData?.key) {
-      return {
-        mode: '',
-        label: 'Parent',
-        editable: false,
-        fieldKey: '',
-        currentLink: null
-      };
-    }
-    const editMeta = await getIssueEditMeta(issueData.key).catch(() => ({fields: {}}));
-    const parentValue = issueData?.fields?.parent;
-    const parentFieldMeta = editMeta.fields?.parent;
-    if (parentValue?.key || parentFieldMeta) {
-      const currentKey = parentValue?.key || '';
-      const currentSummary = parentValue?.fields?.summary || currentKey;
-      return {
-        mode: 'parent',
-        label: 'Parent',
-        editable: !!parentFieldMeta,
-        fieldKey: 'parent',
-        currentLink: currentKey
-          ? {
-              key: currentKey,
-              summary: currentSummary,
-              url: `${INSTANCE_URL}browse/${currentKey}`
-            }
-          : null
-      };
-    }
-
-    const epicFieldId = findEpicLinkFieldId(issueData, editMeta);
-    const epicKey = extractIssueKeyFromLinkageValue(issueData?.fields?.[epicFieldId]);
-    if (!epicFieldId && !epicKey) {
-      return {
-        mode: '',
-        label: 'Parent',
-        editable: false,
-        fieldKey: '',
-        currentLink: null
-      };
-    }
-    let epicSummary = epicKey;
-    if (epicKey) {
-      try {
-        const epicSummaryData = await getIssueSummary(epicKey);
-        epicSummary = epicSummaryData?.summary || epicKey;
-      } catch (error) {
-        epicSummary = epicKey;
-      }
-    }
-    return {
-      mode: 'epicLink',
-      label: 'Epic',
-      editable: !!editMeta.fields?.[epicFieldId],
-      fieldKey: epicFieldId,
-      currentLink: epicKey
-        ? {
-            key: epicKey,
-            summary: epicSummary,
-            url: `${INSTANCE_URL}browse/${epicKey}`
-          }
-        : null
-    };
-  }
-
-  function buildIssueSearchOption(issue, extra = {}) {
-    const issueKey = String(issue?.key || '').trim();
-    const issueSummary = String(issue?.fields?.summary || issue?.summary || issueKey).trim();
-    const statusName = issue?.fields?.status?.name || '';
-    return buildEditOption(issueKey, `[${issueKey}] ${issueSummary}`.trim(), {
-      id: issueKey,
-      iconUrl: issue?.fields?.issuetype?.iconUrl || issue?.issuetype?.iconUrl || '',
-      metaText: statusName,
-      rawValue: {
-        key: issueKey,
-        summary: issueSummary
-      },
-      searchText: `${issueKey} ${issueSummary} ${statusName}`,
-      ...extra
-    });
-  }
-
-  function buildIssueSearchCacheKey(query, issueData, mode) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    return `${projectKey}__${mode}__${String(query || '').trim().toLowerCase()}`;
-  }
-
-  function getRecentIssueSearchOptions(issueData, mode) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    return issueSearchRecentCache.get(`${projectKey}__${mode}`) || [];
-  }
-
-  function setRecentIssueSearchOptions(issueData, mode, options) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey || !mode) {
-      return;
-    }
-    issueSearchRecentCache.set(`${projectKey}__${mode}`, (Array.isArray(options) ? options : []).slice(0, 30));
-  }
-
-  function buildSafeIssueSearchClauses(query, projectKey) {
-    const normalizedQuery = String(query || '').trim();
-    if (!normalizedQuery) {
-      return [];
-    }
-
-    const clauses = [];
-    const tokenClauses = normalizedQuery
-      .split(/[^A-Za-z0-9]+/)
-      .map(token => token.trim())
-      .filter(token => token.length >= 2)
-      .slice(0, 4)
-      .map(token => {
-        const escapedToken = token
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"');
-        return `summary ~ \"${escapedToken}*\"`;
-      });
-
-    if (tokenClauses.length === 1) {
-      clauses.push(tokenClauses[0]);
-    } else if (tokenClauses.length > 1) {
-      clauses.push(`(${tokenClauses.join(' AND ')})`);
-    }
-
-    if (/^\d+$/.test(normalizedQuery)) {
-      clauses.push(`key = ${encodeJqlValue(`${projectKey}-${normalizedQuery}`)}`);
-    } else if (/^[A-Z][A-Z0-9_]*-\d+$/i.test(normalizedQuery)) {
-      clauses.push(`key = ${encodeJqlValue(normalizedQuery.toUpperCase())}`);
-    }
-
-    return clauses;
-  }
-
-  async function searchParentCandidates(query, issueData, linkageMode) {
-    const issueKey = String(issueData?.key || '').trim();
-    const projectKey = issueKey.split('-')[0];
-    if (!issueKey || !projectKey) {
-      return [];
-    }
-    const normalizedQuery = String(query || '').trim();
-    const cacheKey = buildIssueSearchCacheKey(normalizedQuery, issueData, linkageMode || 'linkage');
-    return getCachedValue(issueSearchCache, cacheKey, async () => {
-      const escapedIssueKey = encodeJqlValue(issueKey);
-      const isEpicLinkMode = linkageMode === 'epicLink';
-      const jqlParts = [`key != ${escapedIssueKey}`];
-      if (!isEpicLinkMode) {
-        const escapedProjectKey = encodeJqlValue(projectKey);
-        jqlParts.unshift(`project = ${escapedProjectKey}`);
-      }
-      const searchClauses = buildSafeIssueSearchClauses(normalizedQuery, projectKey);
-      if (searchClauses.length) {
-        jqlParts.push(`(${searchClauses.join(' OR ')})`);
-      }
-      const jql = `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
-      let response;
-      try {
-        response = await get(`${INSTANCE_URL}rest/api/2/search?maxResults=20&fields=summary,issuetype,status&jql=${encodeURIComponent(jql)}`);
-      } catch (error) {
-        const errorText = String(error?.message || error?.inner || error || '');
-        if (!errorText.includes('410')) {
-          throw error;
-        }
-        response = await get(`${INSTANCE_URL}rest/api/3/search/jql?maxResults=20&fields=summary,issuetype,status&jql=${encodeURIComponent(jql)}`);
-      }
-      const issues = Array.isArray(response?.issues) ? response.issues : [];
-      const options = issues
-        .map(issue => buildIssueSearchOption(issue))
-        .filter(option => option.id);
-      setRecentIssueSearchOptions(issueData, linkageMode || 'linkage', options);
-      return options;
-    });
   }
 
   // ── Labels ────────────────────────────────────────────────
@@ -4763,62 +3406,6 @@ async function mainAsyncLocal() {
     };
   }
 
-  function buildAttachmentChips(attachments) {
-    const totals = {
-      image: 0,
-      pdf: 0,
-      doc: 0,
-      other: 0
-    };
-
-    (attachments || []).forEach(attachment => {
-      const mimeType = (attachment.mimeType || '').toLowerCase();
-      if (mimeType.startsWith('image/')) {
-        totals.image += 1;
-      } else if (mimeType === 'application/pdf') {
-        totals.pdf += 1;
-      } else if (
-        mimeType.includes('word') ||
-        mimeType.includes('excel') ||
-        mimeType.includes('powerpoint') ||
-        mimeType.includes('officedocument') ||
-        mimeType.includes('msword') ||
-        mimeType.includes('opendocument') ||
-        mimeType.includes('rtf') ||
-        mimeType.startsWith('text/')
-      ) {
-        totals.doc += 1;
-      } else {
-        totals.other += 1;
-      }
-    });
-
-    const chips = [];
-    if (totals.image) chips.push({icon: '🖼️', count: totals.image});
-    if (totals.pdf) chips.push({icon: '📕', count: totals.pdf});
-    if (totals.doc) chips.push({icon: '📝', count: totals.doc});
-    if (totals.other) chips.push({icon: '📎', count: totals.other});
-    return chips;
-  }
-
-
-  function buildActivityIndicators() {
-    return [
-      {
-        iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
-        label: 'History',
-        isHistory: true,
-        clickable: true,
-        title: 'View change history',
-        ariaLabel: 'View change history'
-      }
-    ].map(item => ({
-      ...item,
-      title: item.title || (item.hasCount ? item.count + ' ' + item.label.toLowerCase() : item.label),
-      ariaLabel: item.ariaLabel || item.title || item.label
-    }));
-  }
-
   // ── Pull Request Display ───────────────────────────────────
 
   function formatPullRequestTitle(pr) {
@@ -4838,22 +3425,6 @@ async function mainAsyncLocal() {
       return source + ' --> ' + target;
     }
     return source || target || '--';
-  }
-
-  function buildPreviewAttachments(attachments) {
-    return (attachments || [])
-      .filter(attachment => {
-        return !!attachment &&
-          typeof attachment.mimeType === 'string' &&
-          attachment.mimeType.toLowerCase().startsWith('image') &&
-          !!(attachment.inlineDataUrl || attachment.displayContent);
-      })
-      .map(attachment => ({
-        ...attachment,
-        thumbnail: attachment.inlineDataUrl || attachment.displayContent,
-        previewDisplaySrc: attachment.previewDataUrl || attachment.previewDisplaySrc || attachment.inlineDataUrl || attachment.displayContent,
-        linkTitle: buildLinkHoverTitle('Open attachment', attachment.filename || 'Attachment', attachment.content)
-      }));
   }
 
   function areSameJiraUser(left, right) {
@@ -5129,132 +3700,6 @@ async function mainAsyncLocal() {
 
   // ── Avatars & User Display ─────────────────────────────────
 
-  const sharedAvatarUrls = new Set();
-
-  function detectSharedAvatarUrls(users) {
-    if (!Array.isArray(users) || users.length < 2) {
-      return;
-    }
-    const urlCounts = new Map();
-    for (const user of users) {
-      const url = user?.avatarUrls?.['48x48'] || '';
-      if (url) {
-        urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
-      }
-    }
-    for (const [url, count] of urlCounts) {
-      if (count >= 2) {
-        sharedAvatarUrls.add(url);
-      }
-    }
-  }
-
-  function buildUserView(user) {
-    const displayName = user?.displayName || user?.name || user?.username || user?.emailAddress || '';
-    const rawAvatarUrl = user?.avatarUrls?.['48x48'] || '';
-    const useInitials = isLikelyDefaultAvatar(user, rawAvatarUrl);
-    return {
-      displayName,
-      avatarUrl: useInitials ? '' : rawAvatarUrl,
-      initials: getUserInitials(displayName, '--'),
-      accountId: user?.accountId || '',
-      name: user?.name || user?.username || '',
-      key: user?.key || '',
-      emailAddress: user?.emailAddress || '',
-    };
-  }
-
-  function getUserInitials(displayName, fallbackInitials = '--') {
-    const tokens = String(displayName || '')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-    if (!tokens.length) {
-      return fallbackInitials;
-    }
-    if (tokens.length === 1) {
-      return tokens[0].slice(0, 2).toUpperCase();
-    }
-    return `${tokens[0][0] || ''}${tokens[tokens.length - 1][0] || ''}`.toUpperCase();
-  }
-
-  function isLikelyDefaultAvatar(user, avatarUrl) {
-    if (!avatarUrl) {
-      return true;
-    }
-    if (user?.isDefaultAvatar === true) {
-      return true;
-    }
-    const JIRA_DEFAULT_AVATAR_DATA_URI = 'data:image/svg+xml;base64,PHN2ZyBpZD0iV2Fyc3R3YV8xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+CiAgPHN0eWxlPgogICAgLnN0MHtmaWxsOiNjMWM3ZDB9CiAgPC9zdHlsZT4KICA8cGF0aCBjbGFzcz0ic3QwIiBkPSJNMTIgMjRDNS40IDI0IDAgMTguNiAwIDEyUzUuNCAwIDEyIDBzMTIgNS40IDEyIDEyLTUuNCAxMi0xMiAxMnoiLz4KICA8cGF0aCBkPSJNMTkuNSAxMmMwLS45LS42LTEuNy0xLjUtMS45LS4yLTMuMS0yLjgtNS42LTYtNS42UzYuMiA3IDYgMTAuMWMtLjkuMi0xLjUgMS0xLjUgMS45IDAgMSAuNyAxLjggMS43IDIgLjYgMi44IDMgNS41IDUuOCA1LjVzNS4yLTIuNyA1LjgtNS41YzEtLjIgMS43LTEgMS43LTJ6IiBmaWxsPSIjZjRmNWY3Ii8+CiAgPHBhdGggY2xhc3M9InN0MCIgZD0iTTEyIDE2LjljLTEgMC0yLS43LTIuMy0xLjYtLjEtLjMgMC0uNS4zLS42LjMtLjEuNSAwIC42LjMuMi42LjggMSAxLjQgMSAuNiAwIDEuMi0uNCAxLjQtMSAuMS0uMy40LS40LjYtLjMuMy4xLjQuNC4zLjYtLjMuOS0xLjMgMS42LTIuMyAxLjZ6Ii8+Cjwvc3ZnPg==';
-    const normalizedUrl = String(avatarUrl || '').toLowerCase();
-    if (avatarUrl === JIRA_DEFAULT_AVATAR_DATA_URI ||
-      normalizedUrl.includes('defaultavatar') ||
-      normalizedUrl.includes('/avatar.png') ||
-      normalizedUrl.includes('avatar/default') ||
-      normalizedUrl.includes('initials=')) {
-      return true;
-    }
-    // Jira Server system default: /secure/useravatar?avatarId=NNN (no ownerId)
-    if (/\buseravatar\b/.test(normalizedUrl) && !normalizedUrl.includes('ownerid=')) {
-      return true;
-    }
-    // URL seen by multiple distinct users is a shared default
-    if (avatarUrl && sharedAvatarUrls.has(avatarUrl)) {
-      return true;
-    }
-    return false;
-  }
-
-  function buildUserAvatarView(user, titlePrefix, fallbackInitials = '--') {
-    const view = buildUserView(user);
-    return {
-      avatarUrl: view.avatarUrl,
-      initials: view.displayName ? view.initials : fallbackInitials,
-      displayName: view.displayName,
-      titleText: `${titlePrefix}: ${view.displayName || 'Unknown'}`
-    };
-  }
-
-  function buildAssigneeAvatarView(state, issueData, canEditAssignee) {
-    const assignee = issueData?.fields?.assignee;
-    const displayName = assignee?.displayName || 'Unassigned';
-    const baseAvatarView = assignee
-      ? buildUserAvatarView(assignee, 'Assignee', '--')
-      : {
-          avatarUrl: '',
-          initials: '--',
-          displayName,
-          titleText: 'Assignee: Unassigned'
-        };
-    const activeEdit = buildActiveEditPresentation('assignee', state);
-    return {
-      ...baseAvatarView,
-      displayName,
-      placeholderText: assignee ? '' : 'Unassigned',
-      isEditable: !!canEditAssignee,
-      editTitle: activeEdit ? 'Discard' : (assignee ? 'Edit assignee' : 'Assign issue'),
-      ...(activeEdit || {})
-    };
-  }
-
-  function buildTitleView(state, issueData, canEditTitle) {
-    const issueKey = String(issueData?.key || '');
-    const summary = String(issueData?.fields?.summary || '');
-    const issueUrl = `${INSTANCE_URL}browse/${issueKey}`;
-    const activeEdit = buildActiveEditPresentation('summary', state);
-    return {
-      ticketKey: issueKey,
-      ticketTitle: summary,
-      keyPrefix: `[${issueKey}]`,
-      url: issueUrl,
-      urlTitle: `[${issueKey}] ${summary}`,
-      urlHoverTitle: buildLinkHoverTitle('Open issue in Jira', `[${issueKey}] ${summary}`, issueUrl),
-      isEditable: !!canEditTitle,
-      editTitle: activeEdit ? 'Discard title changes' : 'Edit issue title',
-      ...(activeEdit || {})
-    };
-  }
-
   function compareSprintState(left, right) {
     const order = {
       active: 0,
@@ -5425,317 +3870,82 @@ async function mainAsyncLocal() {
     return sprintPromise;
   }
 
-  function pickSprintFieldId(issueData, sprintFieldIds) {
-    const populatedFieldId = (sprintFieldIds || []).find(fieldId => {
-      const value = issueData?.fields?.[fieldId];
-      return Array.isArray(value) ? value.length > 0 : !!value;
-    });
-    return populatedFieldId || sprintFieldIds?.[0] || '';
+  function buildDefaultActivityIndicators() {
+    return [
+      {
+        iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
+        label: 'History',
+        isHistory: true,
+        clickable: true,
+        title: 'View change history',
+        ariaLabel: 'View change history'
+      }
+    ].map(item => ({
+      ...item,
+      title: item.title || (item.hasCount ? item.count + ' ' + item.label.toLowerCase() : item.label),
+      ariaLabel: item.ariaLabel || item.title || item.label
+    }));
   }
 
   // ── Quick Actions ──────────────────────────────────────────
 
+  const {
+    buildUserView,
+    detectSharedAvatarUrls,
+    normalizeAssignableUsers,
+    normalizeWatcherUsers,
+    proxyUserAvatars,
+  } = createContentPeopleHelpers({
+    areSameJiraUser,
+    buildEditOption,
+    cacheKnownJiraUser,
+    cacheKnownJiraUsers,
+    getDisplayImageUrl,
+    sharedAvatarUrls,
+  });
+
+  const {buildPopupDisplayData} = createContentDisplayHelpers({
+    buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
+    buildActiveEditPresentation,
+    buildCommentsForDisplay,
+    buildCustomFieldChips,
+    buildEditableFieldChip,
+    buildFilterChip,
+    buildLabelsChip,
+    buildLinkHoverTitle,
+    buildQuickActionViewData,
+    buildTimeTrackingSectionPresentation,
+    buildUserView,
+    customFields,
+    displayFields,
+    emptyWatchersState,
+    encodeJqlValue,
+    formatChangelogForDisplay,
+    formatEnvironmentDisplayText,
+    formatFixVersionText,
+    formatPullRequestAuthor,
+    formatPullRequestBranch,
+    formatPullRequestTitle,
+    formatSprintText,
+    getEditableFieldCapability,
+    getTransitionOptions,
+    getVisibleSprintsForDisplay,
+    hasLabelSuggestionSupport,
+    instanceUrl: INSTANCE_URL,
+    layoutContentBlocks,
+    loaderGifUrl,
+    normalizeIssueTypeOptions,
+    normalizeRichHtml,
+    readSprintsFromIssue,
+    resolveIssueLinkage,
+    scopeJqlToProject,
+    showPullRequests,
+    tooltipLayout,
+    buildPreviewAttachments,
+  });
+
 
   // ── Popup Data & Rendering ─────────────────────────────────
-
-  async function buildPopupDisplayData(state) {
-    const {key, issueData, pullRequests, actionLoadingKey, actionError, lastActionSuccess, actionsOpen, quickActions, historyOpen, changelogData, changelogLoading} = state;
-    const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
-      imageMaxHeight: 180
-    });
-    const commentsForDisplay = await buildCommentsForDisplay(issueData, state.commentSession, state.commentReactionState);
-    const fixVersions = issueData.fields.fixVersions || [];
-    const affectsVersions = issueData.fields.versions || [];
-    const sprints = readSprintsFromIssue(issueData);
-    const commentsTotal = commentsForDisplay.length;
-    const attachments = issueData.fields.attachment || [];
-    const previewAttachments = buildPreviewAttachments(attachments);
-    const labels = issueData.fields.labels || [];
-    const linkageData = await resolveIssueLinkage(issueData);
-    const issueTypeName = issueData.fields.issuetype?.name;
-    const statusName = issueData.fields.status?.name;
-    const priorityName = issueData.fields.priority?.name;
-    const projectKey = key.split('-')[0];
-    const [issueTypeCapability, priorityCapability, assigneeCapability, transitionOptions, sprintCapability, affectsCapability, fixVersionsCapability, labelsCapability, environmentCapability, labelSuggestionSupport, summaryCapability, timeTrackingCapability, customFieldChips] = await Promise.all([
-      displayFields.issueType ? getEditableFieldCapability(issueData, 'issuetype') : Promise.resolve({editable: false, allowedValues: []}),
-      displayFields.priority ? getEditableFieldCapability(issueData, 'priority') : Promise.resolve({editable: false}),
-      displayFields.assignee ? getEditableFieldCapability(issueData, 'assignee') : Promise.resolve({editable: false}),
-      displayFields.status ? getTransitionOptions(issueData.key).catch(() => []) : Promise.resolve([]),
-      displayFields.sprint ? getEditableFieldCapability(issueData, 'sprint') : Promise.resolve({editable: false}),
-      displayFields.affects ? getEditableFieldCapability(issueData, 'versions') : Promise.resolve({editable: false}),
-      displayFields.fixVersions ? getEditableFieldCapability(issueData, 'fixVersions') : Promise.resolve({editable: false}),
-      displayFields.labels ? getEditableFieldCapability(issueData, 'labels') : Promise.resolve({editable: false}),
-      displayFields.environment ? getEditableFieldCapability(issueData, 'environment') : Promise.resolve({editable: false, operations: []}),
-      displayFields.labels ? hasLabelSuggestionSupport() : Promise.resolve(false),
-      getEditableFieldCapability(issueData, 'summary').catch(() => ({editable: false, operations: []})),
-      getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false})),
-      buildCustomFieldChips(issueData, customFields, state)
-    ]);
-    const statusEditable = Array.isArray(transitionOptions) && transitionOptions.length > 0;
-    const issueTypeEditable = !!issueTypeCapability?.editable && normalizeIssueTypeOptions(issueTypeCapability.allowedValues || [], issueData.fields.issuetype).length > 1;
-    const priorityEditable = !!priorityCapability?.editable;
-    const assigneeEditable = !!assigneeCapability?.editable;
-    const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
-    const environmentEditable = !!environmentCapability?.editable && (environmentCapability.operations || []).includes('set');
-    const summaryEditable = !!summaryCapability?.editable && (summaryCapability.operations || []).includes('set');
-
-    const layoutRow1 = tooltipLayout?.row1 || ['issueType', 'status', 'priority'];
-    const layoutRow2 = tooltipLayout?.row2 || ['epicParent', 'sprint', 'affects', 'fixVersions'];
-    const layoutRow3 = tooltipLayout?.row3 || ['environment', 'labels'];
-
-    const singleAffectsVersion = affectsVersions.length === 1 ? affectsVersions[0]?.name : '';
-    const singleFixVersion = fixVersions.length === 1 ? fixVersions[0]?.name : '';
-    const visibleSprints = getVisibleSprintsForDisplay(sprints);
-    const sprintClauses = visibleSprints
-      .map(sprint => sprint?.id
-        ? `sprint = ${sprint.id}`
-        : (sprint?.name ? `sprint = ${encodeJqlValue(sprint.name)}` : ''))
-      .filter(Boolean);
-    const sprintJql = sprintClauses.length
-      ? scopeJqlToProject(
-          projectKey,
-          sprintClauses.length === 1 ? sprintClauses[0] : `(${sprintClauses.join(' OR ')})`
-        )
-      : '';
-
-    const buildRow1Chip = (fieldKey) => {
-      switch (fieldKey) {
-        case 'issueType':
-          return buildEditableFieldChip('issuetype', buildFilterChip(
-            issueTypeName || 'No type',
-            issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
-            {iconUrl: issueData.fields.issuetype?.iconUrl || '', linkLabel: issueTypeName}
-          ), state, {
-            canEdit: issueTypeEditable,
-            editTitle: 'Edit issue type'
-          });
-        case 'status':
-          return buildEditableFieldChip('status', buildFilterChip(
-            statusName || 'No status',
-            statusName ? `${scopeJqlToProject(projectKey, `status = ${encodeJqlValue(statusName)}`)}` : '',
-            {iconUrl: issueData.fields.status?.iconUrl || '', linkLabel: statusName}
-          ), state, {
-            canEdit: statusEditable,
-            editTitle: 'Change status'
-          });
-        case 'priority':
-          return buildEditableFieldChip('priority', buildFilterChip(
-            `Priority: ${priorityName || '--'}`,
-            priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
-            {iconUrl: issueData.fields.priority?.iconUrl || '', linkLabel: priorityName}
-          ), state, {
-            canEdit: priorityEditable,
-            editTitle: 'Edit priority'
-          });
-        case 'epicParent':
-          return buildEditableFieldChip('parentLink', {
-            text: linkageData?.currentLink
-              ? `${linkageData.label}: [${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
-              : `${linkageData?.label || 'Parent'}: --`,
-            linkUrl: linkageData?.currentLink?.url || '',
-            linkTitle: linkageData?.currentLink
-              ? buildLinkHoverTitle(
-                  linkageData.mode === 'epicLink' ? 'View epic issue' : 'View parent issue',
-                  `[${linkageData.currentLink.key}] ${linkageData.currentLink.summary}`
-                )
-              : ''
-          }, state, {
-            canEdit: !!linkageData?.editable,
-            editTitle: linkageData?.mode === 'epicLink' ? 'Edit epic link' : 'Edit parent'
-          });
-        default:
-          return null;
-      }
-    };
-
-    const buildRow2Chip = (fieldKey) => {
-      switch (fieldKey) {
-        case 'sprint':
-          return buildEditableFieldChip('sprint', buildFilterChip(
-            `Sprint: ${formatSprintText(sprints) || '--'}`,
-            sprintJql,
-            {linkLabel: visibleSprints.length > 1 ? 'listed sprints' : (formatSprintText(sprints) || '')}
-          ), state, {
-            canEdit: !!sprintCapability?.editable
-          });
-        case 'affects':
-          return buildEditableFieldChip('versions', buildFilterChip(
-            `Affects: ${formatVersionText(affectsVersions) || '--'}`,
-            singleAffectsVersion ? `${scopeJqlToProject(projectKey, `affectedVersion = ${encodeJqlValue(singleAffectsVersion)}`)}` : '',
-            {linkLabel: singleAffectsVersion}
-          ), state, {
-            canEdit: !!affectsCapability?.editable,
-            isRightAligned: true
-          });
-        case 'fixVersions':
-          return buildEditableFieldChip('fixVersions', buildFilterChip(
-            `Fix version: ${formatVersionText(fixVersions) || '--'}`,
-            singleFixVersion ? `${scopeJqlToProject(projectKey, `fixVersion = ${encodeJqlValue(singleFixVersion)}`)}` : '',
-            {linkLabel: singleFixVersion}
-          ), state, {
-            canEdit: !!fixVersionsCapability?.editable,
-            isRightAligned: true
-          });
-        default:
-          return null;
-      }
-    };
-
-    const singleLabel = labels.length === 1 ? labels[0] : '';
-    const environmentText = formatEnvironmentDisplayText(issueData.fields.environment);
-    const environmentTooltip = String(issueData.fields.environment || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .trim();
-
-    const buildRow3Chip = (fieldKey) => {
-      switch (fieldKey) {
-        case 'environment':
-          return buildEditableFieldChip('environment', buildFilterChip(
-            `Environment: ${environmentText}`,
-            '',
-            {
-              chipTitle: environmentTooltip ? `Environment: ${environmentTooltip}` : 'Environment: --',
-              truncateText: true
-            }
-          ), state, {
-            canEdit: environmentEditable,
-            editTitle: 'Edit environment'
-          });
-        case 'labels':
-          return buildEditableFieldChip('labels', buildLabelsChip(labels, projectKey), state, {
-            canEdit: labelsEditable,
-            editTitle: 'Edit labels'
-          });
-        default:
-          return null;
-      }
-    };
-
-    const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]);
-    const row2Chips = layoutRow2.map(buildRow2Chip).filter(Boolean).concat(customFieldChips[2]);
-    const row3Chips = layoutRow3.map(buildRow3Chip).filter(Boolean).concat(customFieldChips[3]);
-    const maxMetaFieldsPerRow = Math.max(row2Chips.length, row3Chips.length);
-
-    const copyTicketMeta = ticket => ({
-      copyUrl: ticket.url,
-      copyTicket: ticket.key,
-      copyTitle: ticket.summary
-    });
-
-    const issueUrl = INSTANCE_URL + 'browse/' + key;
-    const showAttachments = layoutContentBlocks.includes('attachments');
-    const showComments = layoutContentBlocks.includes('comments');
-    const showTimeTracking = layoutContentBlocks.includes('timeTracking');
-    const visibleCommentsTotal = showComments ? commentsTotal : 0;
-    const visibleAttachments = showAttachments ? previewAttachments : [];
-    const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
-    const reporterView = displayFields.reporter && issueData.fields.reporter
-      ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
-      : null;
-    const assigneeView = displayFields.assignee
-      ? buildAssigneeAvatarView(state, issueData, assigneeEditable)
-      : null;
-    const titleView = buildTitleView(state, issueData, summaryEditable);
-    const titleStatusText = titleView.isEditing && titleView.fieldKey === 'summary' ? titleView.loadingText : '';
-    const watches = issueData.fields.watches || {};
-    const watcherCount = Number.isFinite(Number(watches.watchCount)) ? Number(watches.watchCount) : 0;
-    const watchersPanel = buildWatchersPanelView(state);
-    const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
-    const displayData = {
-      urlTitle: titleView.urlTitle,
-      ticketKey: titleView.ticketKey,
-      ticketTitle: titleView.ticketTitle,
-      url: titleView.url,
-      urlHoverTitle: titleView.urlHoverTitle,
-      ...copyTicketMeta({
-        key,
-        summary: issueData.fields.summary,
-        url: issueUrl
-      }),
-      prs: [],
-      description: layoutContentBlocks.includes('description') ? normalizedDescription : '',
-      hasBodyContent: true,
-      emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
-        ? 'No description, attachments or comments.'
-        : '',
-      attachments,
-      previewAttachments: visibleAttachments,
-      commentsForDisplay: showComments ? commentsForDisplay : [],
-      showCommentsSection: showComments || commentsForDisplay.length > 0,
-      showCommentComposer: showComments,
-      issuetype: issueData.fields.issuetype,
-      status: issueData.fields.status,
-      priority: issueData.fields.priority,
-      issueTypeText: displayFields.issueType ? (issueTypeName || 'No type') : '',
-      statusText: displayFields.status ? (statusName || 'No status') : '',
-      sprintText: displayFields.sprint ? (formatSprintText(sprints) || 'No sprint') : '',
-      fixVersionText: displayFields.fixVersions ? (formatFixVersionText(fixVersions) || 'No fix version') : '',
-      useWideAnnotation: maxMetaFieldsPerRow > 3,
-      row1Chips,
-      row2Chips,
-      row3Chips,
-      timeTrackingSection,
-      hasComments: visibleCommentsTotal > 0,
-      commentsTotal: visibleCommentsTotal,
-      attachmentChips: displayFields.attachments ? buildAttachmentChips(attachments) : [],
-      reporter: displayFields.reporter ? issueData.fields.reporter : null,
-      reporterView,
-      assignee: displayFields.assignee ? issueData.fields.assignee : null,
-      assigneeView,
-      titleView,
-      watchersTrigger: {
-        count: watcherCount,
-        title: watcherCount === 1 ? '1 watcher' : `${watcherCount} watchers`,
-        watchingTitle: watches.isWatching ? 'You are watching this issue.' : 'You are not watching this issue.',
-        isWatching: !!watches.isWatching,
-        isOpen: watchersPanel.isOpen,
-        isLoading: watchersPanel.isLoading,
-        hasCount: true,
-      },
-      watchersPanel,
-      commentUrl: issueUrl,
-      hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
-      activityIndicators: [],
-      loaderGifUrl,
-      actionNoticeText: titleStatusText || actionError || lastActionSuccess,
-      actionNoticeClass: titleStatusText
-        ? '_JX_action_notice_info'
-        : (actionError ? '_JX_action_notice_error' : '_JX_action_notice_success'),
-      hasActionNotice: !!(titleStatusText || actionError || lastActionSuccess),
-      ...quickActionData
-    };
-    if (issueData.fields.comment?.comments?.[0]?.id) {
-      displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
-    }
-    if (showPullRequests && size(pullRequests)) {
-      const filteredPullRequests = pullRequests.filter(pr => {
-        return pr && pr.url !== location.href;
-      });
-      displayData.prs = filteredPullRequests.map(pr => {
-        return {
-          id: pr.id,
-          url: pr.url,
-          linkUrl: pr.url,
-          linkTitle: buildLinkHoverTitle('Open pull request', formatPullRequestTitle(pr), pr.url),
-          title: formatPullRequestTitle(pr),
-          status: pr.status,
-          authorName: formatPullRequestAuthor(pr),
-          branchText: formatPullRequestBranch(pr)
-        };
-      });
-    }
-    const changelogHistories = changelogData?.histories || [];
-    displayData.activityIndicators = buildActivityIndicators();
-    displayData.hasRow1Meta = !!displayData.watchersTrigger || displayData.activityIndicators.length > 0;
-    displayData.hasPrimaryStatusRow = row1Chips.length > 0 || displayData.hasRow1Meta;
-    displayData.historyOpen = !!historyOpen;
-    displayData.changelogLoading = !!changelogLoading;
-    displayData.changelogEntries = historyOpen ? await formatChangelogForDisplay(changelogData, issueData) : [];
-    displayData.hasChangelogEntries = historyOpen && displayData.changelogEntries.length > 0;
-    displayData.showChangelogEmpty = historyOpen && !changelogLoading && displayData.changelogEntries.length === 0;
-    return displayData;
-  }
   // ── Popup Positioning ──────────────────────────────────────
   function getRelativeHref(href) {
     const documentHref = document.location.href.split('#')[0];
@@ -5746,59 +3956,31 @@ async function mainAsyncLocal() {
   }
 
   function clampContainerPosition(left, top) {
-    const margin = 8;
-    const width = container.outerWidth() || 0;
-    const height = container.outerHeight() || 0;
-    const viewportLeft = window.scrollX + margin;
-    const viewportTop = window.scrollY + margin;
-    const viewportRight = window.scrollX + window.innerWidth - margin;
-    const viewportBottom = window.scrollY + window.innerHeight - margin;
-    const maxLeft = Math.max(viewportLeft, viewportRight - width);
-    const maxTop = Math.max(viewportTop, viewportBottom - height);
-
-    return {
-      left: Math.min(Math.max(left, viewportLeft), maxLeft),
-      top: Math.min(Math.max(top, viewportTop), maxTop)
-    };
+    if (!contentShellHelpers) {
+      return {left, top};
+    }
+    return contentShellHelpers.clampContainerPosition(left, top);
   }
 
   function keepContainerVisible() {
-    if (containerPinned || !container.html()) {
+    if (!contentShellHelpers) {
       return;
     }
-    const currentLeft = Number.parseFloat(container.css('left'));
-    const currentTop = Number.parseFloat(container.css('top'));
-    const fallbackLeft = window.scrollX + 8;
-    const fallbackTop = window.scrollY + 8;
-    container.css(clampContainerPosition(
-      Number.isFinite(currentLeft) ? currentLeft : fallbackLeft,
-      Number.isFinite(currentTop) ? currentTop : fallbackTop
-    ));
+    contentShellHelpers.keepContainerVisible();
   }
 
   function computeVisibleContainerPosition(pointerX, pointerY) {
-    const preferredLeft = pointerX + 20;
-    const preferredTop = pointerY + 25;
-    const width = container.outerWidth() || 0;
-    const height = container.outerHeight() || 0;
-    const viewportRight = window.scrollX + window.innerWidth - 8;
-    const viewportBottom = window.scrollY + window.innerHeight - 8;
-
-    let left = preferredLeft;
-    let top = preferredTop;
-
-    if (left + width > viewportRight) {
-      left = pointerX - width - 15;
+    if (!contentShellHelpers) {
+      return {left: pointerX, top: pointerY};
     }
-
-    if (top + height > viewportBottom) {
-      top = pointerY - height - 15;
-    }
-
-    return clampContainerPosition(left, top);
+    return contentShellHelpers.computeVisibleContainerPosition(pointerX, pointerY);
   }
 
   // ── Popup Rendering & State ────────────────────────────────
+  let hideTimeOut;
+  let hoverDelayTimeout;
+  let containerPinned = false;
+  let lastHoveredKey = '';
   const container = $('<div class="_JX_container" data-testid="jira-popup-root">');
   const previewOverlay = $(`
     <div class="_JX_preview_overlay" data-testid="jira-popup-preview-overlay">
@@ -5807,6 +3989,14 @@ async function mainAsyncLocal() {
   `);
   $(document.body).append(container);
   $(document.body).append(previewOverlay);
+  contentShellHelpers = createContentShellHelpers({
+    container,
+    previewOverlay,
+    getDisplayImageUrl,
+    isContainerPinned: () => containerPinned,
+    clearHideTimeout: () => clearTimeout(hideTimeOut),
+    pinContainer,
+  });
   async function renderIssuePopup(state) {
     if (!state?.issueData) {
       return;
@@ -5901,68 +4091,6 @@ async function mainAsyncLocal() {
     renderCommentEditMentionSuggestions();
     constrainEditPopoversToViewport();
   }
-  function invalidatePopupCaches() {
-    if (!popupState?.key) {
-      return;
-    }
-    issueCache.delete(popupState.key);
-    watcherListCache.delete(popupState.key);
-    changelogCache.delete(popupState.key);
-    editMetaCache.delete(popupState.key);
-    transitionOptionsCache.delete(popupState.key);
-    assigneeLocalOptionsCache.delete(popupState.key);
-    labelLocalOptionsCache.delete(popupState.key);
-    tempoAccountSearchCache.clear();
-    userPickerSearchCache.clear();
-    userPickerLocalOptionsCache.clear();
-    sharedAvatarUrls.clear();
-    watcherSearchCache.clear();
-    issueSearchCache.clear();
-    [...assigneeSearchCache.keys()].forEach(cacheKey => {
-      if (String(cacheKey).startsWith(`${popupState.key}__`)) {
-        assigneeSearchCache.delete(cacheKey);
-      }
-    });
-    if (popupState.issueData?.id) {
-      const issueId = String(popupState.issueData.id);
-      [...pullRequestCache.keys()].forEach(cacheKey => {
-        if (String(cacheKey).includes(issueId)) {
-          pullRequestCache.delete(cacheKey);
-        }
-      });
-    }
-  }
-
-  function updatePopupState(nextStateOrUpdater) {
-    popupState = typeof nextStateOrUpdater === 'function'
-      ? nextStateOrUpdater(popupState)
-      : nextStateOrUpdater;
-    return popupState;
-  }
-
-  function buildPopupInteractionReset(overrides = {}) {
-    return {
-      actionLoadingKey: '',
-      actionError: '',
-      lastActionSuccess: '',
-      actionsOpen: false,
-      historyOpen: false,
-      changelogData: null,
-      changelogLoading: false,
-      editState: null,
-      commentSession: null,
-      ...overrides,
-    };
-  }
-
-  function buildNextWatchersState(currentState = emptyWatchersState(), changes = {}) {
-    return {
-      ...emptyWatchersState(),
-      ...currentState,
-      ...changes,
-    };
-  }
-
   async function runWatcherSearch(queryText, requestId) {
     const normalizedQuery = String(queryText || '').trim();
     try {
@@ -6092,136 +4220,6 @@ async function mainAsyncLocal() {
     }).catch(() => {});
   }
 
-  async function renderUpdatedPopupState(nextStateOrUpdater) {
-    const nextState = updatePopupState(nextStateOrUpdater);
-    await renderIssuePopup(nextState);
-    return nextState;
-  }
-
-  async function refreshPopupIssueState(successMessage = '', options = {}) {
-    if (!popupState?.key) {
-      return;
-    }
-    const {showSnackBar = false, nextTimeTrackingEditState, refreshWatchersPanel = false, nextWatchersStateChanges = {}, scheduleWatchersFeedbackReset = false, preserveHistory = false} = options;
-    const popupKey = popupState.key;
-    const shouldRefreshWatchersPanel = !!(refreshWatchersPanel || popupState?.watchersState?.open);
-    const shouldKeepHistoryOpen = !!(preserveHistory && popupState?.historyOpen);
-    invalidatePopupCaches();
-    const [refreshedIssueData, refreshedWatcherData, refreshedChangelog] = await Promise.all([
-      getIssueMetaData(popupKey),
-      shouldRefreshWatchersPanel ? getIssueWatchers(popupKey).catch(() => null) : Promise.resolve(null),
-      shouldKeepHistoryOpen ? getIssueChangelog(popupKey).catch(() => ({histories: []})) : Promise.resolve(null)
-    ]);
-    await normalizeIssueImages(refreshedIssueData);
-
-    let refreshedPullRequests = [];
-    if (showPullRequests) {
-      try {
-        const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
-        refreshedPullRequests = normalizePullRequests(pullRequestResponse);
-      } catch (ex) {
-        refreshedPullRequests = [];
-      }
-    }
-
-    let quickActions = [];
-    try {
-      quickActions = await resolveQuickActions(refreshedIssueData);
-    } catch (ex) {
-      quickActions = [];
-    }
-
-    if (!popupState || popupState.key !== popupKey) {
-      return;
-    }
-
-    clearActionNoticeTimer();
-
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      issueData: refreshedIssueData,
-      pullRequests: refreshedPullRequests,
-      quickActions,
-      ...buildPopupInteractionReset({
-        lastActionSuccess: showSnackBar ? '' : successMessage,
-        historyOpen: shouldKeepHistoryOpen,
-        changelogData: shouldKeepHistoryOpen ? (refreshedChangelog || {histories: []}) : null,
-        changelogLoading: false,
-      }),
-      timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
-      watchersState: refreshedWatcherData
-        ? buildNextWatchersState(currentState.watchersState, {
-            loading: false,
-            errorMessage: '',
-            watchers: refreshedWatcherData.watchers,
-            pendingAddIds: [],
-            pendingRemoveIds: [],
-            searchResults: (currentState.watchersState?.searchResults || []).filter(result => {
-              return !refreshedWatcherData.watchers.some(watcher => watcher.id === result.id);
-            }),
-            focusSearch: !!currentState.watchersState?.open,
-            ...nextWatchersStateChanges,
-          })
-        : currentState.watchersState,
-    }));
-    if (scheduleWatchersFeedbackReset) {
-      scheduleWatchersFeedbackClear();
-    }
-    if (!showSnackBar && successMessage) {
-      scheduleActionNoticeClear(successMessage);
-    }
-    if (showSnackBar && successMessage) {
-      snackBar(successMessage);
-    }
-  }
-
-  async function handleDraftAttachmentUploaded(uploadedAttachment) {
-    const popupKey = popupState?.key;
-    const currentIssueData = popupState?.issueData;
-    if (!popupKey || !currentIssueData?.fields || !uploadedAttachment) {
-      return;
-    }
-
-    const normalizedAttachment = await normalizeIssueAttachmentImage({...uploadedAttachment});
-    let refreshedChangelog = null;
-    if (popupState?.historyOpen) {
-      changelogCache.delete(popupKey);
-      refreshedChangelog = await getIssueChangelog(popupKey).catch(() => popupState?.changelogData || {histories: []});
-    }
-
-    if (!popupState || popupState.key !== popupKey) {
-      return;
-    }
-
-    await renderUpdatedPopupState(currentState => {
-      const existingAttachments = Array.isArray(currentState?.issueData?.fields?.attachment)
-        ? currentState.issueData.fields.attachment
-        : [];
-      const normalizedFileName = normalizeHistoryAttachmentName(normalizedAttachment.filename);
-      const nextAttachments = [
-        ...existingAttachments.filter(attachment => {
-          const sameId = normalizedAttachment.id && attachment?.id && String(attachment.id) === String(normalizedAttachment.id);
-          const sameName = normalizedFileName &&
-            normalizeHistoryAttachmentName(attachment?.filename) === normalizedFileName;
-          return !(sameId || sameName);
-        }),
-        normalizedAttachment,
-      ];
-      return {
-        ...currentState,
-        issueData: {
-          ...currentState.issueData,
-          fields: {
-            ...currentState.issueData.fields,
-            attachment: nextAttachments,
-          }
-        },
-        changelogData: refreshedChangelog || currentState.changelogData,
-        changelogLoading: false,
-      };
-    });
-  }
-
   async function addWatcherFromPanel(watcherId) {
     const watcherState = popupState?.watchersState;
     if (!popupState?.issueData?.key || !watcherState) {
@@ -6246,6 +4244,7 @@ async function mainAsyncLocal() {
       await refreshPopupIssueState('', {
         refreshWatchersPanel: true,
         scheduleWatchersFeedbackReset: true,
+        scheduleWatchersFeedbackClear,
         nextWatchersStateChanges: {
           addFeedback: {
             id: watcherId,
@@ -6296,6 +4295,7 @@ async function mainAsyncLocal() {
       await refreshPopupIssueState('', {
         refreshWatchersPanel: true,
         scheduleWatchersFeedbackReset: true,
+        scheduleWatchersFeedbackClear,
         nextWatchersStateChanges: {
           removeFeedback: {
             id: watcherId,
@@ -7454,19 +5454,17 @@ async function mainAsyncLocal() {
 
   // ── Image Preview ─────────────────────────────────────────
   function closePreviewOverlay() {
-    previewOverlay.removeClass('is-open');
-    previewOverlay.find('img').attr('src', '');
+    if (!contentShellHelpers) {
+      return;
+    }
+    contentShellHelpers.closePreviewOverlay();
   }
 
   async function openPreviewOverlay(imageUrl) {
-    if (!imageUrl) {
+    if (!contentShellHelpers) {
       return;
     }
-    clearTimeout(hideTimeOut);
-    pinContainer({showNotice: false});
-    const displaySrc = await getDisplayImageUrl(imageUrl);
-    previewOverlay.find('img').attr('src', displaySrc || imageUrl);
-    previewOverlay.addClass('is-open');
+    await contentShellHelpers.openPreviewOverlay(imageUrl);
   }
 
   previewOverlay.on('click', function (e) {
@@ -7552,10 +5550,6 @@ async function mainAsyncLocal() {
     }, cooldown);
   }
 
-  let hideTimeOut;
-  let hoverDelayTimeout;
-  let containerPinned = false;
-  let lastHoveredKey = '';
   container.on('dragstop', () => {
     pinContainer();
   });

@@ -1,11 +1,17 @@
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const {test: base, expect, chromium} = require('@playwright/test');
+const {test: base, expect} = require('@playwright/test');
+const {chromium} = require('playwright');
 const {createMockJiraServer} = require('./mock-jira-server');
 const {createFixtureServer} = require('./fixture-server');
 
 const extensionPath = path.resolve(__dirname, '../../../jira-plugin');
+const EXTENSION_LAUNCH_RETRIES = 3;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 async function readStorageStateFile() {
   const storageStatePath = String(process.env.JIRA_LIVE_STORAGE_STATE || '').trim();
@@ -58,19 +64,35 @@ async function createTestExtensionCopy() {
 }
 
 async function launchExtensionContext() {
-  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-playwright-'));
-  const testExtensionPath = await createTestExtensionCopy();
   const storageState = await readStorageStateFile();
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    channel: 'chromium',
-    headless: true,
-    args: [
-      `--disable-extensions-except=${testExtensionPath}`,
-      `--load-extension=${testExtensionPath}`,
-    ],
-  });
-  await applyStorageState(context, storageState);
-  return {context, userDataDir, testExtensionPath};
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= EXTENSION_LAUNCH_RETRIES; attempt += 1) {
+    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-playwright-'));
+    const testExtensionPath = await createTestExtensionCopy();
+
+    try {
+      const context = await chromium.launchPersistentContext(userDataDir, {
+        channel: 'chromium',
+        headless: true,
+        args: [
+          `--disable-extensions-except=${testExtensionPath}`,
+          `--load-extension=${testExtensionPath}`,
+        ],
+      });
+      await applyStorageState(context, storageState);
+      return {context, userDataDir, testExtensionPath};
+    } catch (error) {
+      lastError = error;
+      await fs.rm(userDataDir, {recursive: true, force: true}).catch(() => {});
+      await fs.rm(testExtensionPath, {recursive: true, force: true}).catch(() => {});
+      if (attempt < EXTENSION_LAUNCH_RETRIES) {
+        await sleep(250 * attempt);
+      }
+    }
+  }
+
+  throw lastError || new Error('Could not launch Chromium extension context.');
 }
 
 async function getExtensionId(context) {

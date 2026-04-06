@@ -1013,6 +1013,35 @@ export function createPopupEditing(deps) {
     return exactOption ? [exactOption] : [];
   }
 
+  function toggleMultiSelectOptionFromInput(fieldKey) {
+    const popupState = getPopupState();
+    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.selectionMode !== 'multi') {
+      return false;
+    }
+
+    const visibleOptions = filterEditOptions(popupState.editState.options, popupState.editState.inputValue)
+      .filter(option => !option?.isGroupLabel);
+    const nextOption = visibleOptions[0];
+    if (!nextOption?.id) {
+      return false;
+    }
+
+    const selectedOptionIds = normalizeMultiSelectOptionIds(popupState.editState.selectedOptionIds);
+    const nextSelectedOptionIds = selectedOptionIds.includes(nextOption.id)
+      ? selectedOptionIds.filter(candidateId => candidateId !== nextOption.id)
+      : [...selectedOptionIds, nextOption.id];
+
+    setPopupState({
+      ...popupState,
+      editState: buildNextMultiSelectState(popupState.editState, {
+        selectedOptionIds: nextSelectedOptionIds,
+        errorMessage: '',
+      }),
+    });
+    renderIssuePopup(getPopupState()).catch(() => {});
+    return true;
+  }
+
   async function submitFieldEdit(fieldKey) {
     const popupState = getPopupState();
     if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.loadingOptions || popupState.editState.saving) {
@@ -1090,5 +1119,6 @@ export function createPopupEditing(deps) {
     normalizeMultiSelectOptionIds,
     resolveSelectedEditOptions,
     submitFieldEdit,
+    toggleMultiSelectOptionFromInput,
   };
 }

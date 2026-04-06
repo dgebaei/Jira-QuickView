@@ -2,9 +2,8 @@ require('./scripts/playwright/load-env-defaults');
 
 const path = require('path');
 
-const testResultsDir = process.env.PLAYWRIGHT_OUTPUT_DIR
-  ? path.resolve(__dirname, process.env.PLAYWRIGHT_OUTPUT_DIR)
-  : path.join(__dirname, 'tests/output/playwright/test-results');
+const outputRoot = path.join(__dirname, 'tests/output/playwright');
+const testResultsDir = path.join(outputRoot, 'test-results');
 
 module.exports = {
   testDir: path.join(__dirname, 'tests/e2e'),
@@ -17,7 +16,7 @@ module.exports = {
   retries: process.env.CI ? 2 : 0,
   reporter: [
     ['list'],
-    ['blob', {outputDir: path.join(__dirname, 'tests/output/playwright/blob-report')}],
+    ['html', {outputFolder: path.join(outputRoot, 'report'), open: 'never'}],
   ],
   outputDir: testResultsDir,
   use: {

@@ -4,14 +4,25 @@ const {spawnSync} = require('child_process');
 const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '../..');
-const runWithBlobScript = path.join(repoRoot, 'scripts/playwright/run-with-blob.js');
 
-function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g, '-');
+function deriveProjectEnv(label, currentEnv) {
+  const env = {...currentEnv};
+
+  if (label === 'mock-edge') {
+    env.MOCK = env.MOCK || 'true';
+  }
+
+  if (label === 'public-smoke') {
+    env.RUN_PUBLIC_JIRA_TESTS = env.RUN_PUBLIC_JIRA_TESTS || '1';
+    env.MOCK = env.MOCK || 'true';
+  }
+
+  if (label === 'live-authenticated') {
+    env.MOCK = env.MOCK || 'false';
+  }
+
+  return env;
 }
-
-const parentRunId = `all-tests-${timestamp()}`;
-const parentRunLabel = 'Test Run';
 
 const suites = [
   {label: 'mock-edge', args: ['--project=mock-edge', '--project=mock-popup']},
@@ -20,13 +31,9 @@ const suites = [
 ];
 
 for (const suite of suites) {
-  const result = spawnSync(process.execPath, [runWithBlobScript, ...suite.args], {
+  const result = spawnSync('npm', ['exec', '--', 'playwright', 'test', ...suite.args], {
     cwd: repoRoot,
-    env: {
-      ...process.env,
-      PLAYWRIGHT_PARENT_RUN_ID: parentRunId,
-      PLAYWRIGHT_PARENT_RUN_LABEL: parentRunLabel,
-    },
+    env: deriveProjectEnv(suite.label, process.env),
     stdio: 'inherit',
   });
 

@@ -247,7 +247,7 @@ function createState(origin) {
                 field: 'Description',
                 fieldId: 'description',
                 fromString: '',
-                toString: 'Updated rollout checklist for JRACLOUD-97000.\nCapture final screenshots before release.',
+                toString: 'This task needs - what?\n\n*A DESCRIPTION*, of course!\n\nAnd here it is - +_and a rich one!_+\n\n{noformat}With images:{noformat}\n\n!standalone-graph.png!\n\nUpdated rollout checklist for JRACLOUD-97000.\nCapture final screenshots before release.',
               },
             ],
           },
