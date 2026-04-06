@@ -101,14 +101,15 @@ export function createContentHistoryHelpers(options) {
 
   function buildHistoryHtmlPlaceholderStore() {
     const values = [];
+    const tokenPrefix = 'JXHISTORYHTMLTOKEN';
     return {
       restore(text) {
-        return String(text || '').replace(/__JX_HISTORY_HTML_(\d+)__/g, (match, index) => {
+        return String(text || '').replace(new RegExp(`${tokenPrefix}(\\d+)TOKEN`, 'g'), (match, index) => {
           return values[Number(index)] || '';
         });
       },
       stash(html) {
-        const token = `__JX_HISTORY_HTML_${values.length}__`;
+        const token = `${tokenPrefix}${values.length}TOKEN`;
         values.push(html);
         return token;
       }
@@ -159,18 +160,27 @@ export function createContentHistoryHelpers(options) {
       });
 
     let html = escapeHtml(withPlaceholders);
+    const inlineFormatBoundary = `[\\s([{"'>]`;
+    const inlineFormatTerminator = `[\\s).,!?;:\\]}'"<]`;
     const applyWrappedTag = (source, marker, tagName) => {
       const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return source.replace(
-        new RegExp(`(^|[\\s([{"'])${escapedMarker}([^\\n]+?)${escapedMarker}(?=($|[\\s).,!?;:\\]}'"]))`, 'gm'),
+        new RegExp(`(^|${inlineFormatBoundary})${escapedMarker}([^\\n]+?)${escapedMarker}(?=($|${inlineFormatTerminator}))`, 'gm'),
         (match, prefix, content, suffix) => `${prefix}<${tagName}>${content}</${tagName}>${suffix}`
       );
     };
 
-    html = applyWrappedTag(html, '*', 'strong');
-    html = applyWrappedTag(html, '_', 'em');
-    html = applyWrappedTag(html, '+', 'u');
-    html = applyWrappedTag(html, '-', 'del');
+    const inlineFormatters = [
+      ['*', 'strong'],
+      ['_', 'em'],
+      ['+', 'u'],
+      ['-', 'del'],
+    ];
+    // Run two passes so nested wiki markers like +_text_+ resolve after the
+    // outer formatting tag has already been injected.
+    inlineFormatters.concat(inlineFormatters).forEach(([marker, tagName]) => {
+      html = applyWrappedTag(html, marker, tagName);
+    });
     return placeholders.restore(html);
   }
 

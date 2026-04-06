@@ -523,18 +523,64 @@
         </div>
         {{/timeTrackingSection}}
 
+        {{#descriptionSection}}
         <div class="_JX_content_block" data-content-block="description">
-        <div class="_JX_description">
-        {{#description}}
-        <div class="_JX_section_title">Description</div>
+        <div class="_JX_description{{#isEditing}} is-editing{{/isEditing}}" data-testid="jira-popup-description-section">
+        <div class="_JX_section_title _JX_description_header">
+            <span class="_JX_description_header_main">Description</span>
+            {{#hasStatusMessage}}
+            <span class="_JX_description_status {{statusClass}}" data-testid="jira-popup-description-status">{{statusMessage}}</span>
+            {{/hasStatusMessage}}
+            <span class="_JX_description_header_actions">
+                {{#showEditButton}}
+                <button class="_JX_description_edit_button{{#showEmptyEditButton}} _JX_description_edit_button_text{{/showEmptyEditButton}}" type="button" title="{{editButtonTitle}}" data-testid="jira-popup-description-edit">
+                    {{#showEmptyEditButton}}<span>Edit</span>{{/showEmptyEditButton}}
+                    {{^showEmptyEditButton}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42L18.37 3.29a1.003 1.003 0 0 0-1.42 0L15.13 5.11l3.75 3.75 1.83-1.82z"></path></svg>{{/showEmptyEditButton}}
+                </button>
+                {{/showEditButton}}
+                {{#isEditing}}
+                <button class="_JX_description_header_button _JX_description_cancel" type="button" data-testid="jira-popup-description-cancel" {{cancelDisabledAttr}}>Cancel</button>
+                <button class="_JX_description_header_button _JX_description_save" type="button" data-testid="jira-popup-description-save" {{saveDisabledAttr}}>{{saveText}}</button>
+                {{/isEditing}}
+            </span>
+        </div>
         <div class="_JX_section_content">
-        <div class="_JX_description_text">
-            {{{description}}}
+        {{#isEditing}}
+        <div class="_JX_description_editor">
+            <div class="_JX_description_toolbar">
+                {{#toolbarButtons}}
+                <button class="_JX_description_toolbar_button" type="button" data-description-format="{{action}}" title="{{title}}">{{label}}</button>
+                {{/toolbarButtons}}
+            </div>
+            <textarea class="_JX_description_input" data-testid="jira-popup-description-input" rows="9" placeholder="{{inputPlaceholder}}">{{draftValue}}</textarea>
+            <div class="_JX_comment_uploads _JX_description_uploads" data-testid="jira-popup-description-uploads" {{^hasUploads}}hidden{{/hasUploads}}>
+                {{#uploads}}
+                <div class="_JX_comment_upload{{stateClass}}">
+                    {{#previewUrl}}<img class="_JX_comment_upload_preview" src="{{previewUrl}}" alt="{{fileName}}" />{{/previewUrl}}
+                    {{^previewUrl}}<span class="_JX_comment_upload_preview"></span>{{/previewUrl}}
+                    <span>
+                        <span class="_JX_comment_upload_name">{{fileName}}</span>
+                        <span class="_JX_comment_upload_status">{{statusText}}</span>
+                    </span>
+                </div>
+                {{/uploads}}
+            </div>
+        </div>
+        {{/isEditing}}
+        {{^isEditing}}
+        {{#hasContent}}
+        <div class="_JX_description_text" data-testid="jira-popup-description-rendered">
+            {{{bodyHtml}}}
+        </div>
+        {{/hasContent}}
+        {{^hasContent}}
+        <div class="_JX_description_empty" data-testid="jira-popup-description-empty">{{emptyText}}</div>
+        {{/hasContent}}
+        {{/isEditing}}
         </div>
         </div>
-        {{/description}}
         </div>
-        </div>
+        {{/descriptionSection}}
 
         {{#previewAttachments.length}}
         <div class="_JX_content_block" data-content-block="attachments">

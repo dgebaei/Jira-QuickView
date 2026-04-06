@@ -34,6 +34,15 @@ npm run build
 
 - For bugs that span optimistic UI state and persisted Jira data, verify all three states before calling the fix done:
   immediate interaction, same-page close/reopen, and full page reload.
+- Prefer a hybrid red-green workflow for behavior-heavy changes.
+  - Write a failing test first when the change has a clear behavioral contract:
+    bug fixes, regressions, state transitions, cache invalidation, persistence, save/cancel flows, keyboard interaction, or cross-reopen/reload behavior.
+  - Do not force test-first for purely visual polish or exploratory UI shaping:
+    spacing, icon choice, hover treatment, copy tweaks, or layout refinement can be implemented first and tested once the behavior settles.
+  - For larger UI features, start by locking down the core user-facing contract with a few failing end-to-end tests, then implement the minimal path to make them pass.
+  - After the core flow is green, refine the UX in smaller steps and add or tighten tests where the behavior becomes stable.
+  - When extracting helpers or pure logic, prefer small red-green cycles with focused unit-style or narrow integration coverage.
+  - Avoid dogmatic TDD. The goal is to protect behavior and reduce regressions, not to write tests before every line of UI code.
 - Prefer durable E2E assertions over transient snackbars, toasts, or status text. Assert on persisted UI state, disabled/enabled transitions, or refreshed values whenever possible.
 - When many Playwright suites fail while waiting for the extension service worker, treat it as an extension boot problem first. Inspect `jira-plugin/manifest.json`, extension build output, and the extension load path before changing product logic.
 - Before fixing CI, compare the last passing run and the first failing run so the suspected regression window is explicit.

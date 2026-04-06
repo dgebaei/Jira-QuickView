@@ -1,5 +1,6 @@
 export function createContentDisplayHelpers(options) {
   const buildActivityIndicatorsDefault = options?.buildActivityIndicatorsDefault;
+  const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
   const buildCommentsForDisplay = options?.buildCommentsForDisplay;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
@@ -200,7 +201,9 @@ export function createContentDisplayHelpers(options) {
       changelogData,
       changelogLoading,
     } = state;
+    const descriptionAttachmentLookup = buildHistoryAttachmentLookup(issueData.fields.attachment || []);
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
+      attachmentLookup: descriptionAttachmentLookup,
       imageMaxHeight: 180
     });
     const commentsForDisplay = await buildCommentsForDisplay(issueData, state.commentSession, state.commentReactionState);
@@ -228,6 +231,7 @@ export function createContentDisplayHelpers(options) {
       environmentCapability,
       labelSuggestionSupport,
       summaryCapability,
+      descriptionCapability,
       timeTrackingCapability,
       customFieldChips,
     ] = await Promise.all([
@@ -242,6 +246,7 @@ export function createContentDisplayHelpers(options) {
       displayFields.environment ? getEditableFieldCapability(issueData, 'environment') : Promise.resolve({editable: false, operations: []}),
       displayFields.labels ? hasLabelSuggestionSupport() : Promise.resolve(false),
       getEditableFieldCapability(issueData, 'summary').catch(() => ({editable: false, operations: []})),
+      getEditableFieldCapability(issueData, 'description').catch(() => ({editable: false, operations: []})),
       getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false})),
       buildCustomFieldChips(issueData, options?.customFields || [], state)
     ]);
@@ -252,6 +257,7 @@ export function createContentDisplayHelpers(options) {
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
     const environmentEditable = !!environmentCapability?.editable && (environmentCapability.operations || []).includes('set');
     const summaryEditable = !!summaryCapability?.editable && (summaryCapability.operations || []).includes('set');
+    const descriptionEditable = !!descriptionCapability?.editable && (descriptionCapability.operations || []).includes('set');
 
     const layoutRow1 = tooltipLayout?.row1 || ['issueType', 'status', 'priority'];
     const layoutRow2 = tooltipLayout?.row2 || ['epicParent', 'sprint', 'affects', 'fixVersions'];
@@ -401,6 +407,7 @@ export function createContentDisplayHelpers(options) {
     const maxMetaFieldsPerRow = Math.max(row2Chips.length, row3Chips.length);
 
     const issueUrl = instanceUrl + 'browse/' + key;
+    const showDescription = displayFields.description !== false;
     const showAttachments = layoutContentBlocks.includes('attachments');
     const showComments = layoutContentBlocks.includes('comments');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');
@@ -419,6 +426,49 @@ export function createContentDisplayHelpers(options) {
     const watcherCount = Number.isFinite(Number(watches.watchCount)) ? Number(watches.watchCount) : 0;
     const watchersPanel = buildWatchersPanelView(state);
     const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
+    const rawDescription = typeof issueData?.fields?.description === 'string' ? issueData.fields.description : '';
+    const descriptionState = state.descriptionEditState || null;
+    const descriptionHasChanges = String(descriptionState?.inputValue || '') !== String(descriptionState?.originalInputValue || '');
+    const descriptionUploads = Array.isArray(descriptionState?.uploads) ? descriptionState.uploads : [];
+    const descriptionHasUploadsInFlight = descriptionUploads.some(item => item?.status === 'uploading');
+    const descriptionSection = showDescription ? {
+      bodyHtml: normalizedDescription || '',
+      canEdit: descriptionEditable,
+      cancelDisabledAttr: descriptionState?.saving ? 'disabled' : '',
+      draftValue: String(descriptionState?.inputValue ?? rawDescription ?? ''),
+      editButtonLabel: normalizedDescription ? '' : 'Edit',
+      editButtonTitle: normalizedDescription ? 'Edit description' : 'Add description',
+      emptyText: 'No description yet.',
+      hasContent: !!normalizedDescription,
+      hasStatusMessage: !!descriptionState?.statusMessage,
+      hasUploads: descriptionUploads.length > 0,
+      inputPlaceholder: 'Add a description',
+      isEditing: !!descriptionState?.open,
+      saveDisabledAttr: (!descriptionHasChanges || !!descriptionState?.saving || descriptionHasUploadsInFlight) ? 'disabled' : '',
+      saveText: descriptionState?.saving ? 'Saving...' : (descriptionHasUploadsInFlight ? 'Uploading...' : 'Save'),
+      showEditButton: descriptionEditable && !descriptionState?.open,
+      showEmptyEditButton: descriptionEditable && !descriptionState?.open && !normalizedDescription,
+      statusClass: descriptionState?.statusKind === 'error'
+        ? '_JX_description_status_error'
+        : (descriptionState?.statusKind === 'success' ? '_JX_description_status_success' : '_JX_description_status_info'),
+      statusMessage: descriptionState?.statusMessage || '',
+      toolbarButtons: [
+        {action: 'bold', label: 'B', title: 'Bold'},
+        {action: 'italic', label: 'I', title: 'Italic'},
+        {action: 'underline', label: 'U', title: 'Underline'},
+        {action: 'bulletList', label: '• List', title: 'Bullet list'},
+        {action: 'numberList', label: '1. List', title: 'Numbered list'},
+        {action: 'codeBlock', label: '{ }', title: 'Code block'},
+      ],
+      uploads: descriptionUploads.map(item => ({
+        fileName: item.fileName,
+        previewUrl: item.previewUrl || item.displayUrl || '',
+        stateClass: item.status === 'error' ? ' is-error' : '',
+        statusText: item.status === 'uploading'
+          ? 'Uploading to Jira...'
+          : (item.status === 'uploaded' ? 'Attached to issue' : (item.errorMessage || 'Upload failed')),
+      })),
+    } : null;
     const displayData = {
       urlTitle: titleView.urlTitle,
       ticketKey: titleView.ticketKey,
@@ -429,7 +479,8 @@ export function createContentDisplayHelpers(options) {
       copyTicket: key,
       copyTitle: issueData.fields.summary,
       prs: [],
-      description: layoutContentBlocks.includes('description') ? normalizedDescription : '',
+      description: showDescription ? normalizedDescription : '',
+      descriptionSection,
       hasBodyContent: true,
       emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
         ? 'No description, attachments or comments.'

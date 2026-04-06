@@ -1,4 +1,5 @@
 const http = require('http');
+const {descriptionFieldToEditorText} = require('../../../jira-plugin/src/description-rich-text');
 
 const PNG_BUFFER = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAuklEQVR42u3RMQEAIAzAsPnBCeqmBD+4wAGI2A6OHDXQxMx99U9hAhABASIgQAQEiIAAMQKIgAARECACAkRAgAiIgAARECACAkRAgAiIgAARECACAkRAgAiIgAApNdZpDwgQIECAAAECBAgQIECAAAECBAgQIECAAAECBAgQIECAAAECRECACAgQAREQIAICRECACAgQAREQIAICRECACAgQAQFiAhABASIgQAQEiIAAERABASIgQNTcA6yedS4u1mgqAAAAAElFTkSuQmCC',
@@ -51,12 +52,94 @@ function buildAttachmentThumbnailUrl(origin, attachmentId) {
   return `${origin}/rest/api/2/attachment/thumbnail/${attachmentId}`;
 }
 
-function issueDescriptionHtml(origin) {
-  return `
-    <p>The mock issue exercises rich rendering, quick actions, and edit flows.</p>
-    <p><a href="${origin}/browse/JRACLOUD-97846">Open issue</a></p>
-    <p><img src="${origin}/assets/inline-image.png" alt="inline evidence" /></p>
-  `;
+function normalizeAttachmentMarkupName(reference) {
+  return String(reference || '')
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .split('|')[0]
+    .trim();
+}
+
+function renderWikiInlineText(text) {
+  const source = String(text || '');
+  const tokens = [];
+  let html = escapeHtml(source);
+
+  html = html.replace(/\[([^\]|]+)\|([^\]]+)\]/g, (match, label, url) => {
+    const token = `__JHL_LINK_${tokens.length}__`;
+    tokens.push(`<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`);
+    return token;
+  });
+
+  html = html.replace(/\bhttps?:\/\/[^\s<]+/g, url => {
+    const token = `__JHL_LINK_${tokens.length}__`;
+    tokens.push(`<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
+    return token;
+  });
+
+  html = html.replace(/\*([^*\n][^*]*?)\*/g, '<strong>$1</strong>');
+  html = html.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+  html = html.replace(/\+([^+\n]+)\+/g, '<u>$1</u>');
+  html = html.replace(/-([^\-\n]+)-/g, '<del>$1</del>');
+
+  tokens.forEach((tokenHtml, index) => {
+    html = html.replace(`__JHL_LINK_${index}__`, tokenHtml);
+  });
+  return html.replace(/\n/g, '<br/>');
+}
+
+function buildRenderedDescriptionBody(body, attachments = []) {
+  const source = String(body || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  if (!source.trim()) {
+    return '';
+  }
+
+  const attachmentByName = new Map(
+    (attachments || [])
+      .filter(attachment => attachment?.filename)
+      .map(attachment => [normalizeAttachmentMarkupName(attachment.filename), attachment])
+  );
+
+  return source
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(Boolean)
+    .map(block => {
+      const noformatMatch = block.match(/^\{(?:noformat|code)\}([\s\S]*?)\{(?:noformat|code)\}$/i);
+      if (noformatMatch) {
+        return `<p><code>${escapeHtml(noformatMatch[1])}</code></p>`;
+      }
+
+      const lines = block.split('\n').map(line => line.trim()).filter(Boolean);
+      if (lines.length > 0 && lines.every(line => line.startsWith('* '))) {
+        return `<ul>${lines.map(line => `<li>${renderWikiInlineText(line.slice(2))}</li>`).join('')}</ul>`;
+      }
+      if (lines.length > 0 && lines.every(line => line.startsWith('# '))) {
+        return `<ol>${lines.map(line => `<li>${renderWikiInlineText(line.slice(2))}</li>`).join('')}</ol>`;
+      }
+
+      const imageMatch = block.match(/^!([^!]+)!$/);
+      if (imageMatch) {
+        const fileName = normalizeAttachmentMarkupName(imageMatch[1]);
+        const attachment = attachmentByName.get(fileName);
+        if (!attachment) {
+          return `<p>${escapeHtml(block)}</p>`;
+        }
+        return `<p><img src="${escapeHtml(attachment.content)}" alt="${escapeHtml(fileName)}" /></p>`;
+      }
+
+      return `<p>${renderWikiInlineText(block)}</p>`;
+    })
+    .join('');
+}
+
+function issueDescriptionHtml(origin, state) {
+  return buildRenderedDescriptionBody(
+    descriptionFieldToEditorText(state.issue.description),
+    state.issue.attachments.concat(state.uploadedAttachments)
+  );
 }
 
 function createState(origin) {
@@ -131,6 +214,7 @@ function createState(origin) {
         name: 'Medium',
         iconUrl: `${origin}/assets/priority-medium.png`,
       },
+      description: `The mock issue exercises rich rendering, quick actions, and edit flows.\n\n[Open issue|${origin}/browse/JRACLOUD-97846]\n\n!evidence.png!`,
       reporter: {
         accountId: 'user-reporter',
         name: 'reporter',
@@ -416,7 +500,7 @@ function buildIssueResponse(origin, state, options = {}) {
     names,
     ...(options.includeChangelog ? {changelog: issue.changelog} : {}),
     renderedFields: {
-      description: issueDescriptionHtml(origin),
+      description: issueDescriptionHtml(origin, state),
       comment: {
         comments: issue.comments.map(comment => ({id: comment.id, body: comment.renderedBody})),
       },
@@ -463,6 +547,11 @@ function buildEditmeta(state) {
       labels: {
         name: 'Labels',
         operations: ['set'],
+      },
+      description: {
+        name: 'Description',
+        operations: ['set'],
+        schema: {type: 'string'},
       },
       versions: {
         name: 'Affects versions',
@@ -855,6 +944,28 @@ async function createMockJiraServer() {
           return;
         }
         state.issue.summary = nextSummary;
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'description')) {
+        const previousDescription = descriptionFieldToEditorText(state.issue.description);
+        state.issue.description = fields.description == null
+          ? ''
+          : fields.description;
+        state.issue.changelog.histories.unshift({
+          id: `history-description-${Date.now()}`,
+          created: new Date().toISOString(),
+          author: {
+            displayName: state.currentUser.displayName,
+            accountId: state.currentUser.accountId,
+          },
+          items: [
+            {
+              field: 'Description',
+              fieldId: 'description',
+              fromString: previousDescription,
+              toString: descriptionFieldToEditorText(state.issue.description),
+            },
+          ],
+        });
       }
       if (fields.priority?.id) {
         state.issue.priority = {

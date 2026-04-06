@@ -23,6 +23,12 @@ import {createPopupQuickActions} from 'src/popup-quick-actions';
 import {createPopupCommentComposer} from 'src/popup-comment-composer';
 import config from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
+const {
+  buildDescriptionEditorState,
+  buildMediaSingleNodeFromAttachment,
+  buildDescriptionSaveFieldValue,
+  isRichTextDescriptionDocument,
+} = require('src/description-rich-text');
 
 waitForDocument(() => require('src/content.scss'));
 
@@ -257,8 +263,12 @@ async function mainAsyncLocal() {
     contentBlocks: ['description', 'timeTracking', 'pullRequests', 'comments'],
     people: ['reporter', 'assignee']
   };
-  const layoutContentBlocks = (tooltipLayout.contentBlocks || ['description', 'timeTracking', 'pullRequests', 'comments'])
+  const defaultContentBlocks = ['description', 'timeTracking', 'pullRequests', 'comments'];
+  const layoutContentBlocks = (tooltipLayout.contentBlocks || defaultContentBlocks)
     .filter(k => displayFields[k] !== false);
+  if (displayFields.description !== false && !layoutContentBlocks.includes('description')) {
+    layoutContentBlocks.unshift('description');
+  }
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
   const hoverModifierKey = config.hoverModifierKey || 'any';
@@ -307,6 +317,22 @@ async function mainAsyncLocal() {
   });
   const emptyCommentUploadState = () => ({
     items: []
+  });
+  const emptyDescriptionEditState = () => ({
+    errorMessage: '',
+    hadFocus: false,
+    inputValue: '',
+    mediaNodesByMarkup: {},
+    open: false,
+    originalInputValue: '',
+    prefersRichText: false,
+    saving: false,
+    selectionEnd: 0,
+    selectionStart: 0,
+    statusKind: '',
+    statusMessage: '',
+    uploadSequence: 0,
+    uploads: [],
   });
   const emptyWatchersState = () => ({
     open: false,
@@ -436,6 +462,7 @@ async function mainAsyncLocal() {
   let labelSearchTimeoutId = null;
   let watchersFeedbackTimeoutId = null;
   let actionNoticeTimeoutId = null;
+  let descriptionStatusTimeoutId = null;
   let popupState = null;
   let activeCommentContext = null;
   let commentMentionState = emptyCommentMentionState();
@@ -1091,6 +1118,577 @@ async function mainAsyncLocal() {
     replaceMentionTextNodes(temp);
 
     return temp.innerHTML;
+  }
+
+  function createDescriptionEditState(issueData, overrides = {}) {
+    const descriptionFieldValue = issueData?.fields?.description;
+    const editorState = buildDescriptionEditorState(descriptionFieldValue);
+    const inferredMediaNodesByMarkup = {
+      ...buildDescriptionMediaNodesFromAttachments(editorState.text, issueData?.fields?.attachment),
+      ...buildDescriptionMediaNodesFromRenderedHtml(issueData?.renderedFields?.description, issueData?.fields?.attachment),
+      ...editorState.mediaNodesByMarkup,
+    };
+    const currentValue = editorState.text;
+    return {
+      ...emptyDescriptionEditState(),
+      inputValue: currentValue,
+      mediaNodesByMarkup: inferredMediaNodesByMarkup,
+      originalInputValue: currentValue,
+      prefersRichText: editorState.prefersRichText || isRichTextDescriptionDocument(descriptionFieldValue),
+      selectionStart: currentValue.length,
+      selectionEnd: currentValue.length,
+      ...overrides
+    };
+  }
+
+  function getDescriptionEditState() {
+    return popupState?.descriptionEditState || createDescriptionEditState(popupState?.issueData);
+  }
+
+  function setDescriptionEditState(nextState) {
+    if (!popupState) {
+      return;
+    }
+    popupState = {
+      ...popupState,
+      descriptionEditState: nextState
+    };
+  }
+
+  function clearDescriptionStatusTimer() {
+    if (descriptionStatusTimeoutId) {
+      clearTimeout(descriptionStatusTimeoutId);
+      descriptionStatusTimeoutId = null;
+    }
+  }
+
+  function scheduleDescriptionStatusClear(statusMessage) {
+    clearDescriptionStatusTimer();
+    if (!statusMessage) {
+      return;
+    }
+    descriptionStatusTimeoutId = setTimeout(() => {
+      descriptionStatusTimeoutId = null;
+      const currentState = popupState?.descriptionEditState;
+      if (!currentState || currentState.open || currentState.statusMessage !== statusMessage) {
+        return;
+      }
+      setDescriptionEditState({
+        ...currentState,
+        statusKind: '',
+        statusMessage: ''
+      });
+      renderIssuePopup(popupState).catch(() => {});
+    }, 5000);
+  }
+
+  function buildDescriptionImageMarkup(fileName) {
+    return `!${fileName}!`;
+  }
+
+  function extractDescriptionAttachmentId(url) {
+    const source = String(url || '');
+    if (!source) {
+      return '';
+    }
+    const match = source.match(/\/attachment\/(?:content|thumbnail)\/([^/?#]+)/i)
+      || source.match(/\/secure\/attachment\/([^/?#]+)/i);
+    return match ? String(match[1] || '').trim() : '';
+  }
+
+  function getDescriptionImageMarkups(text) {
+    return Array.from(String(text || '').matchAll(/!([^!\n]+)!/g))
+      .map(match => buildDescriptionImageMarkup(String(match[1] || '').split('|')[0].trim()))
+      .filter(Boolean);
+  }
+
+  function buildDescriptionMediaNodesFromAttachments(text, attachments = []) {
+    const attachmentByMarkup = new Map(
+      (Array.isArray(attachments) ? attachments : [])
+        .filter(attachment => attachment?.filename || attachment?.fileName)
+        .map(attachment => {
+          const fileName = String(attachment.filename || attachment.fileName || '').trim();
+          return [buildDescriptionImageMarkup(fileName), attachment];
+        })
+        .filter(([markup]) => markup !== '!!')
+    );
+    return getDescriptionImageMarkups(text).reduce((result, markup) => {
+      const mediaNode = buildMediaSingleNodeFromAttachment(attachmentByMarkup.get(markup));
+      if (mediaNode) {
+        result[markup] = mediaNode;
+      }
+      return result;
+    }, {});
+  }
+
+  function buildDescriptionMediaNodesFromRenderedHtml(html, attachments = []) {
+    if (!html || typeof DOMParser === 'undefined') {
+      return {};
+    }
+    const attachmentByName = new Map(
+      (Array.isArray(attachments) ? attachments : [])
+        .filter(attachment => attachment?.filename || attachment?.fileName)
+        .map(attachment => [String(attachment.filename || attachment.fileName || '').trim(), attachment])
+    );
+    const doc = new DOMParser().parseFromString(String(html), 'text/html');
+    return Array.from(doc.querySelectorAll('img')).reduce((result, image) => {
+      const fileName = String(image.getAttribute('alt') || '').trim();
+      if (!fileName) {
+        return result;
+      }
+      const attachmentId = String(
+        attachmentByName.get(fileName)?.id
+        || extractDescriptionAttachmentId(image.getAttribute('src'))
+        || ''
+      ).trim();
+      if (!attachmentId) {
+        return result;
+      }
+      result[buildDescriptionImageMarkup(fileName)] = buildMediaSingleNodeFromAttachment({
+        id: attachmentId,
+        fileName,
+        filename: fileName,
+      });
+      return result;
+    }, {});
+  }
+
+  async function descriptionFileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function buildDescriptionUploadFileName(file, currentState = getDescriptionEditState()) {
+    const mimeType = String(file?.type || '').toLowerCase();
+    const extensionByMimeType = {
+      'image/bmp': 'bmp',
+      'image/gif': 'gif',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    };
+    const extension = extensionByMimeType[mimeType] || 'png';
+    const nextSequence = Number(currentState?.uploadSequence || 0) + 1;
+    const timestamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 14);
+    return {
+      fileName: `pasted-image-${timestamp}-${nextSequence}.${extension}`,
+      uploadSequence: nextSequence,
+    };
+  }
+
+  function updateDescriptionDraft(nextValue, selectionStart, selectionEnd) {
+    if (!popupState?.descriptionEditState?.open) {
+      return;
+    }
+    setDescriptionEditState({
+      ...getDescriptionEditState(),
+      errorMessage: '',
+      inputValue: String(nextValue || ''),
+      prefersRichText: getDescriptionEditState().prefersRichText,
+      selectionStart: typeof selectionStart === 'number' ? selectionStart : String(nextValue || '').length,
+      selectionEnd: typeof selectionEnd === 'number' ? selectionEnd : String(nextValue || '').length,
+    });
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function replaceDescriptionSelection(replacer) {
+    const currentState = getDescriptionEditState();
+    if (!currentState.open) {
+      return;
+    }
+    const inputValue = String(currentState.inputValue || '');
+    const selectionStart = Math.max(0, Number(currentState.selectionStart || 0));
+    const selectionEnd = Math.max(selectionStart, Number(currentState.selectionEnd || selectionStart));
+    const nextSelection = replacer({
+      selectionEnd,
+      selectionStart,
+      selectedText: inputValue.slice(selectionStart, selectionEnd),
+      value: inputValue,
+    });
+    if (!nextSelection || typeof nextSelection.value !== 'string') {
+      return;
+    }
+    setDescriptionEditState({
+      ...currentState,
+      errorMessage: '',
+      inputValue: nextSelection.value,
+      prefersRichText: nextSelection.prefersRichText != null ? !!nextSelection.prefersRichText : currentState.prefersRichText,
+      selectionStart: Number.isInteger(nextSelection.selectionStart) ? nextSelection.selectionStart : selectionStart,
+      selectionEnd: Number.isInteger(nextSelection.selectionEnd) ? nextSelection.selectionEnd : selectionEnd,
+    });
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  function wrapDescriptionSelectionLineByLine(text, prefix, suffix) {
+    return String(text || '')
+      .split('\n')
+      .map(line => {
+        if (!line.trim()) {
+          return line;
+        }
+        const match = line.match(/^(\s*)(.*?)(\s*)$/);
+        const leadingWhitespace = match?.[1] || '';
+        const content = match?.[2] || '';
+        const trailingWhitespace = match?.[3] || '';
+        if (!content) {
+          return line;
+        }
+        return `${leadingWhitespace}${prefix}${content}${suffix}${trailingWhitespace}`;
+      })
+      .join('\n');
+  }
+
+  function wrapDescriptionSelection(prefix, suffix, placeholder) {
+    replaceDescriptionSelection(({value, selectedText, selectionStart, selectionEnd}) => {
+      const isMultilineSelection = !!selectedText && selectedText.includes('\n');
+      const content = selectedText
+        ? (isMultilineSelection
+            ? wrapDescriptionSelectionLineByLine(selectedText, prefix, suffix)
+            : selectedText)
+        : placeholder;
+      const wrapperPrefix = selectedText
+        ? (isMultilineSelection ? '' : prefix)
+        : prefix;
+      const wrapperSuffix = selectedText
+        ? (isMultilineSelection ? '' : suffix)
+        : suffix;
+      const nextValue = value.slice(0, selectionStart) + wrapperPrefix + content + wrapperSuffix + value.slice(selectionEnd);
+      const contentStart = selectionStart + wrapperPrefix.length;
+      const contentEnd = contentStart + content.length;
+      return {
+        value: nextValue,
+        selectionStart: selectedText ? selectionStart : contentStart,
+        selectionEnd: selectedText ? (selectionStart + wrapperPrefix.length + content.length + wrapperSuffix.length) : contentEnd,
+      };
+    });
+  }
+
+  function prefixDescriptionSelectedLines(prefix) {
+    replaceDescriptionSelection(({value, selectionStart, selectionEnd}) => {
+      const lineStart = value.lastIndexOf('\n', Math.max(0, selectionStart - 1)) + 1;
+      let lineEnd = value.indexOf('\n', selectionEnd);
+      if (lineEnd === -1) {
+        lineEnd = value.length;
+      }
+      const block = value.slice(lineStart, lineEnd);
+      const nextBlock = block.split('\n').map(line => `${prefix}${line}`).join('\n');
+      const nextValue = value.slice(0, lineStart) + nextBlock + value.slice(lineEnd);
+      return {
+        value: nextValue,
+        selectionStart: lineStart,
+        selectionEnd: lineStart + nextBlock.length,
+      };
+    });
+  }
+
+  function applyDescriptionFormatting(action) {
+    switch (String(action || '')) {
+      case 'bold':
+        wrapDescriptionSelection('*', '*', 'bold text');
+        return;
+      case 'italic':
+        wrapDescriptionSelection('_', '_', 'italic text');
+        return;
+      case 'underline':
+        wrapDescriptionSelection('+', '+', 'underlined text');
+        return;
+      case 'bulletList':
+        prefixDescriptionSelectedLines('* ');
+        return;
+      case 'numberList':
+        prefixDescriptionSelectedLines('# ');
+        return;
+      case 'codeBlock':
+        wrapDescriptionSelection('{noformat}\n', '\n{noformat}', 'code');
+        return;
+      default:
+        break;
+    }
+  }
+
+  async function deleteDescriptionDraftAttachment(attachmentId) {
+    if (!attachmentId) {
+      return;
+    }
+    try {
+      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/attachment/${attachmentId}`);
+    } catch (error) {
+      console.warn('[Jira HotLinker] Could not delete description draft attachment', {
+        attachmentId,
+        error: error?.message || String(error),
+      });
+    }
+  }
+
+  async function discardDescriptionEditStateSnapshot(stateSnapshot, options = {}) {
+    const {deleteUploaded = true} = options;
+    const uploads = Array.isArray(stateSnapshot?.uploads) ? stateSnapshot.uploads : [];
+    uploads.forEach(item => {
+      if (item?.previewUrl && item.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+    });
+    if (!deleteUploaded) {
+      return;
+    }
+    await Promise.all(uploads
+      .filter(item => item?.status === 'uploaded' && item.attachmentId)
+      .map(item => deleteDescriptionDraftAttachment(item.attachmentId)));
+  }
+
+  function startDescriptionEdit() {
+    if (!popupState?.issueData) {
+      return;
+    }
+    pinContainer({showNotice: false});
+    clearDescriptionStatusTimer();
+    setDescriptionEditState(createDescriptionEditState(popupState.issueData, {open: true}));
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  async function cancelDescriptionEdit() {
+    if (!popupState?.issueData) {
+      return;
+    }
+    const currentState = getDescriptionEditState();
+    const hadDraftUploads = Array.isArray(currentState.uploads) && currentState.uploads.length > 0;
+    clearDescriptionStatusTimer();
+    setDescriptionEditState({
+      ...currentState,
+      open: false,
+      saving: false,
+      statusKind: '',
+      statusMessage: '',
+    });
+    await discardDescriptionEditStateSnapshot(currentState, {deleteUploaded: true});
+    if (hadDraftUploads) {
+      await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
+    }
+    if (!popupState?.issueData) {
+      return;
+    }
+    setDescriptionEditState(createDescriptionEditState(popupState.issueData));
+    renderIssuePopup(popupState).catch(() => {});
+  }
+
+  async function uploadDescriptionImage(file) {
+    if (!popupState?.issueData?.key) {
+      return;
+    }
+    const currentState = getDescriptionEditState();
+    if (!currentState.open) {
+      return;
+    }
+    const issueKey = popupState.issueData.key;
+    const {fileName, uploadSequence} = buildDescriptionUploadFileName(file, currentState);
+    const localId = `description-upload-${Date.now()}-${uploadSequence}`;
+    const markup = buildDescriptionImageMarkup(fileName);
+    const previewUrl = URL.createObjectURL(file);
+    const displayUrl = await descriptionFileToDataUrl(file).catch(() => '');
+    const nextUploads = [
+      ...currentState.uploads,
+      {
+        attachmentId: '',
+        contentUrl: '',
+        displayUrl,
+        errorMessage: '',
+        fileName,
+        localId,
+        markup,
+        previewUrl,
+        status: 'uploading',
+        thumbnailUrl: '',
+      }
+    ];
+    const value = currentState.inputValue || '';
+    const selectionStart = Number.isInteger(currentState.selectionStart) ? currentState.selectionStart : value.length;
+    const selectionEnd = Number.isInteger(currentState.selectionEnd) ? currentState.selectionEnd : selectionStart;
+    const beforeValue = value.slice(0, selectionStart);
+    const afterValue = value.slice(selectionEnd);
+    const prefix = beforeValue
+      ? (beforeValue.endsWith('\n\n') ? '' : (beforeValue.endsWith('\n') ? '\n' : '\n\n'))
+      : '';
+    const suffix = afterValue
+      ? (afterValue.startsWith('\n\n') ? '' : (afterValue.startsWith('\n') ? '\n' : '\n\n'))
+      : '\n';
+    const insertedText = `${prefix}${markup}${suffix}`;
+    const nextInputValue = value.slice(0, selectionStart) + insertedText + value.slice(selectionEnd);
+    const nextCaret = selectionStart + insertedText.length;
+    setDescriptionEditState({
+      ...currentState,
+      errorMessage: '',
+      inputValue: nextInputValue,
+      selectionStart: nextCaret,
+      selectionEnd: nextCaret,
+      uploadSequence,
+      uploads: nextUploads,
+    });
+    await renderIssuePopup(popupState);
+
+    try {
+      const uploadResult = await uploadAttachment(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/attachments`, new File([file], fileName, {type: file.type || 'image/png'}));
+      const uploadedAttachment = (Array.isArray(uploadResult) ? uploadResult : [uploadResult]).find(item => item && item.id);
+      if (!uploadedAttachment) {
+        throw new Error('Attachment upload failed');
+      }
+      const latestState = getDescriptionEditState();
+      if (!popupState?.issueData || popupState.issueData.key !== issueKey || !latestState.open) {
+        await deleteDescriptionDraftAttachment(uploadedAttachment.id);
+        return;
+      }
+      const nextFileName = uploadedAttachment.filename || fileName;
+      const nextMarkup = buildDescriptionImageMarkup(nextFileName);
+      const nextInputValue = nextMarkup === markup
+        ? latestState.inputValue
+        : String(latestState.inputValue || '').replace(markup, nextMarkup);
+      const nextUploadsState = latestState.uploads.map(item => {
+        if (item.localId !== localId) {
+          return item;
+        }
+        return {
+          ...item,
+          attachmentId: uploadedAttachment.id,
+          contentUrl: toAbsoluteJiraUrl(uploadedAttachment.content),
+          displayUrl,
+          fileName: nextFileName,
+          markup: nextMarkup,
+          status: 'uploaded',
+          thumbnailUrl: toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
+        };
+      });
+      rememberDisplayImageUrl(toAbsoluteJiraUrl(uploadedAttachment.content), displayUrl);
+      rememberDisplayImageUrl(toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content), displayUrl);
+      setDescriptionEditState({
+        ...latestState,
+        inputValue: nextInputValue,
+        uploads: nextUploadsState,
+      });
+      await handleDraftAttachmentUploaded({
+        ...uploadedAttachment,
+        content: toAbsoluteJiraUrl(uploadedAttachment.content),
+        displayContent: displayUrl,
+        thumbnail: displayUrl || toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
+      });
+      await renderIssuePopup(popupState);
+    } catch (error) {
+      const latestState = getDescriptionEditState();
+      if (!latestState.open) {
+        return;
+      }
+      setDescriptionEditState({
+        ...latestState,
+        errorMessage: error?.message || error?.inner || 'Could not upload pasted image',
+        inputValue: String(latestState.inputValue || '').replace(markup, '').replace(/\n{3,}/g, '\n\n'),
+        uploads: latestState.uploads.map(item => {
+          if (item.localId !== localId) {
+            return item;
+          }
+          return {
+            ...item,
+            errorMessage: error?.message || error?.inner || 'Upload failed',
+            status: 'error',
+          };
+        }),
+      });
+      renderIssuePopup(popupState).catch(() => {});
+    }
+  }
+
+  async function saveDescriptionEdit() {
+    if (!popupState?.issueData) {
+      return;
+    }
+    const currentState = getDescriptionEditState();
+    if (!currentState.open || currentState.saving || currentState.uploads.some(item => item?.status === 'uploading')) {
+      return;
+    }
+    const nextDescription = String(currentState.inputValue || '');
+    if (nextDescription === String(currentState.originalInputValue || '')) {
+      return;
+    }
+    const attachmentByMarkup = {};
+    const issueAttachments = Array.isArray(popupState?.issueData?.fields?.attachment) ? popupState.issueData.fields.attachment : [];
+    issueAttachments.forEach(attachment => {
+      const fileName = String(attachment?.filename || '').trim();
+      if (!fileName) {
+        return;
+      }
+      attachmentByMarkup[buildDescriptionImageMarkup(fileName)] = attachment;
+    });
+    currentState.uploads.forEach(upload => {
+      const fileName = String(upload?.fileName || '').trim();
+      const attachmentId = String(upload?.attachmentId || '').trim();
+      if (!fileName || !attachmentId) {
+        return;
+      }
+      attachmentByMarkup[buildDescriptionImageMarkup(fileName)] = {
+        fileName,
+        filename: fileName,
+        id: attachmentId,
+      };
+    });
+    const saveValueResult = buildDescriptionSaveFieldValue(nextDescription, {
+      attachmentByMarkup,
+      mediaNodesByMarkup: currentState.mediaNodesByMarkup,
+      preferRichText: !!currentState.prefersRichText,
+    });
+    if (saveValueResult.error) {
+      setDescriptionEditState({
+        ...currentState,
+        errorMessage: saveValueResult.error,
+        saving: false,
+        statusKind: 'error',
+        statusMessage: saveValueResult.error,
+      });
+      await renderIssuePopup(popupState);
+      return;
+    }
+
+    clearDescriptionStatusTimer();
+    setDescriptionEditState({
+      ...currentState,
+      errorMessage: '',
+      saving: true,
+      statusKind: 'info',
+      statusMessage: 'Saving description...',
+    });
+    await renderIssuePopup(popupState);
+
+    try {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}`, {
+        fields: {
+          description: saveValueResult.value,
+        }
+      });
+      await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
+      if (!popupState?.issueData) {
+        return;
+      }
+      const successMessage = nextDescription.trim() ? 'Description updated' : 'Description cleared';
+      setDescriptionEditState(createDescriptionEditState(popupState.issueData, {
+        statusKind: 'success',
+        statusMessage: successMessage,
+      }));
+      await renderIssuePopup(popupState);
+      scheduleDescriptionStatusClear(successMessage);
+    } catch (error) {
+      const latestState = getDescriptionEditState();
+      const errorMessage = buildEditFieldError(error);
+      const displayError = /^HTTP \d+\b/i.test(errorMessage) ? 'Could not update description' : errorMessage;
+      setDescriptionEditState({
+        ...latestState,
+        errorMessage: displayError,
+        saving: false,
+        statusKind: 'error',
+        statusMessage: displayError,
+      });
+      await renderIssuePopup(popupState);
+    }
   }
 
   // ── Comments ──────────────────────────────────────────────
@@ -3907,6 +4505,7 @@ async function mainAsyncLocal() {
   const {buildPopupDisplayData} = createContentDisplayHelpers({
     buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
     buildActiveEditPresentation,
+    buildHistoryAttachmentLookup,
     buildCommentsForDisplay,
     buildCustomFieldChips,
     buildEditableFieldChip,
@@ -4069,6 +4668,19 @@ async function mainAsyncLocal() {
           const selectionEnd = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionEnd) ? state.timeTrackingEditState.selectionEnd : maxIndex);
           input.setSelectionRange(selectionStart, selectionEnd);
           }
+        }
+      } else if (state.descriptionEditState?.open) {
+        const input = container.find('._JX_description_input')[0];
+        if (input) {
+          const nextValue = String(state.descriptionEditState.inputValue || '');
+          if (input.value !== nextValue) {
+            input.value = nextValue;
+          }
+          input.focus();
+          const maxIndex = input.value.length;
+          const selectionStart = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionStart) ? state.descriptionEditState.selectionStart : maxIndex);
+          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionEnd) ? state.descriptionEditState.selectionEnd : maxIndex);
+          input.setSelectionRange(selectionStart, selectionEnd);
         }
       } else if (state.watchersState?.open && state.watchersState.focusSearch) {
         const input = container.find('._JX_watchers_search_input')[0];
@@ -5431,6 +6043,76 @@ async function mainAsyncLocal() {
     }
   });
 
+  $(document.body).on('click', '._JX_description_edit_button', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    startDescriptionEdit();
+  });
+
+  $(document.body).on('click', '._JX_description_cancel', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelDescriptionEdit().catch(() => {});
+  });
+
+  $(document.body).on('click', '._JX_description_save', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    saveDescriptionEdit().catch(() => {});
+  });
+
+  $(document.body).on('input', '._JX_description_input', function (e) {
+    e.stopPropagation();
+    updateDescriptionDraft(
+      e.currentTarget.value,
+      e.currentTarget.selectionStart,
+      e.currentTarget.selectionEnd
+    );
+  });
+
+  $(document.body).on('click keyup select', '._JX_description_input', function () {
+    const currentState = getDescriptionEditState();
+    if (!currentState.open) {
+      return;
+    }
+    setDescriptionEditState({
+      ...currentState,
+      hadFocus: true,
+      selectionStart: typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length,
+      selectionEnd: typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length,
+    });
+  });
+
+  $(document.body).on('keydown', '._JX_description_input', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelDescriptionEdit().catch(() => {});
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveDescriptionEdit().catch(() => {});
+    }
+  });
+
+  $(document.body).on('paste', '._JX_description_input', function (e) {
+    const imageFiles = getClipboardImageFiles(e);
+    if (!imageFiles.length || !popupState?.issueData?.key || !popupState?.descriptionEditState?.open) {
+      return;
+    }
+    e.preventDefault();
+    imageFiles.forEach(file => {
+      uploadDescriptionImage(file).catch(() => {});
+    });
+  });
+
+  $(document.body).on('mousedown', '._JX_description_toolbar_button', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    applyDescriptionFormatting(e.currentTarget.getAttribute('data-description-format'));
+  });
+
   $(document.body).on('input', '._JX_time_tracking_input', function (e) {
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-time-tracking-field') || '';
@@ -5503,9 +6185,12 @@ async function mainAsyncLocal() {
   function hideContainer() {
     lastHoveredKey = '';
     clearWatchersFeedbackTimer();
+    clearDescriptionStatusTimer();
     closePreviewOverlay();
+    const descriptionStateSnapshot = popupState?.descriptionEditState;
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
+    discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
     activeCommentContext = null;
     resetCommentMentionState();
     containerPinned = false;
@@ -5532,6 +6217,10 @@ async function mainAsyncLocal() {
           historyOpen: false
         };
         renderIssuePopup(popupState).catch(() => {});
+        return;
+      }
+      if (popupState?.descriptionEditState?.open) {
+        cancelDescriptionEdit().catch(() => {});
         return;
       }
       hideContainer();
@@ -5837,6 +6526,10 @@ async function mainAsyncLocal() {
   }
 
   function fetchAndShowPopup(key, pointerX, pointerY) {
+    if (popupState?.key && popupState.key !== key && popupState.descriptionEditState?.open) {
+      clearDescriptionStatusTimer();
+      discardDescriptionEditStateSnapshot(popupState.descriptionEditState, {deleteUploaded: true}).catch(() => {});
+    }
     (async function (cancelToken) {
       const issueData = await getIssueMetaData(key);
       await normalizeIssueImages(issueData);
@@ -5886,6 +6579,7 @@ async function mainAsyncLocal() {
         quickActions,
         commentReactionState,
         ...buildPopupInteractionReset(),
+        descriptionEditState: createDescriptionEditState(issueData),
         watchersState: emptyWatchersState(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
       });
