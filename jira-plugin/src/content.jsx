@@ -23,6 +23,12 @@ import {createPopupQuickActions} from 'src/popup-quick-actions';
 import {createPopupCommentComposer} from 'src/popup-comment-composer';
 import config from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
+const {
+  buildDescriptionEditorState,
+  buildMediaSingleNodeFromAttachment,
+  buildDescriptionSaveFieldValue,
+  isRichTextDescriptionDocument,
+} = require('src/description-rich-text');
 
 waitForDocument(() => require('src/content.scss'));
 
@@ -257,8 +263,12 @@ async function mainAsyncLocal() {
     contentBlocks: ['description', 'timeTracking', 'pullRequests', 'comments'],
     people: ['reporter', 'assignee']
   };
-  const layoutContentBlocks = (tooltipLayout.contentBlocks || ['description', 'timeTracking', 'pullRequests', 'comments'])
+  const defaultContentBlocks = ['description', 'timeTracking', 'pullRequests', 'comments'];
+  const layoutContentBlocks = (tooltipLayout.contentBlocks || defaultContentBlocks)
     .filter(k => displayFields[k] !== false);
+  if (displayFields.description !== false && !layoutContentBlocks.includes('description')) {
+    layoutContentBlocks.unshift('description');
+  }
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
   const hoverModifierKey = config.hoverModifierKey || 'any';
@@ -312,8 +322,10 @@ async function mainAsyncLocal() {
     errorMessage: '',
     hadFocus: false,
     inputValue: '',
+    mediaNodesByMarkup: {},
     open: false,
     originalInputValue: '',
+    prefersRichText: false,
     saving: false,
     selectionEnd: 0,
     selectionStart: 0,
@@ -1109,13 +1121,20 @@ async function mainAsyncLocal() {
   }
 
   function createDescriptionEditState(issueData, overrides = {}) {
-    const currentValue = typeof issueData?.fields?.description === 'string'
-      ? issueData.fields.description
-      : '';
+    const descriptionFieldValue = issueData?.fields?.description;
+    const editorState = buildDescriptionEditorState(descriptionFieldValue);
+    const inferredMediaNodesByMarkup = {
+      ...buildDescriptionMediaNodesFromAttachments(editorState.text, issueData?.fields?.attachment),
+      ...buildDescriptionMediaNodesFromRenderedHtml(issueData?.renderedFields?.description, issueData?.fields?.attachment),
+      ...editorState.mediaNodesByMarkup,
+    };
+    const currentValue = editorState.text;
     return {
       ...emptyDescriptionEditState(),
       inputValue: currentValue,
+      mediaNodesByMarkup: inferredMediaNodesByMarkup,
       originalInputValue: currentValue,
+      prefersRichText: editorState.prefersRichText || isRichTextDescriptionDocument(descriptionFieldValue),
       selectionStart: currentValue.length,
       selectionEnd: currentValue.length,
       ...overrides
@@ -1167,6 +1186,73 @@ async function mainAsyncLocal() {
     return `!${fileName}!`;
   }
 
+  function extractDescriptionAttachmentId(url) {
+    const source = String(url || '');
+    if (!source) {
+      return '';
+    }
+    const match = source.match(/\/attachment\/(?:content|thumbnail)\/([^/?#]+)/i)
+      || source.match(/\/secure\/attachment\/([^/?#]+)/i);
+    return match ? String(match[1] || '').trim() : '';
+  }
+
+  function getDescriptionImageMarkups(text) {
+    return Array.from(String(text || '').matchAll(/!([^!\n]+)!/g))
+      .map(match => buildDescriptionImageMarkup(String(match[1] || '').split('|')[0].trim()))
+      .filter(Boolean);
+  }
+
+  function buildDescriptionMediaNodesFromAttachments(text, attachments = []) {
+    const attachmentByMarkup = new Map(
+      (Array.isArray(attachments) ? attachments : [])
+        .filter(attachment => attachment?.filename || attachment?.fileName)
+        .map(attachment => {
+          const fileName = String(attachment.filename || attachment.fileName || '').trim();
+          return [buildDescriptionImageMarkup(fileName), attachment];
+        })
+        .filter(([markup]) => markup !== '!!')
+    );
+    return getDescriptionImageMarkups(text).reduce((result, markup) => {
+      const mediaNode = buildMediaSingleNodeFromAttachment(attachmentByMarkup.get(markup));
+      if (mediaNode) {
+        result[markup] = mediaNode;
+      }
+      return result;
+    }, {});
+  }
+
+  function buildDescriptionMediaNodesFromRenderedHtml(html, attachments = []) {
+    if (!html || typeof DOMParser === 'undefined') {
+      return {};
+    }
+    const attachmentByName = new Map(
+      (Array.isArray(attachments) ? attachments : [])
+        .filter(attachment => attachment?.filename || attachment?.fileName)
+        .map(attachment => [String(attachment.filename || attachment.fileName || '').trim(), attachment])
+    );
+    const doc = new DOMParser().parseFromString(String(html), 'text/html');
+    return Array.from(doc.querySelectorAll('img')).reduce((result, image) => {
+      const fileName = String(image.getAttribute('alt') || '').trim();
+      if (!fileName) {
+        return result;
+      }
+      const attachmentId = String(
+        attachmentByName.get(fileName)?.id
+        || extractDescriptionAttachmentId(image.getAttribute('src'))
+        || ''
+      ).trim();
+      if (!attachmentId) {
+        return result;
+      }
+      result[buildDescriptionImageMarkup(fileName)] = buildMediaSingleNodeFromAttachment({
+        id: attachmentId,
+        fileName,
+        filename: fileName,
+      });
+      return result;
+    }, {});
+  }
+
   async function descriptionFileToDataUrl(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1203,6 +1289,7 @@ async function mainAsyncLocal() {
       ...getDescriptionEditState(),
       errorMessage: '',
       inputValue: String(nextValue || ''),
+      prefersRichText: getDescriptionEditState().prefersRichText,
       selectionStart: typeof selectionStart === 'number' ? selectionStart : String(nextValue || '').length,
       selectionEnd: typeof selectionEnd === 'number' ? selectionEnd : String(nextValue || '').length,
     });
@@ -1230,22 +1317,53 @@ async function mainAsyncLocal() {
       ...currentState,
       errorMessage: '',
       inputValue: nextSelection.value,
+      prefersRichText: nextSelection.prefersRichText != null ? !!nextSelection.prefersRichText : currentState.prefersRichText,
       selectionStart: Number.isInteger(nextSelection.selectionStart) ? nextSelection.selectionStart : selectionStart,
       selectionEnd: Number.isInteger(nextSelection.selectionEnd) ? nextSelection.selectionEnd : selectionEnd,
     });
     renderIssuePopup(popupState).catch(() => {});
   }
 
+  function wrapDescriptionSelectionLineByLine(text, prefix, suffix) {
+    return String(text || '')
+      .split('\n')
+      .map(line => {
+        if (!line.trim()) {
+          return line;
+        }
+        const match = line.match(/^(\s*)(.*?)(\s*)$/);
+        const leadingWhitespace = match?.[1] || '';
+        const content = match?.[2] || '';
+        const trailingWhitespace = match?.[3] || '';
+        if (!content) {
+          return line;
+        }
+        return `${leadingWhitespace}${prefix}${content}${suffix}${trailingWhitespace}`;
+      })
+      .join('\n');
+  }
+
   function wrapDescriptionSelection(prefix, suffix, placeholder) {
     replaceDescriptionSelection(({value, selectedText, selectionStart, selectionEnd}) => {
-      const content = selectedText || placeholder;
-      const nextValue = value.slice(0, selectionStart) + prefix + content + suffix + value.slice(selectionEnd);
-      const contentStart = selectionStart + prefix.length;
+      const isMultilineSelection = !!selectedText && selectedText.includes('\n');
+      const content = selectedText
+        ? (isMultilineSelection
+            ? wrapDescriptionSelectionLineByLine(selectedText, prefix, suffix)
+            : selectedText)
+        : placeholder;
+      const wrapperPrefix = selectedText
+        ? (isMultilineSelection ? '' : prefix)
+        : prefix;
+      const wrapperSuffix = selectedText
+        ? (isMultilineSelection ? '' : suffix)
+        : suffix;
+      const nextValue = value.slice(0, selectionStart) + wrapperPrefix + content + wrapperSuffix + value.slice(selectionEnd);
+      const contentStart = selectionStart + wrapperPrefix.length;
       const contentEnd = contentStart + content.length;
       return {
         value: nextValue,
         selectionStart: selectedText ? selectionStart : contentStart,
-        selectionEnd: selectedText ? (selectionEnd + prefix.length + suffix.length) : contentEnd,
+        selectionEnd: selectedText ? (selectionStart + wrapperPrefix.length + content.length + wrapperSuffix.length) : contentEnd,
       };
     });
   }
@@ -1493,6 +1611,43 @@ async function mainAsyncLocal() {
     if (nextDescription === String(currentState.originalInputValue || '')) {
       return;
     }
+    const attachmentByMarkup = {};
+    const issueAttachments = Array.isArray(popupState?.issueData?.fields?.attachment) ? popupState.issueData.fields.attachment : [];
+    issueAttachments.forEach(attachment => {
+      const fileName = String(attachment?.filename || '').trim();
+      if (!fileName) {
+        return;
+      }
+      attachmentByMarkup[buildDescriptionImageMarkup(fileName)] = attachment;
+    });
+    currentState.uploads.forEach(upload => {
+      const fileName = String(upload?.fileName || '').trim();
+      const attachmentId = String(upload?.attachmentId || '').trim();
+      if (!fileName || !attachmentId) {
+        return;
+      }
+      attachmentByMarkup[buildDescriptionImageMarkup(fileName)] = {
+        fileName,
+        filename: fileName,
+        id: attachmentId,
+      };
+    });
+    const saveValueResult = buildDescriptionSaveFieldValue(nextDescription, {
+      attachmentByMarkup,
+      mediaNodesByMarkup: currentState.mediaNodesByMarkup,
+      preferRichText: !!currentState.prefersRichText,
+    });
+    if (saveValueResult.error) {
+      setDescriptionEditState({
+        ...currentState,
+        errorMessage: saveValueResult.error,
+        saving: false,
+        statusKind: 'error',
+        statusMessage: saveValueResult.error,
+      });
+      await renderIssuePopup(popupState);
+      return;
+    }
 
     clearDescriptionStatusTimer();
     setDescriptionEditState({
@@ -1507,7 +1662,7 @@ async function mainAsyncLocal() {
     try {
       await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}`, {
         fields: {
-          description: nextDescription.trim() ? nextDescription : null,
+          description: saveValueResult.value,
         }
       });
       await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
@@ -4350,6 +4505,7 @@ async function mainAsyncLocal() {
   const {buildPopupDisplayData} = createContentDisplayHelpers({
     buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
     buildActiveEditPresentation,
+    buildHistoryAttachmentLookup,
     buildCommentsForDisplay,
     buildCustomFieldChips,
     buildEditableFieldChip,
@@ -4516,6 +4672,10 @@ async function mainAsyncLocal() {
       } else if (state.descriptionEditState?.open) {
         const input = container.find('._JX_description_input')[0];
         if (input) {
+          const nextValue = String(state.descriptionEditState.inputValue || '');
+          if (input.value !== nextValue) {
+            input.value = nextValue;
+          }
           input.focus();
           const maxIndex = input.value.length;
           const selectionStart = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionStart) ? state.descriptionEditState.selectionStart : maxIndex);

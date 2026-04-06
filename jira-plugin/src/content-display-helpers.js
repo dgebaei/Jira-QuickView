@@ -1,5 +1,6 @@
 export function createContentDisplayHelpers(options) {
   const buildActivityIndicatorsDefault = options?.buildActivityIndicatorsDefault;
+  const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
   const buildCommentsForDisplay = options?.buildCommentsForDisplay;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
@@ -200,7 +201,9 @@ export function createContentDisplayHelpers(options) {
       changelogData,
       changelogLoading,
     } = state;
+    const descriptionAttachmentLookup = buildHistoryAttachmentLookup(issueData.fields.attachment || []);
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
+      attachmentLookup: descriptionAttachmentLookup,
       imageMaxHeight: 180
     });
     const commentsForDisplay = await buildCommentsForDisplay(issueData, state.commentSession, state.commentReactionState);
@@ -404,7 +407,7 @@ export function createContentDisplayHelpers(options) {
     const maxMetaFieldsPerRow = Math.max(row2Chips.length, row3Chips.length);
 
     const issueUrl = instanceUrl + 'browse/' + key;
-    const showDescription = layoutContentBlocks.includes('description');
+    const showDescription = displayFields.description !== false;
     const showAttachments = layoutContentBlocks.includes('attachments');
     const showComments = layoutContentBlocks.includes('comments');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');

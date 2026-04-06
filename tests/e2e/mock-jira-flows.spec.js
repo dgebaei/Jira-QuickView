@@ -305,7 +305,16 @@ test('always shows the Description section and saves plain text edits through re
       },
     };
   });
-  await configureExtension(optionsPage, baseConfig(servers, target));
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    customFields: target.mode === 'mock' ? [{fieldId: 'customfield_12345', row: 2}] : [],
+    tooltipLayout: {
+      row1: ['issueType', 'status', 'priority'],
+      row2: ['epicParent', 'sprint', 'affects', 'fixVersions'],
+      row3: ['environment', 'labels'],
+      contentBlocks: ['timeTracking', 'pullRequests', 'comments'],
+      people: ['reporter', 'assignee'],
+    },
+  }, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = popupModel(page);
@@ -356,6 +365,270 @@ test('keeps the Description section visible after clearing it in mocked mode @mo
   await hoverIssueKey(page, '#popup-key');
   await expect(descriptionBlock).toContainText('Description');
   await expect(page.getByTestId('jira-popup-description-empty')).toContainText('No description yet.');
+
+  await page.close();
+});
+
+test('saves Description rich formatting through toolbar actions in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Description rich-text coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const descriptionBlock = page.locator('[data-content-block="description"]');
+  await page.getByTestId('jira-popup-description-edit').click();
+
+  const input = page.getByTestId('jira-popup-description-input');
+  await input.fill('This task needs what?');
+  await input.evaluate(element => {
+    element.focus();
+    element.setSelectionRange(5, 9);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await page.locator('button[data-description-format="bold"]').click();
+
+  await input.evaluate(element => {
+    const start = element.value.indexOf('what');
+    element.focus();
+    element.setSelectionRange(start, start + 4);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await page.locator('button[data-description-format="italic"]').click();
+  await page.getByTestId('jira-popup-description-save').click();
+
+  await expect(descriptionBlock.locator('strong', {hasText: 'task'})).toHaveCount(1);
+  await expect(descriptionBlock.locator('em', {hasText: 'what'})).toHaveCount(1);
+
+  await page.locator('._JX_close_button').click();
+  await expect(page.locator('._JX_title')).toHaveCount(0);
+  await hoverIssueKey(page, '#popup-key');
+  await expect(descriptionBlock.locator('strong', {hasText: 'task'})).toHaveCount(1);
+  await expect(descriptionBlock.locator('em', {hasText: 'what'})).toHaveCount(1);
+
+  await page.getByTestId('jira-popup-description-edit').click();
+  await expect(page.getByTestId('jira-popup-description-input')).toHaveValue('This *task* needs _what_?');
+
+  await page.close();
+});
+
+test('applies inline Description formatting line by line for multiline selections in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Description multiline formatting coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const descriptionBlock = page.locator('[data-content-block="description"]');
+
+  await page.getByTestId('jira-popup-description-edit').click();
+  const input = page.getByTestId('jira-popup-description-input');
+  await input.fill('blu\nblu2\nblu3');
+  await input.evaluate(element => {
+    element.focus();
+    element.setSelectionRange(0, element.value.length);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await page.locator('button[data-description-format="italic"]').click();
+  await expect(input).toHaveValue('_blu_\n_blu2_\n_blu3_');
+  await expect(input).toHaveJSProperty('selectionStart', 0);
+  await expect(input).toHaveJSProperty('selectionEnd', '_blu_\n_blu2_\n_blu3_'.length);
+  await page.getByTestId('jira-popup-description-save').click();
+
+  await expect(descriptionBlock.locator('em')).toHaveText(['blu', 'blu2', 'blu3']);
+
+  await page.getByTestId('jira-popup-description-edit').click();
+  await expect(page.getByTestId('jira-popup-description-input')).toHaveValue('_blu_\n_blu2_\n_blu3_');
+
+  await page.close();
+});
+
+test('preserves a leading newline when editing Description in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Description leading-newline coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  await page.getByTestId('jira-popup-description-edit').click();
+  const input = page.getByTestId('jira-popup-description-input');
+  await input.fill('bla');
+  await input.evaluate(element => {
+    element.focus();
+    element.setSelectionRange(0, 0);
+  });
+  await input.press('Enter');
+
+  await expect(input).toHaveValue('\nbla');
+  await expect(input).toHaveJSProperty('selectionStart', 1);
+  await expect(input).toHaveJSProperty('selectionEnd', 1);
+
+  await page.close();
+});
+
+test('preserves existing Description images when saving rich-text edits in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Description rich-text image coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  let forceInitialRichDescription = true;
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^?]+\\?fields=[^#]+$', (payload, request) => {
+    if (request.method() !== 'GET') {
+      return payload;
+    }
+    const payloadWithAttachment = {
+      ...payload,
+      fields: {
+        ...payload.fields,
+        attachment: [
+          ...(payload.fields?.attachment || []),
+          {
+            id: 'attachment-001',
+            filename: 'image-20260330-204037.png',
+            mimeType: 'image/png',
+            content: `${target.instanceUrl}rest/api/2/attachment/content/attachment-001`,
+            thumbnail: `${target.instanceUrl}rest/api/2/attachment/thumbnail/attachment-001`,
+          },
+        ],
+      },
+    };
+    if (!forceInitialRichDescription) {
+      return payloadWithAttachment;
+    }
+    forceInitialRichDescription = false;
+    return {
+      ...payloadWithAttachment,
+      fields: {
+        ...payloadWithAttachment.fields,
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{type: 'text', text: 'This task needs what?'}],
+            },
+            {
+              type: 'mediaSingle',
+              content: [
+                {
+                  type: 'media',
+                  attrs: {
+                    alt: 'evidence.png',
+                    collection: '',
+                    id: 'attachment-001',
+                    type: 'file',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      renderedFields: {
+        ...payload.renderedFields,
+        description: `<p>This task needs what?</p><p><img src="${target.instanceUrl}rest/api/2/attachment/content/attachment-001" alt="evidence.png" /></p>`,
+      },
+    };
+  });
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const descriptionBlock = page.locator('[data-content-block="description"]');
+
+  await expect(descriptionBlock.locator('img[alt="evidence.png"]')).toHaveCount(1);
+  await page.getByTestId('jira-popup-description-edit').click();
+  const input = page.getByTestId('jira-popup-description-input');
+  await expect(input).toHaveValue('This task needs what?\n\n!evidence.png!');
+
+  await input.evaluate(element => {
+    element.focus();
+    element.setSelectionRange(5, 9);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await page.locator('button[data-description-format="bold"]').click();
+  await page.getByTestId('jira-popup-description-save').click();
+
+  await expect(page.getByTestId('jira-popup-description-status')).toContainText('Description updated');
+  await expect(descriptionBlock.locator('strong', {hasText: 'task'})).toHaveCount(1);
+  await expect(descriptionBlock.locator('img[alt="evidence.png"]')).toHaveCount(1);
+
+  await page.locator('._JX_close_button').click();
+  await expect(page.locator('._JX_title')).toHaveCount(0);
+  await hoverIssueKey(page, '#popup-key');
+  await expect(descriptionBlock.locator('strong', {hasText: 'task'})).toHaveCount(1);
+  await expect(descriptionBlock.locator('img[alt="evidence.png"]')).toHaveCount(1);
+
+  await page.close();
+});
+
+test('preserves wiki-style Description storage when formatting existing image markup in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Description rich-text image coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  let savedDescriptionPayload = null;
+  await optionsPage.context().route('**/rest/api/2/issue/**', async route => {
+    const request = route.request();
+    if (
+      request.method() === 'PUT' &&
+      request.url().includes('/rest/api/2/issue/') &&
+      !request.url().includes('/comment') &&
+      !request.url().includes('/worklog')
+    ) {
+      savedDescriptionPayload = JSON.parse(request.postData() || '{}');
+    }
+    await route.continue();
+  });
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^?]+\\?fields=[^#]+$', (payload, request) => {
+    if (request.method() !== 'GET') {
+      return payload;
+    }
+    return {
+      ...payload,
+      fields: {
+        ...payload.fields,
+        attachment: [
+          ...(Array.isArray(payload.fields?.attachment) ? payload.fields.attachment : []),
+          {
+            id: 'attachment-001',
+            filename: 'image-20260330-204037.png',
+            mimeType: 'image/png',
+            content: `${target.instanceUrl}rest/api/2/attachment/content/attachment-001`,
+            thumbnail: `${target.instanceUrl}rest/api/2/attachment/thumbnail/attachment-001`,
+          },
+        ],
+        description: 'This task needs what?\n\n!image-20260330-204037.png|width=401,alt="image-20260330-204037.png"!',
+      },
+      renderedFields: {
+        ...payload.renderedFields,
+        description: `<p>This task needs what?</p><p><img src="${target.instanceUrl}rest/api/2/attachment/content/attachment-001" alt="image-20260330-204037.png" /></p>`,
+      },
+    };
+  });
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  await page.getByTestId('jira-popup-description-edit').click();
+  const input = page.getByTestId('jira-popup-description-input');
+  await expect(input).toHaveValue('This task needs what?\n\n!image-20260330-204037.png|width=401,alt="image-20260330-204037.png"!');
+  await input.evaluate(element => {
+    element.focus();
+    element.setSelectionRange(0, 4);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await page.locator('button[data-description-format="italic"]').click();
+  await page.getByTestId('jira-popup-description-save').click();
+
+  await expect(page.getByTestId('jira-popup-description-status')).toContainText('Description updated');
+  await expect(page.getByTestId('jira-popup-description-status')).not.toContainText('New pasted images');
+  await expect.poll(() => savedDescriptionPayload).not.toBeNull();
+  expect(typeof savedDescriptionPayload.fields.description).toBe('string');
+  expect(savedDescriptionPayload.fields.description).toContain('_This_ task needs what?');
+  expect(savedDescriptionPayload.fields.description).toContain('!image-20260330-204037.png|width=401,alt="image-20260330-204037.png"!');
 
   await page.close();
 });
@@ -425,6 +698,39 @@ test('supports pasted images while editing the Description in mocked mode @mock-
   await expect(page.locator('._JX_title')).toHaveCount(0);
   await hoverIssueKey(page, '#popup-key');
   await expect(page.getByTestId('jira-popup-description-rendered').locator('img._JX_previewable').last()).toBeVisible();
+
+  await page.close();
+});
+
+test('supports pasted images together with rich formatting in the Description in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Description image coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+
+  await page.getByTestId('jira-popup-description-edit').click();
+  const input = page.getByTestId('jira-popup-description-input');
+  await input.fill('This task needs context');
+  await input.evaluate(element => {
+    element.focus();
+    element.setSelectionRange(5, 9);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await page.locator('button[data-description-format="bold"]').click();
+  await input.evaluate(element => {
+    element.setSelectionRange(element.value.length, element.value.length);
+    element.dispatchEvent(new Event('select', {bubbles: true}));
+  });
+  await pasteImageIntoTextarea(input);
+  await expect(input).toHaveValue(/\*task\*[\s\S]*!pasted-image-/);
+  await page.getByTestId('jira-popup-description-save').click();
+
+  const renderedDescription = page.getByTestId('jira-popup-description-rendered');
+  await expect(renderedDescription.locator('strong', {hasText: 'task'})).toHaveCount(1);
+  await expect(renderedDescription.locator('img._JX_previewable').last()).toBeVisible();
 
   await page.close();
 });
@@ -610,8 +916,9 @@ test('groups history entries and nests referenced attachments inside expanded co
   const descriptionBody = descriptionEvent.locator('._JX_history_rich_section_body');
   await expect(descriptionBody).toContainText('Updated rollout checklist for JRACLOUD-97000');
   await expect(descriptionBody.locator('strong', {hasText: 'A DESCRIPTION'})).toHaveCount(1);
-  await expect(descriptionBody.locator('u em', {hasText: 'and a rich one!'})).toHaveCount(1);
-  await expect(descriptionBody.locator('code', {hasText: 'With images:'})).toHaveCount(1);
+  await expect(descriptionBody.locator('u', {hasText: 'and a rich one!'})).toHaveCount(1);
+  await expect(descriptionBody.locator('em', {hasText: 'and a rich one!'})).toHaveCount(1);
+  await expect(descriptionBody).toContainText('With images:');
   await expect(descriptionBody.locator('img._JX_previewable[alt="standalone-graph.png"]')).toHaveCount(1);
   await expect(flyout.locator('a._JX_history_issue_link', {hasText: 'JRACLOUD-97000'}).first()).toHaveAttribute('href', /browse\/JRACLOUD-97000$/);
 

@@ -1,4 +1,5 @@
 const http = require('http');
+const {descriptionFieldToEditorText} = require('../../../jira-plugin/src/description-rich-text');
 
 const PNG_BUFFER = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAuklEQVR42u3RMQEAIAzAsPnBCeqmBD+4wAGI2A6OHDXQxMx99U9hAhABASIgQAQEiIAAMQKIgAARECACAkRAgAiIgAARECACAkRAgAiIgAARECACAkRAgAiIgAApNdZpDwgQIECAAAECBAgQIECAAAECBAgQIECAAAECBAgQIECAAAECRECACAgQAREQIAICRECACAgQAREQIAICRECACAgQAQFiAhABASIgQAQEiIAAERABASIgQNTcA6yedS4u1mgqAAAAAElFTkSuQmCC',
@@ -135,7 +136,10 @@ function buildRenderedDescriptionBody(body, attachments = []) {
 }
 
 function issueDescriptionHtml(origin, state) {
-  return buildRenderedDescriptionBody(state.issue.description, state.issue.attachments.concat(state.uploadedAttachments));
+  return buildRenderedDescriptionBody(
+    descriptionFieldToEditorText(state.issue.description),
+    state.issue.attachments.concat(state.uploadedAttachments)
+  );
 }
 
 function createState(origin) {
@@ -942,10 +946,10 @@ async function createMockJiraServer() {
         state.issue.summary = nextSummary;
       }
       if (Object.prototype.hasOwnProperty.call(fields, 'description')) {
-        const previousDescription = String(state.issue.description || '');
+        const previousDescription = descriptionFieldToEditorText(state.issue.description);
         state.issue.description = fields.description == null
           ? ''
-          : String(fields.description);
+          : fields.description;
         state.issue.changelog.histories.unshift({
           id: `history-description-${Date.now()}`,
           created: new Date().toISOString(),
@@ -958,7 +962,7 @@ async function createMockJiraServer() {
               field: 'Description',
               fieldId: 'description',
               fromString: previousDescription,
-              toString: state.issue.description,
+              toString: descriptionFieldToEditorText(state.issue.description),
             },
           ],
         });
