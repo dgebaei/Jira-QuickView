@@ -1078,7 +1078,12 @@ test('silently pins the popup when editing a comment so pointer exit does not di
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = popupModel(page).root;
-  const comment = page.locator('._JX_comment').first();
+  const composer = page.locator('._JX_comment_input');
+  await composer.fill('Owned comment that will enter edit mode');
+  await page.locator('._JX_comment_save').click();
+
+  const comment = page.locator('._JX_comment').last();
+  await expect(comment.locator('._JX_comment_edit_button')).toBeVisible();
 
   await comment.locator('._JX_comment_edit_button').click();
 
