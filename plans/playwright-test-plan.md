@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a reliable Playwright-based automation suite for Jira HotLinker that covers:
+Build a reliable Playwright-based automation suite for Jira QuickView that covers:
 
 - extension configuration flows
 - content-script activation behavior

@@ -38,7 +38,7 @@ async function ensureExtensionBundle() {
 }
 
 async function createTestExtensionCopy() {
-  const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-extension-'));
+  const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-extension-'));
   await fs.cp(extensionPath, extensionDir, {recursive: true});
 
   const manifestPath = path.join(extensionDir, 'manifest.json');
@@ -71,7 +71,7 @@ async function getExtensionId(context) {
 }
 
 async function main() {
-  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-playwright-'));
+  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-playwright-'));
   await ensureExtensionBundle();
   const testExtensionPath = await createTestExtensionCopy();
   let context = null;

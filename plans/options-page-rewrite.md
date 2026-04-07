@@ -33,7 +33,7 @@ Redesign the options page (`jira-plugin/options/options.jsx`) to support a **Bas
 
 - **CSS variables** — complete re-theme with 40+ tokens, full dark mode support. Dark hero (`#1e293b`), blue section titles (`#1e40af`), grey descriptions, pill toggles, dashed toggle card, footer action bar.
 - **`showAdvanced` state** — backed by `sessionStorage` (`jhl_adv` key). Page always loads in basic view. Tab close → toggle resets.
-- **Hero** — dark header with Jira HotLinker eyebrow, "Extension Options" title, description, amber-dot status pill.
+- **Hero** — dark header with Jira QuickView eyebrow, "Extension Options" title, description, amber-dot status pill.
 - **Basic cards** — Connection (Jira URL + allowed pages) + Appearance (theme pills) in a 2-column grid.
 - **ADVANCED toggle** — dashed-border card with ⚙ icon, description, "Show" button. Renders all advanced sections when open.
 - **Footer** — Discard (reloads page) + Save buttons, sticky-ish at bottom.
@@ -115,7 +115,7 @@ On load, if `tooltipLayout` is not present in stored config, it's built from `di
 ### Visual Language
 
 The options page adopts the tooltip mockup's design system:
-- Dark hero header (`#1e293b`) with Jira HotLinker eyebrow + "Extension Options" title
+- Dark hero header (`#1e293b`) with Jira QuickView eyebrow + "Extension Options" title
 - Status pill with amber dot (unsaved changes indicator)
 - Section cards: light grey top strip, blue section title, grey description, white body
 - BASIC/ADVANCED labels in small-caps grey
@@ -303,7 +303,7 @@ The right-side panel shows a live-updating preview built from `tooltipLayout`:
 3. **Color mode sync**: Extract `themeMode` sync into a `useDocumentTheme` hook so the options page itself changes theme (light/dark/system) as the user edits the setting — no reload needed.
 4. **Status pill**: Keep the "Changes are local until you save" status in the hero, styled as a dark grey pill with amber dot.
 5. **Footer**: Discard + Save buttons (ghost + blue filled), styled as in the mockup.
-6. **Hero section**: Dark header strip, Jira HotLinker eyebrow, "Extension Options" title, description, status pill on right.
+6. **Hero section**: Dark header strip, Jira QuickView eyebrow, "Extension Options" title, description, status pill on right.
 7. **Responsive**: Stack the basic cards vertically on narrow viewports. Show a message on mobile instead of the drag-and-drop editor.
 
 ---

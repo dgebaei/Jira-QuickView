@@ -27,7 +27,7 @@ function createHtml(title, body) {
 function defaultRouteContent(origin) {
   return {
     '/': createHtml('HotLinker Fixture', `
-      <h1>Jira HotLinker Fixture</h1>
+      <h1>Jira QuickView Fixture</h1>
       <div class="card">
         <p id="issue-inline">Release review references <span class="marker">JRACLOUD-97846</span> directly in the text.</p>
         <p id="issue-link"><a href="${origin}/browse/JRACLOUD-97846">Linked ticket JRACLOUD-97846</a></p>

@@ -1,10 +1,41 @@
+const fs = require('fs');
 const http = require('http');
+const path = require('path');
 const {descriptionFieldToEditorText} = require('../../../jira-plugin/src/description-rich-text');
 
 const PNG_BUFFER = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAuklEQVR42u3RMQEAIAzAsPnBCeqmBD+4wAGI2A6OHDXQxMx99U9hAhABASIgQAQEiIAAMQKIgAARECACAkRAgAiIgAARECACAkRAgAiIgAARECACAkRAgAiIgAApNdZpDwgQIECAAAECBAgQIECAAAECBAgQIECAAAECBAgQIECAAAECRECACAgQAREQIAICRECACAgQAREQIAICRECACAgQAQFiAhABASIgQAQEiIAAERABASIgQNTcA6yedS4u1mgqAAAAAElFTkSuQmCC',
   'base64'
 );
+
+const MOCK_ASSET_DIR = path.resolve(__dirname, '..', 'fixtures', 'mock-assets');
+const ATTACHMENT_FIXTURE_BY_ID = {
+  '900': 'evidence.png',
+  '901': 'history-image-1.png',
+  '902': 'history-image-2.png',
+  '903': 'standalone-graph.png',
+};
+
+function guessImageContentType(fileName = '') {
+  return /\.jpe?g$/i.test(fileName) ? 'image/jpeg' : 'image/png';
+}
+
+function readMockAsset(fileName = '') {
+  const normalizedName = path.basename(String(fileName || ''));
+  if (!normalizedName) {
+    return null;
+  }
+
+  const assetPath = path.join(MOCK_ASSET_DIR, normalizedName);
+  if (!fs.existsSync(assetPath)) {
+    return null;
+  }
+
+  return {
+    buffer: fs.readFileSync(assetPath),
+    contentType: guessImageContentType(normalizedName),
+  };
+}
 
 function json(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -681,11 +712,12 @@ async function createMockJiraServer() {
     const pathname = url.pathname;
 
     if (pathname.startsWith('/assets/')) {
+      const asset = readMockAsset(pathname.split('/').pop());
       res.writeHead(200, {
         'access-control-allow-origin': '*',
-        'content-type': 'image/png',
+        'content-type': asset?.contentType || 'image/png',
       });
-      res.end(PNG_BUFFER);
+      res.end(asset?.buffer || PNG_BUFFER);
       return;
     }
 
@@ -923,7 +955,8 @@ async function createMockJiraServer() {
         'access-control-allow-origin': '*',
         'content-type': attachment.mimeType || 'image/png',
       });
-      res.end(PNG_BUFFER);
+      const asset = readMockAsset(ATTACHMENT_FIXTURE_BY_ID[String(attachmentId || '')] || attachment.filename);
+      res.end(asset?.buffer || PNG_BUFFER);
       return;
     }
 
@@ -1103,11 +1136,25 @@ async function createMockJiraServer() {
         detail: [{
           pullRequests: [{
             id: 'pr-1',
-            url: 'https://github.com/dgebaei/Jira-Hot-Linker/pull/1',
+            url: 'https://github.com/dgebaei/Jira-QuickView/pull/1',
             name: 'Fix slash command cursor behavior',
             author: {name: 'Morgan Agent'},
             source: {branch: 'fix/slash-command-end-key'},
             status: 'OPEN',
+          }, {
+            id: 'pr-2',
+            url: 'https://github.com/dgebaei/Jira-QuickView/pull/2',
+            name: 'Add inline custom field editing',
+            author: {name: 'Alex Reviewer'},
+            source: {branch: 'feat/custom-field-inline-editing'},
+            status: 'MERGED',
+          }, {
+            id: 'pr-3',
+            url: 'https://github.com/dgebaei/Jira-QuickView/pull/3',
+            name: 'Prototype release evidence gallery',
+            author: {name: 'Casey Commenter'},
+            source: {branch: 'spike/release-evidence-gallery'},
+            status: 'DECLINED',
           }],
         }],
       });
@@ -1123,7 +1170,7 @@ async function createMockJiraServer() {
         json(res, 200, {summary: []});
         return;
       }
-      json(res, 200, {summary: [{pullrequest: {overall: {count: 1}}}]});
+      json(res, 200, {summary: [{pullrequest: {overall: {count: 3}}}]});
       return;
     }
 

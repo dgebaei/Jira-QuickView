@@ -1,16 +1,16 @@
-# Jira HotLinker
+# Jira QuickView
 
 ## Repository
 
-- **GitHub repo**: https://github.com/dgebaei/Jira-Hot-Linker
+- **GitHub repo**: https://github.com/dgebaei/Jira-QuickView
 - **Upstream**: https://github.com/helmus/Jira-Hot-Linker
-- PRs and issues go to `dgebaei/Jira-Hot-Linker`, not upstream
+- PRs and issues go to `dgebaei/Jira-QuickView`, not upstream
 
 ## Git workflow
 
 - Always `git pull origin master --rebase` before starting work to stay in sync with remote
-- PRs target `master` on `dgebaei/Jira-Hot-Linker`
-- For `gh` commands, always target `dgebaei/Jira-Hot-Linker` explicitly with `-R dgebaei/Jira-Hot-Linker`, or verify first that `gh repo view --json nameWithOwner` resolves to `dgebaei/Jira-Hot-Linker`. Never rely on upstream inference when creating or closing PRs/releases.
+- PRs target `master` on `dgebaei/Jira-QuickView`
+- For `gh` commands, always target `dgebaei/Jira-QuickView` explicitly with `-R dgebaei/Jira-QuickView`, or verify first that `gh repo view --json nameWithOwner` resolves to `dgebaei/Jira-QuickView`. Never rely on upstream inference when creating or closing PRs/releases.
 - By default, do feature work in a dedicated git worktree under `.worktrees/` inside the repo, unless the user explicitly asks to work in the main checkout.
 - Name each worktree folder after the task or branch and keep `.worktrees/` ignored.
 - For manual extension testing, use the stable unpacked path `.worktrees/_active-extension_/jira-plugin` and refresh it with `npm run build:active-extension`.
@@ -63,4 +63,4 @@ npm run build
    Use `version_name` for human-readable prerelease labels like `2.3.0-beta`; do not put `-beta` or other suffixes into `version`.
 5. Build: `npm run build`
 6. Package: `powershell -Command "Remove-Item -Force jira-plugin-build.zip -ErrorAction SilentlyContinue; Compress-Archive -Path jira-plugin/build, jira-plugin/resources, jira-plugin/options, jira-plugin/manifest.json -DestinationPath jira-plugin-build.zip"`
-7. Create release: `gh release create <version> jira-plugin-build.zip --repo dgebaei/Jira-Hot-Linker --title "<version> - <title>" --notes "<release notes>"`
+7. Create release: `gh release create <version> jira-plugin-build.zip --repo dgebaei/Jira-QuickView --title "<version> - <title>" --notes "<release notes>"`

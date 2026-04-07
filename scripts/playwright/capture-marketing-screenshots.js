@@ -11,7 +11,7 @@ const extensionPath = path.join(repoRoot, 'jira-plugin');
 const screenshotDir = path.join(repoRoot, 'docs', 'screenshots');
 
 async function createTestExtensionCopy() {
-  const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-marketing-extension-'));
+  const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-marketing-extension-'));
   await fs.cp(extensionPath, extensionDir, {recursive: true});
   const manifestPath = path.join(extensionDir, 'manifest.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -23,7 +23,7 @@ async function createTestExtensionCopy() {
 }
 
 async function launchExtensionContext() {
-  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-marketing-profile-'));
+  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-marketing-profile-'));
   const testExtensionPath = await createTestExtensionCopy();
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',

@@ -52,7 +52,7 @@ async function applyStorageState(context, storageState) {
 }
 
 async function createTestExtensionCopy() {
-  const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-extension-'));
+  const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-extension-'));
   await fs.cp(extensionPath, extensionDir, {recursive: true});
   const manifestPath = path.join(extensionDir, 'manifest.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -68,7 +68,7 @@ async function launchExtensionContext() {
   let lastError = null;
 
   for (let attempt = 1; attempt <= EXTENSION_LAUNCH_RETRIES; attempt += 1) {
-    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-hot-linker-playwright-'));
+    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-playwright-'));
     const testExtensionPath = await createTestExtensionCopy();
 
     try {
