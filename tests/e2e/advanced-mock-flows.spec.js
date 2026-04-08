@@ -82,6 +82,38 @@ test('shows assignee and parent search results inside their editors', async ({ex
   await page.close();
 });
 
+test('finds assignee users beyond the initial assignable list via picker fallback @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Assignee fallback coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/user/assignable/search(?:\\?.*)?$', (payload, request) => {
+    const url = new URL(request.url());
+    const query = String(url.searchParams.get('query') || url.searchParams.get('username') || '').trim().toLowerCase();
+    if (!query || query.includes('morgan')) {
+      return Array.isArray(payload)
+        ? payload.filter(user => String(user?.displayName || '').toLowerCase() !== 'morgan agent')
+        : payload;
+    }
+    return payload;
+  });
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await popup.editButton('assignee').click();
+  const morganOption = page.locator('._JX_edit_option[data-field-key="assignee"][data-option-id="user-me"]').first();
+  await expect(morganOption).toHaveCount(0);
+  await popup.editInput('assignee').fill('Morgan');
+  await expect(morganOption).toBeVisible();
+  await morganOption.click();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
+
+  await page.close();
+});
+
 test('edits the popup title inline and applies the change immediately', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {

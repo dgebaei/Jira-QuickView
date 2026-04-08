@@ -580,6 +580,7 @@ async function mainAsyncLocal() {
     requestJson,
     resolveIssueLinkage,
     searchAssignableUsers,
+    searchUserPicker,
     searchParentCandidates,
     setPopupState: nextState => {
       popupState = nextState;

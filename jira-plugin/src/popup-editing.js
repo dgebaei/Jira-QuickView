@@ -26,6 +26,7 @@ export function createPopupEditing(deps) {
     requestJson,
     resolveIssueLinkage,
     searchAssignableUsers,
+    searchUserPicker,
     searchParentCandidates,
     getCustomFieldEditorDefinition,
     getPopupState,
@@ -508,6 +509,35 @@ export function createPopupEditing(deps) {
     throw lastError || new Error('Could not update assignee');
   }
 
+  async function loadAssigneeOptions(issueData, currentOption) {
+    const issueKey = String(issueData?.key || '');
+    const assignableOptions = await searchAssignableUsers('', issueData);
+    const options = mergeEditOptions(
+      [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'})],
+      mergeEditOptions(currentOption ? [currentOption] : [], assignableOptions)
+    );
+    assigneeLocalOptionsCache.set(issueKey, options.filter(option => option.id !== '__unassigned__'));
+    return options;
+  }
+
+  async function searchAssigneeOptions(issueData, currentOption, query = '') {
+    const issueKey = String(issueData?.key || '');
+    const baselineOptions = assigneeLocalOptionsCache.get(issueKey) || [];
+    const [assignableOptions, pickerOptions] = await Promise.all([
+      searchAssignableUsers(query, issueData).catch(() => []),
+      searchUserPicker(query).catch(() => []),
+    ]);
+    const mergedOptions = mergeEditOptions(
+      [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'})],
+      mergeEditOptions(
+        currentOption ? [currentOption] : [],
+        mergeEditOptions(assignableOptions, mergeEditOptions(pickerOptions, baselineOptions))
+      )
+    );
+    assigneeLocalOptionsCache.set(issueKey, mergedOptions.filter(option => option.id !== '__unassigned__'));
+    return mergedOptions;
+  }
+
   async function getEditableFieldDefinition(fieldKey, issueData) {
     if (fieldKey === 'versions') {
       const capability = await getEditableFieldCapability(issueData, fieldKey);
@@ -742,28 +772,8 @@ export function createPopupEditing(deps) {
         currentSelections: currentOption ? [currentOption] : [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'No assignee'})],
         initialInputValue: '',
         inputPlaceholder: 'Search assignable users',
-        loadOptions: async () => {
-          const searchedOptions = await searchAssignableUsers('', issueData);
-          const options = [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'})];
-          if (currentOption && !options.find(option => option.id === currentOption.id)) {
-            options.push(currentOption);
-          }
-          searchedOptions.forEach(option => {
-            if (!options.find(existing => existing.id === option.id)) {
-              options.push(option);
-            }
-          });
-          assigneeLocalOptionsCache.set(issueData.key, options.filter(option => option.id !== '__unassigned__'));
-          return options;
-        },
-        searchOptions: async query => {
-          const localBaselineOptions = assigneeLocalOptionsCache.get(issueData.key) || [];
-          const searchedOptions = await searchAssignableUsers(query, issueData);
-          const mergedOptions = [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'}), ...searchedOptions, ...localBaselineOptions]
-            .filter((option, index, options) => option?.id && options.findIndex(candidate => candidate.id === option.id) === index);
-          assigneeLocalOptionsCache.set(issueData.key, mergedOptions.filter(option => option.id !== '__unassigned__'));
-          return mergedOptions;
-        },
+        loadOptions: () => loadAssigneeOptions(issueData, currentOption),
+        searchOptions: query => searchAssigneeOptions(issueData, currentOption, query),
         save: selectedOptions => saveAssigneeSelection(issueData, selectedOptions),
         successMessage: selectedOptions => {
           const selectedOption = selectedOptions[0];
