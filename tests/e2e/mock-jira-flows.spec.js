@@ -1,6 +1,6 @@
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
 const {popupModel} = require('./helpers/popup');
-const {deleteIssueComment, getIssueComments, getLiveIssue, getMentionUsers} = require('./helpers/live-jira-api');
+const {deleteIssueComment, getIssueComments, getLiveIssue, getMentionUsers, jiraApiPattern} = require('./helpers/live-jira-api');
 const {ensurePreviewAttachment} = require('./helpers/live-jira-seed');
 const {patchJsonResponse} = require('./helpers/jira-route-mocks');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
@@ -259,6 +259,95 @@ test('renders text custom fields with a plain prefilled input instead of select-
   await input.fill('Rain is coming');
   await input.press('Enter');
   await expect(popup.root).toContainText('CustomTextField: Rain is coming');
+
+  await page.close();
+});
+
+test('supports editing non-custom Jira fields added through popup layout configuration @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'System field layout coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  const resolutionOptions = [
+    {id: '1', name: 'Done'},
+    {id: '2', name: "Won't Fix"},
+  ];
+  let currentResolution = null;
+
+  await optionsPage.context().route(jiraApiPattern(target.instanceUrl, '/rest/api/2/issue/[^/]+(?:\\?.*)?$'), async route => {
+    const request = route.request();
+    if (request.method() === 'PUT') {
+      const payload = JSON.parse(request.postData() || '{}');
+      const nextResolutionId = String(payload?.fields?.resolution?.id || '');
+      currentResolution = resolutionOptions.find(option => option.id === nextResolutionId) || null;
+      await route.fulfill({
+        status: 204,
+        headers: {'access-control-allow-origin': '*'},
+        body: '',
+      });
+      return;
+    }
+
+    const response = await route.fetch();
+    const payload = await response.json();
+    await route.fulfill({
+      status: response.status(),
+      headers: {
+        ...response.headers(),
+        'content-type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        ...payload,
+        names: {
+          ...payload.names,
+          resolution: 'Resolution',
+        },
+        fields: {
+          ...payload.fields,
+          resolution: currentResolution,
+        },
+      }),
+    });
+  });
+
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', (payload, request) => {
+    if (request.method() !== 'GET') {
+      return payload;
+    }
+    return {
+      ...payload,
+      fields: {
+        ...payload.fields,
+        resolution: {
+          required: false,
+          name: 'Resolution',
+          key: 'resolution',
+          schema: {
+            type: 'option',
+          },
+          operations: ['set'],
+          allowedValues: resolutionOptions,
+        },
+      },
+    };
+  });
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    customFields: [{fieldId: 'resolution', row: 2}],
+  }, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await expect(popup.root).toContainText('Resolution: --');
+  await popup.editButton('resolution').click();
+  const doneOption = popup.editOptions('resolution').filter({hasText: 'Done'}).first();
+  await expect(doneOption).toBeVisible();
+  await doneOption.click();
+  await popup.editInput('resolution').press('Enter');
+
+  await expect(popup.root).toContainText('Resolution updated');
+  await expect(popup.root).toContainText('Resolution: Done');
 
   await page.close();
 });

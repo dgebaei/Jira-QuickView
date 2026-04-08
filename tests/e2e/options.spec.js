@@ -1,6 +1,7 @@
 const fs = require('fs/promises');
 const {test, expect, configureExtension} = require('./helpers/extension-fixtures');
-const {getFirstCustomFieldId, getFirstSupportedCustomField} = require('./helpers/live-jira-api');
+const {patchJsonResponse} = require('./helpers/jira-route-mocks');
+const {getFirstCustomFieldId} = require('./helpers/live-jira-api');
 const {contentBlockItem, customFieldLibraryItem, openAdvancedSettings, optionsPageModel} = require('./helpers/options-page');
 const {buildExtensionConfig, requireJiraTestTarget} = require('./helpers/test-targets');
 
@@ -34,37 +35,50 @@ test('normalizes and persists a bare Jira hostname on save', async ({optionsPage
   expect(stored.domains).toContain('https://example.atlassian.net/');
 });
 
-test('validates custom field ids and resolves their names from Jira metadata', async ({optionsPage, servers}) => {
+test('allows supported Jira field ids in the popup layout while blocking built-in duplicates', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
+  if (target.mode === 'mock') {
+    await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/field(?:\\?.*)?$', (payload, request) => {
+      if (request.method() !== 'GET') {
+        return payload;
+      }
+      return [
+        ...(Array.isArray(payload) ? payload : []),
+        {id: 'resolution', name: 'Resolution', schema: {type: 'option'}},
+      ];
+    });
+  }
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
 
   await form.fieldLibraryAddButton.click();
 
-  await form.fieldLibraryInput.fill('impact');
-  await expect(form.fieldLibraryValidation).toContainText('Format: customfield_12345');
-  await expect(form.fieldLibrarySaveButton).toBeDisabled();
-
-  await form.fieldLibraryInput.fill('customfield_99999');
+  await form.fieldLibraryInput.fill('not_a_real_jira_field');
   await expect(form.fieldLibraryValidation).toContainText('Not found in Jira');
   await expect(form.fieldLibrarySaveButton).toBeDisabled();
 
-  const liveCustomField = target.mode === 'mock' ? null : await getFirstSupportedCustomField(target);
-  const customFieldId = target.mode === 'mock' ? 'customfield_12345' : liveCustomField?.id;
-  test.skip(!customFieldId, 'No Jira custom field is available for metadata resolution.');
-  await form.fieldLibraryInput.fill(customFieldId);
-  await expect(form.fieldLibraryValidation).toContainText(target.mode === 'mock' ? 'Customer Impact' : (liveCustomField?.name || /\S+/));
+  await form.fieldLibraryInput.fill('labels');
+  await expect(form.fieldLibraryValidation).toContainText('Built-in field');
+  await expect(form.fieldLibrarySaveButton).toBeDisabled();
+
+  await form.fieldLibraryInput.fill('resolution');
+  await expect(form.fieldLibraryValidation).toContainText('Resolution');
   await expect(form.fieldLibrarySaveButton).toBeEnabled();
 
   await form.fieldLibrarySaveButton.click();
-  if (target.mode === 'mock') {
-    await expect(customFieldLibraryItem(optionsPage, customFieldId)).toContainText('Customer Impact');
-  } else {
-    await expect(customFieldLibraryItem(optionsPage, customFieldId)).toBeVisible();
-    await expect(customFieldLibraryItem(optionsPage, customFieldId)).toContainText(liveCustomField?.name || customFieldId);
-  }
+  await expect(customFieldLibraryItem(optionsPage, 'resolution')).toContainText('Resolution');
+
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(customFieldLibraryItem(optionsPage, 'resolution')).toContainText('Resolution');
+
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['customFields']));
+  expect(stored.customFields).toEqual(expect.arrayContaining([{fieldId: 'resolution', row: 3}]));
 });
 
 test('persists custom fields added through the options page', async ({optionsPage, servers}) => {

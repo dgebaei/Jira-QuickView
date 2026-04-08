@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import {CSS} from '@dnd-kit/utilities';
-import {getCustomFieldLayoutKey, updateCustomFieldRow} from 'options/options-utils';
+import {BUILT_IN_FIELD_IDS, getCustomFieldLayoutKey, updateCustomFieldRow} from 'options/options-utils';
 
 const FIELD_OPTIONS = [
   {key: 'issueType', label: 'Issue Type'},
@@ -111,8 +111,8 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
   let validationMsg = '';
   let validationTone = '';
   if (trimmed) {
-    if (!/^customfield_\d+$/i.test(trimmed)) {
-      validationMsg = 'Format: customfield_12345';
+    if (BUILT_IN_FIELD_IDS.has(trimmed)) {
+      validationMsg = 'Built-in field';
       validationTone = 'error';
     } else if (existingCustomFieldIds.includes(trimmed)) {
       validationMsg = 'Already added';
@@ -164,7 +164,7 @@ function FieldLibrary({ fields, onAddField, onRemoveCustomField, existingCustomF
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
-            placeholder='customfield_12345'
+            placeholder='Field ID (e.g. resolution)'
             autoFocus
           />
           {validationMsg && (

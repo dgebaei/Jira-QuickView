@@ -43,16 +43,17 @@ export function createContentFieldCapabilityHelpers(options) {
       const sprintFieldIds = await getSprintFieldIds(instanceUrl);
       resolvedFieldKey = pickSprintFieldId(issueData, sprintFieldIds);
     }
+    const catalogField = (await getAllFields(instanceUrl)).find(field => field?.id === resolvedFieldKey) || null;
     const editMetaField = editMeta.fields?.[resolvedFieldKey];
     if (!editMetaField) {
       return {
         editable: false,
         fieldKey: resolvedFieldKey,
+        fieldMeta: catalogField,
         operations: [],
         allowedValues: []
       };
     }
-    const catalogField = (await getAllFields(instanceUrl)).find(field => field?.id === resolvedFieldKey) || null;
     const mergedFieldMeta = {
       ...(catalogField || {}),
       ...editMetaField,

@@ -1,5 +1,12 @@
 import {hasPathSlash} from 'options/declarative';
 
+export const BUILT_IN_FIELD_IDS = new Set([
+  'issuetype', 'status', 'priority', 'labels', 'environment',
+  'versions', 'fixVersions', 'parent', 'assignee', 'reporter',
+  'summary', 'description', 'attachment', 'comment', 'timetracking',
+  'project', 'id'
+]);
+
 export function normalizeInstanceUrl(instanceUrl) {
   let normalized = String(instanceUrl || '').trim();
   if (!normalized) {
@@ -124,8 +131,8 @@ export function getCustomFieldError(fieldId, fieldCatalog) {
   if (!trimmed) {
     return '';
   }
-  if (!/^customfield_\d+$/i.test(trimmed)) {
-    return 'Use a Jira custom field ID in the form customfield_12345.';
+  if (BUILT_IN_FIELD_IDS.has(trimmed)) {
+    return 'This field is already part of the built-in layout.';
   }
   if (Object.keys(fieldCatalog).length && !fieldCatalog[trimmed]) {
     return 'This field ID was not found in Jira.';
