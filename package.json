@@ -7,6 +7,7 @@
     "build": "node scripts/build-extension-and-reload.js",
     "build:active-extension": "node scripts/build-extension-and-reload.js",
     "build:bundle-only": "webpack --mode=development",
+    "build:bundle-prod": "webpack --mode=production",
     "dev": "webpack --watch --mode=development",
     "lint": "eslint . --ext .js,.jsx",
     "lint:fix": "eslint . --ext .js,.jsx --fix",
@@ -29,6 +30,7 @@
     "test:e2e:show-report": "npm exec -- playwright show-report tests/output/playwright/report",
     "test:e2e:reset-report-data": "node scripts/playwright/reset-reports.js",
     "release:check": "node scripts/release-check.js",
+    "release:zip": "node scripts/create-release-zip.js",
     "tldr:setup": "node scripts/setup-llm-tldr.js",
     "tldr:code": "node scripts/llm-tldr.js"
   },
