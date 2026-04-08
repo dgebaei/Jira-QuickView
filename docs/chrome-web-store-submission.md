@@ -43,19 +43,20 @@ Recommended screenshot order for the first five store screenshots:
 Suggested values:
 
 - Name: `Jira QuickView`
+- Summary: `Act on Jira issues from Gmail, Outlook, GitHub, and other enabled pages without opening a new Jira tab.`
 - Category: `Productivity`
 - Language: `English`
-- Homepage URL: `https://github.com/dgebaei/Jira-QuickView`
+- Homepage URL: `https://dgebaei.github.io/Jira-QuickView/`
 - Support URL: `https://github.com/dgebaei/Jira-QuickView/issues`
 - Content rating: `Not mature`
 
 Suggested detailed description:
 
-> Jira QuickView lets you hover Jira issue keys on supported pages and open a rich Jira popup without leaving the page you are already reading. It is designed for review, triage, release work, and issue updates while you stay inside GitHub, docs, tickets, and other pages you choose to enable.
+> Jira QuickView turns Jira issue keys in notification emails, pull requests, release notes, docs, and other enabled pages into actionable issue popups. Open a Jira email in Gmail or Outlook, hover the issue key in the message, and inspect or triage the ticket directly from your inbox. The same workflow applies on GitHub and any other page you enable.
 >
-> The popup shows Jira issue details such as status, priority, labels, sprint, versions, custom fields, comments, attachments, history, and linked pull request information already available through Jira. It also supports in-context Jira actions such as field updates, workflow transitions, comments, attachment handling, and related quick actions when your Jira permissions allow them.
+> The popup shows Jira issue details such as status, priority, labels, sprint, fix versions, custom fields, comments, attachments, history, reporter and assignee details, and linked pull request information already available through Jira. It also supports in-context Jira actions such as field updates, workflow transitions, comments, attachment handling, and related quick actions when your Jira permissions allow them.
 >
-> Jira QuickView uses your existing Jira browser session and does not require a separate Jira password inside the extension. You control which pages the extension can run on and which Jira fields are shown in the popup.
+> Jira QuickView uses your existing Jira browser session and does not require a separate Jira password inside the extension. You choose which pages can run the extension, set your Jira instance URL, and customize which Jira fields and layout appear in the popup.
 
 ## 5. Privacy Tab Copy
 
