@@ -1,6 +1,6 @@
 # Jira QuickView
 
-> Hover a Jira key anywhere on the web and get issue context, linked PR status, attachments, comments, and edit controls without opening a new Jira tab.
+> Hover Jira keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect issues, follow linked PRs, comment, transition, and edit fields without opening a new Jira tab.
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&logo=googlechrome&logoColor=white)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge)
@@ -8,12 +8,13 @@
 
 ## One hover, much more context
 
-Jira QuickView keeps issue context next to the work you are already doing. Review a PR, read a spec, check a release note, or scan a bug queue, then hover the Jira key and work from the popup instead of jumping into Jira.
+Open a Jira notification email in Gmail or Outlook, hover the issue key in the message, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.
 
 ![Main product overview](docs/screenshots/marketing-hidpi-light/popup-overview.png)
 
 ## Feature highlights
 
+- Action Jira email notifications directly from Gmail, Outlook, and other enabled inbox-style pages
 - Rich popup for issue metadata, description, attachments, comments, and linked pull requests
 - PR visibility inside the card, including title, author, branch, and status
 - Inline editing for supported Jira fields and supported custom field types
@@ -23,6 +24,7 @@ Jira QuickView keeps issue context next to the work you are already doing. Revie
 
 ## Why it matters
 
+- Turns Jira notification emails into actionable workflows instead of another tab-switching detour
 - Less tab switching during review and triage
 - Faster issue updates while staying in the current page
 - Better release confidence with attachments, history, and linked PRs in one place
