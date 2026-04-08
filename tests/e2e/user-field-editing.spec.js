@@ -1,4 +1,5 @@
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
+const {patchJsonResponse} = require('./helpers/jira-route-mocks');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
 
 function baseConfig(servers, target, overrides = {}) {
@@ -120,10 +121,27 @@ test('prepopulates assignable users for an empty editable user custom field', as
   await page.close();
 });
 
-test('shows empty user custom field as a non-editable placeholder when Jira omits edit metadata', async ({extensionApp, optionsPage, servers}) => {
+test('shows empty user custom field as a non-editable placeholder when field catalog metadata is present but Jira omits edit metadata', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'This regression is modeled deterministically in mocked mode only.');
   await servers.jira.setScenario('empty-user-field-missing-editmeta');
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/field(?:\\?.*)?$', (payload, request) => {
+    if (request.method() !== 'GET') {
+      return payload;
+    }
+    const fields = Array.isArray(payload) ? payload : [];
+    const hasReviewerField = fields.some(field => String(field?.id || '') === 'customfield_67890');
+    return hasReviewerField
+      ? payload
+      : fields.concat([{
+          id: 'customfield_67890',
+          name: 'Reviewer',
+          schema: {
+            type: 'user',
+            custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker',
+          },
+        }]);
+  });
   await configureExtension(optionsPage, baseConfig(servers, target, {
     customFields: [{fieldId: 'customfield_67890', row: 2}],
   }));
