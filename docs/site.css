@@ -100,6 +100,26 @@ code {
   margin-top: 1.5rem;
 }
 
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  background: rgba(29, 63, 110, 0.08);
+  border: 1px solid rgba(29, 63, 110, 0.08);
+  color: var(--accent-dark);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -138,6 +158,23 @@ code {
   margin-bottom: 2rem;
 }
 
+.readme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.readme-section {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem 1.75rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
 .card {
   padding: 1.25rem;
 }
@@ -155,6 +192,34 @@ code {
   margin: 0 0 0.9rem;
   color: var(--muted);
   line-height: 1.7;
+}
+
+.readme-section p,
+.readme-section li,
+.card li,
+.card ol {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.readme-section ul,
+.card ul,
+.card ol {
+  margin: 0.7rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.readme-section h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.4rem;
+}
+
+.inline-link {
+  font-weight: 700;
+}
+
+.privacy-list {
+  margin-top: 0.5rem;
 }
 
 .gallery {
@@ -201,6 +266,7 @@ code {
 @media (max-width: 900px) {
   .hero,
   .cards,
+  .readme-grid,
   .gallery-grid {
     grid-template-columns: 1fr;
   }

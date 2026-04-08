@@ -11,9 +11,14 @@
   <main class="page">
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Chrome Extension</p>
+        <p class="eyebrow">README</p>
         <h1>Jira QuickView</h1>
-        <p class="lede">Hover Jira issue keys on supported pages, open a rich issue popup, and perform Jira updates without leaving the page you are already reading.</p>
+        <p class="lede">Hover a Jira key anywhere on the web and get issue context, linked PR status, attachments, comments, and edit controls without opening a new Jira tab.</p>
+        <div class="badge-row">
+          <span class="badge">Chrome Extension</span>
+          <span class="badge">Manifest V3</span>
+          <span class="badge">MIT License</span>
+        </div>
         <div class="actions">
           <a class="button primary" href="https://github.com/dgebaei/Jira-QuickView">Source Code</a>
           <a class="button" href="https://github.com/dgebaei/Jira-QuickView/issues">Support</a>
@@ -21,53 +26,129 @@
         </div>
       </div>
       <div class="hero-art">
-        <img src="chrome-web-store-assets/screenshot-01-overview-1280x800.png" alt="Jira QuickView overview screenshot">
+        <img src="screenshots/marketing-hidpi-light/popup-overview.png" alt="Jira QuickView overview screenshot">
       </div>
     </section>
 
-    <section class="cards">
+    <section class="readme-section">
+      <p class="eyebrow">One hover, much more context</p>
+      <h2>Keep Jira issue context next to the work you are already doing.</h2>
+      <p>Review a PR, read a spec, check a release note, or scan a bug queue, then hover the Jira key and work from the popup instead of jumping into Jira.</p>
+    </section>
+
+    <section class="readme-grid">
       <article class="card">
-        <h2>What It Does</h2>
-        <p>Jira QuickView detects Jira keys on enabled pages and shows issue metadata, descriptions, comments, attachments, history, and linked pull request context in a hover popup.</p>
+        <h2>Feature Highlights</h2>
+        <ul>
+          <li>Rich popup for issue metadata, description, attachments, comments, and linked pull requests</li>
+          <li>PR visibility inside the card, including title, author, branch, and status</li>
+          <li>Inline editing for supported Jira fields and supported custom field types</li>
+          <li>Configurable layout with Jira custom fields placed directly into the popup rows</li>
+          <li>Comment drafting with mentions and support for comment reactions</li>
+          <li>Jira-backed quick actions and workflow transitions</li>
+        </ul>
       </article>
+
       <article class="card">
-        <h2>How It Connects</h2>
-        <p>The extension uses your existing Jira browser session and sends requests directly from the browser to the Jira instance you configure.</p>
+        <h2>Why It Matters</h2>
+        <ul>
+          <li>Less tab switching during review and triage</li>
+          <li>Faster issue updates while staying in the current page</li>
+          <li>Better release confidence with attachments, history, and linked PRs in one place</li>
+          <li>More relevant popups because each team can control fields and custom field placement</li>
+        </ul>
       </article>
+    </section>
+
+    <section class="readme-grid">
       <article class="card">
-        <h2>Support</h2>
-        <p>Issues and support requests: <a href="https://github.com/dgebaei/Jira-QuickView/issues">github.com/dgebaei/Jira-QuickView/issues</a></p>
-        <p>Publisher email: <a href="mailto:dgebaei@gmail.com">dgebaei@gmail.com</a></p>
+        <h2>Configuration</h2>
+        <ul>
+          <li>Set the Jira instance URL and allowed pages</li>
+          <li>Tune hover activation behavior</li>
+          <li>Reorder popup rows and content blocks</li>
+          <li>Add Jira custom fields such as <code>customfield_12345</code></li>
+          <li>Show custom fields in the layout and edit supported field types inline</li>
+        </ul>
       </article>
+
+      <article class="card">
+        <h2>Install</h2>
+        <p>Chrome Web Store listing: coming soon</p>
+        <ol>
+          <li><a href="https://github.com/dgebaei/Jira-QuickView/releases/latest/download/jira-plugin-build.zip">Download the latest build</a></li>
+          <li>Open <code>chrome://extensions</code></li>
+          <li>Enable <code>Developer mode</code></li>
+          <li>Click <code>Load unpacked</code></li>
+          <li>Select the unzipped <code>jira-plugin/</code> folder</li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="readme-section">
+      <p class="eyebrow">Privacy</p>
+      <h2>Uses your existing Jira browser session.</h2>
+      <ul class="privacy-list">
+        <li>Stores no separate Jira password</li>
+        <li>Sends requests from the browser to your Jira instance</li>
+        <li>Honors Jira permissions, validation rules, and workflow restrictions</li>
+      </ul>
+      <p><a class="inline-link" href="privacy-policy.html">Read the full privacy policy</a></p>
     </section>
 
     <section class="gallery">
       <div class="section-head">
-        <p class="eyebrow">Screenshots</p>
-        <h2>Store Asset Preview</h2>
+        <p class="eyebrow">Gallery</p>
+        <h2>README screenshots</h2>
       </div>
       <div class="gallery-grid">
         <figure class="shot">
-          <img src="chrome-web-store-assets/screenshot-01-overview-1280x800.png" alt="Overview screenshot">
-          <figcaption>Overview</figcaption>
+          <img src="screenshots/marketing-hidpi-light/popup-actions.png" alt="Quick actions screenshot">
+          <figcaption>Quick actions</figcaption>
         </figure>
         <figure class="shot">
-          <img src="chrome-web-store-assets/screenshot-02-inline-editing-1280x800.png" alt="Inline editing screenshot">
+          <img src="screenshots/marketing-hidpi-light/popup-inline-editor.png" alt="Inline editing screenshot">
           <figcaption>Inline editing</figcaption>
         </figure>
         <figure class="shot">
-          <img src="chrome-web-store-assets/screenshot-03-pull-requests-1280x800.png" alt="Pull requests screenshot">
-          <figcaption>Related pull requests</figcaption>
+          <img src="screenshots/marketing-hidpi-light/popup-description-editor.png" alt="Description editing screenshot">
+          <figcaption>Description editing</figcaption>
         </figure>
         <figure class="shot">
-          <img src="chrome-web-store-assets/screenshot-04-comment-compose-1280x800.png" alt="Comment compose screenshot">
+          <img src="screenshots/marketing-hidpi-light/popup-comment-compose.png" alt="Comment compose screenshot">
           <figcaption>Comment drafting</figcaption>
         </figure>
         <figure class="shot">
-          <img src="chrome-web-store-assets/screenshot-05-options-1280x800.png" alt="Options screenshot">
-          <figcaption>Options</figcaption>
+          <img src="screenshots/marketing-hidpi-light/popup-attachments.png" alt="Attachments screenshot">
+          <figcaption>Attachments and evidence</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="screenshots/marketing-hidpi-light/popup-pull-requests.png" alt="Pull requests screenshot">
+          <figcaption>Related pull requests</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="screenshots/marketing-hidpi-light/popup-history.png" alt="Change history screenshot">
+          <figcaption>Change history</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="screenshots/marketing-hidpi-light/options-basic-overview.png" alt="Options overview screenshot">
+          <figcaption>Options overview</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="screenshots/marketing-hidpi-light/options-advanced-layout.png" alt="Advanced layout screenshot">
+          <figcaption>Advanced layout</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="screenshots/marketing-hidpi-light/options-custom-fields.png" alt="Custom fields screenshot">
+          <figcaption>Custom fields</figcaption>
         </figure>
       </div>
+    </section>
+
+    <section class="readme-section">
+      <p class="eyebrow">License</p>
+      <h2>MIT</h2>
+      <p>See <a href="https://github.com/dgebaei/Jira-QuickView/blob/master/LICENSE.md">LICENSE.md</a>.</p>
     </section>
   </main>
 </body>
