@@ -24,6 +24,10 @@ body {
   color: var(--text);
 }
 
+body.lightbox-open {
+  overflow: hidden;
+}
+
 a {
   color: var(--accent-dark);
 }
@@ -144,6 +148,16 @@ code {
   padding: 1rem;
 }
 
+.lightbox-trigger {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
 .hero-art img,
 .shot img {
   display: block;
@@ -242,6 +256,76 @@ code {
 
 .shot figcaption {
   margin-top: 0.75rem;
+  font-weight: 700;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(9, 15, 27, 0.86);
+  backdrop-filter: blur(10px);
+}
+
+.lightbox[data-open="true"] {
+  display: flex;
+}
+
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-out;
+}
+
+.lightbox-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.9rem;
+  width: min(96vw, 1500px);
+  max-height: calc(100vh - 3rem);
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(9, 15, 27, 0.72);
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-figure {
+  margin: 0;
+}
+
+.lightbox-figure img {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 8rem);
+  object-fit: contain;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.lightbox-caption {
+  margin: 0;
+  text-align: center;
+  color: #eef4f8;
   font-weight: 700;
 }
 

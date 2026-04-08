@@ -396,12 +396,13 @@ function ConfigPage(props) {
                   id='domains'
                 value={domainsText}
                 onChange={event => setDomainsText(event.target.value)}
-                placeholder='github.com, outlook.office.com' />
+                placeholder='github.com, mail.google.com, outlook.office.com' />
               <span className='fieldHelp'>
                 Comma-separated domains, URLs, or valid{' '}
                 <a href='https://developer.chrome.com/extensions/match_patterns' target='_blank' rel='noopener noreferrer'>
                   match patterns
                 </a>.
+                Suggested starting points: github.com, mail.google.com, and outlook.office.com.
                 You can also add a page directly from the extension icon.
               </span>
             </label>

@@ -89,13 +89,9 @@ Use wording close to the following for each permission shown in the dashboard.
 
 > Detects matching frame navigations on supported sites so the content script can be injected into dynamic pages and embedded frames when needed.
 
-`https://github.com/*`
-
-> GitHub is enabled by default because pull requests, commits, issues, and review pages commonly contain Jira issue keys. This permission allows local Jira-key detection and popup rendering on GitHub pages.
-
 `*://*/*` optional host access
 
-> Optional site access is requested only when the user explicitly enables Jira QuickView for the current site. It allows the extension to scan that page locally for Jira keys and show the popup there. The extension does not automatically activate on every site.
+> Optional site access is requested only when the user explicitly enables Jira QuickView for a page or saves allowed pages in settings. Suggested starting points in the UI include github.com, mail.google.com, and outlook.office.com, but none are enabled automatically on install. The extension does not automatically activate on every site.
 
 ### Remote Code Declaration
 
