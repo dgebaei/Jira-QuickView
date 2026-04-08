@@ -30,14 +30,6 @@ Open a Jira notification email in Gmail or Outlook, hover the issue key in the m
 - Better release confidence with attachments, history, and linked PRs in one place
 - More relevant popups because each team can control fields and custom field placement
 
-## Configuration
-
-- Set the Jira instance URL and allowed pages
-- Tune hover activation behavior
-- Reorder popup rows and content blocks
-- Add Jira custom fields such as `customfield_12345`
-- Show custom fields in the layout and edit supported field types inline
-
 ## Install and configure
 
 Chrome Web Store listing: coming soon
