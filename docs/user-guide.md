@@ -7,46 +7,89 @@ The screenshots in this guide are examples. Your popup can look different depend
 <details class="user-guide-toc" open>
 <summary>Table of contents</summary>
 
-- [1. What Jira QuickView Helps You Do](#1-what-jira-quickview-helps-you-do)
-- [2. Before You Start](#2-before-you-start)
-- [3. First-Time Setup](#3-first-time-setup)
-- [4. Options Page](#4-options-page)
-    - [4.1 Basic: Connection](#41-basic-connection)
-    - [4.2 Basic: Appearance](#42-basic-appearance)
-    - [4.3 Advanced: Show Advanced Settings](#43-advanced-show-advanced-settings)
-    - [4.4 Advanced: Hover Behavior](#44-advanced-hover-behavior)
-    - [4.5 Advanced: Tooltip Layout Overview](#45-advanced-tooltip-layout-overview)
-    - [4.6 Advanced: Organizing Row Fields](#46-advanced-organizing-row-fields)
-        - [4.6.1 Custom Fields](#461-custom-fields)
-    - [4.7 Advanced: Content Blocks](#47-advanced-content-blocks)
-    - [4.8 Advanced: Settings Sync](#48-advanced-settings-sync)
-    - [4.9 Save and Discard](#49-save-and-discard)
-- [5. Using the Popup Every Day](#5-using-the-popup-every-day)
-    - [5.1 Where the Popup Appears](#51-where-the-popup-appears)
-    - [5.2 Header: Reporter, Assignee, Summary, and Actions](#52-header-reporter-assignee-summary-and-actions)
-    - [5.3 Quick Actions Menu](#53-quick-actions-menu)
-    - [5.4 Row 1: Issue Type, Status, Priority, History, and Watchers](#54-row-1-issue-type-status-priority-history-and-watchers)
-        - [5.4.1 History Panel](#541-history-panel)
-        - [5.4.2 Watchers Panel](#542-watchers-panel)
-    - [5.5 Row 2: Epic, Parent, Sprint, Affects Version, and Fix Version](#55-row-2-epic-parent-sprint-affects-version-and-fix-version)
-    - [5.6 Row 3: Environment, Labels, and Custom Fields](#56-row-3-environment-labels-and-custom-fields)
-    - [5.7 Description Block](#57-description-block)
-    - [5.8 Time Tracking Block](#58-time-tracking-block)
-    - [5.9 Attachments Block](#59-attachments-block)
-    - [5.10 Pull Requests Block](#510-pull-requests-block)
-    - [5.11 Comments and Reactions](#511-comments-and-reactions)
-- [6. Why Edit Buttons or Options Appear Only Sometimes](#6-why-edit-buttons-or-options-appear-only-sometimes)
-- [7. Troubleshooting](#7-troubleshooting)
-    - [The popup does not appear](#the-popup-does-not-appear)
-    - [The popup appears but issue data does not load](#the-popup-appears-but-issue-data-does-not-load)
-    - [A field cannot be edited](#a-field-cannot-be-edited)
-    - [A user is missing from Assignee search](#a-user-is-missing-from-assignee-search)
-    - [Allowed page pattern does not match](#allowed-page-pattern-does-not-match)
-- [8. Suggested Daily Workflows](#8-suggested-daily-workflows)
-    - [Triage from email](#triage-from-email)
-    - [Review a pull request](#review-a-pull-request)
-    - [Prepare a release](#prepare-a-release)
-    - [Investigate a bug](#investigate-a-bug)
+<nav class="user-guide-toc-list" aria-label="User guide sections">
+  <div class="user-guide-toc-entry">
+    <a class="user-guide-toc-link" href="#1-what-jira-quickview-helps-you-do">1. What Jira QuickView Helps You Do</a>
+  </div>
+  <div class="user-guide-toc-entry">
+    <a class="user-guide-toc-link" href="#2-before-you-start">2. Before You Start</a>
+  </div>
+  <div class="user-guide-toc-entry">
+    <a class="user-guide-toc-link" href="#3-first-time-setup">3. First-Time Setup</a>
+  </div>
+
+  <details class="user-guide-toc-section">
+    <summary>4. Options Page</summary>
+    <ul>
+      <li><a href="#4-options-page">4. Options Page overview</a></li>
+      <li><a href="#41-basic-connection">4.1 Basic: Connection</a></li>
+      <li><a href="#42-basic-appearance">4.2 Basic: Appearance</a></li>
+      <li><a href="#43-advanced-show-advanced-settings">4.3 Advanced: Show Advanced Settings</a></li>
+      <li><a href="#44-advanced-hover-behavior">4.4 Advanced: Hover Behavior</a></li>
+      <li><a href="#45-advanced-tooltip-layout-overview">4.5 Advanced: Tooltip Layout Overview</a></li>
+      <li>
+        <a href="#46-advanced-organizing-row-fields">4.6 Advanced: Organizing Row Fields</a>
+        <ul>
+          <li><a href="#461-custom-fields">4.6.1 Custom Fields</a></li>
+        </ul>
+      </li>
+      <li><a href="#47-advanced-content-blocks">4.7 Advanced: Content Blocks</a></li>
+      <li><a href="#48-advanced-settings-sync">4.8 Advanced: Settings Sync</a></li>
+      <li><a href="#49-save-and-discard">4.9 Save and Discard</a></li>
+    </ul>
+  </details>
+
+  <details class="user-guide-toc-section">
+    <summary>5. Using the Popup Every Day</summary>
+    <ul>
+      <li><a href="#5-using-the-popup-every-day">5. Using the Popup Every Day overview</a></li>
+      <li><a href="#51-where-the-popup-appears">5.1 Where the Popup Appears</a></li>
+      <li><a href="#52-header-reporter-assignee-summary-and-actions">5.2 Header: Reporter, Assignee, Summary, and Actions</a></li>
+      <li><a href="#53-quick-actions-menu">5.3 Quick Actions Menu</a></li>
+      <li>
+        <a href="#54-row-1-issue-type-status-priority-history-and-watchers">5.4 Row 1: Issue Type, Status, Priority, History, and Watchers</a>
+        <ul>
+          <li><a href="#541-history-panel">5.4.1 History Panel</a></li>
+          <li><a href="#542-watchers-panel">5.4.2 Watchers Panel</a></li>
+        </ul>
+      </li>
+      <li><a href="#55-row-2-epic-parent-sprint-affects-version-and-fix-version">5.5 Row 2: Epic, Parent, Sprint, Affects Version, and Fix Version</a></li>
+      <li><a href="#56-row-3-environment-labels-and-custom-fields">5.6 Row 3: Environment, Labels, and Custom Fields</a></li>
+      <li><a href="#57-description-block">5.7 Description Block</a></li>
+      <li><a href="#58-time-tracking-block">5.8 Time Tracking Block</a></li>
+      <li><a href="#59-attachments-block">5.9 Attachments Block</a></li>
+      <li><a href="#510-pull-requests-block">5.10 Pull Requests Block</a></li>
+      <li><a href="#511-comments-and-reactions">5.11 Comments and Reactions</a></li>
+    </ul>
+  </details>
+
+  <div class="user-guide-toc-entry">
+    <a class="user-guide-toc-link" href="#6-why-edit-buttons-or-options-appear-only-sometimes">6. Why Edit Buttons or Options Appear Only Sometimes</a>
+  </div>
+
+  <details class="user-guide-toc-section">
+    <summary>7. Troubleshooting</summary>
+    <ul>
+      <li><a href="#7-troubleshooting">7. Troubleshooting overview</a></li>
+      <li><a href="#the-popup-does-not-appear">The popup does not appear</a></li>
+      <li><a href="#the-popup-appears-but-issue-data-does-not-load">The popup appears but issue data does not load</a></li>
+      <li><a href="#a-field-cannot-be-edited">A field cannot be edited</a></li>
+      <li><a href="#a-user-is-missing-from-assignee-search">A user is missing from Assignee search</a></li>
+      <li><a href="#allowed-page-pattern-does-not-match">Allowed page pattern does not match</a></li>
+    </ul>
+  </details>
+
+  <details class="user-guide-toc-section">
+    <summary>8. Suggested Daily Workflows</summary>
+    <ul>
+      <li><a href="#8-suggested-daily-workflows">8. Suggested Daily Workflows overview</a></li>
+      <li><a href="#triage-from-email">Triage from email</a></li>
+      <li><a href="#review-a-pull-request">Review a pull request</a></li>
+      <li><a href="#prepare-a-release">Prepare a release</a></li>
+      <li><a href="#investigate-a-bug">Investigate a bug</a></li>
+    </ul>
+  </details>
+</nav>
 
 </details>
 

@@ -440,33 +440,48 @@ code {
   font-weight: 800;
 }
 
-.readme-render .user-guide-toc > ul {
+.readme-render .user-guide-toc-list {
   display: grid;
-  gap: 0.3rem 2rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  list-style-position: outside;
-  margin-bottom: 0;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
 }
 
-.readme-render .user-guide-toc ul ul {
+.readme-render .user-guide-toc-link,
+.readme-render .user-guide-toc-section > summary {
   display: block;
-  margin: 0.35rem 0 0.7rem;
-  padding-left: 1.25rem;
-}
-
-.readme-render .user-guide-toc li {
-  margin-bottom: 0.25rem;
-}
-
-.readme-render .user-guide-toc li li {
-  margin-bottom: 0.18rem;
-}
-
-.readme-render .user-guide-toc > ul > li > a {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(20, 184, 166, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--link);
   font-weight: 750;
 }
 
-.readme-render .user-guide-toc ul ul a {
+.readme-render .user-guide-toc-link:hover,
+.readme-render .user-guide-toc-section > summary:hover {
+  background: rgba(255, 255, 255, 0.86);
+  text-decoration: underline;
+}
+
+.readme-render .user-guide-toc-section[open] > summary {
+  margin-bottom: 0.35rem;
+}
+
+.readme-render .user-guide-toc-section > ul {
+  margin: 0 0 0.7rem;
+  padding-left: 1.45rem;
+}
+
+.readme-render .user-guide-toc-section ul ul {
+  margin: 0.25rem 0 0.45rem;
+  padding-left: 1.15rem;
+}
+
+.readme-render .user-guide-toc-section li {
+  margin-bottom: 0.18rem;
+}
+
+.readme-render .user-guide-toc-section li a {
   font-size: 0.94em;
 }
 
@@ -579,7 +594,4 @@ code {
     max-height: calc(100vh - 10rem);
   }
 
-  .readme-render .user-guide-toc > ul {
-    grid-template-columns: 1fr;
-  }
 }
