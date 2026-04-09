@@ -772,6 +772,7 @@ export function createPopupEditing(deps) {
         currentSelections: currentOption ? [currentOption] : [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'No assignee'})],
         initialInputValue: '',
         inputPlaceholder: 'Search assignable users',
+        skipInitialEmptySearch: true,
         loadOptions: () => loadAssigneeOptions(issueData, currentOption),
         searchOptions: query => searchAssigneeOptions(issueData, currentOption, query),
         save: selectedOptions => saveAssigneeSelection(issueData, selectedOptions),

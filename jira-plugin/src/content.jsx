@@ -365,6 +365,10 @@ async function mainAsyncLocal() {
   const userPickerSearchCache = new Map();
   const userPickerLocalOptionsCache = new Map();
   const jiraUserDisplayNameCache = new Map();
+  const userSearchStrategyState = {
+    assignable: '',
+    people: '',
+  };
   const sharedAvatarUrls = new Set();
   let contentShellHelpers = null;
   const {
@@ -2661,35 +2665,102 @@ async function mainAsyncLocal() {
 
   // ── Assignee Search ────────────────────────────────────────
 
-  async function fetchAssignableUsers(query, issueData) {
-    const issueKey = issueData?.key || '';
-    const projectKey = String(issueKey).split('-')[0];
-    const encodedQuery = encodeURIComponent(String(query || '').trim());
-    const encodedIssueKey = encodeURIComponent(issueKey);
-    const encodedProjectKey = encodeURIComponent(projectKey);
-    const urls = [
-      `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&query=${encodedQuery}`,
-      `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&username=${encodedQuery}`,
-      `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&query=${encodedQuery}`,
-      `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&username=${encodedQuery}`
-    ].filter(url => !url.includes('issueKey=&') && !url.includes('project=&'));
+  function extractArrayUserResults(response) {
+    return Array.isArray(response) ? response : null;
+  }
 
+  function extractPickerUserResults(response) {
+    if (Array.isArray(response)) {
+      return response;
+    }
+    if (Array.isArray(response?.users)) {
+      return response.users;
+    }
+    if (Array.isArray(response?.items)) {
+      return response.items;
+    }
+    return null;
+  }
+
+  function buildOrderedUserSearchStrategies(strategyType, strategies) {
+    const preferredKey = String(userSearchStrategyState[strategyType] || '').trim();
+    const strategyList = Array.isArray(strategies) ? strategies.filter(Boolean) : [];
+    if (!preferredKey) {
+      return strategyList;
+    }
+    const preferredStrategy = strategyList.find(strategy => strategy?.key === preferredKey);
+    if (!preferredStrategy) {
+      return strategyList;
+    }
+    return [
+      preferredStrategy,
+      ...strategyList.filter(strategy => strategy?.key !== preferredKey),
+    ];
+  }
+
+  async function fetchUsersBySearchStrategy(strategyType, strategies) {
+    const orderedStrategies = buildOrderedUserSearchStrategies(strategyType, strategies);
     let lastError;
-    for (const url of urls) {
+    for (const strategy of orderedStrategies) {
       try {
-        const response = await get(url);
-        if (Array.isArray(response)) {
-          detectSharedAvatarUrls(response);
-          return proxyUserAvatars(response);
+        const response = await get(strategy.url);
+        const users = strategy.extractUsers(response);
+        if (!Array.isArray(users)) {
+          throw new Error(`Unexpected response for ${strategy.key}`);
         }
+        userSearchStrategyState[strategyType] = strategy.key;
+        return users;
       } catch (error) {
         lastError = error;
       }
     }
+    userSearchStrategyState[strategyType] = '';
     if (lastError) {
       throw lastError;
     }
     return [];
+  }
+
+  async function fetchAssignableUsers(query, issueData) {
+    const issueKey = issueData?.key || '';
+    const projectKey = String(issueKey).split('-')[0];
+    const normalizedQuery = String(query || '').trim();
+    const encodedQuery = encodeURIComponent(normalizedQuery);
+    const encodedIssueKey = encodeURIComponent(issueKey);
+    const encodedProjectKey = encodeURIComponent(projectKey);
+    const strategies = [
+      issueKey
+        ? {
+            key: 'issue-query',
+            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&query=${encodedQuery}`,
+            extractUsers: extractArrayUserResults,
+          }
+        : null,
+      projectKey
+        ? {
+            key: 'project-query',
+            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&query=${encodedQuery}`,
+            extractUsers: extractArrayUserResults,
+          }
+        : null,
+      issueKey
+        ? {
+            key: 'issue-username',
+            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&username=${encodedQuery}`,
+            extractUsers: extractArrayUserResults,
+          }
+        : null,
+      projectKey
+        ? {
+            key: 'project-username',
+            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&username=${encodedQuery}`,
+            extractUsers: extractArrayUserResults,
+          }
+        : null,
+    ].filter(Boolean);
+    const users = await fetchUsersBySearchStrategy('assignable', strategies);
+    detectSharedAvatarUrls(users);
+    return proxyUserAvatars(users);
   }
 
   async function searchAssignableUsers(query, issueData) {
@@ -2707,31 +2778,26 @@ async function mainAsyncLocal() {
 
   async function fetchUserPickerResults(query) {
     const encodedQuery = encodeURIComponent(query);
-    const urls = [
-      `${INSTANCE_URL}rest/api/2/user/search?username=${encodedQuery}&maxResults=20`,
-      `${INSTANCE_URL}rest/api/2/user/search?query=${encodedQuery}&maxResults=20`,
-      `${INSTANCE_URL}rest/api/2/user/picker?query=${encodedQuery}&maxResults=20`
-    ];
-    let lastError;
-    for (const url of urls) {
-      try {
-        const response = await get(url);
-        const users = Array.isArray(response)
-          ? response
-          : response?.users || response?.items || [];
-        if (Array.isArray(users)) {
-          detectSharedAvatarUrls(users);
-          await proxyUserAvatars(users);
-          return normalizeAssignableUsers(users);
-        }
-      } catch (error) {
-        lastError = error;
+    const users = await fetchUsersBySearchStrategy('people', [
+      {
+        key: 'picker-query',
+        url: `${INSTANCE_URL}rest/api/2/user/picker?query=${encodedQuery}&maxResults=20`,
+        extractUsers: extractPickerUserResults,
+      },
+      {
+        key: 'search-query',
+        url: `${INSTANCE_URL}rest/api/2/user/search?query=${encodedQuery}&maxResults=20`,
+        extractUsers: extractArrayUserResults,
+      },
+      {
+        key: 'search-username',
+        url: `${INSTANCE_URL}rest/api/2/user/search?username=${encodedQuery}&maxResults=20`,
+        extractUsers: extractArrayUserResults,
       }
-    }
-    if (lastError) {
-      throw lastError;
-    }
-    return [];
+    ]);
+    detectSharedAvatarUrls(users);
+    await proxyUserAvatars(users);
+    return normalizeAssignableUsers(users);
   }
 
   async function searchUserPicker(query) {
@@ -5100,7 +5166,10 @@ async function mainAsyncLocal() {
       }
       await renderIssuePopup(popupState);
 
-      if (popupState?.editState?.fieldKey === fieldKey && (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search')) {
+      const shouldTriggerInitialSearch = popupState?.editState?.fieldKey === fieldKey &&
+        (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search') &&
+        !(definition.skipInitialEmptySearch && !String(popupState.editState.inputValue || '').trim());
+      if (shouldTriggerInitialSearch) {
         const searchRequestId = ++editSearchRequestCounter;
         popupState = {
           ...popupState,
