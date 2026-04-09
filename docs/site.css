@@ -293,10 +293,9 @@ code {
   max-height: calc(100vh - 3rem);
 }
 
+.lightbox-nav,
 .lightbox-close {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
   z-index: 2;
   width: 2.75rem;
   height: 2.75rem;
@@ -304,9 +303,33 @@ code {
   border-radius: 999px;
   background: rgba(9, 15, 27, 0.72);
   color: #fff;
-  font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
+}
+
+.lightbox-nav {
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.85rem;
+}
+
+.lightbox-prev {
+  left: 0.75rem;
+}
+
+.lightbox-next {
+  right: 0.75rem;
+}
+
+.lightbox-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.lightbox-close {
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 1.4rem;
 }
 
 .lightbox-figure {
@@ -328,6 +351,14 @@ code {
   text-align: center;
   color: #eef4f8;
   font-weight: 700;
+}
+
+.lightbox-meta {
+  margin: 0;
+  text-align: center;
+  color: rgba(238, 244, 248, 0.76);
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .policy {
@@ -476,5 +507,31 @@ code {
   .page,
   .page-narrow {
     width: min(100% - 1rem, 1180px);
+  }
+
+  .lightbox {
+    padding: 1rem 0.75rem;
+  }
+
+  .lightbox-panel {
+    width: min(100vw, 1500px);
+  }
+
+  .lightbox-nav {
+    top: auto;
+    bottom: 4.5rem;
+    transform: none;
+  }
+
+  .lightbox-prev {
+    left: 1rem;
+  }
+
+  .lightbox-next {
+    right: 1rem;
+  }
+
+  .lightbox-figure img {
+    max-height: calc(100vh - 10rem);
   }
 }

@@ -32,11 +32,14 @@ if (lightboxTriggers.length) {
   lightbox.innerHTML = `
     <button type="button" class="lightbox-backdrop" aria-label="Close full screen image"></button>
     <div class="lightbox-panel" role="dialog" aria-modal="true" aria-label="Full screen image viewer">
+      <button type="button" class="lightbox-nav lightbox-prev" aria-label="Show previous image">&#8249;</button>
+      <button type="button" class="lightbox-nav lightbox-next" aria-label="Show next image">&#8250;</button>
       <button type="button" class="lightbox-close" aria-label="Close full screen image">&times;</button>
       <figure class="lightbox-figure">
         <img src="" alt="">
         <figcaption class="lightbox-caption"></figcaption>
       </figure>
+      <p class="lightbox-meta" aria-live="polite"></p>
     </div>
   `;
 
@@ -44,9 +47,56 @@ if (lightboxTriggers.length) {
 
   const lightboxImage = lightbox.querySelector('.lightbox-figure img');
   const lightboxCaption = lightbox.querySelector('.lightbox-caption');
+  const lightboxMeta = lightbox.querySelector('.lightbox-meta');
   const lightboxCloseButtons = lightbox.querySelectorAll('.lightbox-backdrop, .lightbox-close');
+  const lightboxPrev = lightbox.querySelector('.lightbox-prev');
+  const lightboxNext = lightbox.querySelector('.lightbox-next');
 
   let lastTrigger = null;
+  let activeIndex = -1;
+
+  function getTriggerImageData(trigger) {
+    const image = trigger.querySelector('img');
+    const figure = trigger.closest('figure');
+    const caption = figure?.querySelector('figcaption')?.textContent?.trim() || image?.alt || '';
+
+    return { image, caption };
+  }
+
+  function updateNavigationState() {
+    const hasMultipleImages = lightboxTriggers.length > 1;
+    lightboxPrev.disabled = !hasMultipleImages;
+    lightboxNext.disabled = !hasMultipleImages;
+    lightboxMeta.hidden = !hasMultipleImages || activeIndex < 0;
+    lightboxMeta.textContent = activeIndex >= 0 ? `${activeIndex + 1} / ${lightboxTriggers.length}` : '';
+  }
+
+  function renderLightboxImage(index) {
+    if (!lightboxTriggers.length) {
+      return;
+    }
+
+    const normalizedIndex = ((index % lightboxTriggers.length) + lightboxTriggers.length) % lightboxTriggers.length;
+    const { image, caption } = getTriggerImageData(lightboxTriggers[normalizedIndex]);
+
+    if (!image) {
+      return;
+    }
+
+    activeIndex = normalizedIndex;
+    lightboxImage.src = image.src;
+    lightboxImage.alt = image.alt || caption;
+    lightboxCaption.textContent = caption;
+    updateNavigationState();
+  }
+
+  function stepLightbox(offset) {
+    if (activeIndex < 0 || lightboxTriggers.length < 2) {
+      return;
+    }
+
+    renderLightboxImage(activeIndex + offset);
+  }
 
   function closeLightbox() {
     lightbox.setAttribute('data-open', 'false');
@@ -55,6 +105,8 @@ if (lightboxTriggers.length) {
     lightboxImage.src = '';
     lightboxImage.alt = '';
     lightboxCaption.textContent = '';
+    activeIndex = -1;
+    updateNavigationState();
     if (lastTrigger) {
       lastTrigger.focus();
       lastTrigger = null;
@@ -62,18 +114,15 @@ if (lightboxTriggers.length) {
   }
 
   function openLightbox(trigger) {
-    const image = trigger.querySelector('img');
-    const figure = trigger.closest('figure');
-    const caption = figure?.querySelector('figcaption')?.textContent?.trim() || image?.alt || '';
+    const triggerIndex = lightboxTriggers.indexOf(trigger);
+    const { image } = getTriggerImageData(trigger);
 
-    if (!image) {
+    if (!image || triggerIndex < 0) {
       return;
     }
 
     lastTrigger = trigger;
-    lightboxImage.src = image.src;
-    lightboxImage.alt = image.alt || caption;
-    lightboxCaption.textContent = caption;
+    renderLightboxImage(triggerIndex);
     lightbox.setAttribute('data-open', 'true');
     lightbox.setAttribute('aria-hidden', 'false');
     document.body.classList.add('lightbox-open');
@@ -88,9 +137,30 @@ if (lightboxTriggers.length) {
     button.addEventListener('click', closeLightbox);
   });
 
+  lightboxPrev.addEventListener('click', () => stepLightbox(-1));
+  lightboxNext.addEventListener('click', () => stepLightbox(1));
+
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && lightbox.getAttribute('data-open') === 'true') {
+    if (lightbox.getAttribute('data-open') !== 'true') {
+      return;
+    }
+
+    if (event.key === 'Escape') {
       closeLightbox();
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      stepLightbox(-1);
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      stepLightbox(1);
     }
   });
+
+  updateNavigationState();
 }
