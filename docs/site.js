@@ -19,6 +19,41 @@ function enhanceReadmeImages() {
   });
 }
 
+function enhanceUserGuideToc() {
+  const toc = document.querySelector('.user-guide-toc');
+  const toggleAll = toc?.querySelector('[data-toc-toggle-all]');
+  const sections = Array.from(toc?.querySelectorAll('.user-guide-toc-section') || []);
+
+  if (!toc || !toggleAll || !sections.length) {
+    return;
+  }
+
+  function allSectionsExpanded() {
+    return sections.every(section => section.open);
+  }
+
+  function updateToggleLabel() {
+    const expanded = allSectionsExpanded();
+    toggleAll.textContent = expanded ? 'Collapse all' : 'Expand all';
+    toggleAll.setAttribute('aria-expanded', String(expanded));
+  }
+
+  toggleAll.addEventListener('click', () => {
+    const shouldExpand = !allSectionsExpanded();
+    sections.forEach(section => {
+      section.open = shouldExpand;
+    });
+    updateToggleLabel();
+  });
+
+  sections.forEach(section => {
+    section.addEventListener('toggle', updateToggleLabel);
+  });
+
+  updateToggleLabel();
+}
+
+enhanceUserGuideToc();
 enhanceReadmeImages();
 
 const lightboxTriggers = Array.from(document.querySelectorAll('.lightbox-trigger'));

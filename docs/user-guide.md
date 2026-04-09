@@ -7,6 +7,10 @@ The screenshots in this guide are examples. Your popup can look different depend
 <details class="user-guide-toc" open>
 <summary>Table of contents</summary>
 
+<div class="user-guide-toc-toolbar">
+  <button type="button" class="user-guide-toc-toggle-all" data-toc-toggle-all aria-expanded="false">Expand all</button>
+</div>
+
 <nav class="user-guide-toc-list" aria-label="User guide sections">
   <div class="user-guide-toc-entry">
     <a class="user-guide-toc-link" href="#1-what-jira-quickview-helps-you-do">1. What Jira QuickView Helps You Do</a>

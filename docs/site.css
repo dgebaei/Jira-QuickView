@@ -427,6 +427,7 @@ code {
 }
 
 .readme-render .user-guide-toc {
+  position: relative;
   margin: 1.5rem 0 2rem;
   padding: 1.1rem;
   border: 1px solid rgba(20, 184, 166, 0.2);
@@ -445,10 +446,40 @@ code {
 
 .readme-render .user-guide-toc > summary {
   width: fit-content;
+  max-width: calc(100% - 7rem);
   padding: 0.2rem 0.45rem;
   border-radius: 999px;
   color: #0f766e;
   letter-spacing: 0.01em;
+}
+
+.readme-render .user-guide-toc-toolbar {
+  position: absolute;
+  top: 1.05rem;
+  right: 1.15rem;
+}
+
+.readme-render .user-guide-toc-toggle-all {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #0f766e;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 0.25rem 0.45rem;
+  text-decoration: none;
+}
+
+.readme-render .user-guide-toc-toggle-all:hover {
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.readme-render .user-guide-toc-toggle-all:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  outline-offset: 2px;
 }
 
 .readme-render .user-guide-toc-list {
@@ -500,7 +531,7 @@ code {
 }
 
 .readme-render .user-guide-toc-section > summary::after {
-  content: "Show";
+  content: "Expand";
   flex: 0 0 auto;
   padding: 0.18rem 0.52rem;
   border-radius: 999px;
@@ -512,7 +543,7 @@ code {
 }
 
 .readme-render .user-guide-toc-section[open] > summary::after {
-  content: "Hide";
+  content: "Collapse";
 }
 
 .readme-render .user-guide-toc-section[open] > summary {
