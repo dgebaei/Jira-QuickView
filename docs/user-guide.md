@@ -622,8 +622,6 @@ If an edit button is missing, it usually means one of two things: Jira does not 
 
 ## 7. Troubleshooting
 
-![Options page overview](screenshots/marketing-hidpi-light/options-basic-overview.png)
-
 ### The popup does not appear
 
 ![Basic Options settings](screenshots/user-guide/options-basic-settings.png)
