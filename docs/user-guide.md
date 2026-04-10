@@ -67,14 +67,11 @@ The screenshots in this guide are examples. Your popup can look different depend
     </ul>
   </details>
 
-  <div class="user-guide-toc-entry">
-    <a class="user-guide-toc-link" href="#6-why-edit-buttons-or-options-appear-only-sometimes">6. Why Edit Buttons or Options Appear Only Sometimes</a>
-  </div>
-
   <details class="user-guide-toc-section">
-    <summary>7. Troubleshooting</summary>
+    <summary>6. Troubleshooting</summary>
     <ul>
-      <li><a href="#7-troubleshooting">7. Troubleshooting overview</a></li>
+      <li><a href="#6-troubleshooting">6. Troubleshooting overview</a></li>
+      <li><a href="#why-edit-buttons-or-options-appear-only-sometimes">Why Edit Buttons or Options Appear Only Sometimes</a></li>
       <li><a href="#the-popup-does-not-appear">The popup does not appear</a></li>
       <li><a href="#the-popup-appears-but-issue-data-does-not-load">The popup appears but issue data does not load</a></li>
       <li><a href="#a-field-cannot-be-edited">A field cannot be edited</a></li>
@@ -84,9 +81,9 @@ The screenshots in this guide are examples. Your popup can look different depend
   </details>
 
   <details class="user-guide-toc-section">
-    <summary>8. Suggested Daily Workflows</summary>
+    <summary>7. Suggested Daily Workflows</summary>
     <ul>
-      <li><a href="#8-suggested-daily-workflows">8. Suggested Daily Workflows overview</a></li>
+      <li><a href="#7-suggested-daily-workflows">7. Suggested Daily Workflows overview</a></li>
       <li><a href="#triage-from-email">Triage from email</a></li>
       <li><a href="#review-a-pull-request">Review a pull request</a></li>
       <li><a href="#prepare-a-release">Prepare a release</a></li>
@@ -640,7 +637,9 @@ Business logic and limitations:
 - Comment reactions are shown only when the Jira instance supports the reaction flow used by the extension.
 - Delete actions ask for confirmation inside the popup before applying the change.
 
-## 6. Why Edit Buttons or Options Appear Only Sometimes
+## 6. Troubleshooting
+
+### Why Edit Buttons or Options Appear Only Sometimes
 
 ![Inline editing example](screenshots/marketing-hidpi-light/popup-inline-editor.png)
 
@@ -666,8 +665,6 @@ Important examples:
 - Custom fields can be displayed even when their type cannot be edited inline.
 
 If an edit button is missing, it usually means one of two things: Jira does not allow the edit for that issue, or Jira QuickView can display the field but does not yet support editing that field type.
-
-## 7. Troubleshooting
 
 ### The popup does not appear
 
@@ -723,7 +720,7 @@ Then move to specific patterns:
 
 Remember that wildcard patterns use `*`. Do not write raw regex syntax unless you have verified how Chrome permissions and Jira QuickView normalization will treat it.
 
-## 8. Suggested Daily Workflows
+## 7. Suggested Daily Workflows
 
 ![Quick actions workflow](screenshots/marketing-hidpi-light/popup-actions.png)
 
