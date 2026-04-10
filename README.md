@@ -32,97 +32,26 @@ Open a Jira notification email in Gmail or Outlook, hover the issue key in the m
 - Better release confidence with attachments, history, and linked PRs in one place
 - More relevant popups because each team can control fields and custom field placement
 
-## Install and configure
+## Quick start
 
-1. Open the [Download Extension](https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia) page in the Chrome Web Store.
-2. Click `Add to Chrome`.
-3. Confirm the browser prompt.
-4. Open the Jira QuickView Options page after installation.
+1. Open [Download Extension](https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia) in the Chrome Web Store.
+2. Click `Add to Chrome` and confirm the browser prompt.
+3. Open the Jira QuickView Options page.
+4. Enter your Jira instance URL, for example `https://your-company.atlassian.net`.
+5. Add the pages where Jira QuickView should run, such as `github.com`, `mail.google.com`, or `outlook.office.com`.
+6. Save, open an allowed page, and hover a Jira issue key such as `ABC-123`.
 
-### Initial setup
+By default, the popup opens when you hover a Jira key and then hold `Alt`, `Ctrl`, or `Shift`. This keeps busy pages readable while still making issue details one gesture away.
 
-1. Open the extension options page
-2. Set your Jira instance URL, for example `https://your-company.atlassian.net`
-3. Add the pages where Jira QuickView should run, for example:
-   - `github.com`
-   - `mail.google.com`
-   - `outlook.office.com`
-   - `docs.your-company.com`
-   - `wiki.your-company.com`
-4. Save the settings
-5. Open one of those pages and hover a Jira issue key such as `ABC-123`
+For full setup details, advanced allowed-page patterns, Outlook web/PWA setup, custom fields, troubleshooting, and day-to-day workflows, read the [User guide](docs/user-guide.md).
 
-### Default behavior
+## Where it works
 
-By default, Jira QuickView opens the popup when you hover a Jira issue key and then hold a modifier key.
+Jira QuickView works on pages you explicitly allow, including GitHub, Gmail, Outlook on the web, internal docs, wiki pages, dashboards, release notes, and QA checklists. It does not scan every site you visit.
 
-Default trigger:
+## Customize the popup
 
-- hover the Jira key
-- then hold `Alt`, `Ctrl`, or `Shift`
-
-This helps avoid unwanted popups on busy pages like inboxes, pull requests, and internal docs.
-
-### Optional customization
-
-You can optionally adjust the interaction model and popup layout in the options page:
-
-- change the modifier key behavior
-- make hover activation more or less sensitive
-- reorder popup rows and content blocks
-- add custom Jira fields to the popup layout
-
-### Common page setups
-
-#### GitHub
-
-Add:
-
-- `github.com`
-
-Use this for pull requests, commits, issues, release notes, and code review pages that reference Jira keys.
-
-#### Gmail
-
-Add:
-
-- `mail.google.com`
-
-Use this to action Jira notification emails directly from Gmail in the browser.
-
-#### Outlook
-
-Add:
-
-- `outlook.office.com`
-
-Use this for Outlook on the web.
-
-If you usually work from the desktop Outlook app, open Outlook on the web at `outlook.office.com` in Chrome or Edge and install it as a PWA from the browser menu.
-
-In Chrome:
-
-1. Open `outlook.office.com`
-2. Click the install icon in the address bar, or open the browser menu and choose `Cast, save, and share` -> `Install page as app`
-
-In Edge:
-
-1. Open `outlook.office.com`
-2. Open the browser menu and choose `Apps` -> `Install this site as an app`
-
-Once installed, Outlook opens in its own app-like window but still runs as a browser-based web app, so Chrome extensions such as Jira QuickView can work there. The native desktop Outlook client does not support Chrome extensions.
-
-The same idea applies to other browser-hosted apps: if they run as web pages in Chrome or Edge, including installed PWAs, Jira QuickView can work there.
-
-#### Internal tools, docs, and other web apps
-
-Add the domain or match pattern for pages where Jira keys appear, for example:
-
-- `docs.your-company.com`
-- `wiki.your-company.com`
-- `https://*.your-company.com/*`
-
-Jira QuickView only runs on pages you explicitly enable.
+The Options page lets you choose color mode, hover behavior, row fields, content blocks, custom Jira fields, and import/export settings. The [User guide](docs/user-guide.md) explains each configuration block and the Jira permission or workflow limits behind edit controls.
 
 ## Privacy
 
@@ -132,16 +61,10 @@ Jira QuickView only runs on pages you explicitly enable.
 - Honors Jira permissions, validation rules, and workflow restrictions
 - [Privacy Policy](https://dgebaei.github.io/Jira-QuickView/privacy-policy.html)
 
-### Notes
+## Need help?
 
-- You can also enable the current page by clicking the extension icon
-- The extension uses your existing Jira browser session
-- If the popup does not appear, confirm that:
-  - the page domain is enabled
-  - your Jira instance URL is saved
-  - the page contains Jira issue keys
-  - you are holding `Alt`, `Ctrl`, or `Shift` after hovering, unless you changed that behavior in settings
-  - your Jira instance is reachable from the browser, for example through VPN or your company network if required
+- Read the [User guide](docs/user-guide.md) for setup, advanced configuration, troubleshooting, and daily workflows.
+- Use the [Issue tracker](https://github.com/dgebaei/Jira-QuickView/issues) to report bugs or request improvements.
 
 ## Gallery
 
