@@ -189,7 +189,7 @@ function ConfigPage(props) {
 
   const exportSettings = () => {
     const config = {
-      version: '2.3.0',
+      version: '2.3.1',
       exportedAt: new Date().toISOString(),
       instanceUrl,
       domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
