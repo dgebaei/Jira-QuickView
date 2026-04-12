@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jira QuickView</title>
+  <meta name="description" content="Act on Jira issues from Gmail, Outlook, GitHub, docs, and other enabled pages without opening a new Jira tab.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.png" type="image/png" sizes="128x128">
+  <link rel="apple-touch-icon" href="favicon.png">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <main class="page page-narrow">
+    <article class="readme-render">
+<h1 id="jira-quickview">Jira QuickView</h1>
+<blockquote>
+<p>Hover Jira keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect issues, follow linked PRs, comment, transition, and edit fields without opening a new Jira tab.</p>
+</blockquote>
+<p><img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" /> <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" /> <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" /></p>
+<p><a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> · <a href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a> · <a href="user-guide.html">User guide</a> · <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a> · <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a></p>
+<h2 id="one-hover-much-more-context">One hover, much more context</h2>
+<p>Open a Jira notification email in Gmail or Outlook, hover the issue key in the message, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.</p>
+<p><img src="screenshots/marketing-hidpi-light/popup-overview.png" alt="Main product overview" /></p>
+<h2 id="feature-highlights">Feature highlights</h2>
+<ul>
+<li>Action Jira email notifications directly from Gmail, Outlook, and other enabled inbox-style pages</li>
+<li>Rich popup for issue metadata, description, attachments, comments, and linked pull requests</li>
+<li>PR visibility inside the card, including title, author, branch, and status</li>
+<li>Inline editing for supported Jira fields and supported custom field types</li>
+<li>Configurable layout with Jira custom fields placed directly into the popup rows</li>
+<li>Comment drafting with mentions and support for comment reactions</li>
+<li>Jira-backed quick actions and workflow transitions</li>
+</ul>
+<h2 id="why-it-matters">Why it matters</h2>
+<ul>
+<li>Turns Jira notification emails into actionable workflows instead of another tab-switching detour</li>
+<li>Less tab switching during review and triage</li>
+<li>Faster issue updates while staying in the current page</li>
+<li>Better release confidence with attachments, history, and linked PRs in one place</li>
+<li>More relevant popups because each team can control fields and custom field placement</li>
+</ul>
+<h2 id="quick-start">Quick start</h2>
+<ol type="1">
+<li>Open <a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> in the Chrome Web Store.</li>
+<li>Click <code>Add to Chrome</code> and confirm the browser prompt.</li>
+<li>Open the Jira QuickView Options page.</li>
+<li>Enter your Jira instance URL, for example <code>https://your-company.atlassian.net</code>.</li>
+<li>Add the pages where Jira QuickView should run, such as <code>github.com</code>, <code>mail.google.com</code>, or <code>outlook.office.com</code>.</li>
+<li>Save, open an allowed page, and hover a Jira issue key such as <code>ABC-123</code>.</li>
+</ol>
+<p>By default, the popup opens when you hover a Jira key and then hold <code>Alt</code>, <code>Ctrl</code>, or <code>Shift</code>. This keeps busy pages readable while still making issue details one gesture away.</p>
+<p>For full setup details, advanced allowed-page patterns, Outlook web/PWA setup, custom fields, troubleshooting, and day-to-day workflows, read the <a href="user-guide.html">User guide</a>.</p>
+<h2 id="where-it-works">Where it works</h2>
+<p>Jira QuickView works on pages you explicitly allow, including GitHub, Gmail, Outlook on the web, internal docs, wiki pages, dashboards, release notes, and QA checklists. It does not scan every site you visit.</p>
+<h2 id="customize-the-popup">Customize the popup</h2>
+<p>The Options page lets you choose color mode, hover behavior, row fields, content blocks, custom Jira fields, and import/export settings. The <a href="user-guide.html">User guide</a> explains each configuration block and the Jira permission or workflow limits behind edit controls.</p>
+<h2 id="privacy">Privacy</h2>
+<ul>
+<li>Uses your existing Jira browser session</li>
+<li>Stores no separate Jira password</li>
+<li>Sends requests from the browser to your Jira instance</li>
+<li>Honors Jira permissions, validation rules, and workflow restrictions</li>
+<li><a href="https://dgebaei.github.io/Jira-QuickView/privacy-policy.html">Privacy Policy</a></li>
+</ul>
+<h2 id="need-help">Need help?</h2>
+<ul>
+<li>Read the <a href="user-guide.html">User guide</a> for setup, advanced configuration, troubleshooting, and daily workflows.</li>
+<li>Use the <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a> to report bugs or request improvements.</li>
+</ul>
+<h2 id="gallery">Gallery</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Quick actions</th>
+<th>Inline editing</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><img src="screenshots/marketing-hidpi-light/popup-actions.png" alt="Quick actions" /></td>
+<td><img src="screenshots/marketing-hidpi-light/popup-inline-editor.png" alt="Inline editing" /></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th>Description editing</th>
+<th>Comment drafting</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><img src="screenshots/marketing-hidpi-light/popup-description-editor.png" alt="Description editing" /></td>
+<td><img src="screenshots/marketing-hidpi-light/popup-comment-compose.png" alt="Comment drafting" /></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th>Attachments and evidence</th>
+<th>Related pull requests</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><img src="screenshots/marketing-hidpi-light/popup-attachments.png" alt="Attachments and evidence" /></td>
+<td><img src="screenshots/marketing-hidpi-light/popup-pull-requests.png" alt="Related pull requests" /></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th>Change history</th>
+<th>Options overview</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><img src="screenshots/marketing-hidpi-light/popup-history.png" alt="Change history" /></td>
+<td><img src="screenshots/marketing-hidpi-light/options-basic-overview.png" alt="Options overview" /></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th>Advanced layout</th>
+<th>Custom fields</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><img src="screenshots/marketing-hidpi-light/options-advanced-layout.png" alt="Advanced layout" /></td>
+<td><img src="screenshots/marketing-hidpi-light/options-custom-fields.png" alt="Custom fields" /></td>
+</tr>
+</tbody>
+</table>
+<h2 id="license">License</h2>
+<p>MIT. See <code>LICENSE.md</code>.</p>
+
+    </article>
+  </main>
+  <script src="site.js"></script>
+</body>
+</html>
