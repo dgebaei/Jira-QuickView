@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "settingsRevision": 4,
+  "publishedAt": "2026-04-10T12:00:00.000Z",
+  "minimumExtensionVersion": "2.3.1",
+  "policy": {
+    "instanceUrl": "locked",
+    "domains": "default",
+    "themeMode": "unmanaged",
+    "hoverDepth": "locked",
+    "hoverModifierKey": "locked",
+    "displayFields": "default",
+    "tooltipLayout": "default",
+    "customFields": "default"
+  },
+  "settings": {
+    "instanceUrl": "https://example.atlassian.net/",
+    "domains": [
+      "https://mail.google.com/*",
+      "https://github.com/*"
+    ],
+    "hoverDepth": "deep",
+    "hoverModifierKey": "shift",
+    "displayFields": {
+      "labels": false,
+      "comments": true
+    },
+    "tooltipLayout": {
+      "row1": [
+        "issueType",
+        "status",
+        "priority",
+        "epicParent"
+      ],
+      "row2": [
+        "sprint",
+        "affects",
+        "fixVersions"
+      ],
+      "row3": [
+        "environment",
+        "labels"
+      ],
+      "contentBlocks": [
+        "description",
+        "attachments",
+        "comments",
+        "pullRequests"
+      ],
+      "people": [
+        "reporter",
+        "assignee"
+      ]
+    },
+    "customFields": [
+      {
+        "fieldId": "customfield_12345",
+        "row": 3
+      }
+    ]
+  }
+}

@@ -27,6 +27,7 @@
   ],
   "permissions": [
     "activeTab",
+    "alarms",
     "declarativeContent",
     "scripting",
     "storage",

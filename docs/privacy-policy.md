@@ -1,6 +1,6 @@
 # Jira QuickView Privacy Policy
 
-Effective date: 2026-04-08
+Effective date: 2026-04-12
 
 This draft is based on the current implementation in this repository.
 
@@ -23,6 +23,8 @@ Jira QuickView stores extension settings in Chrome storage so the extension can 
 - Popup layout and display preferences
 - Custom field IDs and related configuration
 - Theme, hover, and UI preference settings
+- Team Sync source details such as a shared settings URL or Jira issue key and attachment filename
+- Team Sync status and metadata such as last revision, sync timestamps, and the last applied shared settings payload
 
 ### 2. Page content on enabled pages
 
@@ -57,6 +59,15 @@ If you use editing features, the extension may also send updates you initiate to
 
 The extension uses your existing browser session with Jira. It does not ask you to create or store a separate Jira password inside the extension.
 
+### 5. Shared settings file data
+
+If you enable Settings Sync, Jira QuickView may request a shared JSON configuration file from:
+
+- A Jira attachment on the Jira instance you configured
+- A direct URL that you or your administrator configured in the extension
+
+That shared JSON file can include organization-level Jira QuickView configuration such as layout settings, allowed page patterns, popup behavior, and Team Sync policy metadata.
+
 ## How Information Is Used
 
 Jira QuickView uses the information above only to provide the extension’s user-facing functionality, including:
@@ -65,6 +76,7 @@ Jira QuickView uses the information above only to provide the extension’s user
 - Fetching and showing Jira issue context in the popup
 - Rendering avatars, attachments, and previews
 - Saving your extension preferences
+- Loading and applying shared Team Sync configuration when you enable Settings Sync
 - Performing Jira actions that you explicitly trigger
 
 ## How Information Is Shared
@@ -76,6 +88,7 @@ Jira QuickView does not send your data to advertising networks, data brokers, or
 Information is transmitted only as needed to:
 
 - Your configured Jira instance, using your browser session, to provide the requested feature
+- A user-configured or administrator-provided shared settings URL when you enable Settings Sync URL mode
 - Services already involved in the page you choose to use, such as GitHub pages where Jira keys are detected locally in the page content
 
 In the current implementation, pull request information shown in the popup is obtained from Jira issue data returned by Jira, not by separate GitHub API calls from the extension.
@@ -83,6 +96,7 @@ In the current implementation, pull request information shown in the popup is ob
 ## Data Retention
 
 - Extension settings remain in Chrome storage until you change them, clear browser storage, or remove the extension.
+- Team Sync source details and last sync metadata remain in Chrome storage until you change them, disconnect Team Sync, clear browser storage, or remove the extension.
 - Jira issue data, images, and popup state are primarily processed in memory during use and are not stored by the developer on a separate server.
 
 ## Your Choices
@@ -91,12 +105,13 @@ You can:
 
 - Choose which pages or domains the extension is allowed to run on
 - Change or remove the configured Jira instance URL
+- Change or disconnect the Team Sync source at any time
 - Remove the extension at any time
 - Revoke site access and Chrome permissions through Chrome’s extension settings
 
 ## Security
 
-Jira QuickView is designed to use the minimum data needed for its features. Requests to Jira are made from your browser to the Jira instance you configured. The extension does not use remote code in its current implementation.
+Jira QuickView is designed to use the minimum data needed for its features. Requests to Jira are made from your browser to the Jira instance you configured. If you enable Settings Sync URL mode, the extension also requests the shared JSON settings file from the URL you configured. The extension does not use remote code in its current implementation.
 
 You are responsible for configuring a valid Jira URL and for ensuring that your Jira instance is secured appropriately for your environment.
 

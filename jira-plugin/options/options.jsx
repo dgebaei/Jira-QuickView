@@ -2,10 +2,21 @@
 import React, {useEffect, useState, useCallback, useRef} from 'react';
 import ReactDOM from 'react-dom';
 import defaultConfig, {buildTooltipLayoutFromDisplayFields} from 'options/config';
-import {storageGet, storageSet, permissionsRequest} from 'src/chrome';
+import {storageGet, storageSet, storageLocalGet, storageLocalSet, storageLocalRemove, permissionsRequest, sendMessage} from 'src/chrome';
 import {resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocumentTheme} from 'src/theme';
 import {TooltipLayoutEditor} from 'options/tooltip-layout-editor';
+import {
+  buildExportedSettingsPayload,
+  buildSimpleSyncState,
+  extractSettingsConfig,
+  getConfigPermissionOrigins,
+  getSimpleSyncSourcePermissionOrigins,
+  normalizeSimpleSyncState,
+  SIMPLE_SYNC_DEFAULT_FILE_NAME,
+  SIMPLE_SYNC_SOURCE_TYPES,
+  SIMPLE_SYNC_STORAGE_KEY,
+} from 'src/settings-sync';
 import {
   normalizeInstanceUrl,
   normalizeCustomFields,
@@ -51,6 +62,12 @@ function ConfigPage(props) {
   const [status, setStatus] = useState('');
   const [statusTone, setStatusTone] = useState('neutral');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [simpleSyncState, setSimpleSyncState] = useState(() => normalizeSimpleSyncState({}));
+  const [syncSourceType, setSyncSourceType] = useState(SIMPLE_SYNC_SOURCE_TYPES.JIRA_ATTACHMENT);
+  const [syncUrl, setSyncUrl] = useState('');
+  const [syncIssueKey, setSyncIssueKey] = useState('');
+  const [syncFileName, setSyncFileName] = useState(SIMPLE_SYNC_DEFAULT_FILE_NAME);
   const [showAdvanced, setShowAdvanced] = useState(
     () => sessionStorage.getItem('jhl_adv') === '1'
   );
@@ -76,6 +93,19 @@ function ConfigPage(props) {
     customFields,
   });
   const isDirty = currentJson !== savedJsonRef.current;
+  const isUrlSyncSource = syncSourceType === SIMPLE_SYNC_SOURCE_TYPES.URL;
+  const draftSyncUrl = String(syncUrl || '').trim();
+  const draftSyncIssueKey = String(syncIssueKey || '').trim().toUpperCase();
+  const draftSyncFileName = String(syncFileName || SIMPLE_SYNC_DEFAULT_FILE_NAME).trim() || SIMPLE_SYNC_DEFAULT_FILE_NAME;
+  const hasSimpleSyncDraftSource = isUrlSyncSource
+    ? !!draftSyncUrl
+    : !!draftSyncIssueKey;
+  const draftSimpleSyncMatchesStored = isUrlSyncSource
+    ? simpleSyncState.sourceType === SIMPLE_SYNC_SOURCE_TYPES.URL && (simpleSyncState.source.url || '') === draftSyncUrl
+    : simpleSyncState.sourceType === SIMPLE_SYNC_SOURCE_TYPES.JIRA_ATTACHMENT
+      && (simpleSyncState.source.issueKey || '') === draftSyncIssueKey
+      && (simpleSyncState.source.fileName || SIMPLE_SYNC_DEFAULT_FILE_NAME) === draftSyncFileName;
+  const canRunSimpleSyncNow = hasSimpleSyncDraftSource || (simpleSyncState.enabled && draftSimpleSyncMatchesStored);
 
   const toggleAdvanced = useCallback(() => {
     setShowAdvanced(prev => {
@@ -84,6 +114,72 @@ function ConfigPage(props) {
       return next;
     });
   }, []);
+
+  const applyConfigToForm = useCallback((config) => {
+    const nextTooltipLayout = config.tooltipLayout || buildTooltipLayoutFromDisplayFields({
+      ...defaultConfig.displayFields,
+      ...(config.displayFields || {})
+    });
+    const nextInstanceUrl = config.instanceUrl || '';
+    const nextDomainsText = (config.domains || []).join(', ');
+    const nextThemeMode = normalizeThemeMode(config.themeMode || DEFAULT_THEME_MODE);
+    const nextHoverDepth = config.hoverDepth || 'shallow';
+    const nextHoverModifierKey = config.hoverModifierKey || 'none';
+    const nextCustomFields = normalizeCustomFields(config.customFields, nextTooltipLayout)
+      .map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}));
+
+    setInstanceUrl(nextInstanceUrl);
+    setDomainsText(nextDomainsText);
+    setThemeMode(nextThemeMode);
+    setHoverDepth(nextHoverDepth);
+    setHoverModifierKey(nextHoverModifierKey);
+    setDisplayFields({
+      ...defaultConfig.displayFields,
+      ...(config.displayFields || {})
+    });
+    setTooltipLayout(nextTooltipLayout);
+    setCustomFields(nextCustomFields);
+    savedJsonRef.current = buildOptionsSnapshot({
+      instanceUrl: nextInstanceUrl,
+      domainsText: nextDomainsText,
+      themeMode: nextThemeMode,
+      hoverDepth: nextHoverDepth,
+      hoverModifierKey: nextHoverModifierKey,
+      tooltipLayout: nextTooltipLayout,
+      customFields: nextCustomFields,
+    });
+  }, []);
+
+  const applySimpleSyncStateToForm = useCallback((state) => {
+    const normalized = normalizeSimpleSyncState(state);
+    setSimpleSyncState(normalized);
+    setSyncSourceType(normalized.sourceType);
+    if (normalized.sourceType === SIMPLE_SYNC_SOURCE_TYPES.URL) {
+      setSyncUrl(normalized.source.url || '');
+    } else {
+      setSyncIssueKey(normalized.source.issueKey || '');
+      setSyncFileName(normalized.source.fileName || SIMPLE_SYNC_DEFAULT_FILE_NAME);
+    }
+  }, []);
+
+  const refreshSimpleSyncState = useCallback(async () => {
+    const result = await storageLocalGet({[SIMPLE_SYNC_STORAGE_KEY]: {}});
+    const normalized = normalizeSimpleSyncState(result[SIMPLE_SYNC_STORAGE_KEY]);
+    applySimpleSyncStateToForm(normalized);
+    return normalized;
+  }, [applySimpleSyncStateToForm]);
+
+  useEffect(() => {
+    let cancelled = false;
+    storageLocalGet({[SIMPLE_SYNC_STORAGE_KEY]: {}}).then(result => {
+      if (!cancelled) {
+        applySimpleSyncStateToForm(result[SIMPLE_SYNC_STORAGE_KEY]);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [applySimpleSyncStateToForm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,8 +285,6 @@ function ConfigPage(props) {
 
   const exportSettings = () => {
     const config = {
-      version: '2.3.1',
-      exportedAt: new Date().toISOString(),
       instanceUrl,
       domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
       themeMode,
@@ -200,12 +294,13 @@ function ConfigPage(props) {
       tooltipLayout,
       customFields: normalizeCustomFields(customFields, tooltipLayout)
     };
+    const payload = buildExportedSettingsPayload(config, simpleSyncState, chrome.runtime.getManifest().version);
 
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'jira-hotlinker-settings.json';
+    a.download = 'jira-quickview-settings.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -222,9 +317,10 @@ function ConfigPage(props) {
 
       try {
         const text = await file.text();
-        const config = JSON.parse(text);
+        const payload = JSON.parse(text);
+        const config = extractSettingsConfig(payload);
 
-        if (!config.instanceUrl && !config.domains) {
+        if (!config || (!config.instanceUrl && !config.domains)) {
           setStatusTone('error');
           setStatus('Invalid settings file.');
           return;
@@ -250,22 +346,97 @@ function ConfigPage(props) {
     input.click();
   };
 
-  const showProModal = () => {
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
-    modal.innerHTML = `
-      <div style="background:white;border-radius:12px;padding:24px;max-width:400px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
-        <h3 style="margin:0 0 12px;color:#1e40af;">Team Sync (Pro)</h3>
-        <p style="color:#64748b;margin:0 0 16px;">Auto-sync your Jira QuickView settings across your team. Coming soon!</p>
-        <p style="color:#94a3b8;font-size:12px;margin:0 0 16px;">Join the waitlist to get early access.</p>
-        <a href="mailto:dgebaei@gmail.com?subject=Team Sync Pro Waitlist" style="display:inline-block;background:#7c3aed;color:white;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:600;">Join Waitlist</a>
-        <button onclick="this.closest('div').parentElement.remove()" style="display:block;margin:12px auto 0;background:transparent;border:none;color:#64748b;cursor:pointer;">Close</button>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
-    });
+  const runSimpleSyncNow = async () => {
+    setIsSyncing(true);
+    try {
+      if (hasSimpleSyncDraftSource && (!simpleSyncState.enabled || !draftSimpleSyncMatchesStored)) {
+        const currentConfig = await storageGet(defaultConfig);
+        const savedInstanceUrl = normalizeInstanceUrl(currentConfig.instanceUrl || '');
+        const normalizedFormInstanceUrl = normalizeInstanceUrl(instanceUrl || '');
+        const nextSimpleSyncState = buildSimpleSyncState({
+          sourceType: syncSourceType,
+          url: draftSyncUrl,
+          issueKey: draftSyncIssueKey,
+          fileName: draftSyncFileName,
+        }, simpleSyncState);
+
+        if (nextSimpleSyncState.sourceType === SIMPLE_SYNC_SOURCE_TYPES.JIRA_ATTACHMENT) {
+          if (!savedInstanceUrl) {
+            throw new Error('Save your Jira instance URL before using Jira attachment sync.');
+          }
+          if (normalizedFormInstanceUrl && normalizedFormInstanceUrl !== savedInstanceUrl) {
+            throw new Error('Save your Jira instance URL before syncing from a Jira attachment.');
+          }
+        }
+
+        const permissionOrigins = getSimpleSyncSourcePermissionOrigins(nextSimpleSyncState, {
+          instanceUrl: savedInstanceUrl,
+        });
+        if (permissionOrigins.length) {
+          const granted = await permissionsRequest({origins: permissionOrigins.map(toMatchUrl)});
+          if (!granted) {
+            throw new Error('Team Sync source was not saved because permission was not granted.');
+          }
+        }
+
+        await storageLocalSet({[SIMPLE_SYNC_STORAGE_KEY]: nextSimpleSyncState});
+        applySimpleSyncStateToForm(nextSimpleSyncState);
+      }
+
+      const response = await sendMessage({action: 'runSimpleSettingsSync'});
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+      const result = response?.result || {};
+      await refreshSimpleSyncState();
+      const nextConfig = await storageGet(defaultConfig);
+      applyConfigToForm(nextConfig);
+    } catch (error) {
+      setSimpleSyncState(current => normalizeSimpleSyncState({
+        ...current,
+        status: 'error',
+        message: error.message || 'Team settings sync failed.',
+      }));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const disconnectSimpleSync = async () => {
+    await storageLocalRemove(SIMPLE_SYNC_STORAGE_KEY);
+    applySimpleSyncStateToForm({});
+  };
+
+  const grantSimpleSyncPermissions = async () => {
+    setIsSyncing(true);
+    try {
+      const currentConfig = await storageGet(defaultConfig);
+      const origins = getConfigPermissionOrigins(currentConfig);
+      if (!origins.length) {
+        return;
+      }
+      const granted = await permissionsRequest({origins});
+      if (!granted) {
+        return;
+      }
+      await storageLocalSet({
+        [SIMPLE_SYNC_STORAGE_KEY]: {
+          ...simpleSyncState,
+          status: 'synced',
+          message: 'Required permissions granted.',
+        }
+      });
+      await resetDeclarativeMapping();
+      await refreshSimpleSyncState();
+    } catch (error) {
+      setSimpleSyncState(current => normalizeSimpleSyncState({
+        ...current,
+        status: 'error',
+        message: error.message || 'Could not request synced page permissions.',
+      }));
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const saveOptions = async () => {
@@ -282,6 +453,26 @@ function ConfigPage(props) {
     }
 
     setInstanceUrl(normalizedInstanceUrl);
+
+    const shouldPersistSimpleSyncSource = simpleSyncState.enabled || (isUrlSyncSource
+      ? !!String(syncUrl || '').trim()
+      : !!String(syncIssueKey || '').trim());
+
+    let nextSimpleSyncState = null;
+    if (shouldPersistSimpleSyncSource) {
+      try {
+        nextSimpleSyncState = buildSimpleSyncState({
+          sourceType: syncSourceType,
+          url: syncUrl,
+          issueKey: syncIssueKey,
+          fileName: syncFileName,
+        }, simpleSyncState);
+      } catch (error) {
+        setStatusTone('error');
+        setStatus(error.message || 'Team Sync source could not be saved.');
+        return;
+      }
+    }
 
     const permissionDomains = domains.concat([normalizedInstanceUrl]);
     const currentInstanceUrl = await storageGet(defaultConfig);
@@ -310,42 +501,103 @@ function ConfigPage(props) {
       return;
     }
 
-    await storageSet({
-      instanceUrl: normalizedInstanceUrl,
-      domains,
-      themeMode: normalizeThemeMode(themeMode),
-      v15upgrade: true,
-      hoverDepth,
-      hoverModifierKey,
-      displayFields,
-      tooltipLayout,
-      customFields: normalizeCustomFields(customFields, tooltipLayout)
-    });
-    resetDeclarativeMapping();
-    setDomainsText(domains.join(', '));
-    savedJsonRef.current = buildOptionsSnapshot({
-      instanceUrl: normalizedInstanceUrl,
-      domainsText: domains.join(', '),
-      themeMode: normalizeThemeMode(themeMode),
-      hoverDepth,
-      hoverModifierKey,
-      tooltipLayout,
-      customFields,
-    });
-    setIsSaving(false);
-    setStatusTone('success');
-    setStatus('Options saved successfully.');
-    setTimeout(() => {
-      setStatusTone('neutral');
-      setStatus('');
-    }, 2500);
+    if (nextSimpleSyncState) {
+      try {
+        const permissionOrigins = getSimpleSyncSourcePermissionOrigins(nextSimpleSyncState, {
+          instanceUrl: normalizedInstanceUrl,
+        });
+        if (permissionOrigins.length) {
+          const sourceGranted = await permissionsRequest({origins: permissionOrigins.map(toMatchUrl)});
+          if (!sourceGranted) {
+            setIsSaving(false);
+            setStatusTone('error');
+            setStatus('Team Sync source was not saved because permission was not granted.');
+            return;
+          }
+        }
+      } catch (error) {
+        setIsSaving(false);
+        setStatusTone('error');
+        setStatus(error.message || 'Team Sync source could not be saved.');
+        return;
+      }
+    }
+
+    try {
+      await storageSet({
+        instanceUrl: normalizedInstanceUrl,
+        domains,
+        themeMode: normalizeThemeMode(themeMode),
+        v15upgrade: true,
+        hoverDepth,
+        hoverModifierKey,
+        displayFields,
+        tooltipLayout,
+        customFields: normalizeCustomFields(customFields, tooltipLayout)
+      });
+      resetDeclarativeMapping();
+
+      if (nextSimpleSyncState) {
+        await storageLocalSet({[SIMPLE_SYNC_STORAGE_KEY]: nextSimpleSyncState});
+        applySimpleSyncStateToForm(nextSimpleSyncState);
+      }
+
+      setDomainsText(domains.join(', '));
+      savedJsonRef.current = buildOptionsSnapshot({
+        instanceUrl: normalizedInstanceUrl,
+        domainsText: domains.join(', '),
+        themeMode: normalizeThemeMode(themeMode),
+        hoverDepth,
+        hoverModifierKey,
+        tooltipLayout,
+        customFields,
+      });
+
+      if (nextSimpleSyncState?.enabled) {
+        try {
+          const response = await sendMessage({action: 'runSimpleSettingsSync'});
+          if (response?.error) {
+            throw new Error(response.error);
+          }
+          await refreshSimpleSyncState();
+          const nextConfig = await storageGet(defaultConfig);
+          applyConfigToForm(nextConfig);
+        } catch (error) {
+          await refreshSimpleSyncState();
+        }
+        setStatusTone('success');
+        setStatus('Options saved successfully.');
+        setTimeout(() => {
+          setStatusTone('neutral');
+          setStatus('');
+        }, 2500);
+      } else {
+        setStatusTone('success');
+        setStatus('Options saved successfully.');
+        setTimeout(() => {
+          setStatusTone('neutral');
+          setStatus('');
+        }, 2500);
+      }
+    } catch (error) {
+      setStatusTone('error');
+      setStatus(error.message || 'Options could not be saved.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const discardOptions = () => {
     window.location.reload();
   };
 
-  const statusMessage = status || (hasInvalidCustomFields ? 'Fix invalid custom field IDs before saving.' : 'Changes are local until you save them.');
+  const statusMessage = status || (
+    hasInvalidCustomFields
+      ? 'Fix invalid custom field IDs before saving.'
+      : (isDirty ? 'Unsaved changes.' : 'No unsaved changes.')
+  );
+  const statusPillIsSaved = !status && !hasInvalidCustomFields && !isDirty;
+  const showTeamSyncMessage = !!simpleSyncState.message && ['error', 'permissionsRequired'].includes(simpleSyncState.status);
 
   return (
     <div className='optionsPage' data-testid='options-root'>
@@ -359,8 +611,8 @@ function ConfigPage(props) {
           </p>
         </div>
         <div className='heroRight'>
-          <div className='statusPill' data-testid='options-status-pill'>
-            <span className={`statusPillDot ${statusTone === 'success' ? 'statusPillDotActive' : ''}`} />
+          <div className={`statusPill${statusPillIsSaved ? ' statusPillActive' : ''}`} data-testid='options-status-pill'>
+            <span className={`statusPillDot ${statusTone === 'success' || statusPillIsSaved ? 'statusPillDotActive' : ''}`} />
             {statusMessage}
           </div>
         </div>
@@ -438,30 +690,31 @@ function ConfigPage(props) {
 
       </div>
 
-      {/* ── Advanced Toggle ──────────────────────────────── */}
-      <div className='advToggleCard'>
-        <svg className='advToggleIcon' viewBox='0 0 24 24' aria-hidden='true' focusable='false'>
-          <circle cx='12' cy='12' r='3.5' />
-          <path d='M12 3v3M12 18v3M4.9 4.9 7 7M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1' />
-        </svg>
-        <div className='advToggleText'>
-          <h3>Show advanced settings</h3>
-          <p>Hover trigger depth, modifier keys, field layout editor, custom fields, and settings sync.</p>
+      {/* ── Advanced ────────────────────────────────────── */}
+      <section className={`advancedPanel${showAdvanced ? ' advancedPanelOpen' : ''}`}>
+        <div className='advancedPanelHeader'>
+          <svg className='advToggleIcon' viewBox='0 0 24 24' aria-hidden='true' focusable='false'>
+            <circle cx='12' cy='12' r='3.5' />
+            <path d='M12 3v3M12 18v3M4.9 4.9 7 7M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1' />
+          </svg>
+          <div className='advToggleText'>
+            <h3>Show advanced settings</h3>
+            <p>Hover trigger depth, modifier keys, field layout editor, custom fields, and settings sync.</p>
+          </div>
+          <button
+            type='button'
+            data-testid='options-advanced-toggle'
+            className='advToggleBtn'
+            onClick={toggleAdvanced}
+            aria-expanded={showAdvanced}
+          >
+            {showAdvanced ? 'Hide' : 'Show'}
+          </button>
         </div>
-        <button
-          type='button'
-          data-testid='options-advanced-toggle'
-          className='advToggleBtn'
-          onClick={toggleAdvanced}
-          aria-expanded={showAdvanced}
-        >
-          {showAdvanced ? 'Hide' : 'Show'}
-        </button>
-      </div>
 
-      {/* ── ADVANCED Sections ───────────────────────────── */}
-      {showAdvanced && (
-        <div className='settingsGrid'>
+        {showAdvanced && (
+          <div className='advancedPanelBody'>
+            <div className='settingsGrid advancedSettingsGrid'>
           {/* ── Hover Behavior ───────────────────────────── */}
           <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
@@ -523,28 +776,115 @@ function ConfigPage(props) {
 
           {/* ── Settings Sync ────────────────────────────── */}
           <section className='settingsCard settingsGridFull'>
-            <div className='cardHeader'>
-              <h2>Settings Sync</h2>
-              <p>Export, import, or auto-sync your extension configuration across your team.</p>
+            <div className='cardHeader cardHeaderWithStatus'>
+              <div className='cardHeaderCopy'>
+                <h2>Settings Sync</h2>
+                <p>Export, import, or auto-sync your extension configuration across your team.</p>
+              </div>
+              <span className={`teamSyncStatus teamSyncStatus-${simpleSyncState.status}`} data-testid='options-team-sync-status'>
+                {simpleSyncState.enabled ? simpleSyncState.status : 'not connected'}
+              </span>
             </div>
             <div className='cardBody'>
-              <div className='syncButtons'>
-                <button type='button' data-testid='options-export-settings' className='syncBtn' onClick={exportSettings}>
-                  &#10132; Export Settings (.json)
-                </button>
-                <button type='button' data-testid='options-import-settings' className='syncBtn' onClick={importSettings}>
-                  &#10132; Import Settings (.json)
-                </button>
-                <button type='button' data-testid='options-team-sync' className='syncBtn proButton' onClick={showProModal}>
-                  &#10022; Team Sync (Pro)
-                </button>
+              <div className='teamSyncPanel' data-testid='options-team-sync-panel'>
+                <div className='teamSyncSourceRow'>
+                  <label className='formField teamSyncSourceTypeField'>
+                    <div className='fieldLabelRow'>
+                      <span className='fieldLabel'>Sync source</span>
+                      <button type='button' className='teamSyncHint' aria-label='If a sync check fails, Jira QuickView keeps the last applied team settings and shows the error here.'>
+                        <span className='teamSyncHintIcon' aria-hidden='true'>i</span>
+                        <span className='teamSyncTooltip'>
+                          If a sync check fails, Jira QuickView keeps the last applied team settings and shows the error here.
+                        </span>
+                      </button>
+                    </div>
+                    <select data-testid='options-team-sync-source-type' value={syncSourceType} onChange={event => setSyncSourceType(event.target.value)}>
+                      <option value={SIMPLE_SYNC_SOURCE_TYPES.JIRA_ATTACHMENT}>Jira attachment</option>
+                      <option value={SIMPLE_SYNC_SOURCE_TYPES.URL}>Settings file URL</option>
+                    </select>
+                  </label>
+
+                  {isUrlSyncSource ? (
+                    <label className='formField teamSyncFieldSpanTwo'>
+                      <span className='fieldLabel'>Settings file URL</span>
+                      <input
+                        data-testid='options-team-sync-url'
+                        type='url'
+                        value={syncUrl}
+                        onChange={event => setSyncUrl(event.target.value)}
+                        placeholder='https://intranet.example.com/jira-quickview-settings.json' />
+                    </label>
+                  ) : (
+                    <>
+                      <label className='formField'>
+                        <span className='fieldLabel'>Jira issue key</span>
+                        <input
+                          data-testid='options-team-sync-issue-key'
+                          type='text'
+                          value={syncIssueKey}
+                          onChange={event => setSyncIssueKey(event.target.value)}
+                          placeholder='OPS-123' />
+                      </label>
+                      <label className='formField'>
+                        <div className='fieldLabelRow'>
+                          <span className='fieldLabel'>Attachment filename</span>
+                          <button type='button' className='teamSyncHint teamSyncHintAlignRight' aria-label='Jira attachment sync uses the newest attachment with the same filename. Increment settingsRevision inside the JSON when publishing a new version.'>
+                            <span className='teamSyncHintIcon' aria-hidden='true'>i</span>
+                            <span className='teamSyncTooltip'>
+                              Jira attachment sync uses the newest attachment with the same filename. Increment settingsRevision inside the JSON when publishing a new version.
+                            </span>
+                          </button>
+                        </div>
+                        <input
+                          data-testid='options-team-sync-file-name'
+                          type='text'
+                          value={syncFileName}
+                          onChange={event => setSyncFileName(event.target.value)}
+                          placeholder={SIMPLE_SYNC_DEFAULT_FILE_NAME} />
+                      </label>
+                    </>
+                  )}
+                </div>
+                <div className='teamSyncActions'>
+                  <div className='teamSyncPrimaryColumn'>
+                    <div className='syncButtons teamSyncActionGroup teamSyncActionGroupPrimary'>
+                      <button type='button' data-testid='options-team-sync-now' className='syncBtn proButton' onClick={runSimpleSyncNow} disabled={isSyncing || isSaving || !canRunSimpleSyncNow}>
+                        Sync Now
+                      </button>
+                      {simpleSyncState.status === 'permissionsRequired' && (
+                        <button type='button' data-testid='options-team-sync-grant-permissions' className='syncBtn' onClick={grantSimpleSyncPermissions} disabled={isSyncing || isSaving}>
+                          Grant Permissions
+                        </button>
+                      )}
+                      <button type='button' data-testid='options-team-sync-disconnect' className='syncBtn' onClick={disconnectSimpleSync} disabled={isSyncing || isSaving || !simpleSyncState.enabled}>
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+                  <div className='syncButtons teamSyncActionGroup teamSyncActionGroupSecondary'>
+                    <button type='button' data-testid='options-import-settings' className='syncBtn' onClick={importSettings}>
+                      &larr; Import (.json)
+                    </button>
+                    <button type='button' data-testid='options-export-settings' className='syncBtn' onClick={exportSettings}>
+                      &rarr; Export (.json)
+                    </button>
+                  </div>
+                </div>
+                {showTeamSyncMessage && (
+                  <p
+                    className={`teamSyncInlineMessage teamSyncStatus teamSyncStatus-${simpleSyncState.status}`}
+                    data-testid='options-team-sync-message'>
+                    {simpleSyncState.message}
+                  </p>
+                )}
               </div>
-              <p className='syncProHint'>auto-sync config across your team</p>
             </div>
           </section>
 
-        </div>
-      )}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* ── Footer Action Bar ────────────────────────────── */}
       <footer className={`actionBar${isDirty ? ' actionBarDirty' : ''}`}>

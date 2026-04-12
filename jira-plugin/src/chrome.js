@@ -26,7 +26,11 @@ export const promisifyChrome = (context, funcName) =>
 
 const storageGet = promisifyChrome(chrome.storage.sync, 'get');
 const storageSet = promisifyChrome(chrome.storage.sync, 'set');
+const storageLocalGet = promisifyChrome(chrome.storage.local, 'get');
+const storageLocalSet = promisifyChrome(chrome.storage.local, 'set');
+const storageLocalRemove = promisifyChrome(chrome.storage.local, 'remove');
 const permissionsRequest = promisifyChrome(chrome.permissions, 'request');
+const permissionsContains = promisifyChrome(chrome.permissions, 'contains');
 const permissionsRemove = promisifyChrome(chrome.permissions, 'remove');
 const sendMessage = promisifyChrome(chrome.runtime, 'sendMessage');
 
@@ -34,7 +38,11 @@ const sendMessage = promisifyChrome(chrome.runtime, 'sendMessage');
 export {
   storageSet,
   storageGet,
+  storageLocalSet,
+  storageLocalGet,
+  storageLocalRemove,
   permissionsRequest,
+  permissionsContains,
   permissionsRemove,
   sendMessage,
 };

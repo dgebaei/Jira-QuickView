@@ -350,17 +350,61 @@ Business logic and limitations:
 
 ### 4.8 Advanced: Settings Sync
 
-![Advanced settings sync](screenshots/user-guide/options-settings-sync.png)
+![Settings Sync via Jira attachment](screenshots/user-guide/options-settings-sync-jira-attachment.png)
+
+![Settings Sync via settings file URL](screenshots/user-guide/options-settings-sync-url.png)
 
 Settings Sync lets you move a Jira QuickView configuration between browsers or teammates.
 
 Available actions:
 
-- `Export Settings (.json)` downloads the current configuration.
-- `Import Settings (.json)` loads a previously exported configuration into the Options page.
-- `Team Sync (Pro)` is shown as a future team-sync workflow and is not active in the current public setup.
+- `Export (.json)` downloads the current configuration as a versioned JSON file.
+- `Import (.json)` loads a previously exported file or Team Sync settings file into the Options page.
+- `Team Sync` connects the extension to one shared JSON settings file and applies updates automatically.
 
-Important: importing settings does not fully apply them until you click `Save`. This gives you a chance to review the Jira URL, allowed pages, layout, hover behavior, and custom fields before changing the active browser setup.
+Team Sync sources:
+
+- `Jira attachment`: point the extension at one Jira issue key and one attachment filename.
+- `Settings file URL`: point the extension at one HTTPS or HTTP URL that serves the JSON file.
+
+What goes in the shared file:
+
+- Team Sync reads a versioned JSON document like `docs/examples/jira-quickview-settings.json`.
+- The file must include `schemaVersion`, a positive `settingsRevision`, and a `settings` object.
+- The current `Export (.json)` output already uses the Team Sync file format, so it is a good starting point for administrators publishing a shared file.
+- The Team Sync source itself is still stored locally in the browser, not inside the shared settings file. Importing a file does not automatically connect the browser to a shared Jira issue or URL.
+
+First-time setup for end users:
+
+1. Open the extension Options page.
+2. If your team uses `Jira attachment`, save your Jira instance URL first.
+3. Open `Advanced` and find `Team Sync`.
+4. Choose `Jira attachment` or `Settings file URL`.
+5. Enter the shared Jira issue key and filename, or paste the shared URL.
+6. Click `Save` and accept the permission prompt if Chrome asks for it. Jira QuickView saves the Team Sync source and immediately runs the first sync check.
+
+What users need from an administrator:
+
+- For `Jira attachment`: the Jira issue key and the exact attachment filename.
+- For `Settings file URL`: the direct URL to the JSON file.
+
+Publishing updates:
+
+- Keep the shared location stable. For Jira attachment mode, keep the attachment filename stable. For URL mode, keep the shared URL stable.
+- Publish a new JSON file with a higher `settingsRevision`.
+- For Jira attachment sync, upload the new file to the same issue with the same filename. Jira QuickView picks the newest matching attachment automatically, including Jira's duplicate-upload rename pattern.
+- A sample file is available at `docs/examples/jira-quickview-settings.json`.
+
+Failure handling:
+
+- If the source URL is wrong, the Jira issue key is invalid, the attachment is missing, or the JSON is invalid, the Team Sync panel shows an error.
+- The last successfully applied team configuration stays active.
+- When a later sync succeeds, the extension applies the newer revision automatically.
+
+Important:
+
+- Importing settings does not fully apply them until you click `Save`. This gives you a chance to review the Jira URL, allowed pages, layout, hover behavior, and custom fields before changing the active browser setup.
+- `Save` still succeeds even if the first Team Sync fetch fails. Your local settings and Team Sync source are saved, the last good synced team configuration stays active, and the sync error remains visible in the Team Sync panel.
 
 ### 4.9 Save and Discard
 
@@ -368,9 +412,10 @@ Important: importing settings does not fully apply them until you click `Save`. 
 
 The footer of the Options page applies or discards changes.
 
-- `Save` writes the configuration to Chrome storage, requests any needed host permissions, and refreshes the extension's page matching rules.
+- `Save` writes the configuration to Chrome storage, requests any needed host permissions, refreshes the extension's page matching rules, and runs the first Team Sync check when Team Sync is configured.
 - `Discard` reloads the Options page and drops unsaved changes.
-- The status pill tells you whether changes are local only, saving, saved, or blocked by validation.
+- The status pill at the top of the page tells you whether there are unsaved changes or whether the current form matches the last saved state.
+- Save notices in the footer report the save result. Team Sync errors stay in the Team Sync panel itself.
 
 If custom fields are invalid, saving is disabled until the issue is fixed. This prevents a broken field ID from being saved accidentally.
 

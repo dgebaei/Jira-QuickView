@@ -1,6 +1,6 @@
 # Chrome Web Store Submission Checklist
 
-This checklist is tailored to the current `jira-plugin/manifest.json` and current behavior in the repository as of 2026-04-08.
+This checklist is tailored to the current `jira-plugin/manifest.json` and current behavior in the repository as of 2026-04-12.
 
 ## 1. Account And Publisher Setup
 
@@ -84,7 +84,7 @@ Use wording close to the following for each permission shown in the dashboard.
 
 `storage`
 
-> Saves the Jira instance URL, enabled page patterns, popup layout, custom field settings, theme, and other extension preferences.
+> Saves the Jira instance URL, enabled page patterns, popup layout, custom field settings, theme, Team Sync source details, and other extension preferences.
 
 `webNavigation`
 
@@ -92,7 +92,7 @@ Use wording close to the following for each permission shown in the dashboard.
 
 `*://*/*` optional host access
 
-> Optional site access is requested only when the user explicitly enables Jira QuickView for a page or saves allowed pages in settings. Suggested starting points in the UI include github.com, mail.google.com, and outlook.office.com, but none are enabled automatically on install. The extension does not automatically activate on every site.
+> Optional site access is requested only when the user explicitly enables Jira QuickView for a page, saves allowed pages in settings, or configures Settings Sync with a shared settings URL. Suggested starting points in the UI include github.com, mail.google.com, and outlook.office.com, but none are enabled automatically on install. The extension does not automatically activate on every site or fetch shared settings from arbitrary sites without user configuration.
 
 ### Remote Code Declaration
 
@@ -110,8 +110,10 @@ Use:
 The Chrome Web Store UI can change, so verify the exact checkbox labels at submission time. Based on the current implementation, be prepared to disclose only the data categories your final build actually handles:
 
 - Extension settings stored in Chrome storage
+- Team Sync source details and shared settings metadata stored in Chrome storage
 - Page text/content on user-enabled pages for Jira-key detection
 - Jira account/session-connected data shown in the popup
+- Shared Team Sync configuration data loaded from a user-configured URL or Jira attachment
 - User-generated Jira content such as comments, edits, and attachments when the user initiates those actions
 
 Do not claim analytics, advertising, sale of data, or remote-code behavior unless the implementation changes.
