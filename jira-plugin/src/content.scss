@@ -1171,7 +1171,7 @@ body ._JX {
   &_time_tracking_row_log {
     align-items: end;
     column-gap: 8px;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   &_time_tracking_field {
