@@ -29,6 +29,38 @@ import {
 import 'options/options.scss';
 
 const TOOLTIP_LAYOUT_ZONES = ['row1', 'row2', 'row3'];
+const HERO_LINKS = [
+  {
+    key: 'download',
+    href: 'https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia',
+    label: 'Download extension',
+  },
+  {
+    key: 'website',
+    href: 'https://dgebaei.github.io/Jira-QuickView/',
+    label: 'Extension website',
+  },
+  {
+    key: 'guide',
+    href: 'https://dgebaei.github.io/Jira-QuickView/user-guide.html',
+    label: 'User guide',
+  },
+  {
+    key: 'repo',
+    href: 'https://github.com/dgebaei/Jira-QuickView',
+    label: 'GitHub repository',
+  },
+  {
+    key: 'issues',
+    href: 'https://github.com/dgebaei/Jira-QuickView/issues',
+    label: 'Issue tracker',
+  },
+  {
+    key: 'new-issue',
+    href: 'https://github.com/dgebaei/Jira-QuickView/issues/new/choose',
+    label: 'New issue',
+  },
+];
 
 async function main() {
   const storedConfig = await storageGet(defaultConfig);
@@ -625,6 +657,20 @@ function ConfigPage(props) {
           <p className='heroCopy'>
             Configure your Jira connection, theme, and which fields appear in the hover popup.
           </p>
+          <nav className='heroLinks' aria-label='Jira QuickView resources' data-testid='options-hero-links'>
+            {HERO_LINKS.map(link => (
+              <a
+                key={link.key}
+                className='heroLink'
+                data-testid={`options-hero-link-${link.key}`}
+                href={link.href}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
         </div>
         <div className='heroRight'>
           <div className={`statusPill${statusPillIsSaved ? ' statusPillActive' : ''}`} data-testid='options-status-pill'>

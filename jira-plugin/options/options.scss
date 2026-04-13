@@ -209,6 +209,40 @@ body {
   max-width: 600px;
 }
 
+.heroLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.heroLink {
+  align-items: center;
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  color: var(--hero-text);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 9px 12px;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.heroLink:hover {
+  background: rgba(191, 219, 254, 0.2);
+  border-color: rgba(191, 219, 254, 0.45);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.heroLink:focus-visible {
+  outline: 2px solid rgba(191, 219, 254, 0.8);
+  outline-offset: 2px;
+}
+
 .statusPill {
   align-items: center;
   background: var(--status-bg);
@@ -1097,6 +1131,10 @@ button:disabled {
     padding-top: 0;
   }
 
+  .heroLinks {
+    gap: 8px;
+  }
+
   .advancedPanelHeader {
     grid-template-columns: 1fr;
   }
@@ -1163,6 +1201,17 @@ button:disabled {
 
   .themePills {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .heroLink {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+
+  .statusPill {
+    white-space: normal;
   }
 }
 

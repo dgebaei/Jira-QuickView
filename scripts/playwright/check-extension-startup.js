@@ -74,6 +74,7 @@ async function main() {
   const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jira-quickview-playwright-'));
   await ensureExtensionBundle();
   const testExtensionPath = await createTestExtensionCopy();
+  const screenshotPath = String(process.env.JHL_CAPTURE_OPTIONS_SCREENSHOT || '').trim();
   let context = null;
 
   try {
@@ -87,6 +88,15 @@ async function main() {
     });
 
     const extensionId = await getExtensionId(context);
+    if (screenshotPath) {
+      const page = await context.newPage();
+      await page.goto(`chrome-extension://${extensionId}/options/options.html`, {waitUntil: 'domcontentloaded'});
+      await page.waitForSelector('[data-testid="options-hero-links"]', {state: 'visible'});
+      await fs.mkdir(path.dirname(path.resolve(screenshotPath)), {recursive: true});
+      await page.screenshot({path: path.resolve(screenshotPath)});
+      await page.close().catch(() => {});
+      console.log(`Options screenshot saved to ${path.resolve(screenshotPath)}`);
+    }
     console.log(`Extension startup OK (${extensionId})`);
   } finally {
     if (context) {
