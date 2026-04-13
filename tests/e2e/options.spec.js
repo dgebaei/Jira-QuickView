@@ -1,9 +1,12 @@
 const fs = require('fs/promises');
+const extensionManifest = require('../../jira-plugin/manifest.json');
 const {test, expect, configureExtension} = require('./helpers/extension-fixtures');
 const {failWithJson, patchJsonResponse} = require('./helpers/jira-route-mocks');
 const {getFirstCustomFieldId} = require('./helpers/live-jira-api');
 const {contentBlockItem, customFieldLibraryItem, openAdvancedSettings, optionsPageModel} = require('./helpers/options-page');
 const {buildExtensionConfig, requireJiraTestTarget} = require('./helpers/test-targets');
+
+const CURRENT_EXTENSION_VERSION = String(extensionManifest.version || '');
 
 function baseConfig(servers, target, overrides = {}) {
   return {
@@ -42,6 +45,24 @@ test('shows whether there are unsaved changes in the hero status pill', async ({
   await form.instanceUrlInput.fill('example.atlassian.net');
 
   await expect(form.statusPill).toContainText('Unsaved changes.');
+});
+
+test('shows quick links to docs and issue reporting in the hero header', async ({optionsPage}) => {
+  const form = optionsPageModel(optionsPage);
+
+  await expect(form.heroLinks).toBeVisible();
+  await expect(form.heroLinkDownload).toHaveAttribute('href', 'https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia');
+  await expect(form.heroLinkWebsite).toHaveAttribute('href', 'https://dgebaei.github.io/Jira-QuickView/');
+  await expect(form.heroLinkGuide).toHaveAttribute('href', 'https://dgebaei.github.io/Jira-QuickView/user-guide.html');
+  await expect(form.heroLinkRepo).toHaveAttribute('href', 'https://github.com/dgebaei/Jira-QuickView');
+  await expect(form.heroLinkIssues).toHaveAttribute('href', 'https://github.com/dgebaei/Jira-QuickView/issues');
+  await expect(form.heroLinkNewIssue).toHaveAttribute('href', 'https://github.com/dgebaei/Jira-QuickView/issues/new/choose');
+
+  const screenshotPath = String(process.env.JHL_CAPTURE_OPTIONS_SCREENSHOT || '').trim();
+  if (screenshotPath) {
+    await optionsPage.setViewportSize({width: 1440, height: 960});
+    await optionsPage.screenshot({path: screenshotPath});
+  }
 });
 
 test('normalizes and persists a bare Jira hostname on save', async ({optionsPage}) => {
@@ -231,7 +252,7 @@ test('exports the current settings as JSON', async ({optionsPage, servers}) => {
   const exported = JSON.parse(await fs.readFile(downloadPath, 'utf8'));
   expect(exported.schemaVersion).toBe(1);
   expect(exported.settingsRevision).toBe(1);
-  expect(exported.minimumExtensionVersion).toBe('2.3.1');
+  expect(exported.minimumExtensionVersion).toBe(CURRENT_EXTENSION_VERSION);
   expect(exported.policy.instanceUrl).toBe('locked');
   expect(exported.settings.instanceUrl).toBe('https://example.atlassian.net/');
   expect(exported.settings.hoverDepth).toBe('deep');
@@ -449,7 +470,7 @@ test('exports the last synced revision and policy after Team Sync applies', asyn
   const syncedSettings = {
     schemaVersion: 1,
     settingsRevision: 7,
-    minimumExtensionVersion: '2.3.1',
+    minimumExtensionVersion: CURRENT_EXTENSION_VERSION,
     policy: {
       instanceUrl: 'locked',
       domains: 'default',
@@ -514,7 +535,7 @@ test('exports the last synced revision and policy after Team Sync applies', asyn
 
   const exported = JSON.parse(await fs.readFile(downloadPath, 'utf8'));
   expect(exported.settingsRevision).toBe(7);
-  expect(exported.minimumExtensionVersion).toBe('2.3.1');
+  expect(exported.minimumExtensionVersion).toBe(CURRENT_EXTENSION_VERSION);
   expect(exported.policy.hoverDepth).toBe('locked');
   expect(exported.settings.hoverDepth).toBe('deep');
 });

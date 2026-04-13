@@ -14,15 +14,18 @@ function baseConfig(servers, target, overrides = {}) {
 async function openPopup(extensionApp, servers, target, route = '/popup-actions') {
   const resolvedTarget = await resolveTargetIssueKeys(target);
   const page = await extensionApp.context.newPage();
+  const popup = page.locator('._JX_container');
+  const titleLink = page.locator('#_JX_title_link');
   await page.goto(`${servers.allowedPage.origin}${route}`);
   await replaceIssueKeysOnPage(page, [
     {from: 'JRACLOUD-97846', to: resolvedTarget.primaryIssueKey},
     {from: 'JRACLOUD-98123', to: resolvedTarget.secondaryIssueKey},
   ]);
   await injectContentScript(extensionApp, page);
-  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  await expect.poll(async () => popup.count()).toBe(1);
   await hoverIssueKey(page, '#popup-key');
-  await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
+  await expect(titleLink).toContainText(resolvedTarget.primaryIssueKey);
+  await expect(popup).toContainText(resolvedTarget.primaryIssueKey);
   return {page, target: resolvedTarget};
 }
 

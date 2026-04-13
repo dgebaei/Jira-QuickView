@@ -2,6 +2,13 @@ function optionsPageModel(page) {
   return {
     root: page.getByTestId('options-root'),
     statusPill: page.getByTestId('options-status-pill'),
+    heroLinks: page.getByTestId('options-hero-links'),
+    heroLinkDownload: page.getByTestId('options-hero-link-download'),
+    heroLinkWebsite: page.getByTestId('options-hero-link-website'),
+    heroLinkGuide: page.getByTestId('options-hero-link-guide'),
+    heroLinkRepo: page.getByTestId('options-hero-link-repo'),
+    heroLinkIssues: page.getByTestId('options-hero-link-issues'),
+    heroLinkNewIssue: page.getByTestId('options-hero-link-new-issue'),
     instanceUrlInput: page.getByTestId('options-instance-url'),
     domainsInput: page.getByTestId('options-domains'),
     advancedToggle: page.getByTestId('options-advanced-toggle'),
