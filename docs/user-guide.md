@@ -26,12 +26,13 @@ The screenshots in this guide are examples. Your popup can look different depend
   <div class="user-guide-toc-entry">
     <a class="user-guide-toc-link" href="#2-before-you-start">2. Before You Start</a>
   </div>
-  <div class="user-guide-toc-entry">
-    <a class="user-guide-toc-link" href="#3-first-time-setup">3. First-Time Setup</a>
-  </div>
-  <div class="user-guide-toc-entry">
-    <a class="user-guide-toc-link" href="#31-browser-compatibility-and-installed-web-apps">3.1 Browser Compatibility and Installed Web Apps</a>
-  </div>
+  <details class="user-guide-toc-section">
+    <summary>3. First-Time Setup</summary>
+    <ul>
+      <li><a href="#3-first-time-setup">3. First-Time Setup overview</a></li>
+      <li><a href="#31-use-websites-as-desktop-apps-pwas">3.1 Use websites as desktop apps (PWAs)</a></li>
+    </ul>
+  </details>
 
   <details class="user-guide-toc-section">
     <summary>4. Options Page</summary>
@@ -147,26 +148,18 @@ Jira QuickView uses your existing browser session. It does not store a separate 
 
 If nothing happens after setup, check the troubleshooting section at the end of this guide. The most common causes are an unallowed page, a Jira URL typo, not being signed in to Jira, or using the hover modifier incorrectly.
 
-### 3.1 Browser Compatibility and Installed Web Apps
+### 3.1 Use websites as desktop apps (PWAs)
 
-Jira QuickView is a Chrome Web Store extension, so the best-supported setup is a desktop Chromium browser.
+This subsection is only about turning supported websites such as Gmail or Outlook on the web into standalone desktop-style app windows after Jira QuickView already works in your browser.
 
-Recommended choices:
+Before installing a site as a desktop app:
 
-- `Chrome`: fully supported.
-- `Microsoft Edge`: supported by installing the extension from the Chrome Web Store.
-- `Brave`: supported by installing the extension from the Chrome Web Store.
-- `Firefox`: not supported for Jira QuickView, even though recent Firefox for Windows builds can install sites as web apps.
-- `Safari`: not supported for Jira QuickView, even though Safari on macOS can turn sites into web apps and can run Safari-specific extensions.
+1. Install Jira QuickView in a supported desktop browser: `Chrome`, `Microsoft Edge`, or `Brave`.
+2. Open Jira QuickView Options and configure your Jira URL plus allowed pages.
+3. Open the target site in a normal browser tab first and confirm that hovering a Jira key works there.
+4. Make sure the exact site domain is in `Allowed pages`.
 
-If your goal is Outlook or Gmail in an app-like window, use this order:
-
-1. Install Jira QuickView in the browser.
-2. Open the mail site in a normal tab and make sure Jira QuickView works there first.
-3. Add the exact site domain to `Allowed pages`.
-4. Only then install that site as a web app or app window if your browser supports it.
-
-Useful allowed page examples for mail-based workflows:
+Useful allowed page examples:
 
 - `mail.google.com`
 - `outlook.office.com`
@@ -175,90 +168,73 @@ Useful allowed page examples for mail-based workflows:
 
 #### Chrome
 
-Use Chrome when you want the most direct setup and the clearest vendor documentation.
+1. Open the site you want to use as a desktop app, such as Gmail or Outlook on the web, in Chrome.
+2. Click the Chrome menu (`⋮`) in the top-right corner.
+3. Choose `Cast, save, and share`.
+4. Click `Install page as app...`.
+5. Confirm by clicking `Install`.
+6. Launch the installed app from your desktop, taskbar, Start menu, or app launcher.
+7. Open a message or page that contains a Jira key and confirm Jira QuickView still works inside the app window.
 
-1. Open [Download Extension](https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia) in Chrome.
-2. Click `Add to Chrome`, then confirm `Add extension`.
-3. Open Jira QuickView Options and configure your Jira URL plus allowed pages.
-4. Open Outlook or Gmail in a normal tab and verify that hovering a Jira key works.
-5. If you want an app-style window, open the site, then use `More` > `Cast, save, and share` > `Install page as app...`.
-6. If Chrome shows an install icon in the address bar for that site, you can use that shortcut instead.
-
-What to expect:
-
-- The installed site opens in its own window.
-- Your normal Chrome profile, cookies, and signed-in Jira session still matter.
-- If the popup works in a regular tab but not in the app window, re-check the exact domain in `Allowed pages`.
+If Chrome shows an install icon in the address bar for that site, you can click that icon instead of opening the menu.
 
 #### Microsoft Edge
 
-Edge works well when you want installed web apps, especially for Outlook and Microsoft 365 pages.
+1. Open the site you want to use as a desktop app, such as Outlook on the web, in Edge.
+2. Click `Settings and more` (`...`) in the top-right corner.
+3. Choose `More tools`.
+4. Choose `Apps`.
+5. Click `Install this site as an app`.
+6. Confirm the install dialog.
+7. Launch the installed app window and verify Jira QuickView works there.
 
-1. Open the Chrome Web Store listing for Jira QuickView in Edge.
-2. If Edge asks whether to allow extensions from other stores, click `Allow`.
-3. Click `Get extension` or `Get`, then confirm `Add extension`.
-4. Open Jira QuickView Options and configure your Jira URL plus allowed pages.
-5. Open Outlook in a normal Edge tab and verify that hovering a Jira key works.
-6. To install Outlook or another site as an app, open the site and use `Settings and more` > `More tools` > `Apps` > `Install this site as an app`.
-7. You can manage installed apps later at `edge://apps`.
-
-What to expect:
-
-- Edge can install both true PWAs and ordinary websites as app windows.
-- This is usually the smoothest option if your daily flow centers on Outlook on the web.
+You can later manage or reopen installed sites at `edge://apps`.
 
 #### Brave
 
-Brave supports nearly all Chromium-compatible extensions, so Jira QuickView can be installed from the Chrome Web Store there as well.
+1. Open the site you want to use as a desktop app in Brave.
+2. First look for an install icon in the address bar and click it if Brave shows one.
+3. If there is no address-bar install icon, open the Brave menu.
+4. Use Brave's install or app-window command for the current site.
+5. If your Brave build does not show a direct install command, use the site shortcut flow and enable `Open as window` if Brave offers it.
+6. Launch the installed app window and verify Jira QuickView works there.
 
-1. Open the Chrome Web Store listing for Jira QuickView in Brave.
-2. Click `Add to Brave`, then confirm the install prompt.
-3. Open Jira QuickView Options and configure your Jira URL plus allowed pages.
-4. Open Outlook or Gmail in a normal Brave tab and verify that hovering a Jira key works.
-5. If you want an app-like mail window, use Brave's site install, app shortcut, or open-as-window flow if your current Brave build exposes it.
+Brave is Chromium-based, so the overall flow is similar to Chrome, but exact menu wording can vary by Brave version.
 
-What to know:
+#### Pin the installed app for quick access
 
-- Brave's extension support is strong because it is Chromium-based.
-- Brave's installed-site UI changes more often than Chrome or Edge, so menu labels may differ by version.
-- If your Brave build does not clearly offer an app-style install flow, keep using the site in a normal tab. Jira QuickView still works there.
+##### Windows
 
-#### Firefox
+1. Launch the installed web app once so Windows registers it clearly in Start and on the taskbar.
+2. To pin it to the taskbar, right-click the running app icon on the taskbar and choose `Pin to taskbar`.
+3. To pin it to Start, open `Start`, find the installed app, right-click it, and choose `Pin to Start` if Windows shows that option.
 
-Firefox is not a supported Jira QuickView browser today.
+##### Mac
 
-What Firefox can do:
+1. Launch the installed web app.
+2. In the Dock, Control-click or right-click the app icon.
+3. Choose `Options` > `Keep in Dock`.
 
-- Firefox for Windows can now install sites as web apps and pin them to the taskbar.
+##### Linux
 
-What Firefox cannot do for this project:
+1. Launch the installed web app.
+2. In your desktop app menu, dock, or panel, find the app icon.
+3. Right-click it and choose the pinning option your desktop environment uses, such as `Add to Favorites`, `Pin to Dash`, or `Pin to Panel`.
 
-- Jira QuickView is not published as a Firefox add-on.
-- The Chrome Web Store install flow does not apply to Firefox.
+Linux desktop labels vary by environment, but the installed app normally appears like any other desktop app after installation.
 
-Practical guidance:
+#### What a PWA is and what it enables
 
-- If you only want Outlook as a web app window, Firefox may be acceptable on Windows.
-- If you want Outlook or Gmail plus Jira QuickView, use Chrome, Edge, or Brave instead.
+A PWA, or installed website app, is a normal website opened in its own desktop-style window instead of a regular browser tab.
 
-#### Safari
+For Gmail, Outlook, GitHub, or similar sites, this usually gives you:
 
-Safari is also not a supported Jira QuickView browser today.
+- a separate taskbar or dock icon
+- a dedicated launcher or Start-menu entry
+- a cleaner app-style window without your normal tab strip
+- the same browser profile, cookies, extensions, and Jira session you already use in the browser
 
-What Safari can do:
-
-- On macOS, Safari can turn a website into a web app with `Add to Dock`.
-- Safari web apps can use Safari web extensions that are available through Apple's extension system.
-
-What Safari cannot do for this project:
-
-- Jira QuickView is not published as a Safari extension in the App Store.
-- Installing the Chrome Web Store version will not work in Safari.
-
-Practical guidance:
-
-- If you want app-like Outlook or Gmail windows on macOS and also need Jira QuickView, use Chrome or Edge.
-- Use Safari only if you are intentionally choosing Safari without Jira QuickView.
+For Jira QuickView specifically, the main benefit is that web apps such as Gmail or Outlook can feel closer to native desktop apps while still keeping the extension available.
 
 ## 4. Options Page
 

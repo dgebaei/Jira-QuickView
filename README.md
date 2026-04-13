@@ -43,7 +43,7 @@ Open a Jira notification email in Gmail or Outlook, hover the issue key in the m
 
 By default, the popup opens when you hover a Jira key and then hold `Alt`, `Ctrl`, or `Shift`. This keeps busy pages readable while still making issue details one gesture away.
 
-For full setup details, advanced allowed-page patterns, browser compatibility, installed web-app setup notes, custom fields, troubleshooting, and day-to-day workflows, read the [User guide](docs/user-guide.md).
+For full setup details, advanced allowed-page patterns, desktop-app/PWA setup notes, custom fields, troubleshooting, and day-to-day workflows, read the [User guide](docs/user-guide.md).
 
 ## Where it works
 
