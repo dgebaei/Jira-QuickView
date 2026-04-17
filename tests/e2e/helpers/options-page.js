@@ -2,6 +2,7 @@ function optionsPageModel(page) {
   return {
     root: page.getByTestId('options-root'),
     statusPill: page.getByTestId('options-status-pill'),
+    heroVersionLink: page.getByTestId('options-hero-version-link'),
     heroLinks: page.getByTestId('options-hero-links'),
     heroLinkDownload: page.getByTestId('options-hero-link-download'),
     heroLinkWebsite: page.getByTestId('options-hero-link-website'),
