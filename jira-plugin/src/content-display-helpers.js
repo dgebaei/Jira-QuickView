@@ -26,6 +26,7 @@ export function createContentDisplayHelpers(options) {
   const layoutContentBlocks = options?.layoutContentBlocks || [];
   const loaderGifUrl = options?.loaderGifUrl || '';
   const normalizeIssueTypeOptions = options?.normalizeIssueTypeOptions;
+  const normalizeCommentSortOrder = options?.normalizeCommentSortOrder || (value => value === 'newest' ? 'newest' : 'oldest');
   const normalizeRichHtml = options?.normalizeRichHtml;
   const readSprintsFromIssue = options?.readSprintsFromIssue;
   const resolveIssueLinkage = options?.resolveIssueLinkage;
@@ -306,6 +307,7 @@ export function createContentDisplayHelpers(options) {
       children,
       childrenError,
       childrenSort,
+      commentSortOrder,
       pullRequests,
       pullRequestsSort,
       actionLoadingKey,
@@ -322,7 +324,13 @@ export function createContentDisplayHelpers(options) {
       attachmentLookup: descriptionAttachmentLookup,
       imageMaxHeight: 180
     });
-    const commentsForDisplay = await buildCommentsForDisplay(issueData, state.commentSession, state.commentReactionState);
+    const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
+    const commentsForDisplay = await buildCommentsForDisplay(
+      issueData,
+      state.commentSession,
+      state.commentReactionState,
+      normalizedCommentSortOrder
+    );
     const fixVersions = issueData.fields.fixVersions || [];
     const affectsVersions = issueData.fields.versions || [];
     const sprints = readSprintsFromIssue(issueData);
@@ -649,6 +657,13 @@ export function createContentDisplayHelpers(options) {
         : '',
       attachments,
       previewAttachments: visibleAttachments,
+      commentSortToggleAriaPressed: normalizedCommentSortOrder === 'newest' ? 'true' : 'false',
+      commentSortToggleLabel: normalizedCommentSortOrder === 'newest' ? 'Newest first' : 'Oldest first',
+      commentSortToggleIsNewest: normalizedCommentSortOrder === 'newest',
+      commentSortToggleIsOldest: normalizedCommentSortOrder !== 'newest',
+      commentSortToggleTitle: normalizedCommentSortOrder === 'newest'
+        ? 'Switch to oldest comments first'
+        : 'Switch to newest comments first',
       commentsForDisplay: showComments ? commentsForDisplay : [],
       showCommentsSection: showComments || commentsForDisplay.length > 0,
       showCommentComposer: showComments,

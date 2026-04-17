@@ -20,6 +20,7 @@
 - Shared agent workflow docs live under `.agents/skills/`; prefer those local project skills when available so different agents and harnesses reuse the same repo conventions.
 - The repo-root `CLAUDE.md` defines repo-wide workflow. Area-specific `CLAUDE.md` files may still contain local context when they are populated, so consult them when working in those areas instead of assuming they are irrelevant.
 - Whenever a change affects UI, layout, visual styling, or user-visible interaction states, capture fresh screenshots that validate the new behavior or UX before handing work back.
+- Always align nearby UI elements vertically to a shared center line by default. Only keep intentional vertical misalignment when the user explicitly wants it.
 - In the final handoff for UI-affecting changes, list the generated screenshots explicitly and prefer clickable markdown file links over plain-text paths so the user can inspect them quickly.
 - If screenshot capture is blocked by the environment, say so explicitly in the final handoff and describe what prevented it instead of silently omitting visual verification.
 

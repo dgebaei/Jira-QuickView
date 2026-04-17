@@ -705,7 +705,17 @@
         {{#showCommentsSection}}
         <div class="_JX_content_block" data-content-block="comments">
         <div class="_JX_comments">
-            <div class="_JX_section_title">Comments</div>
+            <div class="_JX_section_title _JX_section_title_with_action">
+                <span>Comments</span>
+                <button class="_JX_comment_sort_toggle" type="button" title="{{commentSortToggleTitle}}" aria-label="{{commentSortToggleTitle}}" aria-pressed="{{commentSortToggleAriaPressed}}" data-testid="jira-popup-comment-sort-toggle">
+                    <span class="_JX_comment_sort_toggle_prefix">Sort</span>
+                    <span class="_JX_comment_sort_toggle_label">{{commentSortToggleLabel}}</span>
+                    <svg class="_JX_comment_sort_toggle_icon" width="8" height="10" viewBox="0 0 10 12" focusable="false" role="presentation" aria-hidden="true">
+                        <path class="_JX_comment_sort_toggle_path{{#commentSortToggleIsOldest}} is-active{{/commentSortToggleIsOldest}}" d="M2 4 5 1l3 3"></path>
+                        <path class="_JX_comment_sort_toggle_path{{#commentSortToggleIsNewest}} is-active{{/commentSortToggleIsNewest}}" d="M2 8 5 11l3-3"></path>
+                    </svg>
+                </button>
+            </div>
             <div class="_JX_section_content">
             <div class="_JX_comment_list">
             {{#commentsForDisplay}}

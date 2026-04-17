@@ -205,6 +205,49 @@ test('sorts the Pull Requests block from the column headers @mock-only', async (
   await page.close();
 });
 
+test('sorts comments from the popup header and persists the preference across popup sessions @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Comment sorting is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const commentAuthors = page.locator('[data-content-block="comments"] ._JX_comment_author');
+  const commentSortToggle = page.getByTestId('jira-popup-comment-sort-toggle');
+
+  await expect(commentSortToggle).toContainText('Oldest first');
+  await expect(commentAuthors).toHaveText([
+    'Alex Reviewer',
+    'Casey Commenter',
+  ]);
+
+  await commentSortToggle.click();
+
+  await expect(commentSortToggle).toContainText('Newest first');
+  await expect(commentAuthors).toHaveText([
+    'Casey Commenter',
+    'Alex Reviewer',
+  ]);
+
+  const storedSortOrder = await optionsPage.evaluate(async () => {
+    const result = await chrome.storage.local.get(['jqv.commentSortOrder']);
+    return result['jqv.commentSortOrder'];
+  });
+  expect(storedSortOrder).toBe('newest');
+
+  await page.close();
+
+  const reopened = await openPopup(extensionApp, servers, target);
+  await expect(reopened.page.getByTestId('jira-popup-comment-sort-toggle')).toContainText('Newest first');
+  await expect(reopened.page.locator('[data-content-block="comments"] ._JX_comment_author')).toHaveText([
+    'Casey Commenter',
+    'Alex Reviewer',
+  ]);
+
+  await reopened.page.close();
+});
+
 test('hides the Children block when the current issue has no immediate children @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Empty child coverage is deterministic in mocked mode only.');

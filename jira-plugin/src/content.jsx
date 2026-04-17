@@ -4,7 +4,7 @@ import debounce from 'lodash/debounce';
 import regexEscape from 'escape-string-regexp';
 import Mustache from 'mustache';
 import {waitForDocument} from 'src/utils';
-import {sendMessage, storageGet, storageSet} from 'src/chrome';
+import {sendMessage, storageGet, storageSet, storageLocalGet, storageLocalSet} from 'src/chrome';
 import {snackBar} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
 import {createContentFieldCapabilityHelpers} from 'src/content-field-capability-helpers';
@@ -80,6 +80,9 @@ const DEFAULT_PULL_REQUESTS_SORT = Object.freeze({
   direction: 'asc'
 });
 
+const DEFAULT_COMMENT_SORT_ORDER = 'oldest';
+const COMMENT_SORT_ORDER_STORAGE_KEY = 'jqv.commentSortOrder';
+
 function normalizeChildrenSort(sort) {
   const column = ['type', 'key', 'status', 'assignee'].includes(sort?.column)
     ? sort.column
@@ -126,6 +129,18 @@ function togglePullRequestsSort(sort, column) {
     column,
     direction: 'asc'
   };
+}
+
+function normalizeCommentSortOrder(sortOrder) {
+  return sortOrder === 'newest'
+    ? 'newest'
+    : DEFAULT_COMMENT_SORT_ORDER;
+}
+
+function toggleCommentSortOrder(sortOrder) {
+  return normalizeCommentSortOrder(sortOrder) === 'newest'
+    ? 'oldest'
+    : 'newest';
 }
 
 // ── Jira Key Matching ───────────────────────────────────────────
@@ -325,6 +340,14 @@ async function mainAsyncLocal() {
 
   const config = await getConfig();
   const INSTANCE_URL = config.instanceUrl;
+  const storedCommentSortState = await storageLocalGet({
+    [COMMENT_SORT_ORDER_STORAGE_KEY]: DEFAULT_COMMENT_SORT_ORDER
+  }).catch(() => ({
+    [COMMENT_SORT_ORDER_STORAGE_KEY]: DEFAULT_COMMENT_SORT_ORDER
+  }));
+  let commentSortOrderPreference = normalizeCommentSortOrder(
+    storedCommentSortState[COMMENT_SORT_ORDER_STORAGE_KEY]
+  );
   if (window.top === window && !window.__JX_pageDiagnosticsLogged) {
     window.__JX_pageDiagnosticsLogged = true;
     const extensionVersion = chrome.runtime?.getManifest?.()?.version || '';
@@ -711,13 +734,11 @@ async function mainAsyncLocal() {
 
   const {
     applyCommentMentionSelection,
-    buildOptimisticCommentBodyHtml,
     captureCommentComposerDraft,
     clearCommentUploads,
     discardCommentComposerDraft,
     getClipboardImageFiles,
     getCommentComposerElements,
-    getUploadedCommentAttachments,
     hasCommentUploadInFlight,
     moveCommentMentionSelection,
     renderCommentMentionSuggestions,
@@ -1840,10 +1861,20 @@ async function mainAsyncLocal() {
 
   // ── Comments ──────────────────────────────────────────────
 
-  async function buildCommentsForDisplay(issueData, commentSession = null, reactionState = popupState?.commentReactionState) {
+  async function buildCommentsForDisplay(
+    issueData,
+    commentSession = null,
+    reactionState = popupState?.commentReactionState,
+    commentSortOrder = popupState?.commentSortOrder
+  ) {
     const issueKey = issueData?.key || '';
+    const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
     const comments = [...(issueData.fields.comment?.comments || [])].sort((a, b) => {
-      return new Date(a.created).getTime() - new Date(b.created).getTime();
+      const leftTimestamp = new Date(a.created).getTime();
+      const rightTimestamp = new Date(b.created).getTime();
+      return normalizedCommentSortOrder === 'newest'
+        ? rightTimestamp - leftTimestamp
+        : leftTimestamp - rightTimestamp;
     });
     const renderedById = {};
     const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
@@ -2050,18 +2081,6 @@ async function mainAsyncLocal() {
   }
 
 
-  function updateCommentActivityCount(delta) {
-    const activityItem = container.find('._JX_activity_item').eq(1);
-    if (!activityItem.length) {
-      return;
-    }
-    const countNode = activityItem.find('strong');
-    const currentCount = Number(countNode.text()) || 0;
-    const nextCount = Math.max(0, currentCount + delta);
-    countNode.text(String(nextCount));
-    activityItem.attr('title', `${nextCount} comments`);
-  }
-
   function setCommentReactionEntry(commentId, emojiId, changes) {
     if (!popupState) {
       return;
@@ -2199,76 +2218,6 @@ async function mainAsyncLocal() {
     }
   }
 
-  async function appendCommentToPopup(savedComment, commentText, uploadedAttachments = []) {
-    const commentsRoot = container.find('._JX_comments');
-    if (!commentsRoot.length) {
-      return;
-    }
-
-    commentsRoot.find('._JX_comments_empty').remove();
-    container.find('._JX_empty_body').remove();
-    const issueKey = activeCommentContext?.issueKey || popupState?.issueData?.key || '';
-    const issueSummary = popupState?.issueData?.fields?.summary || '';
-    const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
-    const bodyHtml = await buildOptimisticCommentBodyHtml(commentText || '', uploadedAttachments);
-    const commentId = String(savedComment?.id || '');
-    const commentPermalink = buildCommentPermalink(issueKey, commentId);
-    const commentLinkTitleText = `[${issueKey}] ${issueSummary}`.trim();
-    const reactionUi = buildCommentReactionUi(commentId);
-    const authorUser = savedComment?.author || currentUser;
-    const authorView = buildUserView(authorUser);
-    const authorAvatarHtml = authorView.avatarUrl
-      ? `<img class="_JX_comment_author_avatar" src="${escapeHtml(authorView.avatarUrl)}" alt="">`
-      : `<span class="_JX_comment_author_avatar _JX_comment_author_avatar_placeholder">${escapeHtml(authorView.initials)}</span>`;
-    const commentHtml = `
-      <div class="_JX_comment" data-comment-id="${escapeHtml(commentId)}">
-        <div class="_JX_comment_meta">
-          <span class="_JX_comment_meta_main">${authorAvatarHtml}<span class="_JX_comment_author">${escapeHtml(authorView.displayName || 'You')}</span> | <a class="_JX_comment_time" href="${escapeHtml(commentPermalink)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(buildLinkHoverTitle('Open comment in Jira', commentLinkTitleText, commentPermalink))}">Just now</a><button class="_JX_comment_meta_icon_button _JX_copy_link" type="button" title="${escapeHtml(buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink))}" aria-label="${escapeHtml(buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink))}" data-url="${escapeHtml(commentPermalink)}" data-ticket="${escapeHtml(issueKey)}" data-title="${escapeHtml(commentLinkTitleText)}"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><path d="M10 19h8V8h-8v11zM8 7.992C8 6.892 8.902 6 10.009 6h7.982C19.101 6 20 6.893 20 7.992v11.016c0 1.1-.902 1.992-2.009 1.992H10.01A2.001 2.001 0 0 1 8 19.008V7.992z"></path><path d="M5 16V4.992C5 3.892 5.902 3 7.009 3H15v13H5zm2 0h8V5H7v11z"></path></g></svg></button></span>
-          <span class="_JX_comment_meta_actions">
-            <button class="_JX_comment_meta_button _JX_comment_edit_button" type="button" data-comment-id="${escapeHtml(commentId)}">Edit</button>
-            <button class="_JX_comment_meta_button _JX_comment_delete_button" type="button" data-comment-id="${escapeHtml(commentId)}">Delete</button>
-          </span>
-          ${reactionUi.hasReactionOptions ? `
-            <div class="_JX_comment_reactions">
-              <div class="_JX_comment_reaction_bar">
-                ${reactionUi.reactionPills.map(pill => `
-                  <button class="_JX_comment_reaction_pill${pill.reacted ? ' is-reacted' : ''}${pill.pending ? ' is-pending' : ''}" type="button" data-comment-id="${escapeHtml(pill.commentId)}" data-emoji-id="${escapeHtml(pill.emojiId)}" title="${escapeHtml(pill.title)}" aria-label="${escapeHtml(pill.title)}" ${pill.disabledAttr}>
-                    <span class="_JX_comment_reaction_emoji" aria-hidden="true">${escapeHtml(pill.emoji)}</span>
-                    <span class="_JX_comment_reaction_count">${pill.count}</span>
-                  </button>
-                `).join('')}
-                <details class="_JX_comment_reaction_dropdown">
-                  <summary class="_JX_comment_reaction_more" aria-label="Add reaction" title="Add reaction">
-                    <svg class="_JX_comment_reaction_more_icon" width="16" height="16" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                      <path fill="currentColor" d="M12 2.75c5.11 0 9.25 4.14 9.25 9.25S17.11 21.25 12 21.25 2.75 17.11 2.75 12 6.89 2.75 12 2.75zm0 1.5A7.75 7.75 0 1 0 19.75 12 7.75 7.75 0 0 0 12 4.25zm-2.5 6.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zm5 0a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zm-5.04 4.03a.75.75 0 0 1 1.05.11 1.93 1.93 0 0 0 2.98 0 .75.75 0 0 1 1.16.95 3.43 3.43 0 0 1-5.3 0 .75.75 0 0 1 .11-1.06z"></path>
-                      <path fill="currentColor" d="M18.5 4.5a.75.75 0 0 1 .75.75V7h1.75a.75.75 0 0 1 0 1.5h-1.75v1.75a.75.75 0 0 1-1.5 0V8.5H16a.75.75 0 0 1 0-1.5h1.75V5.25a.75.75 0 0 1 .75-.75z"></path>
-                    </svg>
-                  </summary>
-                  <div class="_JX_comment_reaction_menu">
-                    ${reactionUi.menuReactionOptions.map(option => `
-                      <button class="_JX_comment_reaction_button${option.isReacted ? ' is-reacted' : ''}${option.isPending ? ' is-pending' : ''}" type="button" data-comment-id="${escapeHtml(option.commentId)}" data-emoji-id="${escapeHtml(option.emojiId)}" title="${escapeHtml(option.title)}" aria-label="${escapeHtml(option.title)}" ${option.disabledAttr}>
-                        <span class="_JX_comment_reaction_emoji" aria-hidden="true">${escapeHtml(option.emoji)}</span>
-                      </button>
-                    `).join('')}
-                  </div>
-                </details>
-              </div>
-            </div>
-          ` : ''}
-        </div>
-        <div class="_JX_comment_body">${bodyHtml}</div>
-      </div>
-    `;
-
-    const commentList = commentsRoot.find('._JX_comment_list');
-    if (commentList.length) {
-      commentList.append(commentHtml);
-    } else {
-      commentsRoot.append(`<div class="_JX_comment_list">${commentHtml}</div>`);
-    }
-    updateCommentActivityCount(1);
-  }
-
   function addSavedCommentToPopupState(savedComment, commentText, fallbackAuthor = null) {
     if (!popupState?.issueData?.fields) {
       return;
@@ -2328,7 +2277,6 @@ async function mainAsyncLocal() {
     syncCommentComposerState();
 
     try {
-      const uploadedAttachments = getUploadedCommentAttachments();
       const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
       const requestBody = restoreEditableCommentMentions(commentText, commentComposerMentionMappings);
       const savedComment = await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${commentIssueKey}/comment`, {
@@ -2339,17 +2287,16 @@ async function mainAsyncLocal() {
       if (isSameIssueStillVisible) {
         addSavedCommentToPopupState(savedComment, requestBody, currentUser);
         setCachedValue(issueCache, commentIssueKey, popupState?.issueData);
-        await appendCommentToPopup(savedComment, requestBody, uploadedAttachments);
         elements.input.val('');
+        elements.root.attr('data-saving', 'false');
         commentComposerDraftValue = '';
         commentComposerMentionMappings = [];
         commentComposerHadFocus = false;
         commentComposerSelectionStart = 0;
         commentComposerSelectionEnd = 0;
         await clearCommentUploads({deleteUploaded: false});
-        elements.root.attr('data-saving', 'false');
         setCommentComposerError('');
-        syncCommentComposerState();
+        await renderIssuePopup(popupState);
       } else {
         issueCache.delete(commentIssueKey);
       }
@@ -4903,6 +4850,7 @@ async function mainAsyncLocal() {
     instanceUrl: INSTANCE_URL,
     layoutContentBlocks,
     loaderGifUrl,
+    normalizeCommentSortOrder,
     normalizeIssueTypeOptions,
     normalizeRichHtml,
     readSprintsFromIssue,
@@ -5988,6 +5936,23 @@ async function mainAsyncLocal() {
     renderIssuePopup(popupState).catch(() => {});
   });
 
+  $(document.body).on('click', '._JX_comment_sort_toggle', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const nextCommentSortOrder = toggleCommentSortOrder(popupState?.commentSortOrder);
+    commentSortOrderPreference = nextCommentSortOrder;
+    if (popupState) {
+      popupState = {
+        ...popupState,
+        commentSortOrder: nextCommentSortOrder
+      };
+      renderIssuePopup(popupState).catch(() => {});
+    }
+    storageLocalSet({
+      [COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder
+    }).catch(() => {});
+  });
+
   $(document.body).on('click', '._JX_watchers_trigger', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -7006,6 +6971,7 @@ async function mainAsyncLocal() {
         children,
         childrenError,
         childrenSort: DEFAULT_CHILDREN_SORT,
+        commentSortOrder: commentSortOrderPreference,
         pullRequestsSort: DEFAULT_PULL_REQUESTS_SORT,
         pullRequests,
         pointerX,
