@@ -201,6 +201,45 @@ body {
   line-height: 1.2;
 }
 
+.heroTitleRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.heroTitleRow .heroTitle {
+  margin-bottom: 0;
+}
+
+.heroVersionLink {
+  align-items: center;
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  color: var(--hero-text);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 10px;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.heroVersionLink:hover {
+  background: rgba(191, 219, 254, 0.2);
+  border-color: rgba(191, 219, 254, 0.45);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.heroVersionLink:focus-visible {
+  outline: 2px solid rgba(191, 219, 254, 0.8);
+  outline-offset: 2px;
+}
+
 .heroCopy {
   color: var(--eyebrow-color);
   font-size: 13px;
