@@ -1,6 +1,9 @@
 name: Publish Chrome Web Store
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       version:
@@ -34,6 +37,7 @@ concurrency:
 
 jobs:
   publish:
+    if: ${{ github.event_name != 'release' || (!github.event.release.prerelease && !github.event.release.draft) }}
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -42,7 +46,8 @@ jobs:
       CHROME_WEB_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
 
     steps:
-      - name: Ensure this runs from master
+      - name: Ensure manual runs come from master
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           if [ "${GITHUB_REF}" != "refs/heads/master" ]; then
             echo "Chrome Web Store submissions must run from master. Current ref: ${GITHUB_REF}"
@@ -50,12 +55,31 @@ jobs:
           fi
 
       - name: Verify manual confirmation
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           expected="submit-${{ inputs.version }}"
           if [ "${{ inputs.confirm }}" != "${expected}" ]; then
             echo "Confirmation input must exactly equal ${expected}."
             exit 1
           fi
+
+      - name: Resolve submission parameters
+        id: params
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+            upload_only="${{ inputs.upload_only }}"
+            publish_type="${{ inputs.publish_type }}"
+          else
+            version="${{ github.event.release.tag_name }}"
+            upload_only="false"
+            publish_type="DEFAULT_PUBLISH"
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "upload_only=${upload_only}" >> "${GITHUB_OUTPUT}"
+          echo "publish_type=${publish_type}" >> "${GITHUB_OUTPUT}"
 
       - name: Check required Chrome Web Store secrets
         run: |
@@ -70,6 +94,32 @@ jobs:
 
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify automatic release guardrails
+        if: ${{ github.event_name == 'release' }}
+        shell: bash
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          if ! [[ "${tag}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Automatic Chrome Web Store publish only supports stable tags like 2.5.0. Got: ${tag}"
+            exit 1
+          fi
+
+          git fetch origin master --force
+
+          tag_commit="$(git rev-list -n 1 "${tag}")"
+          if [ -z "${tag_commit}" ]; then
+            echo "Could not resolve tag commit for ${tag}."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "${tag_commit}" origin/master; then
+            echo "Automatic Chrome Web Store publish only supports release tags whose commit is contained in origin/master."
+            echo "Tag ${tag} resolves to ${tag_commit}, which is not an ancestor of origin/master."
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -95,18 +145,18 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chrome-web-store-package-${{ inputs.version }}
-          path: jira-quickview-${{ inputs.version }}-chrome-web-store.zip
+          name: chrome-web-store-package-${{ steps.params.outputs.version }}
+          path: jira-quickview-${{ steps.params.outputs.version }}-chrome-web-store.zip
           if-no-files-found: error
 
       - name: Publish package to Chrome Web Store
         run: |
           args=(
             scripts/publish-chrome-web-store.js
-            --expected-version "${{ inputs.version }}"
-            --publish-type "${{ inputs.publish_type }}"
+            --expected-version "${{ steps.params.outputs.version }}"
+            --publish-type "${{ steps.params.outputs.publish_type }}"
           )
-          if [ "${{ inputs.upload_only }}" = "true" ]; then
+          if [ "${{ steps.params.outputs.upload_only }}" = "true" ]; then
             args+=(--upload-only)
           fi
           node "${args[@]}"

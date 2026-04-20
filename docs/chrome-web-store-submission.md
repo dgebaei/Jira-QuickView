@@ -7,8 +7,10 @@ This checklist is tailored to the current `jira-plugin/manifest.json` and curren
 The repository now includes a dedicated GitHub Actions workflow for Chrome Web Store submissions:
 
 - Workflow file: `.github/workflows/chrome-web-store-publish.yml`
-- Trigger: `workflow_dispatch` only
-- Automatic pushes to `master` do **not** submit a package to the store
+- Triggers:
+  - automatically when a GitHub release is published
+  - manually via `workflow_dispatch` as a fallback
+- Automatic pushes to `master` still do **not** submit a package to the store on their own. The automatic path is tied to GitHub release publication.
 
 Use this exact CLI pattern when you want to submit a version manually:
 
@@ -22,6 +24,19 @@ gh workflow run chrome-web-store-publish.yml \
 ```
 
 The `confirm` input is intentionally strict. If it does not exactly match `submit-<version>`, the workflow stops before it builds or uploads anything.
+
+Automatic release behavior:
+
+- Publishing a GitHub release such as `2.5.0` automatically starts the workflow.
+- The workflow uses the release tag as the expected extension version.
+- Automatic release-triggered runs are guarded so they only proceed when:
+  - the tag is a stable version like `2.5.0`
+  - the release is not marked as a prerelease
+  - the tagged commit is contained in `origin/master`
+- Automatic release-triggered runs default to:
+  - `upload_only=false`
+  - `publish_type=DEFAULT_PUBLISH`
+- Manual `workflow_dispatch` remains available when you want to upload only, stage a publish, or handle prerelease / nonstandard release cases instead of using the default release path.
 
 Repository configuration needed before the first run:
 
@@ -38,7 +53,8 @@ One-time service-account setup:
 
 Operational behavior:
 
-- The workflow only runs on `master`.
+- Manual workflow dispatch only runs on `master`.
+- Automatic release-triggered runs only proceed for stable tags whose tagged commit is on `origin/master`.
 - It validates the manifest version, runs the startup smoke test, builds `jira-quickview-<version>-chrome-web-store.zip`, uploads that ZIP as a workflow artifact, and only then calls the Chrome Web Store API.
 - Set `upload_only=true` if you want to upload the ZIP without submitting it for review.
 - Set `publish_type=STAGED_PUBLISH` if you want approval to stage the build instead of publishing immediately after review.
