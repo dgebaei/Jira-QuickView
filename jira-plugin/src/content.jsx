@@ -4018,9 +4018,15 @@ async function mainAsyncLocal() {
         continue;
       }
       if (!hasDisplayValue) {
-        chipsByRow[row].push(buildEditableFieldChip(fieldId, buildFilterChip(`${fieldName}: --`, ''), state, {
-          canEdit: false
-        }));
+        const capability = await getEditableFieldCapability(issueData, fieldId).catch(() => null);
+        const supportDescriptor = capability?.fieldMeta
+          ? getCustomFieldSupportDescriptor(capability.fieldMeta)
+          : null;
+        if (supportDescriptor?.valueKind === 'user') {
+          chipsByRow[row].push(buildEditableFieldChip(fieldId, buildFilterChip(`${fieldName}: --`, ''), state, {
+            canEdit: false
+          }));
+        }
         continue;
       }
       const entries = Array.isArray(rawValue) ? rawValue : [rawValue];

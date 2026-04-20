@@ -3,8 +3,8 @@ require('./load-env-defaults');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const {spawnSync} = require('child_process');
 const {chromium} = require('playwright');
+const {formatCommand, spawnCommandSync} = require('../lib/spawn-command');
 
 const repoRoot = path.resolve(__dirname, '../..');
 const extensionPath = path.join(repoRoot, 'jira-plugin');
@@ -16,14 +16,18 @@ const requiredBundlePaths = [
 ];
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const {result} = spawnCommandSync(command, args, {
     cwd: options.cwd || repoRoot,
     stdio: 'inherit',
     encoding: 'utf8',
   });
 
+  if (result.error) {
+    throw new Error(result.error.message || `Failed to start ${formatCommand(command, args)}`);
+  }
+
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status}`);
+    throw new Error(`${formatCommand(command, args)} failed with exit code ${result.status}`);
   }
 }
 

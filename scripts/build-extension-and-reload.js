@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const {spawnSync} = require('child_process');
+const {formatCommand, spawnCommandSync} = require('./lib/spawn-command');
 
 function fail(message) {
   console.error(message);
@@ -8,15 +8,19 @@ function fail(message) {
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const {result} = spawnCommandSync(command, args, {
     cwd: options.cwd,
     stdio: options.captureOutput ? 'pipe' : 'inherit',
     encoding: 'utf8',
   });
 
+  if (result.error) {
+    fail(result.error.message || `Failed to start ${formatCommand(command, args)}`);
+  }
+
   if (result.status !== 0) {
     const stderr = String(result.stderr || '').trim();
-    fail(stderr || `${command} ${args.join(' ')} failed.`);
+    fail(stderr || `${formatCommand(command, args)} failed.`);
   }
 
   return String(result.stdout || '').trim();
@@ -27,7 +31,12 @@ function normalizePath(value) {
 }
 
 function copyIntoActiveExtension(targetWorktree, activeExtensionRoot) {
-  fs.rmSync(activeExtensionRoot, {recursive: true, force: true});
+  fs.rmSync(activeExtensionRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 200,
+  });
   fs.mkdirSync(activeExtensionRoot, {recursive: true});
 
   fs.copyFileSync(

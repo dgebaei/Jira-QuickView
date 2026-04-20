@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const {spawnSync} = require('child_process');
+const {spawnCommandSync} = require('./lib/spawn-command');
 
 const repoRoot = path.resolve(__dirname, '..');
 const toolRoot = path.join(repoRoot, '.tools', 'llm-tldr');
@@ -17,7 +17,7 @@ const shouldReinstall = args.has('--reinstall') || args.has('--force');
 fs.mkdirSync(cacheDir, {recursive: true});
 
 function run(command, commandArgs, extra = {}) {
-  const result = spawnSync(command, commandArgs, {
+  const {result} = spawnCommandSync(command, commandArgs, {
     stdio: 'inherit',
     cwd: repoRoot,
     ...extra,
@@ -32,7 +32,7 @@ function run(command, commandArgs, extra = {}) {
 }
 
 function ensureUv() {
-  const check = spawnSync('uv', ['--version'], {
+  const {result: check} = spawnCommandSync('uv', ['--version'], {
     stdio: 'ignore',
     cwd: repoRoot,
   });

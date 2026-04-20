@@ -1,7 +1,7 @@
 require('./load-env-defaults');
 
-const {spawnSync} = require('child_process');
 const path = require('path');
+const {spawnCommandSync} = require('../lib/spawn-command');
 
 const repoRoot = path.resolve(__dirname, '../..');
 
@@ -31,11 +31,16 @@ const suites = [
 ];
 
 for (const suite of suites) {
-  const result = spawnSync('npm', ['exec', '--', 'playwright', 'test', ...suite.args], {
+  const {result} = spawnCommandSync('npm', ['exec', '--', 'playwright', 'test', ...suite.args], {
     cwd: repoRoot,
     env: deriveProjectEnv(suite.label, process.env),
     stdio: 'inherit',
   });
+
+  if (result.error) {
+    console.error(result.error.message || 'Could not start Playwright suite.');
+    process.exit(result.status || 1);
+  }
 
   if (result.status !== 0) {
     process.exit(result.status || 1);

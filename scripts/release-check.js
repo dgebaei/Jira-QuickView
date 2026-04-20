@@ -1,17 +1,21 @@
-const {spawnSync} = require('child_process');
 const path = require('path');
+const {formatCommand, spawnCommandSync} = require('./lib/spawn-command');
 
 const repoRoot = path.resolve(__dirname, '..');
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const {result} = spawnCommandSync(command, args, {
     cwd: repoRoot,
     encoding: 'utf8',
     stdio: options.captureOutput ? 'pipe' : 'inherit',
   });
 
+  if (result.error) {
+    throw new Error(result.error.message || `Failed to start ${formatCommand(command, args)}`);
+  }
+
   if (result.status !== 0) {
-    const summary = [command, ...args].join(' ');
+    const summary = formatCommand(command, args);
     const stderr = String(result.stderr || '').trim();
     throw new Error(stderr ? `${summary} failed: ${stderr}` : `${summary} failed.`);
   }
