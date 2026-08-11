@@ -182,5 +182,24 @@ test('copies from the Jira Data Center issue header with its context path @mock-
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
     `${instanceUrl}browse/${target.primaryIssueKey}`
   );
+
+  const childIssueKey = 'JRACLOUD-97847';
+  const childrenJqlLink = page.getByTestId('jira-dc-children-jql-link');
+  await expect(childrenJqlLink).toBeVisible();
+  const childrenJqlUrl = new URL(await childrenJqlLink.getAttribute('href'));
+  expect(childrenJqlUrl.pathname).toBe('/jira/issues/');
+  expect(childrenJqlUrl.searchParams.get('jql')).toBe(`"Epic Link" = "${target.primaryIssueKey}"`);
+
+  const childCopyButton = page.getByRole('button', {name: `Copy ${childIssueKey} issue link`});
+  await expect(childCopyButton).toBeVisible();
+  await childCopyButton.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `${instanceUrl}browse/${childIssueKey}`
+  );
+
+  const screenshotPath = String(process.env.JHL_CAPTURE_JIRA_DC_CHILDREN_SCREENSHOT || '').trim();
+  if (screenshotPath) {
+    await page.locator('#greenhopper-epics-issue-web-panel').screenshot({path: screenshotPath});
+  }
   await page.close();
 });

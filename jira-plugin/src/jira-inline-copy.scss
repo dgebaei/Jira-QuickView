@@ -35,10 +35,38 @@
   transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
-:where([data-issue-key], tr, [role='row'], article, li):hover ._JX_inline_copy_button_result,
-:where([data-issue-key], tr, [role='row'], article, li):focus-within ._JX_inline_copy_button_result,
+:where([data-issue-key], [data-issuekey], tr, [role='row'], article, li):hover ._JX_inline_copy_button_result,
+:where([data-issue-key], [data-issuekey], tr, [role='row'], article, li):focus-within ._JX_inline_copy_button_result,
 ._JX_inline_copy_button_result:focus-visible {
   opacity: 1;
+}
+
+._JX_native_children_jql_link {
+  align-items: center;
+  border-radius: 3px;
+  color: var(--ds-link, #0c66e4);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 4px;
+  padding: 4px 6px;
+  text-decoration: none;
+
+  &:hover {
+    background: var(--ds-background-neutral-subtle-hovered, #091e420f);
+    color: var(--ds-link-pressed, #0052cc);
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--ds-border-focused, #0c66e4);
+    outline: none;
+  }
+
+  svg {
+    height: 12px;
+    width: 12px;
+  }
 }
 
 @media (hover: none) {

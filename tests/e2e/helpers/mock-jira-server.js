@@ -151,6 +151,7 @@ function buildCloudBoardPage(state) {
 }
 
 function buildDataCenterIssuePage(state) {
+  const childIssue = state.childIssues[0];
   return `<!doctype html>
     <html>
       <head>
@@ -162,6 +163,16 @@ function buildDataCenterIssuePage(state) {
           .issue-header-content { align-items: center; display: flex; gap: 8px; }
           #key-val { color: #42526e; font-weight: 600; text-decoration: none; }
           #summary-val { font-size: 24px; margin-top: 22px; }
+          .module { margin-top: 28px; }
+          .mod-header { align-items: center; border-bottom: 1px solid #b7bec8; display: flex; justify-content: space-between; }
+          .toggle-header { font-size: 14px; margin: 0; }
+          .toggle-title { background: transparent; border: 0; color: #172b4d; font: inherit; font-weight: 600; padding: 10px 0; }
+          .ops { align-items: center; display: flex; gap: 10px; list-style: none; margin: 0; padding: 0; }
+          .icon-add16 { color: #44546f; font-size: 20px; text-decoration: none; }
+          .ghx-issuetable { border-collapse: collapse; width: 100%; }
+          .ghx-issuetable td { border-bottom: 1px solid #dfe1e6; padding: 11px 8px; }
+          .ghx-summary { width: 55%; }
+          .status { color: #44546f; }
         </style>
       </head>
       <body>
@@ -169,6 +180,26 @@ function buildDataCenterIssuePage(state) {
           <div class="issue-header-content"><a id="key-val" href="/jira/browse/${escapeHtml(state.issue.key)}">${escapeHtml(state.issue.key)}</a></div>
           <h1 id="summary-val">${escapeHtml(state.issue.summary)}</h1>
           <p>Mock Jira Data Center issue details</p>
+          <div id="greenhopper-epics-issue-web-panel" class="module toggle-wrap">
+            <div id="greenhopper-epics-issue-web-panel_heading" class="mod-header">
+              <h3 class="toggle-header" id="greenhopper-epics-issue-web-panel-label">
+                <button class="aui-button toggle-title" type="button"><span class="aui-toggle-header-button-label">Issues in epic</span></button>
+              </h3>
+              <ul class="ops"><li><a id="gh-create-issue-in-epic-lnk" href="/jira/secure/CreateIssue!default.jspa" class="icon icon-add16"><span>+</span></a></li></ul>
+            </div>
+            <div class="mod-content">
+              <table id="ghx-issues-in-epic-table" class="ghx-issuetable">
+                <tbody>
+                  <tr data-issuekey="${escapeHtml(childIssue.key)}" class="issuerow">
+                    <td class="nav ghx-minimal"><a href="/jira/browse/${escapeHtml(childIssue.key)}">${escapeHtml(childIssue.key)}</a></td>
+                    <td class="nav ghx-summary">${escapeHtml(childIssue.fields.summary)}</td>
+                    <td class="nav status"><span class="jira-issue-status-lozenge">${escapeHtml(childIssue.fields.status.name)}</span></td>
+                    <td class="nav assignee">Morgan Agent</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </main>
       </body>
     </html>`;
