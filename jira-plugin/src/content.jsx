@@ -679,8 +679,6 @@ async function mainAsyncLocal() {
     renderIssuePopup,
     requestJson,
     resolveIssueLinkage,
-    searchAssignableUsers,
-    searchUserPicker,
     searchParentCandidates,
     setPopupState: nextState => {
       popupState = nextState;
@@ -4924,7 +4922,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
+    return ['assignee', 'fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {

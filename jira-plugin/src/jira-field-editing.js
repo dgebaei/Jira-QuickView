@@ -224,6 +224,74 @@ function buildSprintOptions(issue, sprints) {
   ];
 }
 
+function buildUserOption(user) {
+  const id = String(user?.accountId || user?.name || user?.key || '');
+  const label = String(user?.displayName || user?.name || user?.key || '');
+  return {
+    id,
+    label,
+    avatarUrl: user?.avatarUrls?.['48x48'] || '',
+    metaText: user?.name || user?.key || '',
+    rawValue: {
+      accountId: user?.accountId || '',
+      name: user?.name || '',
+      key: user?.key || '',
+    },
+    searchText: `${label} ${user?.name || ''} ${user?.key || ''}`.trim().toLowerCase(),
+  };
+}
+
+function unassignedOption(metaText = 'Clear assignee') {
+  return {
+    id: '__unassigned__',
+    label: 'Unassigned',
+    metaText,
+    rawValue: null,
+    searchText: `unassigned ${metaText}`.toLowerCase(),
+  };
+}
+
+function currentAssigneeOption(issue) {
+  const assignee = issue?.fields?.assignee;
+  return assignee ? buildUserOption(assignee) : null;
+}
+
+function buildAssigneeOptions(issue, assignees = [], people = [], baseline = []) {
+  const currentOption = currentAssigneeOption(issue);
+  const fixedOptions = [unassignedOption(), ...(currentOption ? [currentOption] : [])];
+  return mergeOptions(
+    fixedOptions,
+    mergeOptions(
+      assignees.map(buildUserOption),
+      mergeOptions(people.map(buildUserOption), baseline)
+    )
+  );
+}
+
+function detectAssigneeIdentifier(issue, preferredIdentifier) {
+  if (preferredIdentifier) return preferredIdentifier;
+  const assignee = issue?.fields?.assignee;
+  if (assignee?.accountId) return 'accountId';
+  if (assignee?.name) return 'name';
+  if (assignee?.key) return 'key';
+  return 'accountId';
+}
+
+function assigneeWriteCandidates(selectedOption, issue, preferredIdentifier) {
+  const rawValue = selectedOption?.rawValue || {};
+  const isUnassigned = selectedOption?.id === '__unassigned__';
+  const payloads = {
+    accountId: isUnassigned ? {accountId: null} : (rawValue.accountId ? {accountId: rawValue.accountId} : null),
+    name: isUnassigned ? {name: null} : (rawValue.name ? {name: rawValue.name} : null),
+    key: isUnassigned ? {key: null} : (rawValue.key ? {key: rawValue.key} : null),
+  };
+  const preferred = detectAssigneeIdentifier(issue, preferredIdentifier);
+  return [preferred, 'accountId', 'name', 'key']
+    .filter((identifier, index, identifiers) => identifier && identifiers.indexOf(identifier) === index)
+    .filter(identifier => payloads[identifier])
+    .map(identifier => ({identifier, body: payloads[identifier]}));
+}
+
 export function createJiraFieldEditing(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -231,15 +299,17 @@ export function createJiraFieldEditing(options = {}) {
   if (!jira || typeof jira.write !== 'function') {
     throw new Error('JiraFieldEditing requires a Jira adapter');
   }
-  if (!issueData || typeof issueData.loadFieldContext !== 'function' || typeof issueData.refreshAfterMutation !== 'function') {
+  if (!issueData || typeof issueData.loadFieldContext !== 'function' || typeof issueData.refreshAfterMutation !== 'function' || typeof issueData.search !== 'function') {
     throw new Error('JiraFieldEditing requires QuickViewIssueData');
   }
 
   let generation = 0;
   let editSequence = 0;
+  let searchSequence = 0;
   let session = null;
   let edit = null;
   let resolvedFieldId = '';
+  let preferredAssigneeIdentifier = '';
 
   function view() {
     return {
@@ -318,7 +388,7 @@ export function createJiraFieldEditing(options = {}) {
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['assignee', 'fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
     resolvedFieldId = '';
@@ -395,6 +465,48 @@ export function createJiraFieldEditing(options = {}) {
         options: transitions,
         selectedOptionId: null,
         showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'assignee') {
+      if (!context?.editable) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentOption = currentAssigneeOption(capturedSession.issueSnapshot.core);
+      edit = {
+        ...edit,
+        editorType: 'user-search',
+        fieldKey: 'assignee',
+        label: 'Assignee',
+        selectionMode: 'single',
+        inputPlaceholder: 'Search assignable users',
+        options: [],
+        selectedOptionId: currentOption?.id || '__unassigned__',
+        selectedOptions: currentOption ? [currentOption] : [unassignedOption('No assignee')],
+        showActionButtons: false,
+        loadingOptions: true,
+        searchRequestId: ++searchSequence,
+        status: 'loadingOptions',
+      };
+      const assigneeOutcome = await issueData.search({
+        purpose: 'assignee',
+        issueKey: capturedSession.issueKey,
+        query: '',
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId)) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (assigneeOutcome.kind !== 'loaded') {
+        const failure = assigneeOutcome.failure || normalizeFailure(new Error('Could not search assignable users'));
+        edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        options: buildAssigneeOptions(capturedSession.issueSnapshot.core, assigneeOutcome.items),
         loadingOptions: false,
         status: 'editing',
       };
@@ -503,13 +615,53 @@ export function createJiraFieldEditing(options = {}) {
     return outcome('changed', {editId});
   }
 
-  function inputChanged(intent) {
+  async function inputChanged(intent) {
     if (!matchesEdit(intent) || edit.saving) return outcome('ignored');
     const typedValue = String(intent.value || '');
     let inputValue = typedValue;
     let start = Number.isInteger(intent.selection?.start) ? intent.selection.start : inputValue.length;
     let end = Number.isInteger(intent.selection?.end) ? intent.selection.end : start;
     let selectedOptionId = edit.selectedOptionId || null;
+    if (edit.editorType === 'user-search' && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      const exactOption = baselineOptions.find(option => option.label.toLowerCase() === typedValue.trim().toLowerCase());
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        selectedOptionId: exactOption?.id || null,
+        selectedOptions: exactOption ? [exactOption] : [],
+        highlightedOptionId: null,
+        hasChanges: !!exactOption,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      const [assigneeOutcome, peopleOutcome] = await Promise.all([
+        issueData.search({purpose: 'assignee', issueKey: capturedSession.issueKey, query: typedValue, signal: intent.signal}),
+        issueData.search({purpose: 'userPicker', query: typedValue, signal: intent.signal}),
+      ]);
+      if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      edit = {
+        ...edit,
+        options: buildAssigneeOptions(
+          capturedSession.issueSnapshot.core,
+          assigneeOutcome.kind === 'loaded' ? assigneeOutcome.items : [],
+          peopleOutcome.kind === 'loaded' ? peopleOutcome.items : [],
+          baselineOptions
+        ),
+        loadingOptions: false,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
     if (edit.selectionMode === 'multi') {
       edit = {
         ...edit,
@@ -619,6 +771,7 @@ export function createJiraFieldEditing(options = {}) {
     const editId = edit.editId;
     if (!edit.hasChanges) return outcome('ignored', {editId});
     let writeRequest;
+    let writeCandidates = null;
     let notice;
     if (edit.fieldKey === 'summary') {
       const nextSummary = String(edit.inputValue || '').trim();
@@ -661,6 +814,31 @@ export function createJiraFieldEditing(options = {}) {
         path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
         body: {fields: {[edit.fieldKey]: {id: selectedValue.id}}},
       };
+    } else if (edit.fieldKey === 'assignee') {
+      const selectedAssignee = edit.options.find(option => option.id === edit.selectedOptionId);
+      if (!selectedAssignee) {
+        const failure = normalizeFailure(new Error('Pick an assignee before saving'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      writeCandidates = assigneeWriteCandidates(
+        selectedAssignee,
+        capturedSession.issueSnapshot.core,
+        preferredAssigneeIdentifier
+      );
+      if (!writeCandidates.length) {
+        const failure = normalizeFailure(new Error('Could not build assignee payload'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = selectedAssignee.id === '__unassigned__'
+        ? 'Assignee cleared'
+        : `Assignee set to ${selectedAssignee.label}`;
+      writeCandidates = writeCandidates.map(candidate => ({
+        ...candidate,
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}/assignee`,
+      }));
     } else if (['fixVersions', 'versions'].includes(edit.fieldKey)) {
       const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
       notice = edit.fieldKey === 'fixVersions'
@@ -692,10 +870,31 @@ export function createJiraFieldEditing(options = {}) {
 
     if (!writeAlreadySucceeded) {
       try {
-        await jira.write({
-          ...writeRequest,
-          signal: intent.signal,
-        });
+        if (writeCandidates) {
+          let lastError = null;
+          let successfulIdentifier = '';
+          for (const candidate of writeCandidates) {
+            try {
+              await jira.write({
+                method: candidate.method,
+                path: candidate.path,
+                body: candidate.body,
+                signal: intent.signal,
+              });
+              successfulIdentifier = candidate.identifier;
+              break;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          if (!successfulIdentifier) throw lastError || new Error('Could not update assignee');
+          preferredAssigneeIdentifier = successfulIdentifier;
+        } else {
+          await jira.write({
+            ...writeRequest,
+            signal: intent.signal,
+          });
+        }
       } catch (error) {
         if (!isCurrent(capturedSession, editId)) {
           return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});

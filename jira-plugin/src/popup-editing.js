@@ -29,15 +29,11 @@ export function createPopupEditing(deps) {
     renderIssuePopup,
     requestJson,
     resolveIssueLinkage,
-    searchAssignableUsers,
-    searchUserPicker,
     searchParentCandidates,
     getCustomFieldEditorDefinition,
     getPopupState,
     setPopupState,
   } = deps;
-
-  let preferredAssigneeIdentifier = '';
 
   function mergeEditOptions(primaryOptions, fallbackOptions) {
     const mergedOptions = [];
@@ -186,135 +182,7 @@ export function createPopupEditing(deps) {
     ];
   }
 
-  function detectAssigneeIdentifier(issueData) {
-    if (preferredAssigneeIdentifier) {
-      return preferredAssigneeIdentifier;
-    }
-    const assignee = issueData?.fields?.assignee;
-    if (assignee?.accountId) {
-      return 'accountId';
-    }
-    if (assignee?.name) {
-      return 'name';
-    }
-    if (assignee?.key) {
-      return 'key';
-    }
-    return 'accountId';
-  }
-
-  function buildAssigneePayloadCandidates(selectedOption, issueData) {
-    const preferredIdentifier = detectAssigneeIdentifier(issueData);
-    const rawValue = selectedOption?.rawValue || {};
-    const isUnassigned = selectedOption?.id === '__unassigned__';
-    const payloadsByIdentifier = {
-      accountId: isUnassigned
-        ? {accountId: null}
-        : rawValue.accountId ? {accountId: rawValue.accountId} : null,
-      name: isUnassigned
-        ? {name: null}
-        : rawValue.name ? {name: rawValue.name} : null,
-      key: isUnassigned
-        ? {key: null}
-        : rawValue.key ? {key: rawValue.key} : null,
-    };
-    const identifierOrder = [preferredIdentifier, 'accountId', 'name', 'key']
-      .filter((value, index, array) => value && array.indexOf(value) === index);
-    return identifierOrder
-      .map(identifier => ({identifier, payload: payloadsByIdentifier[identifier]}))
-      .filter(entry => entry.payload);
-  }
-
-  async function saveAssigneeSelection(issueData, selectedOptions) {
-    const selectedOption = selectedOptions[0];
-    if (!selectedOption) {
-      throw new Error('Pick an assignee before saving');
-    }
-    const payloadCandidates = buildAssigneePayloadCandidates(selectedOption, issueData);
-    if (!payloadCandidates.length) {
-      throw new Error('Could not build assignee payload');
-    }
-    const assigneeUrl = `${INSTANCE_URL}rest/api/2/issue/${issueData.key}/assignee`;
-    let lastError;
-    for (const candidate of payloadCandidates) {
-      try {
-        await requestJson('PUT', assigneeUrl, candidate.payload);
-        preferredAssigneeIdentifier = candidate.identifier;
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not update assignee');
-  }
-
-  async function loadAssigneeOptions(issueData, currentOption) {
-    const assignableOptions = await searchAssignableUsers('', issueData);
-    const options = mergeEditOptions(
-      [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'})],
-      mergeEditOptions(currentOption ? [currentOption] : [], assignableOptions)
-    );
-    return options;
-  }
-
-  async function searchAssigneeOptions(issueData, currentOption, query = '') {
-    const baselineOptions = getPopupState()?.editState?.options || [];
-    const [assignableOptions, pickerOptions] = await Promise.all([
-      searchAssignableUsers(query, issueData).catch(() => []),
-      searchUserPicker(query).catch(() => []),
-    ]);
-    const mergedOptions = mergeEditOptions(
-      [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'})],
-      mergeEditOptions(
-        currentOption ? [currentOption] : [],
-        mergeEditOptions(assignableOptions, mergeEditOptions(pickerOptions, baselineOptions))
-      )
-    );
-    return mergedOptions;
-  }
-
   async function getEditableFieldDefinition(fieldKey, issueData) {
-    if (fieldKey === 'assignee') {
-      const capability = await getEditableFieldCapability(issueData, 'assignee');
-      if (!capability.editable) {
-        return null;
-      }
-      const currentAssignee = issueData?.fields?.assignee;
-      const currentOption = currentAssignee
-        ? buildEditOption(currentAssignee.accountId || currentAssignee.name || currentAssignee.key, currentAssignee.displayName || currentAssignee.name || currentAssignee.key, {
-            avatarUrl: currentAssignee.avatarUrls?.['48x48'] || '',
-            metaText: currentAssignee.name || currentAssignee.key || '',
-            rawValue: {
-              accountId: currentAssignee.accountId || '',
-              name: currentAssignee.name || '',
-              key: currentAssignee.key || '',
-            },
-          })
-        : null;
-      return {
-        fieldKey,
-        editorType: 'user-search',
-        label: 'Assignee',
-        selectionMode: 'single',
-        currentText: currentAssignee?.displayName || 'Unassigned',
-        currentOptionId: currentOption?.id || '__unassigned__',
-        currentSelections: currentOption ? [currentOption] : [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'No assignee'})],
-        initialInputValue: '',
-        inputPlaceholder: 'Search assignable users',
-        skipInitialEmptySearch: true,
-        loadOptions: () => loadAssigneeOptions(issueData, currentOption),
-        searchOptions: query => searchAssigneeOptions(issueData, currentOption, query),
-        save: selectedOptions => saveAssigneeSelection(issueData, selectedOptions),
-        successMessage: selectedOptions => {
-          const selectedOption = selectedOptions[0];
-          if (!selectedOption || selectedOption.id === '__unassigned__') {
-            return 'Assignee cleared';
-          }
-          return `Assignee set to ${selectedOption.label}`;
-        },
-      };
-    }
-
     if (fieldKey === 'parentLink') {
       const linkage = await resolveIssueLinkage(issueData);
       if (!linkage?.editable || !linkage.mode) {

@@ -721,3 +721,152 @@ test('Sprint option failure leaves the interface retryable', async ({page}) => {
     boardRequests: 2,
   });
 });
+
+test('Assignee editing owns initial options, merged search, selection, payload, and refresh', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'assignee', name: 'Assignee'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {assignee: {name: 'Assignee', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee') && request.path.includes('query='), result: [
+        {accountId: 'bob-1', name: 'bob', key: 'BOB', displayName: 'Bob Builder'},
+      ]},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee') && request.path.includes('query=morgan'), result: [
+        {accountId: 'morgan-1', name: 'morgan', key: 'MORGAN', displayName: 'Morgan Agent'},
+      ]},
+      {operation: 'read', match: request => request.path.includes('/rest/api/2/user/picker?query=morgan'), result: {users: [
+        {accountId: 'morgan-1', name: 'morgan', key: 'MORGAN', displayName: 'Morgan Agent'},
+        {accountId: 'mae-1', name: 'mae', key: 'MAE', displayName: 'Mae Agent'},
+      ]}},
+      {operation: 'write', method: 'PUT', match: request => request.path.endsWith('/issue/ABC-1/assignee'), result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', assignee: {accountId: 'morgan-1', displayName: 'Morgan Agent'}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', assignee: {
+        accountId: 'ada-1', name: 'ada', key: 'ADA', displayName: 'Ada Agent',
+      }}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'assignee'});
+    const searched = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'Morgan'});
+    const selected = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: 'morgan-1'});
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        ids: begun.view.edit?.options.map(option => option.id),
+        selectedOptionId: begun.view.edit?.selectedOptionId,
+      },
+      searched: {kind: searched.kind, labels: searched.view.edit?.options.map(option => option.label)},
+      selected: {kind: selected.kind, selectedOptionId: selected.view.edit?.selectedOptionId},
+      saved: {kind: saved.kind, notice: saved.notice},
+      write: write ? {method: write.method, path: write.path, body: write.body} : null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', ids: ['__unassigned__', 'ada-1', 'bob-1'], selectedOptionId: 'ada-1'},
+    searched: {kind: 'changed', labels: ['Unassigned', 'Ada Agent', 'Morgan Agent', 'Mae Agent', 'Bob Builder']},
+    selected: {kind: 'changed', selectedOptionId: 'morgan-1'},
+    saved: {kind: 'saved', notice: 'Assignee set to Morgan Agent'},
+    write: {
+      method: 'PUT',
+      path: 'https://jira.example/rest/api/2/issue/ABC-1/assignee',
+      body: {accountId: 'morgan-1'},
+    },
+  });
+});
+
+test('Assignee payload fallback and clearing preserve Jira identifier ordering', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const field = {id: 'assignee', name: 'Assignee'};
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [field]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {assignee: field}}},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee'), result: [
+        {accountId: 'morgan-1', name: 'morgan', key: 'MORGAN', displayName: 'Morgan Agent'},
+      ]},
+      {operation: 'write', method: 'PUT', error: 'Name payload unsupported'},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', assignee: {accountId: 'morgan-1', displayName: 'Morgan Agent'}}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [field]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {assignee: field}}},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee'), result: []},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '2', key: 'XYZ-2', fields: {summary: 'Other', assignee: null}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', assignee: {name: 'ada', displayName: 'Ada Agent'}}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'assignee'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: 'morgan-1'});
+    const assigned = await fields.dispatch({type: 'save', editId: begun.editId});
+
+    fields.attach({
+      sessionId: 'popup-2',
+      issueSnapshot: {issueKey: 'XYZ-2', core: {id: '2', key: 'XYZ-2', fields: {summary: 'Other', assignee: {accountId: 'ada-2', displayName: 'Ada Two'}}}, sections: {}},
+    });
+    const clearBegun = await fields.dispatch({type: 'begin', fieldId: 'assignee'});
+    await fields.dispatch({type: 'selectOption', editId: clearBegun.editId, optionId: '__unassigned__'});
+    const cleared = await fields.dispatch({type: 'save', editId: clearBegun.editId});
+    return {
+      assigned: {kind: assigned.kind, notice: assigned.notice},
+      cleared: {kind: cleared.kind, notice: cleared.notice},
+      writeBodies: jira.getRequests().filter(request => request.operation === 'write').map(request => request.body),
+    };
+  });
+
+  expect(result).toEqual({
+    assigned: {kind: 'saved', notice: 'Assignee set to Morgan Agent'},
+    cleared: {kind: 'saved', notice: 'Assignee cleared'},
+    writeBodies: [{name: 'morgan'}, {accountId: 'morgan-1'}, {accountId: null}],
+  });
+});
+
+test('a stale Assignee search cannot replace newer suggestions', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const oldAssignee = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'assignee', name: 'Assignee'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {assignee: {name: 'Assignee'}}}},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee') && request.path.endsWith('query='), result: []},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee') && request.path.includes('query=old'), deferred: oldAssignee},
+      {operation: 'read', match: request => request.path.includes('/rest/api/2/user/picker?query=old'), result: {users: []}},
+      {operation: 'read', match: request => request.path.includes('/rest/internal/2/users/assignee') && request.path.includes('query=new'), result: [
+        {accountId: 'new-1', displayName: 'New Result'},
+      ]},
+      {operation: 'read', match: request => request.path.includes('/rest/api/2/user/picker?query=new'), result: {users: []}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', assignee: null}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'assignee'});
+    const oldSearch = fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'old'});
+    await Promise.resolve();
+    const newSearch = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'new'});
+    oldAssignee.resolve([{accountId: 'old-1', displayName: 'Old Result'}]);
+    const stale = await oldSearch;
+    return {
+      newSearch: {kind: newSearch.kind, labels: newSearch.view.edit?.options.map(option => option.label)},
+      stale: {kind: stale.kind},
+      finalLabels: fields.view().edit?.options.map(option => option.label),
+    };
+  });
+
+  expect(result).toEqual({
+    newSearch: {kind: 'changed', labels: ['Unassigned', 'New Result']},
+    stale: {kind: 'ignored'},
+    finalLabels: ['Unassigned', 'New Result'],
+  });
+});
