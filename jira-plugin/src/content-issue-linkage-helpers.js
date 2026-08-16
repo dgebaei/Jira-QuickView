@@ -1,5 +1,4 @@
 export function createContentIssueLinkageHelpers(options) {
-  const buildEditOption = options?.buildEditOption;
   const getIssueSummary = options?.getIssueSummary;
   const instanceUrl = options?.instanceUrl;
   const issueDataModule = options?.issueData;
@@ -69,44 +68,5 @@ export function createContentIssueLinkageHelpers(options) {
     };
   }
 
-  function buildIssueSearchOption(issue, issueData) {
-    const issueKey = String(issue?.key || '').trim();
-    const issueSummary = String(issue?.fields?.summary || issue?.summary || issueKey).trim();
-    const statusName = issue?.fields?.status?.name || '';
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    const candidateProjectKey = String(issue?.fields?.project?.key || issueKey).split('-')[0];
-    const isLocalProject = candidateProjectKey === projectKey;
-    return buildEditOption(issueKey, `[${issueKey}] ${issueSummary}`.trim(), {
-      id: issueKey,
-      iconUrl: issue?.fields?.issuetype?.iconUrl || issue?.issuetype?.iconUrl || '',
-      metaText: statusName,
-      rawValue: {key: issueKey, summary: issueSummary},
-      searchText: `${issueKey} ${issueSummary} ${statusName}`,
-      groupKey: isLocalProject ? `project:${projectKey}` : '__other_projects__',
-      groupLabel: isLocalProject ? `${projectKey} project` : 'Other projects',
-      groupSortKey: isLocalProject ? '0' : '1',
-    });
-  }
-
-  function getRecentIssueSearchOptions() {
-    return [];
-  }
-
-  async function searchParentCandidates(query, issueData, linkageMode) {
-    const fieldId = linkageMode === 'parent'
-      ? 'parent'
-      : (await resolveIssueLinkage(issueData)).fieldKey;
-    const outcome = await issueDataModule.search({
-      purpose: 'parent',
-      issueKey: issueData?.key,
-      fieldId,
-      query,
-    });
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Issue search failed');
-    }
-    return outcome.items.map(issue => buildIssueSearchOption(issue, issueData)).filter(option => option.id);
-  }
-
-  return {getRecentIssueSearchOptions, resolveIssueLinkage, searchParentCandidates};
+  return {resolveIssueLinkage};
 }

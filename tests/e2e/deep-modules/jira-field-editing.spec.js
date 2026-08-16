@@ -870,3 +870,132 @@ test('a stale Assignee search cannot replace newer suggestions', async ({page}) 
     finalLabels: ['Unassigned', 'New Result'],
   });
 });
+
+test('Cloud Parent editing owns local-first search, grouping, payload, and refresh', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const currentIssue = {
+      id: '1',
+      key: 'ABC-1',
+      fields: {
+        summary: 'Issue',
+        project: {id: '10', key: 'ABC'},
+        issuetype: {id: 'story'},
+        parent: {key: 'ABC-9', fields: {summary: 'Current parent'}},
+      },
+    };
+    const localIssues = [
+      {key: 'ABC-9', fields: {summary: 'Current parent', project: {key: 'ABC'}, issuetype: {id: 'epic'}, status: {name: 'Open'}}},
+      {key: 'ABC-10', fields: {summary: 'Next parent', project: {key: 'ABC'}, issuetype: {id: 'epic'}, status: {name: 'Open'}}},
+    ];
+    const remoteIssue = {key: 'XYZ-2', fields: {summary: 'Remote parent', project: {key: 'XYZ'}, issuetype: {id: 'epic'}, status: {name: 'Backlog'}}};
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'parent', name: 'Parent'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {parent: {name: 'Parent', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: currentIssue},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/3/issuetype'), result: [
+        {id: 'story', hierarchyLevel: 0},
+        {id: 'epic', hierarchyLevel: 1},
+      ]},
+      {operation: 'read', match: request => request.path.includes('/rest/api/latest/search?') && new URL(request.path).searchParams.get('jql').includes('project = "ABC"'), result: {issues: localIssues}},
+      {operation: 'read', match: request => request.path.includes('/rest/api/latest/search?') && new URL(request.path).searchParams.get('jql').includes('project != "ABC"'), result: {issues: [remoteIssue]}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
+        ...currentIssue,
+        fields: {...currentIssue.fields, parent: {key: 'ABC-10', fields: {summary: 'Next parent'}}},
+      }},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: currentIssue, sections: {}}});
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'parentLink'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: 'ABC-10'});
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        ids: begun.view.edit?.options.filter(option => !option.isGroupLabel).map(option => option.id),
+        groupLabels: begun.view.edit?.options.filter(option => option.isGroupLabel).map(option => option.label),
+        selectedOptionId: begun.view.edit?.selectedOptionId,
+      },
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {
+      kind: 'changed',
+      ids: ['ABC-9', 'ABC-10', 'XYZ-2'],
+      groupLabels: ['ABC project', 'Other projects'],
+      selectedOptionId: 'ABC-9',
+    },
+    saved: {kind: 'saved', notice: 'Parent set to ABC-10'},
+    writeBody: {fields: {parent: {key: 'ABC-10'}}},
+  });
+});
+
+test('Data Center Epic Link editing uses the resolved custom field while presenting Parent', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const epicField = {id: 'customfield_10014', name: 'Epic Link', schema: {custom: 'com.pyxis.greenhopper.jira:gh-epic-link'}};
+    const currentIssue = {
+      id: '1',
+      key: 'ABC-1',
+      names: {customfield_10014: 'Epic Link'},
+      fields: {
+        summary: 'Issue',
+        project: {id: '10', key: 'ABC'},
+        issuetype: {id: 'story'},
+        parent: null,
+        customfield_10014: 'ABC-9',
+      },
+    };
+    const candidate = key => ({key, fields: {
+      summary: key === 'ABC-9' ? 'Current epic' : 'Next epic',
+      project: {key: 'ABC'},
+      issuetype: {id: 'epic'},
+      status: {name: 'Open'},
+    }});
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [epicField]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_10014: {...epicField, operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: currentIssue},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/3/issuetype'), result: [
+        {id: 'story', hierarchyLevel: 0},
+        {id: 'epic', hierarchyLevel: 1},
+      ]},
+      {operation: 'read', match: request => request.path.includes('/rest/api/latest/search?') && new URL(request.path).searchParams.get('jql').includes('project = "ABC"'), result: {issues: [candidate('ABC-9'), candidate('ABC-10')]}},
+      {operation: 'read', match: request => request.path.includes('/rest/api/latest/search?') && new URL(request.path).searchParams.get('jql').includes('project != "ABC"'), result: {issues: []}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
+        ...currentIssue,
+        fields: {...currentIssue.fields, customfield_10014: 'ABC-10'},
+      }},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: currentIssue, sections: {}}});
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'parentLink'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: 'ABC-10'});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        fieldKey: begun.view.edit?.fieldKey,
+        label: begun.view.edit?.label,
+        selectedLabel: begun.view.edit?.selectedOptions[0]?.label,
+      },
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', fieldKey: 'parentLink', label: 'Parent', selectedLabel: '[ABC-9] Current epic'},
+    saved: {kind: 'saved', notice: 'Parent set to ABC-10'},
+    writeBody: {fields: {customfield_10014: 'ABC-10'}},
+  });
+});

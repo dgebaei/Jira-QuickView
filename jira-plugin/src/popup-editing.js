@@ -23,13 +23,10 @@ export function createPopupEditing(deps) {
     buildEditFieldError,
     getEditableFieldCapability,
     getLabelSuggestions,
-    getRecentIssueSearchOptions,
     hasLabelSuggestionSupport,
     refreshPopupIssueState,
     renderIssuePopup,
     requestJson,
-    resolveIssueLinkage,
-    searchParentCandidates,
     getCustomFieldEditorDefinition,
     getPopupState,
     setPopupState,
@@ -116,143 +113,7 @@ export function createPopupEditing(deps) {
     };
   }
 
-  function buildGroupedOptionList(options, optionsConfig = {}) {
-    const list = Array.isArray(options) ? options : [];
-    const includeUngrouped = optionsConfig.includeUngrouped !== false;
-    const ungroupedOptions = includeUngrouped
-      ? list.filter(option => !option?.groupKey)
-      : [];
-    const groupedOptions = list.filter(option => option?.groupKey);
-    const groups = new Map();
-
-    groupedOptions.forEach(option => {
-      const groupKey = String(option.groupKey || '').trim();
-      if (!groupKey) {
-        return;
-      }
-      const existingGroup = groups.get(groupKey) || {
-        key: groupKey,
-        label: String(option.groupLabel || groupKey),
-        sortKey: String(option.groupSortKey || '9'),
-        options: [],
-      };
-      existingGroup.sortKey = String(option.groupSortKey || existingGroup.sortKey || '9');
-      existingGroup.options.push(option);
-      groups.set(groupKey, existingGroup);
-    });
-
-    const preferredGroupKey = String(optionsConfig.preferredGroupKey || '').trim();
-    const sortedGroups = [...groups.values()].sort((left, right) => {
-      if (preferredGroupKey) {
-        if (left.key === preferredGroupKey && right.key !== preferredGroupKey) {
-          return -1;
-        }
-        if (right.key === preferredGroupKey && left.key !== preferredGroupKey) {
-          return 1;
-        }
-      }
-      const sortKeyOrder = String(left.sortKey || '9').localeCompare(String(right.sortKey || '9'), undefined, {
-        numeric: true,
-        sensitivity: 'base',
-      });
-      if (sortKeyOrder !== 0) {
-        return sortKeyOrder;
-      }
-      return String(left.label || left.key).localeCompare(String(right.label || right.key), undefined, {
-        numeric: true,
-        sensitivity: 'base',
-      });
-    });
-
-    const showGroupLabels = !(optionsConfig.hideSingleGroup && sortedGroups.length <= 1);
-
-    return [
-      ...ungroupedOptions,
-      ...sortedGroups.flatMap(group => showGroupLabels
-        ? [
-            {
-              id: `__group__${group.key}`,
-              isGroupLabel: true,
-              label: group.label,
-              searchText: String(group.label || '').toLowerCase(),
-            },
-            ...group.options,
-          ]
-        : group.options),
-    ];
-  }
-
   async function getEditableFieldDefinition(fieldKey, issueData) {
-    if (fieldKey === 'parentLink') {
-      const linkage = await resolveIssueLinkage(issueData);
-      if (!linkage?.editable || !linkage.mode) {
-        return null;
-      }
-      const currentLink = linkage.currentLink;
-      const projectKey = String(issueData?.key || '').split('-')[0];
-      const currentLinkProjectKey = String(currentLink?.key || '').split('-')[0];
-      const currentLinkIsLocal = currentLinkProjectKey === projectKey;
-      const currentOption = currentLink
-        ? buildEditOption(currentLink.key, `[${currentLink.key}] ${currentLink.summary || currentLink.key}`, {
-            groupKey: currentLinkIsLocal ? `project:${projectKey}` : '__other_projects__',
-            groupLabel: currentLinkIsLocal ? `${projectKey} project` : 'Other projects',
-            groupSortKey: currentLinkIsLocal ? '0' : '1',
-            rawValue: {
-              key: currentLink.key,
-              summary: currentLink.summary || currentLink.key,
-            },
-          })
-        : null;
-      return {
-        fieldKey,
-        editorType: 'issue-search',
-        label: linkage.label,
-        selectionMode: 'single',
-        currentText: currentLink ? `[${currentLink.key}] ${currentLink.summary || currentLink.key}` : `${linkage.label}: none`,
-        currentOptionId: currentOption?.id || null,
-        currentSelections: currentOption ? [currentOption] : [],
-        initialInputValue: '',
-        inputPlaceholder: 'Search issues by key or summary',
-        loadOptions: async () => {
-          const recentOptions = getRecentIssueSearchOptions(issueData, linkage.mode);
-          const searchedOptions = await searchParentCandidates('', issueData, linkage.mode).catch(() => []);
-          return buildGroupedOptionList(
-            mergeEditOptions([currentOption].filter(Boolean), mergeEditOptions(searchedOptions, recentOptions))
-          );
-        },
-        searchOptions: async query => buildGroupedOptionList(
-          await searchParentCandidates(query, issueData, linkage.mode)
-        ),
-        save: selectedOptions => {
-          const selectedOption = selectedOptions[0];
-          const selectedIssueKey = selectedOption?.rawValue?.key || selectedOption?.id;
-          if (!selectedIssueKey) {
-            throw new Error(`Pick a ${linkage.label.toLowerCase()} issue before saving`);
-          }
-          if (linkage.mode === 'parent') {
-            return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-              fields: {
-                parent: {key: selectedIssueKey},
-              },
-            });
-          }
-          if (!linkage.fieldKey) {
-            throw new Error('Could not resolve Epic Link field');
-          }
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              [linkage.fieldKey]: selectedIssueKey,
-            },
-          });
-        },
-        successMessage: selectedOptions => {
-          const selectedOption = selectedOptions[0];
-          const selectedIssueKey = selectedOption?.rawValue?.key || selectedOption?.id || '';
-          return selectedIssueKey ? `${linkage.label} set to ${selectedIssueKey}` : `${linkage.label} updated`;
-        },
-      };
-    }
-
     if (fieldKey === 'labels') {
       const capability = await getEditableFieldCapability(issueData, 'labels');
       const suggestionSupport = await hasLabelSuggestionSupport();

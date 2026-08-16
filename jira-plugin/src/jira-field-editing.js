@@ -292,6 +292,83 @@ function assigneeWriteCandidates(selectedOption, issue, preferredIdentifier) {
     .map(identifier => ({identifier, body: payloads[identifier]}));
 }
 
+function linkageValueKey(value) {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object') return String(value.key || value.value || value.id || '').trim();
+  return '';
+}
+
+function resolveLinkage(issue, context) {
+  const editMetaFields = context?.editMeta?.fields || {};
+  const parent = issue?.fields?.parent;
+  if (parent?.key || editMetaFields.parent) {
+    const key = String(parent?.key || '').trim();
+    return {
+      currentKey: key,
+      currentSummary: parent?.fields?.summary || key,
+      editable: !!editMetaFields.parent,
+      fieldId: 'parent',
+      mode: 'parent',
+    };
+  }
+  const names = issue?.names || {};
+  const fromNames = Object.keys(names).find(fieldId => ['epic', 'epic link'].includes(String(names[fieldId] || '').toLowerCase()));
+  const fromEditMeta = Object.keys(editMetaFields).find(fieldId => {
+    return ['epic', 'epic link'].includes(String(editMetaFields[fieldId]?.name || '').toLowerCase());
+  });
+  const fieldId = fromNames || fromEditMeta || context?.fieldIds?.epicLink?.[0] || '';
+  const key = linkageValueKey(issue?.fields?.[fieldId]);
+  return {
+    currentKey: key,
+    currentSummary: key,
+    editable: !!fieldId && !!editMetaFields[fieldId],
+    fieldId,
+    mode: fieldId || key ? 'epicLink' : '',
+  };
+}
+
+function buildParentOption(candidate, issueKey) {
+  const key = String(candidate?.key || '').trim();
+  const summary = String(candidate?.fields?.summary || candidate?.summary || key).trim();
+  const statusName = String(candidate?.fields?.status?.name || '');
+  const projectKey = issueKey.split('-')[0];
+  const candidateProjectKey = String(candidate?.fields?.project?.key || key).split('-')[0];
+  const isLocal = candidateProjectKey === projectKey;
+  return {
+    id: key,
+    label: `[${key}] ${summary}`.trim(),
+    iconUrl: candidate?.fields?.issuetype?.iconUrl || candidate?.issuetype?.iconUrl || '',
+    metaText: statusName,
+    rawValue: {key, summary},
+    searchText: `${key} ${summary} ${statusName}`.trim().toLowerCase(),
+    groupKey: isLocal ? `project:${projectKey}` : '__other_projects__',
+    groupLabel: isLocal ? `${projectKey} project` : 'Other projects',
+    groupSortKey: isLocal ? '0' : '1',
+  };
+}
+
+function buildParentOptions(linkage, issueKey, candidates = [], baseline = []) {
+  const candidateOptions = candidates.map(candidate => buildParentOption(candidate, issueKey)).filter(option => option.id);
+  const currentCandidate = candidates.find(candidate => String(candidate?.key || '') === linkage.currentKey);
+  const currentOption = linkage.currentKey ? buildParentOption({
+    key: linkage.currentKey,
+    fields: {
+      project: {key: linkage.currentKey.split('-')[0]},
+      summary: currentCandidate?.fields?.summary || linkage.currentSummary || linkage.currentKey,
+      issuetype: currentCandidate?.fields?.issuetype || {},
+      status: currentCandidate?.fields?.status || {},
+    },
+  }, issueKey) : null;
+  const merged = mergeOptions(
+    currentOption ? [currentOption] : [],
+    mergeOptions(candidateOptions, baseline.filter(option => !option.isGroupLabel))
+  );
+  return {
+    currentOption,
+    options: groupOptions(merged),
+  };
+}
+
 export function createJiraFieldEditing(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -309,6 +386,8 @@ export function createJiraFieldEditing(options = {}) {
   let session = null;
   let edit = null;
   let resolvedFieldId = '';
+  let linkageMode = '';
+  let mutationFieldId = '';
   let preferredAssigneeIdentifier = '';
 
   function view() {
@@ -343,6 +422,8 @@ export function createJiraFieldEditing(options = {}) {
       generation += 1;
       edit = null;
       resolvedFieldId = '';
+      linkageMode = '';
+      mutationFieldId = '';
     }
     session = {
       generation,
@@ -360,6 +441,8 @@ export function createJiraFieldEditing(options = {}) {
     session = null;
     edit = null;
     resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
     return view();
   }
 
@@ -388,10 +471,12 @@ export function createJiraFieldEditing(options = {}) {
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['assignee', 'fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['assignee', 'fixVersions', 'issuetype', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
     resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
     edit = {
       editId,
       fieldKey: String(intent.fieldId),
@@ -510,6 +595,53 @@ export function createJiraFieldEditing(options = {}) {
         loadingOptions: false,
         status: 'editing',
       };
+    } else if (intent.fieldId === 'parentLink') {
+      const linkage = resolveLinkage(capturedSession.issueSnapshot.core, context);
+      if (!linkage.editable || !linkage.mode || !linkage.fieldId) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      resolvedFieldId = linkage.fieldId;
+      linkageMode = linkage.mode;
+      mutationFieldId = linkage.mode === 'parent' ? 'parent' : 'epicLink';
+      edit = {
+        ...edit,
+        editorType: 'issue-search',
+        fieldKey: 'parentLink',
+        label: 'Parent',
+        selectionMode: 'single',
+        inputPlaceholder: 'Search issues by key or summary',
+        options: [],
+        selectedOptionId: linkage.currentKey || null,
+        selectedOptions: [],
+        showActionButtons: false,
+        loadingOptions: true,
+        searchRequestId: ++searchSequence,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({
+        purpose: 'parent',
+        issueKey: capturedSession.issueKey,
+        fieldId: linkage.fieldId,
+        query: '',
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId)) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      const parentOptions = buildParentOptions(
+        linkage,
+        capturedSession.issueKey,
+        searchOutcome.kind === 'loaded' ? searchOutcome.items : []
+      );
+      edit = {
+        ...edit,
+        options: parentOptions.options,
+        selectedOptions: parentOptions.currentOption ? [parentOptions.currentOption] : [],
+        loadingOptions: false,
+        status: 'editing',
+      };
     } else if (intent.fieldId === 'sprint') {
       if (!context?.editable || !context.fieldId || fieldOutcome.failures?.options) {
         const failure = fieldOutcome.failures?.options || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
@@ -520,6 +652,7 @@ export function createJiraFieldEditing(options = {}) {
       const currentSprint = currentSprints.length === 1 ? currentSprints[0] : null;
       const sprintOptions = buildSprintOptions(capturedSession.issueSnapshot.core, context.options);
       resolvedFieldId = context.fieldId;
+      mutationFieldId = 'sprint';
       edit = {
         ...edit,
         editorType: 'single-select',
@@ -662,6 +795,52 @@ export function createJiraFieldEditing(options = {}) {
       };
       return outcome('changed');
     }
+    if (edit.editorType === 'issue-search' && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        selectedOptionId: null,
+        selectedOptions: [],
+        highlightedOptionId: null,
+        hasChanges: false,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({
+        purpose: 'parent',
+        issueKey: capturedSession.issueKey,
+        fieldId: resolvedFieldId,
+        query: typedValue,
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (searchOutcome.kind !== 'loaded') {
+        const failure = searchOutcome.failure || normalizeFailure(new Error('Issue search failed'));
+        edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      const linkage = resolveLinkage(capturedSession.issueSnapshot.core, {
+        editMeta: {fields: {[resolvedFieldId]: {name: linkageMode === 'parent' ? 'Parent' : 'Epic Link'}}},
+        fieldIds: {epicLink: linkageMode === 'epicLink' ? [resolvedFieldId] : []},
+      });
+      edit = {
+        ...edit,
+        options: buildParentOptions(linkage, capturedSession.issueKey, searchOutcome.items, baselineOptions).options,
+        loadingOptions: false,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
     if (edit.selectionMode === 'multi') {
       edit = {
         ...edit,
@@ -721,6 +900,8 @@ export function createJiraFieldEditing(options = {}) {
     const editId = edit.editId;
     edit = null;
     resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
     return outcome('cancelled', {editId});
   }
 
@@ -839,6 +1020,22 @@ export function createJiraFieldEditing(options = {}) {
         method: 'PUT',
         path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}/assignee`,
       }));
+    } else if (edit.fieldKey === 'parentLink') {
+      const selectedParent = edit.options.find(option => !option.isGroupLabel && option.id === edit.selectedOptionId);
+      const selectedIssueKey = selectedParent?.rawValue?.key || selectedParent?.id || '';
+      if (!selectedIssueKey || !resolvedFieldId || !linkageMode) {
+        const failure = normalizeFailure(new Error('Pick a parent issue before saving'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = `Parent set to ${selectedIssueKey}`;
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: linkageMode === 'parent'
+          ? {parent: {key: selectedIssueKey}}
+          : {[resolvedFieldId]: selectedIssueKey}},
+      };
     } else if (['fixVersions', 'versions'].includes(edit.fieldKey)) {
       const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
       notice = edit.fieldKey === 'fixVersions'
@@ -911,7 +1108,7 @@ export function createJiraFieldEditing(options = {}) {
     const refreshOutcome = await issueData.refreshAfterMutation({
       issueKey: capturedSession.issueKey,
       priorSnapshot: capturedSession.issueSnapshot,
-      mutation: {kind: 'fieldChanged', fieldId: edit.fieldKey},
+      mutation: {kind: 'fieldChanged', fieldId: mutationFieldId || edit.fieldKey},
       requirements: capturedSession.requirements,
       signal: intent.signal,
     });
@@ -932,6 +1129,8 @@ export function createJiraFieldEditing(options = {}) {
     session = {...session, issueSnapshot: refreshOutcome.snapshot};
     edit = null;
     resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
     return outcome('saved', {
       editId,
       notice,

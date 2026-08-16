@@ -562,12 +562,7 @@ async function mainAsyncLocal() {
     buildEditOption,
     issueData: quickViewIssueData,
   });
-  const {
-    getRecentIssueSearchOptions,
-    resolveIssueLinkage,
-    searchParentCandidates,
-  } = createContentIssueLinkageHelpers({
-    buildEditOption,
+  const {resolveIssueLinkage} = createContentIssueLinkageHelpers({
     getIssueSummary,
     instanceUrl: INSTANCE_URL,
     issueData: quickViewIssueData,
@@ -673,13 +668,10 @@ async function mainAsyncLocal() {
     getEditableFieldCapability,
     getLabelSuggestions,
     getPopupState: () => popupState,
-    getRecentIssueSearchOptions,
     hasLabelSuggestionSupport,
     refreshPopupIssueState,
     renderIssuePopup,
     requestJson,
-    resolveIssueLinkage,
-    searchParentCandidates,
     setPopupState: nextState => {
       popupState = nextState;
     },
@@ -4922,7 +4914,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['assignee', 'fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
+    return ['assignee', 'fixVersions', 'issuetype', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {
