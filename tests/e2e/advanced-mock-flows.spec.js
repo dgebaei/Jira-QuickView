@@ -680,9 +680,26 @@ test('updates time tracking estimates through the content block editor @mock-onl
 
   await originalEstimateInput.fill('2w');
   await remainingEstimateInput.fill('3d');
+  await page.evaluate(() => {
+    window.__jqvTimeTrackingDisabledObserved = false;
+    const observer = new MutationObserver(mutations => {
+      const sawDisabledInput = mutations.some(mutation => {
+        if (mutation.target?.matches?.('._JX_time_tracking_input') && mutation.target.disabled) return true;
+        return [...(mutation.addedNodes || [])].some(node => {
+          if (node?.matches?.('._JX_time_tracking_input:disabled')) return true;
+          return !!node?.querySelector?.('._JX_time_tracking_input:disabled');
+        });
+      });
+      if (sawDisabledInput) {
+        window.__jqvTimeTrackingDisabledObserved = true;
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, {attributes: true, attributeFilter: ['disabled'], childList: true, subtree: true});
+  });
   await page.locator('._JX_time_tracking_save').click();
 
-  await expect(originalEstimateInput).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => window.__jqvTimeTrackingDisabledObserved)).toBe(true);
   await expect(originalEstimateInput).toBeEnabled();
   await expect(originalEstimateInput).toHaveValue('2w');
   await expect(remainingEstimateInput).toHaveValue('3d');

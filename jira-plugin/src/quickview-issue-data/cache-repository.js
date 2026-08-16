@@ -19,6 +19,21 @@ export function createIssueDataCacheRepository(options = {}) {
     inFlight.delete(logicalKey);
   }
 
+  function invalidateFamily(family) {
+    const prefix = `${family}::`;
+    const logicalKeys = new Set([
+      ...epochs.keys(),
+      ...resolved.keys(),
+      ...inFlight.keys(),
+    ]);
+    logicalKeys.forEach(logicalKey => {
+      if (!logicalKey.startsWith(prefix)) return;
+      epochs.set(logicalKey, getEpoch(logicalKey) + 1);
+      resolved.delete(logicalKey);
+      inFlight.delete(logicalKey);
+    });
+  }
+
   async function read({family, key, load, ttlMs}) {
     const logicalKey = buildKey(family, key);
     const now = clock();
@@ -55,5 +70,5 @@ export function createIssueDataCacheRepository(options = {}) {
     }
   }
 
-  return {invalidate, read};
+  return {invalidate, invalidateFamily, read};
 }

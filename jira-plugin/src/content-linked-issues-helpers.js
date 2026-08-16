@@ -1,5 +1,3 @@
-import {buildJiraSearchRequestUrls} from './jira-issue-helpers';
-
 function uniqueBy(values, getKey) {
   const seen = new Set();
   return (values || []).filter(value => {
@@ -257,58 +255,19 @@ export function buildLinkedIssuesPanelView(state, issueData, options = {}) {
 }
 
 export function createContentLinkedIssuesHelpers(options) {
-  const encodeJqlValue = options?.encodeJqlValue;
-  const get = options?.get;
-  const getCachedValue = options?.getCachedValue;
-  const instanceUrl = options?.instanceUrl || '';
-  const issueSearchCache = options?.issueSearchCache;
+  const issueDataModule = options?.issueData;
 
-  async function getIssueLinkTypes() {
-    return getCachedValue(issueSearchCache, '__issue_link_types__', async () => {
-      const response = await get(`${instanceUrl}rest/api/2/issueLinkType`);
-      return Array.isArray(response?.issueLinkTypes) ? response.issueLinkTypes : [];
-    });
+  async function loadLinkedSection(issueKey) {
+    const outcome = await issueDataModule.openIssue({issueKey, requirements: {linkedIssues: true}});
+    const section = outcome.snapshot?.sections?.linkedIssues;
+    if (!section || section.status === 'failed') {
+      throw new Error(section?.failure?.message || outcome.failures?.core?.message || 'Could not load linked issues');
+    }
+    return section;
   }
 
-  async function searchWithJql(query, issueData) {
-    const currentKey = issueKeyOf(issueData);
-    const currentProjectKey = currentKey.split('-')[0];
-    const escapedQuery = String(query || '').trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const normalizedQuery = String(query || '').trim().toUpperCase();
-    const clauses = [`summary ~ "${escapedQuery}*"`];
-    if (/^[A-Z][A-Z0-9_]*-\d+$/.test(normalizedQuery)) {
-      clauses.push(`key = ${encodeJqlValue(normalizedQuery)}`);
-    }
-    const common = `key != ${encodeJqlValue(currentKey)} AND (${clauses.join(' OR ')})`;
-    const searches = [
-      `project = ${encodeJqlValue(currentProjectKey)} AND ${common}`,
-      `project != ${encodeJqlValue(currentProjectKey)} AND ${common}`,
-    ];
-    if (/^[A-Z][A-Z0-9_]*$/.test(normalizedQuery) && normalizedQuery !== currentProjectKey) {
-      searches.push(`project = ${encodeJqlValue(normalizedQuery)} AND key != ${encodeJqlValue(currentKey)}`);
-    }
-    const responses = await Promise.allSettled(searches.map(async jql => {
-      let lastError = null;
-      for (const url of buildJiraSearchRequestUrls(instanceUrl, {
-        maxResults: 30,
-        fields: ['summary', 'issuetype', 'status', 'project', 'assignee'],
-        jql: `${jql} ORDER BY updated DESC`,
-      })) {
-        try {
-          return await get(url);
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      throw lastError || new Error('Issue search failed.');
-    }));
-    const issues = responses.flatMap(result => result.status === 'fulfilled' && Array.isArray(result.value?.issues)
-      ? result.value.issues
-      : []);
-    if (!issues.length && responses.every(result => result.status === 'rejected')) {
-      throw responses[0].reason || new Error('Issue search failed.');
-    }
-    return issues;
+  async function getIssueLinkTypes(issueKey) {
+    return (await loadLinkedSection(issueKey)).linkTypes || [];
   }
 
   async function searchIssueLinkCandidates(query, issueData, excludedKeys = []) {
@@ -318,32 +277,16 @@ export function createContentLinkedIssuesHelpers(options) {
     }
     const currentKey = issueKeyOf(issueData);
     const currentProjectKey = currentKey.split('-')[0];
-    const cacheKey = `__linked_issues__${currentProjectKey}__${normalizedQuery.toLowerCase()}`;
-    const issues = await getCachedValue(issueSearchCache, cacheKey, async () => {
-      const params = new URLSearchParams({
-        query: normalizedQuery,
-        currentIssueKey: currentKey,
-        currentProjectId: String(issueData?.fields?.project?.id || ''),
-        showSubTasks: 'true',
-        showSubTaskParent: 'true',
-      });
-      const pickerUrls = [
-        `${instanceUrl}rest/api/2/issue/picker?${params}`,
-        `${instanceUrl}rest/api/3/issue/picker?${params}`,
-      ];
-      for (const url of pickerUrls) {
-        try {
-          const response = await get(url);
-          const pickerIssues = (response?.sections || []).flatMap(section => section?.issues || []);
-          if (pickerIssues.length) {
-            return pickerIssues.map(normalizePickerIssue);
-          }
-        } catch (error) {
-          // Fall through to the search endpoints for Jira variants without the picker.
-        }
-      }
-      return searchWithJql(normalizedQuery, issueData);
+    const outcome = await issueDataModule.search({
+      purpose: 'linkedIssue',
+      issueKey: currentKey,
+      query: normalizedQuery,
+      selectedValues: excludedKeys,
     });
+    if (outcome.kind !== 'loaded') {
+      throw new Error(outcome.failure?.message || 'Issue search failed');
+    }
+    const issues = outcome.items;
     const excluded = new Set([currentKey, ...(excludedKeys || []).map(value => String(value || '').toUpperCase())]);
     const loweredQuery = normalizedQuery.toLowerCase();
     return uniqueBy(issues, issueKeyOf)
@@ -360,29 +303,7 @@ export function createContentLinkedIssuesHelpers(options) {
   }
 
   async function getLinkedIssueDetails(issueData) {
-    const keys = getLinkedIssueKeys(issueData);
-    if (!keys.length) {
-      return {};
-    }
-    const jql = `key in (${keys.map(encodeJqlValue).join(', ')})`;
-    let response = null;
-    let lastError = null;
-    for (const url of buildJiraSearchRequestUrls(instanceUrl, {
-      maxResults: keys.length,
-      fields: ['summary', 'issuetype', 'status', 'project', 'assignee'],
-      jql,
-    })) {
-      try {
-        response = await get(url);
-        break;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    if (!response && lastError) {
-      throw lastError;
-    }
-    return Object.fromEntries((response?.issues || []).map(issue => [issueKeyOf(issue), issue]));
+    return (await loadLinkedSection(issueKeyOf(issueData))).detailsByKey || {};
   }
 
   return {

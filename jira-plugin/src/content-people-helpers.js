@@ -1,10 +1,6 @@
 export function createContentPeopleHelpers(options) {
   const areSameJiraUser = options?.areSameJiraUser;
   const buildEditOption = options?.buildEditOption;
-  const cacheKnownJiraUser = options?.cacheKnownJiraUser;
-  const cacheKnownJiraUsers = options?.cacheKnownJiraUsers;
-  const getDisplayImageUrl = options?.getDisplayImageUrl;
-  const sharedAvatarUrls = options?.sharedAvatarUrls;
 
   function getUserInitials(displayName, fallbackInitials = '--') {
     const tokens = String(displayName || '')
@@ -39,28 +35,7 @@ export function createContentPeopleHelpers(options) {
     if (/\buseravatar\b/.test(normalizedUrl) && !normalizedUrl.includes('ownerid=')) {
       return true;
     }
-    if (avatarUrl && sharedAvatarUrls.has(avatarUrl)) {
-      return true;
-    }
     return false;
-  }
-
-  function detectSharedAvatarUrls(users) {
-    if (!Array.isArray(users) || users.length < 2) {
-      return;
-    }
-    const urlCounts = new Map();
-    for (const user of users) {
-      const url = user?.avatarUrls?.['48x48'] || '';
-      if (url) {
-        urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
-      }
-    }
-    for (const [url, count] of urlCounts) {
-      if (count >= 2) {
-        sharedAvatarUrls.add(url);
-      }
-    }
   }
 
   function buildUserView(user) {
@@ -78,29 +53,8 @@ export function createContentPeopleHelpers(options) {
     };
   }
 
-  async function proxyUserAvatars(users) {
-    const beforeUrls = new Map();
-    (users || []).forEach(user => {
-      const url = user?.avatarUrls?.['48x48'];
-      if (url) beforeUrls.set(user, url);
-    });
-    await Promise.all((users || []).map(user => {
-      const url = user?.avatarUrls?.['48x48'];
-      if (!url) return Promise.resolve();
-      return getDisplayImageUrl(url).then(src => { user.avatarUrls['48x48'] = src; }).catch(() => {});
-    }));
-    for (const [user, rawUrl] of beforeUrls) {
-      const proxiedUrl = user?.avatarUrls?.['48x48'];
-      if (proxiedUrl && proxiedUrl !== rawUrl && sharedAvatarUrls.has(rawUrl)) {
-        sharedAvatarUrls.add(proxiedUrl);
-      }
-    }
-    return users;
-  }
-
   function normalizeAssignableUsers(users) {
     const uniqueById = new Map();
-    cacheKnownJiraUsers(users);
     (Array.isArray(users) ? users : []).forEach(user => {
       const view = buildUserView(user);
       const id = view.accountId || view.name || view.key;
@@ -171,8 +125,6 @@ export function createContentPeopleHelpers(options) {
   }
 
   function normalizeWatcherUsers(users, currentUser = null) {
-    cacheKnownJiraUsers(users);
-    cacheKnownJiraUser(currentUser);
     const uniqueById = new Map();
     (Array.isArray(users) ? users : []).forEach(user => {
       const watcher = buildWatcherUserView(user, currentUser);
@@ -185,9 +137,7 @@ export function createContentPeopleHelpers(options) {
 
   return {
     buildUserView,
-    detectSharedAvatarUrls,
     normalizeAssignableUsers,
     normalizeWatcherUsers,
-    proxyUserAvatars,
   };
 }

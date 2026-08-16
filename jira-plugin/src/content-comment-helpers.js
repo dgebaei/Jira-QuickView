@@ -1,13 +1,13 @@
 export function createContentCommentHelpers(options) {
   const mentionContextWindow = Number(options?.mentionContextWindow) || 24;
-  const jiraUserDisplayNameCache = options?.jiraUserDisplayNameCache;
+  const resolveMentionDisplayName = options?.resolveMentionDisplayName;
   const escapeHtml = options?.escapeHtml;
   const normalizeHistoryAttachmentName = options?.normalizeHistoryAttachmentName;
 
   function getMentionDisplayText(rawValue) {
     const normalized = String(rawValue || '').trim();
     const identity = normalized.replace(/^accountid:/i, '');
-    const displayName = jiraUserDisplayNameCache?.get(identity) || jiraUserDisplayNameCache?.get(normalized);
+    const displayName = resolveMentionDisplayName?.(identity) || resolveMentionDisplayName?.(normalized);
     if (displayName) {
       return `@${displayName}`;
     }

@@ -1,24 +1,37 @@
+export function buildEditOption(id, label, extra = {}) {
+  const normalizedLabel = String(label || '');
+  const normalizedSearchText = [
+    normalizedLabel,
+    String(extra.searchText || ''),
+    String(extra.metaText || ''),
+  ]
+    .join(' ')
+    .trim()
+    .toLowerCase();
+  const option = {
+    id: id === '' ? '' : String(id || ''),
+    label: normalizedLabel,
+    ...extra,
+  };
+  option.searchText = normalizedSearchText;
+  return option;
+}
+
 export function createPopupEditing(deps) {
   const {
     INSTANCE_URL,
-    assigneeLocalOptionsCache,
     buildEditFieldError,
     compareSprintState,
     formatSprintOptionLabel,
     formatSprintText,
     formatVersionText,
-    get,
-    getCachedValue,
     getEditableFieldCapability,
     getLabelSuggestions,
     getRecentIssueSearchOptions,
-    getSprintFieldIds,
     getTransitionOptions,
     hasLabelSuggestionSupport,
-    fieldOptionsCache,
-    labelLocalOptionsCache,
+    loadFieldContext,
     normalizeIssueTypeOptions,
-    pickSprintFieldId,
     readSprintBoardRefsFromIssue,
     readSprintsFromIssue,
     refreshPopupIssueState,
@@ -34,25 +47,6 @@ export function createPopupEditing(deps) {
   } = deps;
 
   let preferredAssigneeIdentifier = '';
-
-  function buildEditOption(id, label, extra = {}) {
-    const normalizedLabel = String(label || '');
-    const normalizedSearchText = [
-      normalizedLabel,
-      String(extra.searchText || ''),
-      String(extra.metaText || ''),
-    ]
-      .join(' ')
-      .trim()
-      .toLowerCase();
-    const option = {
-      id: id === '' ? '' : String(id || ''),
-      label: normalizedLabel,
-      ...extra,
-    };
-    option.searchText = normalizedSearchText;
-    return option;
-  }
 
   function mergeEditOptions(primaryOptions, fallbackOptions) {
     const mergedOptions = [];
@@ -260,17 +254,21 @@ export function createPopupEditing(deps) {
   }
 
   async function getProjectVersionOptions(issueData, cacheKey) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
+    if (!issueData?.key) {
       return [];
     }
-    return getCachedValue(fieldOptionsCache, `${cacheKey}__${projectKey}`, async () => {
-      const versions = await get(`${INSTANCE_URL}rest/api/2/project/${encodeURIComponent(projectKey)}/versions`);
-      return (Array.isArray(versions) ? versions : [])
-        .filter(version => version?.name && !version?.archived)
-        .sort(compareFixVersionOptions)
-        .map(version => buildEditOption(version.id, version.name, {rawValue: version}));
+    const outcome = await loadFieldContext({
+      issueKey: issueData.key,
+      fieldId: cacheKey,
+      includeOptions: true,
     });
+    if (!outcome.context) {
+      throw new Error(outcome.failures?.fieldContext?.message || 'Could not load version options');
+    }
+    return (outcome.context.options || [])
+      .slice()
+      .sort(compareFixVersionOptions)
+      .map(version => buildEditOption(version.id, version.name, {rawValue: version}));
   }
 
   function getFixVersionOptions(issueData) {
@@ -279,42 +277,6 @@ export function createPopupEditing(deps) {
 
   function getAffectsVersionOptions(issueData) {
     return getProjectVersionOptions(issueData, 'versions');
-  }
-
-  async function getProjectSprintBoards(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
-      return [];
-    }
-    const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`).catch(() => null);
-    const projectBoards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
-    return projectBoards
-      .map(board => ({
-        ...board,
-        id: String(board?.id || '').trim(),
-        name: String(board?.name || '').trim(),
-        projectKey: String(board?.projectKey || projectKey),
-      }))
-      .filter(board => !!board.id);
-  }
-
-  function mergeSprintBoards(projectKey, ...boardLists) {
-    const boardsById = new Map();
-    boardLists.flat().forEach(board => {
-      const boardId = String(board?.id || '').trim();
-      if (!boardId) {
-        return;
-      }
-      const existingBoard = boardsById.get(boardId) || {};
-      boardsById.set(boardId, {
-        ...existingBoard,
-        ...board,
-        id: boardId,
-        name: String(board?.name || existingBoard.name || '').trim(),
-        projectKey: String(board?.projectKey || existingBoard.projectKey || projectKey),
-      });
-    });
-    return [...boardsById.values()];
   }
 
   async function getSprintOptions(issueData) {
@@ -328,93 +290,15 @@ export function createPopupEditing(deps) {
       .sort()
       .join(',');
     const issueBoardIds = issueBoardIdsKey ? issueBoardIdsKey.split(',').filter(Boolean) : [];
-    return getCachedValue(fieldOptionsCache, `sprint__${projectKey}__${issueBoardIdsKey}`, async () => {
-      const projectBoards = await getProjectSprintBoards(issueData);
-      const baselineBoards = mergeSprintBoards(projectKey, projectBoards);
-      const sprintMap = new Map();
-      const sprintResponses = await Promise.allSettled(baselineBoards.map(board => {
-        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`)
-          .then(response => ({board, response}));
-      }));
-
-      sprintResponses.forEach(result => {
-        if (result.status !== 'fulfilled') {
-          return;
-        }
-        const sprints = Array.isArray(result.value?.response?.values) ? result.value.response.values : [];
-        sprints.forEach(sprint => {
-          if (!sprint?.id || !sprint?.name) {
-            return;
-          }
-          const sprintId = String(sprint.id);
-          const existingSprint = sprintMap.get(sprintId);
-          const boardRefs = Array.isArray(existingSprint?.boardRefs) ? existingSprint.boardRefs.slice() : [];
-          const board = result.value?.board || {};
-          const boardRefKey = String(board.id || '');
-          if (boardRefKey && !boardRefs.some(ref => String(ref.id) === boardRefKey)) {
-            boardRefs.push({
-              id: board.id,
-              name: board.name || '',
-              projectKey: board.projectKey || projectKey,
-            });
-          }
-          sprintMap.set(sprintId, {
-            ...(existingSprint || {}),
-            ...sprint,
-            boardRefs,
-          });
-        });
-      });
-
-      const currentSprints = readSprintsFromIssue(issueData);
-      const currentOpenSprints = currentSprints.filter(sprint => String(sprint?.state || '').toLowerCase() !== 'closed');
-      if (currentOpenSprints.length) {
-        const referencedBoards = readSprintBoardRefsFromIssue(issueData);
-        const extraBoards = mergeSprintBoards(
-          projectKey,
-          referencedBoards.filter(board => !baselineBoards.some(projectBoard => String(projectBoard.id) === String(board.id)))
-        );
-        if (extraBoards.length) {
-          const extraSprintResponses = await Promise.allSettled(extraBoards.map(board => {
-            return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`)
-              .then(response => ({board, response}));
-          }));
-
-          extraSprintResponses.forEach(result => {
-            if (result.status !== 'fulfilled') {
-              return;
-            }
-            const sprints = Array.isArray(result.value?.response?.values) ? result.value.response.values : [];
-            sprints.forEach(sprint => {
-              if (!sprint?.id || !sprint?.name) {
-                return;
-              }
-              const sprintId = String(sprint.id);
-              if (!currentOpenSprints.some(currentSprint => String(currentSprint?.id || '') === sprintId)) {
-                return;
-              }
-              const existingSprint = sprintMap.get(sprintId);
-              const boardRefs = Array.isArray(existingSprint?.boardRefs) ? existingSprint.boardRefs.slice() : [];
-              const board = result.value?.board || {};
-              const boardRefKey = String(board.id || '');
-              if (boardRefKey && !boardRefs.some(ref => String(ref.id) === boardRefKey)) {
-                boardRefs.push({
-                  id: board.id,
-                  name: board.name || '',
-                  projectKey: board.projectKey || projectKey,
-                });
-              }
-              sprintMap.set(sprintId, {
-                ...(existingSprint || {}),
-                ...sprint,
-                boardRefs,
-              });
-            });
-          });
-        }
-      }
-
-      const groupedSprintOptions = [...sprintMap.values()]
+    const outcome = await loadFieldContext({
+      issueKey: issueData.key,
+      fieldId: 'sprint',
+      includeOptions: true,
+    });
+    if (!outcome.context) {
+      throw new Error(outcome.failures?.fieldContext?.message || 'Could not load Sprint options');
+    }
+    const groupedSprintOptions = (outcome.context.options || [])
         .filter(sprint => String(sprint?.state || '').toLowerCase() !== 'closed')
         .sort((left, right) => {
           const stateOrder = compareSprintState(left?.state, right?.state);
@@ -433,14 +317,13 @@ export function createPopupEditing(deps) {
           });
         });
 
-      return [
-        buildEditOption('', 'No sprint'),
-        ...buildGroupedOptionList(groupedSprintOptions, {
-          hideSingleGroup: true,
-          preferredGroupKey: '',
-        }),
-      ];
-    });
+    return [
+      buildEditOption('', 'No sprint'),
+      ...buildGroupedOptionList(groupedSprintOptions, {
+        hideSingleGroup: true,
+        preferredGroupKey: '',
+      }),
+    ];
   }
 
   function detectAssigneeIdentifier(issueData) {
@@ -506,19 +389,16 @@ export function createPopupEditing(deps) {
   }
 
   async function loadAssigneeOptions(issueData, currentOption) {
-    const issueKey = String(issueData?.key || '');
     const assignableOptions = await searchAssignableUsers('', issueData);
     const options = mergeEditOptions(
       [buildEditOption('__unassigned__', 'Unassigned', {metaText: 'Clear assignee'})],
       mergeEditOptions(currentOption ? [currentOption] : [], assignableOptions)
     );
-    assigneeLocalOptionsCache.set(issueKey, options.filter(option => option.id !== '__unassigned__'));
     return options;
   }
 
   async function searchAssigneeOptions(issueData, currentOption, query = '') {
-    const issueKey = String(issueData?.key || '');
-    const baselineOptions = assigneeLocalOptionsCache.get(issueKey) || [];
+    const baselineOptions = getPopupState()?.editState?.options || [];
     const [assignableOptions, pickerOptions] = await Promise.all([
       searchAssignableUsers(query, issueData).catch(() => []),
       searchUserPicker(query).catch(() => []),
@@ -530,7 +410,6 @@ export function createPopupEditing(deps) {
         mergeEditOptions(assignableOptions, mergeEditOptions(pickerOptions, baselineOptions))
       )
     );
-    assigneeLocalOptionsCache.set(issueKey, mergedOptions.filter(option => option.id !== '__unassigned__'));
     return mergedOptions;
   }
 
@@ -607,8 +486,7 @@ export function createPopupEditing(deps) {
         loadOptions: () => getSprintOptions(issueData),
         save: async selectedOptions => {
           const option = selectedOptions[0] || buildEditOption('', 'No sprint');
-          const sprintFieldId = capability.fieldKey ||
-            pickSprintFieldId(issueData, await getSprintFieldIds(INSTANCE_URL));
+          const sprintFieldId = capability.fieldKey;
           if (!sprintFieldId) {
             throw new Error('Could not resolve the Sprint field');
           }
@@ -876,18 +754,16 @@ export function createPopupEditing(deps) {
         loadOptions: async () => {
           const baselineSuggestions = await getLabelSuggestions('').catch(() => []);
           const mergedOptions = mergeEditOptions(currentSelections, baselineSuggestions);
-          labelLocalOptionsCache.set(issueData.key, mergedOptions);
           return mergedOptions;
         },
         searchOptions: async query => {
           const normalizedQuery = String(query || '').trim();
-          const localBaselineOptions = labelLocalOptionsCache.get(issueData.key) || [];
+          const localBaselineOptions = getPopupState()?.editState?.options || [];
           const searchedOptions = await getLabelSuggestions(normalizedQuery);
           const popupState = getPopupState();
           const mergedOptions = normalizedQuery
             ? searchedOptions
             : mergeEditOptions(currentSelections, mergeEditOptions(searchedOptions, mergeEditOptions(localBaselineOptions, popupState?.editState?.options || [])));
-          labelLocalOptionsCache.set(issueData.key, mergedOptions);
           return mergedOptions;
         },
         save: selectedOptions => {

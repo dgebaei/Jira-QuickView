@@ -2,15 +2,13 @@ export function createPopupQuickActions(deps) {
   const {
     INSTANCE_URL,
     formatSprintActionLabel,
-    get,
     getProjectSprintOptions,
-    getSprintFieldIds,
+    loadFieldContext,
+    loadViewer,
     pickSprintFieldId,
     readSprintsFromIssue,
     requestJson,
   } = deps;
-
-  let currentUserPromise;
 
   function buildQuickActionError(error) {
     return error?.message || error?.inner || 'Action failed';
@@ -25,38 +23,8 @@ export function createPopupQuickActions(deps) {
     return leftIds.some(value => rightIds.includes(value));
   }
 
-  async function getCurrentUserInfo() {
-    if (currentUserPromise) {
-      return currentUserPromise;
-    }
-
-    currentUserPromise = (async () => {
-      try {
-        const myself = await get(INSTANCE_URL + 'rest/api/2/myself');
-        return {
-          accountId: myself?.accountId || '',
-          name: myself?.name || myself?.username || myself?.key || '',
-          username: myself?.username || myself?.name || '',
-          key: myself?.key || '',
-          displayName: myself?.displayName || myself?.name || myself?.username || 'You',
-        };
-      } catch (primaryError) {
-        const session = await get(INSTANCE_URL + 'rest/auth/1/session');
-        const user = session?.user || {};
-        return {
-          accountId: '',
-          name: user.name || user.username || user.key || '',
-          username: user.username || user.name || '',
-          key: user.key || '',
-          displayName: user.displayName || user.name || user.username || 'You',
-        };
-      }
-    })().catch(error => {
-      currentUserPromise = null;
-      throw error;
-    });
-
-    return currentUserPromise;
+  async function getCurrentUserInfo(issueKey = '') {
+    return loadViewer(issueKey);
   }
 
   function buildAssignPayload(user) {
@@ -73,8 +41,8 @@ export function createPopupQuickActions(deps) {
   }
 
   async function getAvailableTransitions(issueKey) {
-    const response = await get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/transitions`);
-    return Array.isArray(response?.transitions) ? response.transitions : [];
+    const outcome = await loadFieldContext({issueKey, fieldId: 'status', includeTransitions: true});
+    return outcome.context?.transitions || [];
   }
 
   function isInProgressStatusCategory(statusCategory) {
@@ -121,16 +89,18 @@ export function createPopupQuickActions(deps) {
 
   async function resolveQuickActions(issueData) {
     const actionResults = await Promise.allSettled([
-      getCurrentUserInfo(),
+      getCurrentUserInfo(issueData.key),
       getAvailableTransitions(issueData.key),
       getProjectSprintOptions(issueData),
-      getSprintFieldIds(INSTANCE_URL),
+      loadFieldContext({issueKey: issueData.key, fieldId: 'sprint'}),
     ]);
 
     const currentUser = actionResults[0].status === 'fulfilled' ? actionResults[0].value : null;
     const transitions = actionResults[1].status === 'fulfilled' ? actionResults[1].value : [];
     const sprintOptions = actionResults[2].status === 'fulfilled' ? actionResults[2].value : {activeSprints: [], upcomingSprint: null};
-    const sprintFieldIds = actionResults[3].status === 'fulfilled' ? actionResults[3].value : [];
+    const sprintFieldIds = actionResults[3].status === 'fulfilled'
+      ? (actionResults[3].value.context?.fieldIds?.sprint || [])
+      : [];
     const actions = [];
 
     if (currentUser && !areSameJiraUser(issueData.fields.assignee, currentUser)) {

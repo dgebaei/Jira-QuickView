@@ -26,16 +26,16 @@ import {createContentShellHelpers} from 'src/content-shell-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
-import {createPopupEditing} from 'src/popup-editing';
+import {buildEditOption, createPopupEditing} from 'src/popup-editing';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
 import {createPopupCommentComposer} from 'src/popup-comment-composer';
-import {buildJiraSearchRequestUrls, isEpicLinkField, isParentLinkField, isSprintField} from 'src/jira-issue-helpers';
 import config, {buildTooltipLayoutFromDisplayFields} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
+import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
 const {
   buildDescriptionEditorState,
   buildMediaSingleNodeFromAttachment,
@@ -62,44 +62,6 @@ const getConfig = async () => {
     hasStoredTooltipLayout: !!storedTooltipLayout?.tooltipLayout
   };
 };
-
-// ── Field ID Resolution ─────────────────────────────────────────
-
-let allFieldsPromise;
-
-function getAllFields(instanceUrl) {
-  if (!allFieldsPromise) {
-    allFieldsPromise = get(instanceUrl + 'rest/api/2/field')
-      .then(fields => {
-        const normalizedFields = Array.isArray(fields) ? fields : [];
-        if (!normalizedFields.length) {
-          allFieldsPromise = null;
-        }
-        return normalizedFields;
-      })
-      .catch(() => {
-        allFieldsPromise = null;
-        return [];
-      });
-  }
-  return allFieldsPromise;
-}
-
-function getFieldIdsByFilter(instanceUrl, filterFn) {
-  return getAllFields(instanceUrl).then(fields => fields.filter(filterFn).map(field => field.id));
-}
-
-function getSprintFieldIds(instanceUrl) {
-  return getFieldIdsByFilter(instanceUrl, isSprintField);
-}
-
-function getEpicLinkFieldIds(instanceUrl) {
-  return getFieldIdsByFilter(instanceUrl, isEpicLinkField);
-}
-
-function getParentLinkFieldIds(instanceUrl) {
-  return getFieldIdsByFilter(instanceUrl, isParentLinkField);
-}
 
 const DEFAULT_CHILDREN_SORT = Object.freeze({
   column: 'key',
@@ -459,33 +421,6 @@ async function mainAsyncLocal() {
 
   const annotationTemplate = await fetch(chrome.runtime.getURL('resources/annotation.html')).then(response => response.text());
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
-  const imageProxyCache = {};
-  const cacheTtlMs = 60 * 1000;
-  const childIssueCache = new Map();
-  const pullRequestCache = new Map();
-  const fieldOptionsCache = new Map();
-
-  async function getCachedValue(cache, key, buildValue) {
-    const existing = cache.get(key);
-    if (existing && (Date.now() - existing.createdAt) < cacheTtlMs) {
-      return existing.value;
-    }
-
-    const pendingValue = Promise.resolve().then(buildValue);
-    cache.set(key, {createdAt: Date.now(), value: pendingValue});
-    try {
-      const value = await pendingValue;
-      if (cache.get(key)?.value === pendingValue) {
-        cache.set(key, {createdAt: Date.now(), value});
-      }
-      return value;
-    } catch (error) {
-      if (cache.get(key)?.value === pendingValue) {
-        cache.delete(key);
-      }
-      throw error;
-    }
-  }
   const emptyCommentMentionState = () => ({
     error: '',
     loading: false,
@@ -530,27 +465,6 @@ async function mainAsyncLocal() {
     focusSearch: false,
   });
   const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
-  const projectSprintOptionsPromises = new Map();
-  const editMetaCache = new Map();
-  const transitionOptionsCache = new Map();
-  const assigneeSearchCache = new Map();
-  const genericUserSearchCache = new Map();
-  const assigneeLocalOptionsCache = new Map();
-  const watcherListCache = new Map();
-  const watcherSearchCache = new Map();
-  const issueSearchCache = new Map();
-  const issueSearchRecentCache = new Map();
-  const labelSuggestionCache = new Map();
-  const labelLocalOptionsCache = new Map();
-  const tempoAccountSearchCache = new Map();
-  const userPickerSearchCache = new Map();
-  const userPickerLocalOptionsCache = new Map();
-  const jiraUserDisplayNameCache = new Map();
-  const userSearchStrategyState = {
-    assignable: '',
-    people: '',
-  };
-  const sharedAvatarUrls = new Set();
   let contentShellHelpers = null;
   const {
     buildHistoryAttachmentLookup,
@@ -575,14 +489,12 @@ async function mainAsyncLocal() {
     textToLinkedHtml,
   } = createContentCommentHelpers({
     mentionContextWindow: MENTION_CONTEXT_WINDOW,
-    jiraUserDisplayNameCache,
+    resolveMentionDisplayName: identity => resolveKnownJiraUserDisplayName(identity),
     escapeHtml,
     normalizeHistoryAttachmentName,
   });
   const quickViewIssueData = createQuickViewIssueData({
     customFields,
-    getEpicLinkFieldIds,
-    getSprintFieldIds,
     instanceUrl: INSTANCE_URL,
     jira,
   });
@@ -592,17 +504,6 @@ async function mainAsyncLocal() {
     const error = new Error(message);
     error.inner = message;
     return error;
-  }
-
-  async function getIssueMetaData(issueKey, options = {}) {
-    const outcome = await quickViewIssueData.openIssue({
-      issueKey,
-      freshness: options.freshness || 'cached',
-    });
-    if (!outcome.snapshot?.core) {
-      throw issueDataError(outcome.failures?.core, 'Could not load issue');
-    }
-    return outcome.snapshot.core;
   }
 
   async function getIssueSummary(issueKey) {
@@ -649,46 +550,29 @@ async function mainAsyncLocal() {
   });
   const {
     getEditableFieldCapability,
-    getIssueEditMeta,
     getTransitionOptions,
     pickSprintFieldId,
   } = createContentFieldCapabilityHelpers({
-    editMetaCache,
-    get,
-    getBuildEditOption: () => buildEditOption,
-    getAllFields,
-    getCachedValue,
-    getSprintFieldIds,
-    instanceUrl: INSTANCE_URL,
-    transitionOptionsCache,
+    buildEditOption,
+    issueData: quickViewIssueData,
   });
   const {
     getRecentIssueSearchOptions,
     resolveIssueLinkage,
     searchParentCandidates,
   } = createContentIssueLinkageHelpers({
-    encodeJqlValue,
-    get,
-    getBuildEditOption: () => buildEditOption,
-    getCachedValue,
-    getIssueEditMeta: () => getIssueEditMeta,
+    buildEditOption,
     getIssueSummary,
     instanceUrl: INSTANCE_URL,
-    issueSearchCache,
-    issueSearchRecentCache,
+    issueData: quickViewIssueData,
   });
   const {
     getIssueLinkTypes,
     getLinkedIssueDetails,
     searchIssueLinkCandidates,
   } = createContentLinkedIssuesHelpers({
-    encodeJqlValue,
-    get,
-    getCachedValue,
-    instanceUrl: INSTANCE_URL,
-    issueSearchCache,
+    issueData: quickViewIssueData,
   });
-  let labelSuggestionSupportPromise = null;
   let editSearchRequestCounter = 0;
   let labelSearchTimeoutId = null;
   let watchersFeedbackTimeoutId = null;
@@ -719,9 +603,22 @@ async function mainAsyncLocal() {
   } = createPopupQuickActions({
     INSTANCE_URL,
     formatSprintActionLabel,
-    get,
     getProjectSprintOptions,
-    getSprintFieldIds,
+    loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
+    loadViewer: async issueKey => {
+      const activeIssueKey = issueKey || popupState?.issueData?.key || '';
+      if (!activeIssueKey) {
+        throw new Error('Issue key is required to load the Jira viewer');
+      }
+      const outcome = await quickViewIssueData.openIssue({
+        issueKey: activeIssueKey,
+        requirements: {viewer: true},
+      });
+      if (!outcome.snapshot?.viewer?.user) {
+        throw new Error(outcome.snapshot?.viewer?.failure?.message || 'Could not load the Jira viewer');
+      }
+      return outcome.snapshot.viewer.user;
+    },
     pickSprintFieldId,
     readSprintsFromIssue,
     requestJson,
@@ -731,47 +628,27 @@ async function mainAsyncLocal() {
     buildNextWatchersState,
     buildPopupInteractionReset,
     handleDraftAttachmentUploaded,
-    invalidatePopupCaches,
     refreshPopupIssueState,
     renderUpdatedPopupState,
   } = createContentPopupStateHelpers({
-    assigneeLocalOptionsCache,
-    assigneeSearchCache,
     clearActionNoticeTimer,
     createTimeTrackingEditState,
-    editMetaCache,
     emptyWatchersState,
-    getIssueWatchers,
     getPopupState: () => popupState,
-    getPullRequestDataCached,
     issueData: quickViewIssueData,
-    issueSearchCache,
-    labelLocalOptionsCache,
     normalizeHistoryAttachmentName,
     normalizeIssueAttachmentImage,
-    normalizeIssueImages,
-    normalizePullRequests,
-    normalizePullRequestImages,
-    pullRequestCache,
     renderIssuePopup,
     resolveQuickActions,
     scheduleActionNoticeClear,
     setPopupState: nextState => {
       popupState = nextState;
     },
-    sharedAvatarUrls,
     showPullRequests,
     snackBar,
-    tempoAccountSearchCache,
-    transitionOptionsCache,
-    userPickerLocalOptionsCache,
-    userPickerSearchCache,
-    watcherListCache,
-    watcherSearchCache,
   });
 
   const {
-    buildEditOption,
     buildNextMultiSelectState,
     buildNextTextEditState,
     filterEditOptions,
@@ -783,24 +660,19 @@ async function mainAsyncLocal() {
     toggleMultiSelectOptionFromInput,
   } = createPopupEditing({
     INSTANCE_URL,
-    assigneeLocalOptionsCache,
     buildEditFieldError,
     compareSprintState,
-    fieldOptionsCache,
     formatSprintOptionLabel,
     formatSprintText,
     formatVersionText,
-    get,
-    getCachedValue,
     getCustomFieldEditorDefinition,
     getEditableFieldCapability,
     getLabelSuggestions,
     getPopupState: () => popupState,
     getRecentIssueSearchOptions,
-    getSprintFieldIds,
     getTransitionOptions,
     hasLabelSuggestionSupport,
-    labelLocalOptionsCache,
+    loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
     normalizeIssueTypeOptions,
     pickSprintFieldId,
     readSprintBoardRefsFromIssue,
@@ -916,37 +788,6 @@ async function mainAsyncLocal() {
     }
   }
 
-  function buildDisplayImageCacheKeys(url) {
-    const absoluteUrl = toAbsoluteJiraUrl(url);
-    if (!absoluteUrl) {
-      return [];
-    }
-    const proxyUrl = buildAttachmentProxyUrl(absoluteUrl);
-    return [...new Set([absoluteUrl, proxyUrl].filter(Boolean))];
-  }
-
-  function getCachedDisplayImageUrl(url) {
-    const cacheKeys = buildDisplayImageCacheKeys(url);
-    for (const cacheKey of cacheKeys) {
-      const cachedUrl = imageProxyCache[cacheKey];
-      if (isImageDataUrl(cachedUrl)) {
-        return cachedUrl;
-      }
-    }
-    return '';
-  }
-
-  function cacheDisplayImageUrl(dataUrl, ...urls) {
-    if (!isImageDataUrl(dataUrl)) {
-      return;
-    }
-    urls.forEach(url => {
-      buildDisplayImageCacheKeys(url).forEach(cacheKey => {
-        imageProxyCache[cacheKey] = dataUrl;
-      });
-    });
-  }
-
   async function getDisplayImageUrl(url, mimeType = '') {
     const absoluteUrl = toAbsoluteJiraUrl(url);
     if (!absoluteUrl) {
@@ -966,15 +807,9 @@ async function mainAsyncLocal() {
         return absoluteUrl;
       }
     }
-    const cachedDataUrl = getCachedDisplayImageUrl(absoluteUrl);
-    if (cachedDataUrl) {
-      return cachedDataUrl;
-    }
     const fetchUrl = buildAttachmentProxyUrl(absoluteUrl);
     try {
-      const dataUrl = await getImageDataUrl(fetchUrl, mimeType);
-      cacheDisplayImageUrl(dataUrl, absoluteUrl, fetchUrl);
-      return dataUrl;
+      return await getImageDataUrl(fetchUrl, mimeType);
     } catch (ex) {
       try {
         const response = await fetch(fetchUrl, {credentials: 'include'});
@@ -985,9 +820,7 @@ async function mainAsyncLocal() {
             const normalizedBlob = responseBlob.type === effectiveMimeType
               ? responseBlob
               : new Blob([await responseBlob.arrayBuffer()], {type: effectiveMimeType});
-            const dataUrl = await blobToDataUrl(normalizedBlob);
-            cacheDisplayImageUrl(dataUrl, absoluteUrl, fetchUrl);
-            return dataUrl;
+            return blobToDataUrl(normalizedBlob);
           }
         }
       } catch (fallbackError) {
@@ -998,7 +831,7 @@ async function mainAsyncLocal() {
   }
 
   function rememberDisplayImageUrl(url, dataUrl) {
-    cacheDisplayImageUrl(dataUrl, url);
+    return isImageDataUrl(dataUrl) ? dataUrl : url;
   }
 
   async function resolveAttachmentDisplayImageUrl(mimeType, ...candidateUrls) {
@@ -1047,90 +880,6 @@ async function mainAsyncLocal() {
     return attachment;
   }
 
-  function queueAvatarNormalization(imageLoads, field) {
-    const avatarUrl = field?.avatarUrls?.['48x48'] || field?.avatarUrl || '';
-    if (!avatarUrl) {
-      return;
-    }
-    imageLoads.push(
-      getDisplayImageUrl(avatarUrl).then(src => {
-        if (!field || typeof field !== 'object') {
-          return;
-        }
-        field.avatarUrls = field.avatarUrls || {};
-        field.avatarUrls['48x48'] = src;
-        field.avatarUrl = src;
-      })
-    );
-  }
-
-  function queueIconNormalization(imageLoads, field) {
-    if (!field?.iconUrl) {
-      return;
-    }
-    imageLoads.push(
-      getDisplayImageUrl(field.iconUrl).then(src => {
-        field.iconUrl = src;
-      })
-    );
-  }
-
-  async function normalizeIssueImages(issueData) {
-    const imageLoads = [];
-
-    queueAvatarNormalization(imageLoads, issueData.fields.reporter);
-    queueAvatarNormalization(imageLoads, issueData.fields.assignee);
-    queueIconNormalization(imageLoads, issueData.fields.issuetype);
-    queueIconNormalization(imageLoads, issueData.fields.status);
-    queueIconNormalization(imageLoads, issueData.fields.priority);
-
-    // Normalize comment author avatars
-    (issueData.fields.comment?.comments || []).forEach(comment => {
-      queueAvatarNormalization(imageLoads, comment.author);
-    });
-
-    // Normalize custom field user avatars
-    Object.keys(issueData.fields || {}).forEach(fieldKey => {
-      if (!fieldKey.startsWith('customfield_')) {
-        return;
-      }
-      const fieldValue = issueData.fields[fieldKey];
-      if (fieldValue && typeof fieldValue === 'object' && fieldValue.avatarUrls) {
-        queueAvatarNormalization(imageLoads, fieldValue);
-      }
-      if (Array.isArray(fieldValue)) {
-        fieldValue.forEach(entry => {
-          if (entry && typeof entry === 'object' && entry.avatarUrls) {
-            queueAvatarNormalization(imageLoads, entry);
-          }
-        });
-      }
-    });
-
-    (issueData.fields.attachment || []).forEach(attachment => {
-      imageLoads.push(normalizeIssueAttachmentImage(attachment));
-    });
-
-    await Promise.all(imageLoads);
-  }
-
-  async function normalizeChildIssueImages(childIssues) {
-    const imageLoads = [];
-    (Array.isArray(childIssues) ? childIssues : []).forEach(issue => {
-      queueIconNormalization(imageLoads, issue?.fields?.issuetype);
-      queueAvatarNormalization(imageLoads, issue?.fields?.assignee);
-    });
-    await Promise.all(imageLoads);
-  }
-
-  async function normalizePullRequestImages(pullRequests) {
-    const imageLoads = [];
-    (Array.isArray(pullRequests) ? pullRequests : []).forEach(pr => {
-      queueAvatarNormalization(imageLoads, pr?.author);
-    });
-    await Promise.all(imageLoads);
-  }
-
   // ── Text & HTML Formatting ─────────────────────────────────
 
   function escapeHtml(input) {
@@ -1143,24 +892,25 @@ async function mainAsyncLocal() {
     return String(issueKey || '').trim().replace(/\s+/g, '-').toUpperCase();
   }
 
-  function cacheKnownJiraUser(user) {
-    if (!user || typeof user !== 'object') {
-      return;
-    }
-    const displayName = String(user.displayName || user.name || user.username || user.key || user.emailAddress || '').trim();
-    if (!displayName) {
-      return;
-    }
-    [user.accountId, user.name, user.username, user.key]
-      .map(value => String(value || '').trim())
-      .filter(Boolean)
-      .forEach(identity => {
-        jiraUserDisplayNameCache.set(identity, displayName);
-      });
-  }
-
-  function cacheKnownJiraUsers(users) {
-    (Array.isArray(users) ? users : []).forEach(cacheKnownJiraUser);
+  function resolveKnownJiraUserDisplayName(identity) {
+    const normalizedIdentity = String(identity || '').replace(/^accountid:/i, '').trim();
+    if (!normalizedIdentity) return '';
+    const fields = popupState?.issueData?.fields || {};
+    const users = [
+      fields.reporter,
+      fields.assignee,
+      ...(fields.comment?.comments || []).map(comment => comment?.author),
+      ...(popupState?.watchersState?.watchers || []),
+      ...(popupState?.watchersState?.searchResults || []),
+      ...(commentMentionState?.suggestions || []),
+      ...(commentEditMentionState?.suggestions || []),
+    ];
+    Object.keys(fields).filter(key => key.startsWith('customfield_')).forEach(key => {
+      users.push(...(Array.isArray(fields[key]) ? fields[key] : [fields[key]]));
+    });
+    const user = users.find(candidate => [candidate?.accountId, candidate?.name, candidate?.username, candidate?.key]
+      .some(value => String(value || '').trim() === normalizedIdentity));
+    return String(user?.displayName || user?.name || user?.username || user?.key || '').trim();
   }
 
   function replaceMentionTextNodes(rootNode) {
@@ -1971,10 +1721,6 @@ async function mainAsyncLocal() {
     const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
     const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 100);
     const currentUser = await getCurrentUserInfo().catch(() => null);
-    cacheKnownJiraUser(currentUser);
-    cacheKnownJiraUser(issueData?.fields?.reporter);
-    cacheKnownJiraUser(issueData?.fields?.assignee);
-    cacheKnownJiraUsers(comments.map(comment => comment?.author).filter(Boolean));
     ((issueData.renderedFields?.comment?.comments) || []).forEach(comment => {
       if (comment && comment.id) {
         renderedById[comment.id] = comment.body;
@@ -2125,7 +1871,6 @@ async function mainAsyncLocal() {
     const rawCandidates = Array.isArray(response)
       ? response
       : response?.users || response?.items || [];
-    cacheKnownJiraUsers(rawCandidates);
     const seen = new Set();
     return rawCandidates
       .map(candidate => {
@@ -2217,14 +1962,6 @@ async function mainAsyncLocal() {
     return /http\s+(401|403|404|405)\b/i.test(message) || /forbidden|not found|method not allowed/i.test(message);
   }
 
-  async function fetchCommentReactions(commentIds) {
-    return requestJson('POST', `${INSTANCE_URL}rest/internal/2/reactions/view`, {
-      commentIds: commentIds.map(id => Number(id))
-    }, {
-      'X-Atlassian-Token': 'no-check'
-    });
-  }
-
   async function addCommentReaction(commentId, emojiId) {
     return requestJson('POST', `${INSTANCE_URL}rest/internal/2/reactions`, {
       commentId: String(commentId),
@@ -2238,26 +1975,6 @@ async function mainAsyncLocal() {
     return requestJson('DELETE', `${INSTANCE_URL}rest/internal/2/reactions?commentId=${encodeURIComponent(commentId)}&emojiId=${encodeURIComponent(emojiId)}`, undefined, {
       'X-Atlassian-Token': 'no-check'
     });
-  }
-
-  function buildInitialReactionState(serverReactions) {
-    const byCommentId = {};
-    if (Array.isArray(serverReactions)) {
-      for (const entry of serverReactions) {
-        const commentId = String(entry.commentId || '');
-        const emojiId = entry.emojiId || '';
-        if (!commentId || !emojiId) continue;
-        if (!byCommentId[commentId]) {
-          byCommentId[commentId] = {};
-        }
-        byCommentId[commentId][emojiId] = {
-          count: Number(entry.count) || 0,
-          reacted: !!entry.reacted,
-          pending: false
-        };
-      }
-    }
-    return {byCommentId, supported: true};
   }
 
   async function handleCommentReactionClick(commentId, emojiId) {
@@ -2807,362 +2524,30 @@ async function mainAsyncLocal() {
     return [];
   }
 
-  function getPullRequestData(issueId, applicationType) {
-    return get(INSTANCE_URL + 'rest/dev-status/1.0/issue/detail?issueId=' + issueId + '&applicationType=gitlabselfmanaged&dataType=pullrequest');
-  }
-
-  function getPullRequestSummaryData(issueId) {
-    return get(`${INSTANCE_URL}rest/dev-status/1.0/issue/summary?issueId=${issueId}`);
-  }
-
-  function encodeChildIssueJqlValue(value) {
-    return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
-
-  function buildCustomFieldIssueSearchClause(fieldId, issueKey) {
-    const match = String(fieldId || '').match(/^customfield_(\d+)$/i);
-    if (!match?.[1]) {
-      return '';
-    }
-    return `cf[${match[1]}] = ${encodeChildIssueJqlValue(issueKey)}`;
-  }
-
-  async function searchIssuesByJql(jql, fields = []) {
-    let response = null;
-    let lastError = null;
-    const requestUrls = buildJiraSearchRequestUrls(INSTANCE_URL, {
-      maxResults: 100,
-      fields,
-      jql,
-    });
-
-    for (const requestUrl of requestUrls) {
-      try {
-        response = await get(requestUrl);
-        break;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    if (!response) {
-      throw lastError || new Error('Issue search failed');
-    }
-
-    return Array.isArray(response?.issues)
-      ? response.issues.filter(Boolean)
-      : [];
-  }
-
-  function dedupeIssuesByKey(issues) {
-    const seenKeys = new Set();
-    return (Array.isArray(issues) ? issues : []).filter(issue => {
-      const issueKey = String(issue?.key || '').trim();
-      if (!issueKey || seenKeys.has(issueKey)) {
-        return false;
-      }
-      seenKeys.add(issueKey);
-      return true;
-    });
-  }
-
-  async function getChildIssues(issueData) {
-    const issueKey = String(issueData?.key || '').trim();
-    if (!issueKey) {
-      return {issues: [], jql: ''};
-    }
-
-    return getCachedValue(childIssueCache, issueKey, async () => {
-      const searchFields = ['summary', 'issuetype', 'status', 'assignee'];
-      const directJql = `parent = ${encodeChildIssueJqlValue(issueKey)}`;
-      let directSearchError = null;
-      let directChildren = [];
-
-      try {
-        directChildren = await searchIssuesByJql(directJql, searchFields);
-      } catch (error) {
-        directSearchError = error;
-      }
-
-      if (directChildren.length) {
-        return {
-          issues: dedupeIssuesByKey(directChildren),
-          jql: directJql,
-        };
-      }
-
-      const [epicLinkFieldIds, parentLinkFieldIds] = await Promise.all([
-        getEpicLinkFieldIds(INSTANCE_URL).catch(() => []),
-        getParentLinkFieldIds(INSTANCE_URL).catch(() => []),
-      ]);
-      const fallbackJqls = [...epicLinkFieldIds, ...parentLinkFieldIds]
-        .map(fieldId => buildCustomFieldIssueSearchClause(fieldId, issueKey))
-        .filter(Boolean);
-
-      if (!fallbackJqls.length) {
-        if (directSearchError) {
-          throw directSearchError;
-        }
-        return {issues: [], jql: directJql};
-      }
-
-      const fallbackChildren = [];
-      const successfulFallbackJqls = [];
-      let fallbackSearchError = null;
-      let fallbackSucceeded = false;
-      for (const jql of fallbackJqls) {
-        try {
-          fallbackChildren.push(...(await searchIssuesByJql(jql, searchFields)));
-          successfulFallbackJqls.push(jql);
-          fallbackSucceeded = true;
-        } catch (error) {
-          fallbackSearchError = error;
-        }
-      }
-
-      if (!fallbackSucceeded && directSearchError) {
-        throw directSearchError;
-      }
-      if (!fallbackSucceeded && fallbackSearchError) {
-        throw fallbackSearchError;
-      }
-
-      return {
-        issues: dedupeIssuesByKey(fallbackChildren),
-        jql: successfulFallbackJqls.join(' OR '),
-      };
-    });
-  }
-
-  async function probeDevStatusEndpoints(issueId) {
-    const probes = [
-      {label: '1.0 summary', url: `${INSTANCE_URL}rest/dev-status/1.0/issue/summary?issueId=${issueId}`},
-      {label: 'latest summary', url: `${INSTANCE_URL}rest/dev-status/latest/issue/summary?issueId=${issueId}`},
-      {label: '1.0 details none', url: `${INSTANCE_URL}rest/dev-status/1.0/issue/detail?issueId=${issueId}&dataType=pullrequest`},
-      {label: 'latest details none', url: `${INSTANCE_URL}rest/dev-status/latest/issue/detail?issueId=${issueId}&dataType=pullrequest`},
-      {label: '1.0 details gitlabselfmanaged', url: `${INSTANCE_URL}rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=gitlabselfmanaged&dataType=pullrequest`},
-      {label: 'latest details gitlabselfmanaged', url: `${INSTANCE_URL}rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=gitlabselfmanaged&dataType=pullrequest`}
-    ];
-
-    const settled = await Promise.allSettled(probes.map(async probe => {
-      const response = await get(probe.url);
-      return {
-        label: probe.label,
-        url: probe.url,
-        ok: true,
-        topLevelKeys: Object.keys(response || {}),
-        hasSummary: Array.isArray(response?.summary),
-        hasDetail: Array.isArray(response?.detail),
-        summaryCount: Array.isArray(response?.summary) ? response.summary.length : null,
-        detailCount: Array.isArray(response?.detail) ? response.detail.length : null
-      };
-    }));
-    return settled.map((result, i) => {
-      if (result.status === 'fulfilled') {
-        return result.value;
-      }
-      return {
-        label: probes[i].label,
-        url: probes[i].url,
-        ok: false,
-        error: result.reason?.message || String(result.reason)
-      };
-    });
-  }
-
   // ── Issue Data & Metadata ──────────────────────────────────
 
   // ── Assignee Search ────────────────────────────────────────
-
-  function extractArrayUserResults(response) {
-    return Array.isArray(response) ? response : null;
-  }
-
-  function normalizeJiraUserRecord(user) {
-    if (!user || typeof user !== 'object') {
-      return null;
-    }
-    const candidate = user.user && typeof user.user === 'object'
-      ? user.user
-      : user;
-    const avatarUrl48 = candidate?.avatarUrls?.['48x48'] || candidate?.avatarUrl || '';
-    return {
-      ...candidate,
-      accountId: candidate?.accountId || candidate?.id || '',
-      name: candidate?.name || candidate?.username || candidate?.userName || '',
-      key: candidate?.key || candidate?.userKey || '',
-      displayName: candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || '',
-      emailAddress: candidate?.emailAddress || candidate?.email || '',
-      avatarUrls: candidate?.avatarUrls || (avatarUrl48 ? {'48x48': avatarUrl48} : {}),
-    };
-  }
-
-  function normalizeJiraUserRecords(users) {
-    return (Array.isArray(users) ? users : [])
-      .map(normalizeJiraUserRecord)
-      .filter(Boolean);
-  }
-
-  function extractPickerUserResults(response) {
-    if (Array.isArray(response)) {
-      return response;
-    }
-    if (Array.isArray(response?.users)) {
-      return response.users;
-    }
-    if (Array.isArray(response?.items)) {
-      return response.items;
-    }
-    return null;
-  }
-
-  function extractInternalAssigneeUsers(response) {
-    if (Array.isArray(response)) {
-      return response;
-    }
-    if (Array.isArray(response?.users)) {
-      return response.users;
-    }
-    if (Array.isArray(response?.items)) {
-      return response.items;
-    }
-    if (Array.isArray(response?.results)) {
-      return response.results;
-    }
-    if (Array.isArray(response?.values)) {
-      return response.values;
-    }
-    return null;
-  }
-
-  function buildOrderedUserSearchStrategies(strategyType, strategies) {
-    const preferredKey = String(userSearchStrategyState[strategyType] || '').trim();
-    const strategyList = Array.isArray(strategies) ? strategies.filter(Boolean) : [];
-    if (!preferredKey) {
-      return strategyList;
-    }
-    const preferredStrategy = strategyList.find(strategy => strategy?.key === preferredKey);
-    if (!preferredStrategy) {
-      return strategyList;
-    }
-    return [
-      preferredStrategy,
-      ...strategyList.filter(strategy => strategy?.key !== preferredKey),
-    ];
-  }
-
-  async function fetchUsersBySearchStrategy(strategyType, strategies) {
-    const orderedStrategies = buildOrderedUserSearchStrategies(strategyType, strategies);
-    let lastError;
-    for (const strategy of orderedStrategies) {
-      try {
-        const response = await get(strategy.url);
-        const users = strategy.extractUsers(response);
-        if (!Array.isArray(users)) {
-          throw new Error(`Unexpected response for ${strategy.key}`);
-        }
-        userSearchStrategyState[strategyType] = strategy.key;
-        return users;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    userSearchStrategyState[strategyType] = '';
-    if (lastError) {
-      throw lastError;
-    }
-    return [];
-  }
-
-  async function fetchAssignableUsers(query, issueData) {
-    const issueKey = issueData?.key || '';
-    const projectKey = String(issueKey).split('-')[0];
-    const normalizedQuery = String(query || '').trim();
-    const encodedQuery = encodeURIComponent(normalizedQuery);
-    const encodedIssueKey = encodeURIComponent(issueKey);
-    const encodedProjectKey = encodeURIComponent(projectKey);
-    const strategies = [
-      issueKey
-        ? {
-            key: 'internal-assignee',
-            url: `${INSTANCE_URL}rest/internal/2/users/assignee?issueKey=${encodedIssueKey}&maxResults=100&query=${encodedQuery}`,
-            extractUsers: extractInternalAssigneeUsers,
-          }
-        : null,
-      issueKey
-        ? {
-            key: 'issue-query',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&query=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-      projectKey
-        ? {
-            key: 'project-query',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&query=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-      issueKey
-        ? {
-            key: 'issue-username',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&username=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-      projectKey
-        ? {
-            key: 'project-username',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&username=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-    ].filter(Boolean);
-    const users = normalizeJiraUserRecords(await fetchUsersBySearchStrategy('assignable', strategies));
-    detectSharedAvatarUrls(users);
-    return proxyUserAvatars(users);
-  }
 
   async function searchAssignableUsers(query, issueData) {
     const issueKey = issueData?.key || '';
     if (!issueKey) {
       return [];
     }
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    const cacheKey = `${issueKey}__${normalizedQuery}`;
-    return getCachedValue(assigneeSearchCache, cacheKey, async () => {
-      const users = await fetchAssignableUsers(normalizedQuery, issueData);
-      return normalizeAssignableUsers(users);
-    });
-  }
-
-  async function fetchUserPickerResults(query) {
-    const encodedQuery = encodeURIComponent(query);
-    const users = normalizeJiraUserRecords(await fetchUsersBySearchStrategy('people', [
-      {
-        key: 'picker-query',
-        url: `${INSTANCE_URL}rest/api/2/user/picker?query=${encodedQuery}`,
-        extractUsers: extractPickerUserResults,
-      },
-      {
-        key: 'search-query',
-        url: `${INSTANCE_URL}rest/api/2/user/search?query=${encodedQuery}&maxResults=20`,
-        extractUsers: extractArrayUserResults,
-      },
-      {
-        key: 'search-username',
-        url: `${INSTANCE_URL}rest/api/2/user/search?username=${encodedQuery}&maxResults=20`,
-        extractUsers: extractArrayUserResults,
-      }
-    ]));
-    detectSharedAvatarUrls(users);
-    await proxyUserAvatars(users);
+    const outcome = await quickViewIssueData.search({purpose: 'assignee', issueKey, query});
+    if (outcome.kind !== 'loaded') {
+      throw new Error(outcome.failure?.message || 'Could not search assignable users');
+    }
+    const users = outcome.items;
     return normalizeAssignableUsers(users);
   }
 
   async function searchUserPicker(query) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    return getCachedValue(userPickerSearchCache, normalizedQuery, () => fetchUserPickerResults(normalizedQuery));
+    const outcome = await quickViewIssueData.search({purpose: 'userPicker', query});
+    if (outcome.kind !== 'loaded') {
+      throw new Error(outcome.failure?.message || 'Could not search Jira users');
+    }
+    const users = outcome.items;
+    return normalizeAssignableUsers(users);
   }
 
   function buildClearFieldOption(label = 'Clear value') {
@@ -3181,39 +2566,23 @@ async function mainAsyncLocal() {
         watchers: []
       };
     }
-    return getCachedValue(watcherListCache, issueKey, async () => {
-      const [response, currentUser] = await Promise.all([
-        get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers`),
-        getCurrentUserInfo().catch(() => null)
-      ]);
-      const rawWatchers = response?.watchers || [];
-      detectSharedAvatarUrls(rawWatchers);
-      await proxyUserAvatars(rawWatchers);
-      const normalizedWatchers = normalizeWatcherUsers(rawWatchers, currentUser);
-      const responseWatchCount = Number(response?.watchCount);
-      return {
-        isWatching: typeof response?.isWatching === 'boolean'
-          ? response.isWatching
-          : normalizedWatchers.some(watcher => watcher.isCurrentUser),
-        watchCount: Number.isFinite(responseWatchCount) ? responseWatchCount : normalizedWatchers.length,
-        watchers: normalizedWatchers
-      };
-    });
+    const outcome = await quickViewIssueData.openIssue({issueKey, requirements: {watchers: true}});
+    const section = outcome.snapshot?.sections?.watchers;
+    if (!section || section.status === 'failed') {
+      throw new Error(section?.failure?.message || outcome.failures?.core?.message || 'Could not load watchers');
+    }
+    return section.data || {isWatching: false, watchCount: 0, watchers: []};
   }
 
   async function searchWatcherCandidates(query) {
-    const normalizedQuery = String(query || '').trim();
-    const cacheKey = normalizedQuery.toLowerCase();
-    return getCachedValue(watcherSearchCache, cacheKey, async () => {
-      const [response, currentUser] = await Promise.all([
-        get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(normalizedQuery)}`),
-        getCurrentUserInfo().catch(() => null)
-      ]);
-      const rawUsers = Array.isArray(response)
-        ? response
-        : response?.users || response?.items || [];
-      return normalizeWatcherUsers(rawUsers, currentUser);
-    });
+    const [outcome, currentUser] = await Promise.all([
+      quickViewIssueData.search({purpose: 'watcher', query}),
+      getCurrentUserInfo().catch(() => null),
+    ]);
+    if (outcome.kind !== 'loaded') {
+      throw new Error(outcome.failure?.message || 'Could not search Jira users');
+    }
+    return normalizeWatcherUsers(outcome.items, currentUser);
   }
 
   function getWatcherIdentifierCandidates(user) {
@@ -3307,15 +2676,7 @@ async function mainAsyncLocal() {
   }
 
   async function searchGenericUsers(query) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    const cacheKey = `picker__${normalizedQuery}`;
-    return getCachedValue(genericUserSearchCache, cacheKey, async () => {
-      const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(normalizedQuery)}`);
-      const users = Array.isArray(response)
-        ? response
-        : response?.users || response?.items || [];
-      return normalizeAssignableUsers(users);
-    });
+    return searchUserPicker(query);
   }
 
   async function loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query = '') {
@@ -3324,93 +2685,11 @@ async function mainAsyncLocal() {
       searchAssignableUsers(normalizedQuery, issueData).catch(() => []),
       searchGenericUsers(normalizedQuery).catch(() => [])
     ]);
-    const baseline = userPickerLocalOptionsCache.get(fieldId) || currentSelections;
-    const merged = mergeEditOptions(
+    return mergeEditOptions(
       currentSelections,
-      mergeEditOptions(assignableResults, mergeEditOptions(pickerResults, baseline))
+      mergeEditOptions(assignableResults, pickerResults)
     );
-    userPickerLocalOptionsCache.set(fieldId, merged);
-    return merged;
   }
-  function getPullRequestDataCached(issueId, applicationType) {
-    const cacheKey = `${issueId}__${applicationType}`;
-    return getCachedValue(pullRequestCache, cacheKey, () => {
-      return getPullRequestData(issueId, applicationType);
-    });
-  }
-
-  function getPullRequestSummaryDataCached(issueId) {
-    return getCachedValue(pullRequestCache, `summary__${issueId}`, () => {
-      return getPullRequestSummaryData(issueId);
-    });
-  }
-
-  function normalizePullRequests(response) {
-    if (Array.isArray(response)) {
-      return response.filter(Boolean);
-    }
-
-    const detailEntries = Array.isArray(response?.detail)
-      ? response.detail
-      : Array.isArray(response?.details)
-        ? response.details
-        : response ? [response] : [];
-
-    return detailEntries
-      .flatMap(entry => {
-        if (Array.isArray(entry?.pullRequests)) {
-          return entry.pullRequests;
-        }
-        if (Array.isArray(entry?.pullrequests)) {
-          return entry.pullrequests;
-        }
-        if (Array.isArray(entry?.pullRequest)) {
-          return entry.pullRequest;
-        }
-        return [];
-      })
-      .filter(Boolean);
-  }
-
-  function summarizePullRequestDebugResponse(response) {
-    const detail = Array.isArray(response?.detail) ? response.detail : [];
-    return {
-      detailCount: detail.length,
-      details: detail.map(entry => ({
-        applicationType: entry?.applicationType || '',
-        objectName: entry?.objectName || '',
-        repoCount: Array.isArray(entry?.repositories) ? entry.repositories.length : 0,
-        pullRequestCount: Array.isArray(entry?.pullRequests) ? entry.pullRequests.length : 0,
-        pullRequests: (entry?.pullRequests || []).map(pr => ({
-          id: pr?.id,
-          name: pr?.name,
-          url: pr?.url,
-          status: pr?.status
-        }))
-      }))
-    };
-  }
-
-  function summarizePullRequestSummaryResponse(response) {
-    const summary = Array.isArray(response?.summary) ? response.summary : [];
-    return {
-      summaryCount: summary.length,
-      summary: summary.map(entry => ({
-        applicationType: entry?.applicationType || '',
-        dataType: entry?.dataType || '',
-        branchCount: entry?.branch?.overall?.count ?? entry?.branches?.overall?.count ?? null,
-        repositoryCount: entry?.repository?.overall?.count ?? entry?.repositories?.overall?.count ?? null,
-        commitCount: entry?.commit?.overall?.count ?? entry?.commits?.overall?.count ?? null,
-        pullRequestCount: entry?.pullrequest?.overall?.count ?? entry?.pullRequest?.overall?.count ?? entry?.pullrequests?.overall?.count ?? null,
-        reviewCount: entry?.review?.overall?.count ?? entry?.reviews?.overall?.count ?? null,
-        buildCount: entry?.build?.overall?.count ?? entry?.builds?.overall?.count ?? null,
-        deploymentCount: entry?.deployment?.overall?.count ?? entry?.deployments?.overall?.count ?? null,
-        overall: entry?.overall || null,
-        rawKeys: Object.keys(entry || {})
-      }))
-    };
-  }
-
   // ── Labels ────────────────────────────────────────────────
 
   function stripSimpleHtml(value) {
@@ -3457,27 +2736,16 @@ async function mainAsyncLocal() {
     return [];
   }
 
-  async function fetchLabelSuggestions(queryText) {
-    const normalizedQuery = String(queryText || '').trim();
-    const response = await get(`${INSTANCE_URL}rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=${encodeURIComponent(normalizedQuery)}`);
-    return normalizeLabelSuggestionPayload(response);
-  }
-
   async function getLabelSuggestions(queryText = '') {
-    const rawQuery = String(queryText || '').trim();
-    const cacheKey = rawQuery.toLowerCase();
-    return getCachedValue(labelSuggestionCache, cacheKey, async () => {
-      return fetchLabelSuggestions(rawQuery);
-    });
+    const outcome = await quickViewIssueData.search({purpose: 'label', query: queryText});
+    if (outcome.kind !== 'loaded') {
+      throw new Error(outcome.failure?.message || 'Could not load labels');
+    }
+    return normalizeLabelSuggestionPayload(outcome.items);
   }
 
   async function hasLabelSuggestionSupport() {
-    if (!labelSuggestionSupportPromise) {
-      labelSuggestionSupportPromise = getLabelSuggestions('')
-        .then(() => true)
-        .catch(() => false);
-    }
-    return labelSuggestionSupportPromise;
+    return getLabelSuggestions('').then(() => true).catch(() => false);
   }
 
   // ── Custom Fields ──────────────────────────────────────────
@@ -3680,17 +2948,15 @@ async function mainAsyncLocal() {
     if (!projectId) {
       return [];
     }
-    const normalizedQuery = String(queryText || '').trim();
-    const cacheKey = `${projectId}__${normalizedQuery.toLowerCase()}`;
-    return getCachedValue(tempoAccountSearchCache, cacheKey, async () => {
-      const tqlQuery = `status=OPEN AND (project=${projectId} OR project=GLOBAL)`;
-      const url = `${INSTANCE_URL}rest/tempo-accounts/1/account/search?tqlQuery=${encodeURIComponent(tqlQuery)}&query=${encodeURIComponent(normalizedQuery)}&limit=15&offset=0`;
-      const response = await get(url);
-      const accounts = Array.isArray(response?.accounts) ? response.accounts : [];
-      return accounts
-        .map(buildTempoAccountOption)
-        .filter(Boolean);
+    const outcome = await quickViewIssueData.search({
+      purpose: 'tempo',
+      projectId,
+      query: queryText,
     });
+    if (outcome.kind !== 'loaded') {
+      throw new Error(outcome.failure?.message || 'Could not load Tempo accounts');
+    }
+    return outcome.items.map(buildTempoAccountOption).filter(Boolean);
   }
 
   async function saveTempoAccountSelection(issueData, fieldId, selectedOptions) {
@@ -4045,9 +3311,8 @@ async function mainAsyncLocal() {
           searchUserPicker(query),
           searchAssignableUsers(query, issueData).catch(() => [])
         ]);
-        const baseline = userPickerLocalOptionsCache.get(fieldId) || currentSelections;
+        const baseline = getPopupState()?.editState?.options || currentSelections;
         const merged = mergeEditOptions(pickerResults, mergeEditOptions(assignableResults, baseline));
-        userPickerLocalOptionsCache.set(fieldId, merged);
         return mergeEditOptions([clearOption], merged);
       }) : undefined,
       save: selectedOptions => {
@@ -4779,156 +4044,32 @@ async function mainAsyncLocal() {
     return `Move to Sprint ${sprintName}${stateSuffix}`.trim();
   }
 
-  async function getProjectSprintBoards(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
-      return [];
-    }
-    const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`).catch(() => null);
-    const projectBoards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
-    return projectBoards
-      .map(board => ({
-        ...board,
-        id: String(board?.id || '').trim(),
-        name: String(board?.name || '').trim(),
-        projectKey: String(board?.projectKey || projectKey),
-      }))
-      .filter(board => !!board.id);
-  }
-
-  function mergeSprintBoards(projectKey, ...boardLists) {
-    const boardsById = new Map();
-    boardLists.flat().forEach(board => {
-      const boardId = String(board?.id || '').trim();
-      if (!boardId) {
-        return;
-      }
-      const existingBoard = boardsById.get(boardId) || {};
-      boardsById.set(boardId, {
-        ...existingBoard,
-        ...board,
-        id: boardId,
-        name: String(board?.name || existingBoard.name || '').trim(),
-        projectKey: String(board?.projectKey || existingBoard.projectKey || projectKey),
-      });
-    });
-    return [...boardsById.values()];
-  }
-
-  async function getCandidateSprintBoards(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    return mergeSprintBoards(projectKey, await getProjectSprintBoards(issueData), readSprintBoardRefsFromIssue(issueData));
-  }
-
   async function getProjectSprintOptions(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
+    if (!issueData?.key) {
       return {
         activeSprints: [],
         upcomingSprint: null
       };
     }
-    const issueBoardIdsKey = readSprintBoardRefsFromIssue(issueData)
-      .map(board => String(board.id || ''))
-      .filter(Boolean)
-      .sort()
-      .join(',');
-    const cacheKey = `${projectKey}__${issueBoardIdsKey}`;
-    if (projectSprintOptionsPromises.has(cacheKey)) {
-      return projectSprintOptionsPromises.get(cacheKey);
-    }
-
-    const sprintPromise = (async () => {
-      const sprintFieldIds = await getSprintFieldIds(INSTANCE_URL);
-      if (!sprintFieldIds.length) {
-        return {
-          activeSprints: [],
-          upcomingSprint: null
-        };
-      }
-
-      const boards = await getCandidateSprintBoards(issueData);
-      if (!boards.length) {
-        return {
-          activeSprints: [],
-          upcomingSprint: null
-        };
-      }
-
-      const sprintMap = new Map();
-      const sprintResponses = await Promise.allSettled(boards.map(board => {
-        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`)
-          .then(response => ({board, response}));
-      }));
-
-      sprintResponses.forEach(result => {
-        if (result.status !== 'fulfilled') {
-          return;
-        }
-        const board = result.value?.board || {};
-        const sprints = Array.isArray(result.value?.response?.values) ? result.value.response.values : [];
-        sprints.forEach(sprint => {
-          if (!sprint?.id || !sprint?.name) {
-            return;
-          }
-          const sprintId = String(sprint.id);
-          const existingSprint = sprintMap.get(sprintId);
-          const boardRefs = Array.isArray(existingSprint?.boardRefs) ? existingSprint.boardRefs.slice() : [];
-          const boardRefKey = String(board.id || '');
-          if (boardRefKey && !boardRefs.some(ref => String(ref.id) === boardRefKey)) {
-            boardRefs.push({
-              id: board.id,
-              name: board.name || '',
-              projectKey: board.projectKey || projectKey
-            });
-          }
-          sprintMap.set(sprintId, {
-            ...(existingSprint || {}),
-            ...sprint,
-            boardRefs
-          });
-        });
+    try {
+      const sprintContext = await quickViewIssueData.loadFieldContext({
+        issueKey: issueData.key,
+        fieldId: 'sprint',
+        includeOptions: true,
       });
-
-      readSprintsFromIssue(issueData).forEach(sprint => {
-        if (!sprint?.id || !sprint?.name) {
-          return;
-        }
-        const sprintId = String(sprint.id);
-        if (sprintMap.has(sprintId)) {
-          return;
-        }
-        sprintMap.set(sprintId, {
-          ...sprint,
-          boardRefs: []
-        });
-      });
-
-      const sortedSprints = [...sprintMap.values()].sort((left, right) => {
-        const stateOrder = compareSprintState(left?.state, right?.state);
-        if (stateOrder !== 0) {
-          return stateOrder;
-        }
-        return String(left?.name || '').localeCompare(String(right?.name || ''));
-      });
-
+      const sortedSprints = sprintContext.context?.options || [];
       const activeSprints = sortedSprints.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
       const upcomingSprint = sortedSprints.find(sprint => String(sprint?.state || '').toLowerCase() === 'future') || null;
-
       return {
         activeSprints,
         upcomingSprint
       };
-    })().catch(error => {
-      projectSprintOptionsPromises.delete(cacheKey);
+    } catch (error) {
       return {
         activeSprints: [],
         upcomingSprint: null
       };
-    });
-
-    projectSprintOptionsPromises.set(cacheKey, sprintPromise);
-    return sprintPromise;
+    }
   }
 
   function buildDefaultActivityIndicators() {
@@ -4952,17 +4093,11 @@ async function mainAsyncLocal() {
 
   const {
     buildUserView,
-    detectSharedAvatarUrls,
     normalizeAssignableUsers,
     normalizeWatcherUsers,
-    proxyUserAvatars,
   } = createContentPeopleHelpers({
     areSameJiraUser,
     buildEditOption,
-    cacheKnownJiraUser,
-    cacheKnownJiraUsers,
-    getDisplayImageUrl,
-    sharedAvatarUrls,
   });
 
   const {buildPopupDisplayData} = createContentDisplayHelpers({
@@ -5459,7 +4594,7 @@ async function mainAsyncLocal() {
     }));
 
     const [linkTypesResult, detailsResult] = await Promise.allSettled([
-      getIssueLinkTypes(),
+      getIssueLinkTypes(issueKey),
       getLinkedIssueDetails(popupState.issueData),
     ]);
     if (!popupState?.linkedIssuesState?.open || popupState.issueData?.key !== issueKey) {
@@ -5667,7 +4802,8 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData || popupState.issueData.key !== issueKey) {
       return;
     }
-    const issueDetailsByKey = await getLinkedIssueDetails(popupState.issueData).catch(() => ({}));
+    const linkedSection = popupState.issueSnapshot?.sections?.linkedIssues;
+    const issueDetailsByKey = linkedSection?.detailsByKey || {};
     await renderUpdatedPopupState(currentState => ({
       ...currentState,
       linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
@@ -6190,6 +5326,8 @@ async function mainAsyncLocal() {
         inputValue: option.label,
         selectedOptionId: option.id,
         highlightedOptionId: option.id,
+        loadingOptions: false,
+        searchRequestId: ++editSearchRequestCounter,
         errorMessage: '',
         selectionStart: option.label.length,
         selectionEnd: option.label.length
@@ -6276,27 +5414,18 @@ async function mainAsyncLocal() {
 
     if (result.estimateSaved || result.worklogSaved) {
       try {
-        invalidatePopupCaches();
         const issueOutcome = await quickViewIssueData.refreshAfterMutation({
           issueKey,
+          priorSnapshot: popupState.issueSnapshot,
           mutation: {kind: 'timeChanged'},
+          requirements: {pullRequests: showPullRequests},
         });
         if (!issueOutcome.snapshot?.core) {
           throw issueDataError(issueOutcome.failures?.core, 'Could not refresh issue');
         }
         const refreshedIssueData = issueOutcome.snapshot.core;
-        await normalizeIssueImages(refreshedIssueData);
-
-        let refreshedPullRequests = [];
-        if (showPullRequests) {
-          try {
-            const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
-            refreshedPullRequests = normalizePullRequests(pullRequestResponse);
-            await normalizePullRequestImages(refreshedPullRequests).catch(() => {});
-          } catch (ex) {
-            refreshedPullRequests = [];
-          }
-        }
+        const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
+        const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
 
         let quickActions = [];
         try {
@@ -6322,6 +5451,7 @@ async function mainAsyncLocal() {
 
         await renderUpdatedPopupState(currentPopupState => ({
           ...currentPopupState,
+          issueSnapshot: issueOutcome.snapshot,
           issueData: refreshedIssueData,
           pullRequests: refreshedPullRequests,
           quickActions,
@@ -7263,9 +6393,6 @@ async function mainAsyncLocal() {
     clearDescriptionStatusTimer();
     closePreviewOverlay();
     const descriptionStateSnapshot = popupState?.descriptionEditState;
-    if (popupState?.key) {
-      editMetaCache.delete(popupState.key);
-    }
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
@@ -7609,39 +6736,21 @@ async function mainAsyncLocal() {
       discardDescriptionEditStateSnapshot(popupState.descriptionEditState, {deleteUploaded: true}).catch(() => {});
     }
     (async function (cancelToken) {
-      const issueData = await getIssueMetaData(key);
-      await normalizeIssueImages(issueData);
-      let children = [];
-      let childrenJql = '';
-      let childrenError = '';
-      if (showChildren) {
-        try {
-          const childSearch = await getChildIssues(issueData);
-          children = childSearch.issues;
-          childrenJql = childSearch.jql;
-          await normalizeChildIssueImages(children).catch(() => {});
-        } catch (ex) {
-          console.log('[Jira QuickView] Child issue fetch failed', {
-            issueKey: key,
-            error: ex?.message || String(ex)
-          });
-          childrenError = buildEditFieldError(ex);
-        }
+      const issueOutcome = await quickViewIssueData.openIssue({
+        issueKey: key,
+        requirements: {
+          children: showChildren,
+          pullRequests: showPullRequests,
+          reactions: true,
+        },
+      });
+      if (!issueOutcome.snapshot?.core) {
+        throw issueDataError(issueOutcome.failures?.core, 'Could not load issue');
       }
-      let pullRequests = [];
-      if (showPullRequests) {
-        try {
-          const pullRequestResponse = await getPullRequestDataCached(issueData.id);
-          pullRequests = normalizePullRequests(pullRequestResponse);
-          await normalizePullRequestImages(pullRequests).catch(() => {});
-        } catch (ex) {
-          console.log('[Jira QuickView] Pull request fetch failed', {
-            issueKey: key,
-            issueId: issueData.id,
-            error: ex?.message || String(ex)
-          });
-        }
-      }
+      const legacySnapshot = snapshotToLegacyPopupState(issueOutcome.snapshot);
+      const issueData = legacySnapshot.issueData;
+      const children = legacySnapshot.children;
+      const pullRequests = legacySnapshot.pullRequests;
 
       if (cancelToken.cancel) {
         return;
@@ -7653,25 +6762,13 @@ async function mainAsyncLocal() {
         quickActions = [];
       }
 
-      let commentReactionState = emptyCommentReactionState();
-      const commentIds = (issueData.fields.comment?.comments || [])
-        .map(c => c.id)
-        .filter(Boolean);
-      if (commentIds.length > 0) {
-        try {
-          const serverReactions = await fetchCommentReactions(commentIds);
-          commentReactionState = buildInitialReactionState(serverReactions);
-        } catch (ex) {
-          // Reactions may not be supported; fall back to empty state
-        }
-      }
-
       await renderUpdatedPopupState({
         key,
+        issueSnapshot: legacySnapshot.issueSnapshot,
         issueData,
         children,
-        childrenJql,
-        childrenError,
+        childrenJql: legacySnapshot.childrenJql,
+        childrenError: legacySnapshot.childrenError,
         childrenSort: DEFAULT_CHILDREN_SORT,
         commentSortOrder: commentSortOrderPreference,
         pullRequestsSort: DEFAULT_PULL_REQUESTS_SORT,
@@ -7679,7 +6776,7 @@ async function mainAsyncLocal() {
         pointerX,
         pointerY,
         quickActions,
-        commentReactionState,
+        commentReactionState: legacySnapshot.commentReactionState,
         ...buildPopupInteractionReset(),
         descriptionEditState: createDescriptionEditState(issueData),
         watchersState: emptyWatchersState(),

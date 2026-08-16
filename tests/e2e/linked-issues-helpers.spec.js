@@ -3,7 +3,6 @@ const {
   buildIssueLinkCreatePayload,
   buildLinkedIssuesPanelView,
   buildRelationshipOptions,
-  createContentLinkedIssuesHelpers,
   parseLinkedIssueKeys,
 } = require('../../jira-plugin/src/content-linked-issues-helpers');
 
@@ -64,41 +63,4 @@ test('builds directional options and maps both directions into Jira link payload
     outwardIssue: {key: 'APP-2'},
     inwardIssue: {key: 'APP-1'},
   });
-});
-
-test('falls back to Jira search when issue-picker endpoints are unavailable', async () => {
-  const requestedUrls = [];
-  const helpers = createContentLinkedIssuesHelpers({
-    encodeJqlValue: value => `"${value}"`,
-    get: async url => {
-      requestedUrls.push(url);
-      if (url.includes('/issue/picker')) {
-        throw new Error('Picker unavailable');
-      }
-      return {
-        issues: [{
-          id: '2',
-          key: 'APP-2',
-          fields: {
-            summary: 'Retry failed requests',
-            project: {key: 'APP'},
-            issuetype: {name: 'Task'},
-            status: {name: 'To Do'},
-          },
-        }],
-      };
-    },
-    getCachedValue: async (_cache, _key, loader) => loader(),
-    instanceUrl: 'https://jira.example/',
-    issueSearchCache: new Map(),
-  });
-
-  const results = await helpers.searchIssueLinkCandidates('retry', {
-    key: 'APP-1',
-    fields: {project: {id: '10', key: 'APP'}},
-  });
-
-  expect(results).toEqual([expect.objectContaining({key: 'APP-2', summary: 'Retry failed requests'})]);
-  expect(requestedUrls.filter(url => url.includes('/issue/picker'))).toHaveLength(2);
-  expect(requestedUrls.some(url => url.includes('/search'))).toBe(true);
 });

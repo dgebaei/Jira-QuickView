@@ -1,65 +1,17 @@
 export function createContentPopupStateHelpers(options) {
-  const assigneeLocalOptionsCache = options?.assigneeLocalOptionsCache;
-  const assigneeSearchCache = options?.assigneeSearchCache;
   const clearActionNoticeTimer = options?.clearActionNoticeTimer;
   const createTimeTrackingEditState = options?.createTimeTrackingEditState;
-  const editMetaCache = options?.editMetaCache;
   const emptyWatchersState = options?.emptyWatchersState;
-  const getIssueWatchers = options?.getIssueWatchers;
   const getPopupState = options?.getPopupState;
-  const getPullRequestDataCached = options?.getPullRequestDataCached;
   const issueData = options?.issueData;
-  const issueSearchCache = options?.issueSearchCache;
-  const labelLocalOptionsCache = options?.labelLocalOptionsCache;
   const normalizeHistoryAttachmentName = options?.normalizeHistoryAttachmentName;
   const normalizeIssueAttachmentImage = options?.normalizeIssueAttachmentImage;
-  const normalizeIssueImages = options?.normalizeIssueImages;
-  const normalizePullRequests = options?.normalizePullRequests;
-  const normalizePullRequestImages = options?.normalizePullRequestImages;
-  const pullRequestCache = options?.pullRequestCache;
   const renderIssuePopup = options?.renderIssuePopup;
   const resolveQuickActions = options?.resolveQuickActions;
   const scheduleActionNoticeClear = options?.scheduleActionNoticeClear;
   const setPopupState = options?.setPopupState;
-  const sharedAvatarUrls = options?.sharedAvatarUrls;
   const showPullRequests = options?.showPullRequests;
   const snackBar = options?.snackBar;
-  const tempoAccountSearchCache = options?.tempoAccountSearchCache;
-  const transitionOptionsCache = options?.transitionOptionsCache;
-  const userPickerLocalOptionsCache = options?.userPickerLocalOptionsCache;
-  const userPickerSearchCache = options?.userPickerSearchCache;
-  const watcherListCache = options?.watcherListCache;
-  const watcherSearchCache = options?.watcherSearchCache;
-
-  function invalidatePopupCaches(popupState = getPopupState()) {
-    if (!popupState?.key) {
-      return;
-    }
-    watcherListCache.delete(popupState.key);
-    editMetaCache.delete(popupState.key);
-    transitionOptionsCache.delete(popupState.key);
-    assigneeLocalOptionsCache.delete(popupState.key);
-    labelLocalOptionsCache.delete(popupState.key);
-    tempoAccountSearchCache.clear();
-    userPickerSearchCache.clear();
-    userPickerLocalOptionsCache.clear();
-    sharedAvatarUrls.clear();
-    watcherSearchCache.clear();
-    issueSearchCache.clear();
-    [...assigneeSearchCache.keys()].forEach(cacheKey => {
-      if (String(cacheKey).startsWith(`${popupState.key}__`)) {
-        assigneeSearchCache.delete(cacheKey);
-      }
-    });
-    if (popupState.issueData?.id) {
-      const issueId = String(popupState.issueData.id);
-      [...pullRequestCache.keys()].forEach(cacheKey => {
-        if (String(cacheKey).includes(issueId)) {
-          pullRequestCache.delete(cacheKey);
-        }
-      });
-    }
-  }
 
   function buildPopupInteractionReset(overrides = {}) {
     return {
@@ -112,16 +64,17 @@ export function createContentPopupStateHelpers(options) {
     const shouldRefreshWatchersPanel = !!(refreshWatchersPanel || popupState?.watchersState?.open);
     const shouldKeepHistoryOpen = !!(preserveHistory && popupState?.historyOpen);
 
-    invalidatePopupCaches(popupState);
-
-    const [issueOutcome, refreshedWatcherData] = await Promise.all([
-      issueData.refreshAfterMutation({
-        issueKey: popupKey,
-        mutation: refreshOptions.mutation || {kind: 'issueChanged'},
-        requirements: {history: shouldKeepHistoryOpen},
-      }),
-      shouldRefreshWatchersPanel ? getIssueWatchers(popupKey).catch(() => null) : Promise.resolve(null),
-    ]);
+    const issueOutcome = await issueData.refreshAfterMutation({
+      issueKey: popupKey,
+      priorSnapshot: popupState.issueSnapshot,
+      mutation: refreshOptions.mutation || {kind: 'issueChanged'},
+      requirements: {
+        history: shouldKeepHistoryOpen,
+        linkedIssues: !!popupState?.linkedIssuesState?.open,
+        pullRequests: showPullRequests,
+        watchers: shouldRefreshWatchersPanel,
+      },
+    });
     if (!issueOutcome.snapshot?.core) {
       const message = issueOutcome.failures?.core?.message || 'Could not refresh issue';
       const error = new Error(message);
@@ -133,20 +86,12 @@ export function createContentPopupStateHelpers(options) {
     const refreshedChangelog = shouldKeepHistoryOpen && ['ready', 'empty'].includes(historySection?.status)
       ? historySection.data
       : {histories: []};
-    await normalizeIssueImages(refreshedIssueData);
-
-    let refreshedPullRequests = [];
-    if (showPullRequests) {
-      try {
-        const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
-        refreshedPullRequests = normalizePullRequests(pullRequestResponse);
-        if (typeof normalizePullRequestImages === 'function') {
-          await normalizePullRequestImages(refreshedPullRequests).catch(() => {});
-        }
-      } catch (error) {
-        refreshedPullRequests = [];
-      }
-    }
+    const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
+    const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
+    const watcherSection = issueOutcome.snapshot.sections?.watchers;
+    const refreshedWatcherData = ['ready', 'empty', 'staleRetained'].includes(watcherSection?.status)
+      ? watcherSection.data
+      : null;
 
     let quickActions = [];
     try {
@@ -164,6 +109,7 @@ export function createContentPopupStateHelpers(options) {
 
     await renderUpdatedPopupState(currentState => ({
       ...currentState,
+      issueSnapshot: issueOutcome.snapshot,
       issueData: refreshedIssueData,
       pullRequests: refreshedPullRequests,
       quickActions,
@@ -212,6 +158,7 @@ export function createContentPopupStateHelpers(options) {
     const normalizedAttachment = await normalizeIssueAttachmentImage({...uploadedAttachment});
     const issueOutcome = await issueData.refreshAfterMutation({
       issueKey: popupKey,
+      priorSnapshot: popupState.issueSnapshot,
       mutation: {kind: 'attachmentChanged'},
       requirements: {history: !!popupState?.historyOpen},
     });
@@ -241,6 +188,7 @@ export function createContentPopupStateHelpers(options) {
       ];
       return {
         ...currentState,
+        issueSnapshot: issueOutcome.snapshot || currentState.issueSnapshot,
         issueData: {
           ...currentState.issueData,
           fields: {
@@ -258,7 +206,6 @@ export function createContentPopupStateHelpers(options) {
     buildNextWatchersState,
     buildPopupInteractionReset,
     handleDraftAttachmentUploaded,
-    invalidatePopupCaches,
     refreshPopupIssueState,
     renderUpdatedPopupState,
   };
