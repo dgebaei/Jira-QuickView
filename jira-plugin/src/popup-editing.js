@@ -30,7 +30,6 @@ export function createPopupEditing(deps) {
     getRecentIssueSearchOptions,
     hasLabelSuggestionSupport,
     loadFieldContext,
-    normalizeIssueTypeOptions,
     readSprintBoardRefsFromIssue,
     readSprintsFromIssue,
     refreshPopupIssueState,
@@ -498,88 +497,6 @@ export function createPopupEditing(deps) {
         successMessage: selectedOptions => {
           const option = selectedOptions[0] || buildEditOption('', 'No sprint');
           return option.id ? `Sprint set to ${option.label}` : 'Sprint cleared';
-        },
-      };
-    }
-
-    if (fieldKey === 'priority') {
-      const capability = await getEditableFieldCapability(issueData, 'priority');
-      const allowedPriorities = capability.allowedValues || [];
-      if (!capability.editable || !allowedPriorities.length) {
-        return null;
-      }
-      const currentPriority = issueData?.fields?.priority;
-      return {
-        fieldKey,
-        editorType: 'single-select',
-        label: 'Priority',
-        selectionMode: 'single',
-        currentText: currentPriority?.name || '',
-        currentOptionId: currentPriority?.id ? String(currentPriority.id) : null,
-        currentSelections: currentPriority?.id && currentPriority?.name
-          ? [buildEditOption(currentPriority.id, currentPriority.name, {iconUrl: currentPriority.iconUrl || ''})]
-          : [],
-        initialInputValue: '',
-        loadOptions: async () => allowedPriorities
-          .filter(priority => priority?.id && priority?.name)
-          .map(priority => buildEditOption(priority.id, priority.name, {iconUrl: priority.iconUrl || ''})),
-        save: selectedOptions => {
-          const selectedPriority = selectedOptions[0];
-          if (!selectedPriority?.id) {
-            throw new Error('Pick a priority before saving');
-          }
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              priority: {id: selectedPriority.id},
-            },
-          });
-        },
-        successMessage: selectedOptions => {
-          const selectedPriority = selectedOptions[0];
-          return selectedPriority?.label ? `Priority set to ${selectedPriority.label}` : 'Priority updated';
-        },
-      };
-    }
-
-    if (fieldKey === 'issuetype') {
-      const capability = await getEditableFieldCapability(issueData, 'issuetype');
-      const currentIssueType = issueData?.fields?.issuetype;
-      const issueTypeOptions = normalizeIssueTypeOptions(capability.allowedValues || [], currentIssueType);
-      const currentOption = currentIssueType?.id && currentIssueType?.name
-        ? buildEditOption(currentIssueType.id, currentIssueType.name, {
-            iconUrl: currentIssueType.iconUrl || '',
-            metaText: currentIssueType.description || '',
-            rawValue: currentIssueType,
-          })
-        : null;
-      const allOptions = mergeEditOptions(currentOption ? [currentOption] : [], issueTypeOptions);
-      if (!capability.editable || allOptions.length < 2) {
-        return null;
-      }
-      return {
-        fieldKey,
-        editorType: 'single-select',
-        label: 'Issue type',
-        selectionMode: 'single',
-        currentText: currentIssueType?.name || '',
-        currentOptionId: currentOption?.id || null,
-        currentSelections: currentOption ? [currentOption] : [],
-        initialInputValue: '',
-        loadOptions: async () => allOptions,
-        save: selectedOptions => {
-          const selectedIssueType = selectedOptions[0];
-          if (!selectedIssueType?.id) {
-            throw new Error('Pick an issue type before saving');
-          }
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              issuetype: {id: selectedIssueType.id},
-            },
-          });
-        },
-        successMessage: selectedOptions => {
-          const selectedIssueType = selectedOptions[0];
-          return selectedIssueType?.label ? `Issue type set to ${selectedIssueType.label}` : 'Issue type updated';
         },
       };
     }

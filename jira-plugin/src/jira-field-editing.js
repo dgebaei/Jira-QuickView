@@ -46,6 +46,27 @@ function buildTransitionOptions(transitions) {
     });
 }
 
+function buildAllowedValueOption(value) {
+  const label = String(value?.name || value?.value || '');
+  return {
+    id: String(value?.id || value?.value || ''),
+    label,
+    iconUrl: value?.iconUrl || '',
+    metaText: value?.description || '',
+    rawValue: copyValue(value),
+    searchText: `${label} ${value?.description || ''}`.trim().toLowerCase(),
+  };
+}
+
+function mergeOptions(primary, secondary) {
+  const seen = new Set();
+  return [...primary, ...secondary].filter(option => {
+    if (!option.id || !option.label || seen.has(option.id)) return false;
+    seen.add(option.id);
+    return true;
+  });
+}
+
 export function createJiraFieldEditing(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -133,7 +154,7 @@ export function createJiraFieldEditing(options = {}) {
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['status', 'summary'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['issuetype', 'priority', 'status', 'summary'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
     edit = {
@@ -191,7 +212,7 @@ export function createJiraFieldEditing(options = {}) {
         selectionEnd: currentSummary.length,
         status: 'editing',
       };
-    } else {
+    } else if (intent.fieldId === 'status') {
       const transitions = buildTransitionOptions(context?.transitions);
       if (!transitions.length) {
         const failure = fieldOutcome.failures?.transitions || fieldOutcome.failures?.fieldContext || null;
@@ -207,6 +228,43 @@ export function createJiraFieldEditing(options = {}) {
         inputPlaceholder: 'Type to filter transitions',
         options: transitions,
         selectedOptionId: null,
+        showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else {
+      const fieldId = intent.fieldId;
+      const currentValue = capturedSession.issueSnapshot.core?.fields?.[fieldId] || null;
+      const currentIsSubtask = currentValue?.subtask === true;
+      const allowedOptions = (context?.allowedValues || [])
+        .filter(value => value?.id && value?.name)
+        .filter(value => {
+          if (fieldId !== 'issuetype' || typeof value.subtask !== 'boolean' || typeof currentValue?.subtask !== 'boolean') return true;
+          return value.subtask === currentIsSubtask;
+        })
+        .map(buildAllowedValueOption);
+      const currentOption = currentValue?.id && currentValue?.name
+        ? buildAllowedValueOption(currentValue)
+        : null;
+      const options = fieldId === 'issuetype'
+        ? mergeOptions(currentOption ? [currentOption] : [], allowedOptions)
+        : allowedOptions;
+      const minimumOptions = fieldId === 'issuetype' ? 2 : 1;
+      if (!context?.editable || options.length < minimumOptions) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        editorType: 'single-select',
+        fieldKey: fieldId,
+        label: fieldId === 'issuetype' ? 'Issue type' : 'Priority',
+        selectionMode: 'single',
+        inputPlaceholder: `Type to filter ${fieldId === 'issuetype' ? 'issue type' : 'priority'} values`,
+        options,
+        selectedOptionId: currentOption?.id || null,
+        selectedOptions: currentOption ? [currentOption] : [],
         showActionButtons: false,
         loadingOptions: false,
         status: 'editing',
@@ -328,6 +386,19 @@ export function createJiraFieldEditing(options = {}) {
         path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}/transitions`,
         body: {transition: {id: selectedTransition.id}},
       };
+    } else if (['issuetype', 'priority'].includes(edit.fieldKey)) {
+      const selectedValue = edit.options.find(option => option.id === edit.selectedOptionId);
+      if (!selectedValue) {
+        const failure = normalizeFailure(new Error(`Pick ${edit.fieldKey === 'issuetype' ? 'an issue type' : 'a priority'} before saving`));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = `${edit.fieldKey === 'issuetype' ? 'Issue type' : 'Priority'} set to ${selectedValue.label}`;
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {[edit.fieldKey]: {id: selectedValue.id}}},
+      };
     } else {
       return outcome('ignored', {editId});
     }
@@ -396,7 +467,11 @@ export function createJiraFieldEditing(options = {}) {
       if (intent.key === 'Enter') {
         if (edit?.selectionMode !== 'text') {
           const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleOptions()[0]?.id;
-          return selectOption({...intent, optionId});
+          const selected = await selectOption({...intent, optionId: edit?.highlightedOptionId || optionId});
+          if (edit?.editorType !== 'transition-select' && selected.kind === 'changed') {
+            return save(intent);
+          }
+          return selected;
         }
         return save(intent);
       }

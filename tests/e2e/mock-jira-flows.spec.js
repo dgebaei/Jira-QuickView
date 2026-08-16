@@ -1126,6 +1126,12 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
     await expect(popup).toContainText('Assigned to you');
     await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
 
+    await page.locator('._JX_field_chip_edit[data-field-key="issuetype"]').click();
+    await page.locator('._JX_edit_option[data-field-key="issuetype"][data-option-id="2"]').click();
+    await page.locator('._JX_edit_input[data-field-key="issuetype"]').press('Enter');
+    await expect(popup).toContainText('Issue type set to Task');
+    await expect(popup).toContainText('Task');
+
     await page.locator('._JX_field_chip_edit[data-field-key="priority"]').click();
     await page.locator('._JX_edit_option[data-field-key="priority"][data-option-id="1"]').click();
     await page.locator('._JX_edit_input[data-field-key="priority"]').press('Enter');

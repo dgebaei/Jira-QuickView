@@ -680,7 +680,6 @@ async function mainAsyncLocal() {
     getRecentIssueSearchOptions,
     hasLabelSuggestionSupport,
     loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
-    normalizeIssueTypeOptions,
     pickSprintFieldId,
     readSprintBoardRefsFromIssue,
     readSprintsFromIssue,
@@ -4986,7 +4985,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return fieldKey === 'summary' || fieldKey === 'status';
+    return ['issuetype', 'priority', 'status', 'summary'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {

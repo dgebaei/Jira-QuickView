@@ -348,3 +348,97 @@ test('status arrow navigation selects the next transition before Enter saves it'
     writeBody: {transition: {id: '41'}},
   });
 });
+
+test('issue type editing filters allowed values and saves the selected type', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'issuetype', name: 'Issue Type'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {issuetype: {
+        name: 'Issue Type',
+        operations: ['set'],
+        allowedValues: [
+          {id: '1', name: 'Bug', description: 'Bug report', subtask: false},
+          {id: '2', name: 'Task', description: 'Work item', subtask: false},
+          {id: '3', name: 'Sub-task', subtask: true},
+        ],
+      }}}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', issuetype: {id: '2', name: 'Task', subtask: false}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', issuetype: {id: '1', name: 'Bug', subtask: false}}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'issuetype'});
+    const selected = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '2'});
+    const writesBeforeEnter = jira.getRequests().filter(request => request.operation === 'write').length;
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        labels: begun.view.edit?.options.map(option => option.label),
+        selectedOptionId: begun.view.edit?.selectedOptionId,
+      },
+      selected: {kind: selected.kind, selectedOptionId: selected.view.edit?.selectedOptionId},
+      writesBeforeEnter,
+      saved: {kind: saved.kind, notice: saved.notice, type: saved.refreshedSnapshot?.core?.fields?.issuetype?.name},
+      write: write ? {method: write.method, path: write.path, body: write.body} : null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', labels: ['Bug', 'Task'], selectedOptionId: '1'},
+    selected: {kind: 'changed', selectedOptionId: '2'},
+    writesBeforeEnter: 0,
+    saved: {kind: 'saved', notice: 'Issue type set to Task', type: 'Task'},
+    write: {
+      method: 'PUT',
+      path: 'https://jira.example/rest/api/2/issue/ABC-1',
+      body: {fields: {issuetype: {id: '2'}}},
+    },
+  });
+});
+
+test('priority editing reuses allowed-value selection with the priority payload', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'priority', name: 'Priority'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {priority: {
+        name: 'Priority',
+        operations: ['set'],
+        allowedValues: [
+          {id: '1', name: 'Highest', iconUrl: 'https://jira.example/highest.png'},
+          {id: '2', name: 'Medium', iconUrl: 'https://jira.example/medium.png'},
+        ],
+      }}}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', priority: {id: '1', name: 'Highest'}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', priority: {id: '2', name: 'Medium'}}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'priority'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '1'});
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {kind: begun.kind, labels: begun.view.edit?.options.map(option => option.label)},
+      saved: {kind: saved.kind, notice: saved.notice, priority: saved.refreshedSnapshot?.core?.fields?.priority?.name},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', labels: ['Highest', 'Medium']},
+    saved: {kind: 'saved', notice: 'Priority set to Highest', priority: 'Highest'},
+    writeBody: {fields: {priority: {id: '1'}}},
+  });
+});
