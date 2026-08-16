@@ -12,6 +12,16 @@ Both `tests/.auth/` and `tests/output/` are ignored by git.
 
 ## Test Modes
 
+### Deep-module interface tests
+
+These deterministic browser-fixture tests exercise the same Jira adapter and issue-data interfaces used by production callers. They cover transport outcomes, cancellation, cache coalescing, TTL, retry, invalidation, and request counts without loading the extension.
+
+Run them with:
+
+```bash
+npm run test:deep-modules
+```
+
 ### Mock edge tests
 
 These deterministic tests focus on failure injection and unhappy-path coverage. They use:
@@ -217,11 +227,12 @@ npm run test:e2e:all
 
 Project lanes in Playwright are now:
 
+- `deep-modules`
 - `mock-edge`
 - `public-smoke`
 - `live-authenticated`
 
-`npm run test:e2e:all` now runs those three lanes sequentially so each one gets the correct default environment.
+`npm run test:e2e:all` runs the three extension/browser lanes sequentially so each one gets the correct default environment. Run `npm run test:deep-modules` separately for the focused interface lane.
 
 Run the extension suite in headed mode:
 

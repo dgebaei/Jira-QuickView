@@ -1103,7 +1103,9 @@ export function createPopupEditing(deps) {
     try {
       const submittedEditState = getPopupState().editState;
       await definition.save(selectedOptions, submittedEditState);
-      await refreshPopupIssueState(definition.successMessage(selectedOptions, submittedEditState));
+      await refreshPopupIssueState(definition.successMessage(selectedOptions, submittedEditState), {
+        mutation: {kind: 'fieldChanged', fieldId: definition.fieldKey || fieldKey},
+      });
     } catch (error) {
       const currentPopupState = getPopupState();
       const errorMessage = buildEditFieldError(error);

@@ -9,7 +9,6 @@ import {snackBar} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
 import {createContentFieldCapabilityHelpers} from 'src/content-field-capability-helpers';
 import {createContentHistoryHelpers} from 'src/content-history-helpers';
-import {createContentIssueDataHelpers} from 'src/content-issue-data-helpers';
 import {createContentIssueLinkageHelpers} from 'src/content-issue-linkage-helpers';
 import {
   buildIssueLinkCreatePayload,
@@ -35,6 +34,8 @@ import config, {buildTooltipLayoutFromDisplayFields} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
+import {createQuickViewIssueData} from 'src/quickview-issue-data';
 const {
   buildDescriptionEditorState,
   buildMediaSingleNodeFromAttachment,
@@ -268,24 +269,16 @@ storageGet({'ui_tips_shown': []}).then(function ({ui_tips_shown}) {
   ui_tips_shown_local = ui_tips_shown;
 });
 
-// ── Network / API ───────────────────────────────────────────────
+// ── Jira transport ─────────────────────────────────────────────
 
-function unwrapResponse(response, defaultError = 'Request failed') {
-  if (Object.prototype.hasOwnProperty.call(response, 'result')) {
-    return response.result;
-  }
-  const err = new Error(response.error || defaultError);
-  err.inner = response.error;
-  throw err;
-}
-
+const jira = createBrowserMessageJiraAdapter({sendMessage});
 async function get(url) {
-  return unwrapResponse(await sendMessage({action: 'get', url: url}));
+  return jira.read({path: url});
 }
 
-  async function getImageDataUrl(url, mimeType = '') {
-    return unwrapResponse(await sendMessage({action: 'getImageDataUrl', url, mimeType}));
-  }
+async function getImageDataUrl(url, mimeType = '') {
+  return jira.image({url, mimeType});
+}
 
   async function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
@@ -297,18 +290,10 @@ async function get(url) {
   }
 
 async function requestJson(method, url, body, headers) {
-  return unwrapResponse(await sendMessage({action: 'requestJson', method, url, body, headers}));
+  return jira.write({method, path: url, body, headers});
 }
 async function uploadAttachment(url, file) {
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-  const response = await sendMessage({
-    action: 'uploadAttachment',
-    bytes,
-    contentType: file.type,
-    fileName: file.name,
-    url
-  });
-  return unwrapResponse(response, 'Attachment upload failed');
+  return jira.upload({path: url, file});
 }
 
 
@@ -476,11 +461,31 @@ async function mainAsyncLocal() {
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
   const imageProxyCache = {};
   const cacheTtlMs = 60 * 1000;
-  const issueCache = new Map();
   const childIssueCache = new Map();
   const pullRequestCache = new Map();
-  const changelogCache = new Map();
   const fieldOptionsCache = new Map();
+
+  async function getCachedValue(cache, key, buildValue) {
+    const existing = cache.get(key);
+    if (existing && (Date.now() - existing.createdAt) < cacheTtlMs) {
+      return existing.value;
+    }
+
+    const pendingValue = Promise.resolve().then(buildValue);
+    cache.set(key, {createdAt: Date.now(), value: pendingValue});
+    try {
+      const value = await pendingValue;
+      if (cache.get(key)?.value === pendingValue) {
+        cache.set(key, {createdAt: Date.now(), value});
+      }
+      return value;
+    } catch (error) {
+      if (cache.get(key)?.value === pendingValue) {
+        cache.delete(key);
+      }
+      throw error;
+    }
+  }
   const emptyCommentMentionState = () => ({
     error: '',
     loading: false,
@@ -574,22 +579,57 @@ async function mainAsyncLocal() {
     escapeHtml,
     normalizeHistoryAttachmentName,
   });
-  const {
-    getCachedValue,
-    getIssueChangelog,
-    getIssueMetaData,
-    getIssueSummary,
-    setCachedValue,
-  } = createContentIssueDataHelpers({
-    cacheTtlMs,
-    changelogCache,
+  const quickViewIssueData = createQuickViewIssueData({
     customFields,
-    get,
     getEpicLinkFieldIds,
     getSprintFieldIds,
     instanceUrl: INSTANCE_URL,
-    issueCache,
+    jira,
   });
+
+  function issueDataError(failure, fallbackMessage) {
+    const message = failure?.message || fallbackMessage;
+    const error = new Error(message);
+    error.inner = message;
+    return error;
+  }
+
+  async function getIssueMetaData(issueKey, options = {}) {
+    const outcome = await quickViewIssueData.openIssue({
+      issueKey,
+      freshness: options.freshness || 'cached',
+    });
+    if (!outcome.snapshot?.core) {
+      throw issueDataError(outcome.failures?.core, 'Could not load issue');
+    }
+    return outcome.snapshot.core;
+  }
+
+  async function getIssueSummary(issueKey) {
+    if (!issueKey) {
+      return null;
+    }
+    const outcome = await quickViewIssueData.openIssue({
+      issueKey,
+      requirements: {core: 'summary'},
+    });
+    if (!outcome.snapshot?.core) {
+      throw issueDataError(outcome.failures?.core, 'Could not load issue summary');
+    }
+    return outcome.snapshot.core;
+  }
+
+  async function getIssueChangelog(issueKey) {
+    const outcome = await quickViewIssueData.openIssue({
+      issueKey,
+      requirements: {history: true},
+    });
+    const history = outcome.snapshot?.sections?.history;
+    if (!history || history.status === 'failed') {
+      throw issueDataError(history?.failure || outcome.failures?.core, 'Could not load issue history');
+    }
+    return history.data || {histories: []};
+  }
   const {formatChangelogForDisplay} = createContentHistoryHelpers({
     areSameJiraUser,
     buildAttachmentImagesByName,
@@ -697,17 +737,14 @@ async function mainAsyncLocal() {
   } = createContentPopupStateHelpers({
     assigneeLocalOptionsCache,
     assigneeSearchCache,
-    changelogCache,
     clearActionNoticeTimer,
     createTimeTrackingEditState,
     editMetaCache,
     emptyWatchersState,
-    getIssueChangelog,
-    getIssueMetaData,
     getIssueWatchers,
     getPopupState: () => popupState,
     getPullRequestDataCached,
-    issueCache,
+    issueData: quickViewIssueData,
     issueSearchCache,
     labelLocalOptionsCache,
     normalizeHistoryAttachmentName,
@@ -1683,7 +1720,10 @@ async function mainAsyncLocal() {
     });
     await discardDescriptionEditStateSnapshot(currentState, {deleteUploaded: true});
     if (hadDraftUploads) {
-      await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
+      await refreshPopupIssueState('', {
+        mutation: {kind: 'attachmentChanged'},
+        preserveHistory: !!popupState?.historyOpen,
+      });
     }
     if (!popupState?.issueData) {
       return;
@@ -1881,7 +1921,10 @@ async function mainAsyncLocal() {
           description: saveValueResult.value,
         }
       });
-      await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
+      await refreshPopupIssueState('', {
+        mutation: {kind: 'descriptionChanged'},
+        preserveHistory: !!popupState?.historyOpen,
+      });
       if (!popupState?.issueData) {
         return;
       }
@@ -2331,10 +2374,8 @@ async function mainAsyncLocal() {
         body: requestBody
       });
       const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey;
-      changelogCache.delete(commentIssueKey);
       if (isSameIssueStillVisible) {
         addSavedCommentToPopupState(savedComment, requestBody, currentUser);
-        setCachedValue(issueCache, commentIssueKey, popupState?.issueData);
         elements.input.val('');
         elements.root.attr('data-saving', 'false');
         commentComposerDraftValue = '';
@@ -2345,11 +2386,17 @@ async function mainAsyncLocal() {
         await clearCommentUploads({deleteUploaded: false});
         setCommentComposerError('');
         await renderIssuePopup(popupState);
-      } else {
-        issueCache.delete(commentIssueKey);
       }
       if (isSameIssueStillVisible && popupState?.historyOpen) {
-        await refreshPopupIssueState('Comment added', {preserveHistory: true});
+        await refreshPopupIssueState('Comment added', {
+          mutation: {kind: 'commentChanged'},
+          preserveHistory: true,
+        });
+      } else {
+        await quickViewIssueData.refreshAfterMutation({
+          issueKey: commentIssueKey,
+          mutation: {kind: 'commentChanged'},
+        });
       }
     } catch (error) {
       elements.root.attr('data-saving', 'false');
@@ -2622,7 +2669,10 @@ async function mainAsyncLocal() {
       await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`, {
         body: requestBody
       });
-      await refreshPopupIssueState('Comment updated', {preserveHistory: !!popupState?.historyOpen});
+      await refreshPopupIssueState('Comment updated', {
+        mutation: {kind: 'commentChanged'},
+        preserveHistory: !!popupState?.historyOpen,
+      });
     } catch (error) {
       const errorMessage = error?.message || error?.inner || 'Could not update comment';
       const latestSession = getActiveCommentSession();
@@ -2646,7 +2696,10 @@ async function mainAsyncLocal() {
 
     try {
       await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`);
-      await refreshPopupIssueState('Comment deleted', {preserveHistory: !!popupState?.historyOpen});
+      await refreshPopupIssueState('Comment deleted', {
+        mutation: {kind: 'commentChanged'},
+        preserveHistory: !!popupState?.historyOpen,
+      });
     } catch (error) {
       const errorMessage = error?.message || error?.inner || 'Could not delete comment';
       const latestSession = getActiveCommentSession();
@@ -5298,6 +5351,7 @@ async function mainAsyncLocal() {
     try {
       await addWatcher(popupState.issueData.key, user);
       await refreshPopupIssueState('', {
+        mutation: {kind: 'watchersChanged'},
         refreshWatchersPanel: true,
         scheduleWatchersFeedbackReset: true,
         scheduleWatchersFeedbackClear,
@@ -5349,6 +5403,7 @@ async function mainAsyncLocal() {
     try {
       await removeWatcher(popupState.issueData.key, user);
       await refreshPopupIssueState('', {
+        mutation: {kind: 'watchersChanged'},
         refreshWatchersPanel: true,
         scheduleWatchersFeedbackReset: true,
         scheduleWatchersFeedbackClear,
@@ -5608,7 +5663,7 @@ async function mainAsyncLocal() {
     if (!issueKey) {
       return;
     }
-    await refreshPopupIssueState('');
+    await refreshPopupIssueState('', {mutation: {kind: 'linksChanged'}});
     if (!popupState?.issueData || popupState.issueData.key !== issueKey) {
       return;
     }
@@ -5753,7 +5808,9 @@ async function mainAsyncLocal() {
 
     try {
       const successMessage = await executeQuickAction(action, popupState.issueData);
-      await refreshPopupIssueState(successMessage);
+      await refreshPopupIssueState(successMessage, {
+        mutation: {kind: 'quickAction', action: action.key},
+      });
     } catch (error) {
       await renderUpdatedPopupState(currentState => ({
         ...currentState,
@@ -6220,7 +6277,14 @@ async function mainAsyncLocal() {
     if (result.estimateSaved || result.worklogSaved) {
       try {
         invalidatePopupCaches();
-        const refreshedIssueData = await getIssueMetaData(issueKey);
+        const issueOutcome = await quickViewIssueData.refreshAfterMutation({
+          issueKey,
+          mutation: {kind: 'timeChanged'},
+        });
+        if (!issueOutcome.snapshot?.core) {
+          throw issueDataError(issueOutcome.failures?.core, 'Could not refresh issue');
+        }
+        const refreshedIssueData = issueOutcome.snapshot.core;
         await normalizeIssueImages(refreshedIssueData);
 
         let refreshedPullRequests = [];

@@ -1,17 +1,14 @@
 export function createContentPopupStateHelpers(options) {
   const assigneeLocalOptionsCache = options?.assigneeLocalOptionsCache;
   const assigneeSearchCache = options?.assigneeSearchCache;
-  const changelogCache = options?.changelogCache;
   const clearActionNoticeTimer = options?.clearActionNoticeTimer;
   const createTimeTrackingEditState = options?.createTimeTrackingEditState;
   const editMetaCache = options?.editMetaCache;
   const emptyWatchersState = options?.emptyWatchersState;
-  const getIssueChangelog = options?.getIssueChangelog;
-  const getIssueMetaData = options?.getIssueMetaData;
   const getIssueWatchers = options?.getIssueWatchers;
   const getPopupState = options?.getPopupState;
   const getPullRequestDataCached = options?.getPullRequestDataCached;
-  const issueCache = options?.issueCache;
+  const issueData = options?.issueData;
   const issueSearchCache = options?.issueSearchCache;
   const labelLocalOptionsCache = options?.labelLocalOptionsCache;
   const normalizeHistoryAttachmentName = options?.normalizeHistoryAttachmentName;
@@ -38,9 +35,7 @@ export function createContentPopupStateHelpers(options) {
     if (!popupState?.key) {
       return;
     }
-    issueCache.delete(popupState.key);
     watcherListCache.delete(popupState.key);
-    changelogCache.delete(popupState.key);
     editMetaCache.delete(popupState.key);
     transitionOptionsCache.delete(popupState.key);
     assigneeLocalOptionsCache.delete(popupState.key);
@@ -119,11 +114,25 @@ export function createContentPopupStateHelpers(options) {
 
     invalidatePopupCaches(popupState);
 
-    const [refreshedIssueData, refreshedWatcherData, refreshedChangelog] = await Promise.all([
-      getIssueMetaData(popupKey),
+    const [issueOutcome, refreshedWatcherData] = await Promise.all([
+      issueData.refreshAfterMutation({
+        issueKey: popupKey,
+        mutation: refreshOptions.mutation || {kind: 'issueChanged'},
+        requirements: {history: shouldKeepHistoryOpen},
+      }),
       shouldRefreshWatchersPanel ? getIssueWatchers(popupKey).catch(() => null) : Promise.resolve(null),
-      shouldKeepHistoryOpen ? getIssueChangelog(popupKey).catch(() => ({histories: []})) : Promise.resolve(null),
     ]);
+    if (!issueOutcome.snapshot?.core) {
+      const message = issueOutcome.failures?.core?.message || 'Could not refresh issue';
+      const error = new Error(message);
+      error.inner = message;
+      throw error;
+    }
+    const refreshedIssueData = issueOutcome.snapshot.core;
+    const historySection = issueOutcome.snapshot.sections?.history;
+    const refreshedChangelog = shouldKeepHistoryOpen && ['ready', 'empty'].includes(historySection?.status)
+      ? historySection.data
+      : {histories: []};
     await normalizeIssueImages(refreshedIssueData);
 
     let refreshedPullRequests = [];
@@ -201,11 +210,15 @@ export function createContentPopupStateHelpers(options) {
     }
 
     const normalizedAttachment = await normalizeIssueAttachmentImage({...uploadedAttachment});
-    let refreshedChangelog = null;
-    if (popupState?.historyOpen) {
-      changelogCache.delete(popupKey);
-      refreshedChangelog = await getIssueChangelog(popupKey).catch(() => popupState?.changelogData || {histories: []});
-    }
+    const issueOutcome = await issueData.refreshAfterMutation({
+      issueKey: popupKey,
+      mutation: {kind: 'attachmentChanged'},
+      requirements: {history: !!popupState?.historyOpen},
+    });
+    const historySection = issueOutcome.snapshot?.sections?.history;
+    const refreshedChangelog = popupState?.historyOpen && ['ready', 'empty'].includes(historySection?.status)
+      ? historySection.data
+      : popupState?.changelogData;
 
     const currentPopupState = getPopupState();
     if (!currentPopupState || currentPopupState.key !== popupKey) {
