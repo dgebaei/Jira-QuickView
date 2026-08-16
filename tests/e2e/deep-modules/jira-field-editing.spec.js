@@ -999,3 +999,128 @@ test('Data Center Epic Link editing uses the resolved custom field while present
     writeBody: {fields: {customfield_10014: 'ABC-10'}},
   });
 });
+
+test('Labels editing owns suggestions, multi-selection, keyboard toggling, payload, and refresh', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'labels', name: 'Labels'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {labels: {name: 'Labels', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('fieldName=labels') && request.path.endsWith('fieldValue='), result: {
+        suggestions: [{label: 'existing'}, {label: 'baseline'}],
+      }},
+      {operation: 'read', match: request => request.path.includes('fieldValue=release'), result: {
+        suggestions: [{label: 'release-candidate'}, {label: 'release-ready'}],
+      }},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', labels: ['existing', 'release-candidate']}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', labels: ['existing']}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'labels'});
+    const searched = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'release'});
+    const toggled = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {kind: begun.kind, labels: begun.view.edit?.options.map(option => option.label), selectedOptionIds: begun.view.edit?.selectedOptionIds},
+      searched: {kind: searched.kind, labels: searched.view.edit?.options.map(option => option.label)},
+      toggled: {
+        kind: toggled.kind,
+        inputValue: toggled.view.edit?.inputValue,
+        selectedOptionIds: toggled.view.edit?.selectedOptionIds,
+      },
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', labels: ['existing', 'baseline'], selectedOptionIds: ['existing']},
+    searched: {kind: 'changed', labels: ['release-candidate', 'release-ready']},
+    toggled: {kind: 'changed', inputValue: 'release', selectedOptionIds: ['existing', 'release-candidate']},
+    saved: {kind: 'saved', notice: 'Labels updated'},
+    writeBody: {fields: {labels: ['existing', 'release-candidate']}},
+  });
+});
+
+test('Labels search failure preserves selections and succeeds on retry', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'labels', name: 'Labels'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {labels: {name: 'Labels'}}}},
+      {operation: 'read', match: request => request.path.includes('fieldName=labels') && request.path.endsWith('fieldValue='), result: {suggestions: [{label: 'existing'}]}},
+      {operation: 'read', match: request => request.path.includes('fieldValue=recover'), error: 'Labels unavailable'},
+      {operation: 'read', match: request => request.path.includes('fieldValue=recover'), result: {suggestions: [{label: 'recovered'}]}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', labels: ['existing']}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'labels'});
+    const failed = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'recover'});
+    const retried = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'recover'});
+    return {
+      failed: {
+        kind: failed.kind,
+        errorMessage: failed.view.edit?.errorMessage,
+        selectedOptionIds: failed.view.edit?.selectedOptionIds,
+      },
+      retried: {
+        kind: retried.kind,
+        labels: retried.view.edit?.options.map(option => option.label),
+        selectedOptionIds: retried.view.edit?.selectedOptionIds,
+      },
+      searchCount: jira.getRequests().filter(request => request.path.includes('fieldValue=recover')).length,
+    };
+  });
+
+  expect(result).toEqual({
+    failed: {kind: 'failed', errorMessage: 'Labels unavailable', selectedOptionIds: ['existing']},
+    retried: {kind: 'changed', labels: ['recovered'], selectedOptionIds: ['existing']},
+    searchCount: 2,
+  });
+});
+
+test('Labels input debounce cancels superseded searches inside the editing interface', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'labels', name: 'Labels'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {labels: {name: 'Labels'}}}},
+      {operation: 'read', match: request => request.path.includes('fieldName=labels') && request.path.endsWith('fieldValue='), result: {suggestions: []}},
+      {operation: 'read', match: request => request.path.includes('fieldValue=new'), result: {suggestions: [{label: 'new-label'}]}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', labels: []}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'labels'});
+    const supersededPromise = fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'old'});
+    const latestPromise = fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'new'});
+    const [superseded, latest] = await Promise.all([supersededPromise, latestPromise]);
+    const labelSearches = jira.getRequests().filter(request => request.path.includes('fieldName=labels') && !request.path.endsWith('fieldValue='));
+    return {
+      superseded: superseded.kind,
+      latest: latest.kind,
+      labels: latest.view.edit?.options.map(option => option.label),
+      searchPaths: labelSearches.map(request => request.path),
+    };
+  });
+
+  expect(result).toEqual({
+    superseded: 'ignored',
+    latest: 'changed',
+    labels: ['new-label'],
+    searchPaths: ['https://jira.example/rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=new'],
+  });
+});

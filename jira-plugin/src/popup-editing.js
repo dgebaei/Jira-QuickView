@@ -22,8 +22,6 @@ export function createPopupEditing(deps) {
     INSTANCE_URL,
     buildEditFieldError,
     getEditableFieldCapability,
-    getLabelSuggestions,
-    hasLabelSuggestionSupport,
     refreshPopupIssueState,
     renderIssuePopup,
     requestJson,
@@ -114,53 +112,6 @@ export function createPopupEditing(deps) {
   }
 
   async function getEditableFieldDefinition(fieldKey, issueData) {
-    if (fieldKey === 'labels') {
-      const capability = await getEditableFieldCapability(issueData, 'labels');
-      const suggestionSupport = await hasLabelSuggestionSupport();
-      if (!capability.editable || !suggestionSupport) {
-        return null;
-      }
-      const currentLabels = (issueData?.fields?.labels || []).filter(Boolean);
-      const currentSelections = currentLabels.map(label => buildEditOption(label, label, {
-        searchText: label,
-      }));
-      return {
-        fieldKey,
-        editorType: 'label-search',
-        label: 'Labels',
-        selectionMode: 'multi',
-        currentText: `Labels: ${currentLabels.join(', ') || '--'}`,
-        currentOptionId: null,
-        currentSelections,
-        initialInputValue: '',
-        inputPlaceholder: 'Search existing labels',
-        loadOptions: async () => {
-          const baselineSuggestions = await getLabelSuggestions('').catch(() => []);
-          const mergedOptions = mergeEditOptions(currentSelections, baselineSuggestions);
-          return mergedOptions;
-        },
-        searchOptions: async query => {
-          const normalizedQuery = String(query || '').trim();
-          const localBaselineOptions = getPopupState()?.editState?.options || [];
-          const searchedOptions = await getLabelSuggestions(normalizedQuery);
-          const popupState = getPopupState();
-          const mergedOptions = normalizedQuery
-            ? searchedOptions
-            : mergeEditOptions(currentSelections, mergeEditOptions(searchedOptions, mergeEditOptions(localBaselineOptions, popupState?.editState?.options || [])));
-          return mergedOptions;
-        },
-        save: selectedOptions => {
-          const nextLabels = selectedOptions.map(option => option.id).filter(Boolean);
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              labels: nextLabels,
-            },
-          });
-        },
-        successMessage: () => 'Labels updated',
-      };
-    }
-
     if (fieldKey === 'summary') {
       const capability = await getEditableFieldCapability(issueData, 'summary');
       const operations = capability.operations || [];

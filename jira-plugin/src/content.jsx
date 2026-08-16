@@ -575,7 +575,6 @@ async function mainAsyncLocal() {
     issueData: quickViewIssueData,
   });
   let editSearchRequestCounter = 0;
-  let labelSearchTimeoutId = null;
   let watchersFeedbackTimeoutId = null;
   let linkedIssuesSearchTimeoutId = null;
   let actionNoticeTimeoutId = null;
@@ -666,9 +665,7 @@ async function mainAsyncLocal() {
     buildEditFieldError,
     getCustomFieldEditorDefinition,
     getEditableFieldCapability,
-    getLabelSuggestions,
     getPopupState: () => popupState,
-    hasLabelSuggestionSupport,
     refreshPopupIssueState,
     renderIssuePopup,
     requestJson,
@@ -2680,60 +2677,9 @@ async function mainAsyncLocal() {
   }
   // ── Labels ────────────────────────────────────────────────
 
-  function stripSimpleHtml(value) {
-    return String(value || '').replace(/<[^>]+>/g, '');
-  }
-
-  function buildLabelOption(label, extra = {}) {
-    const normalizedLabel = String(label || '').trim();
-    const normalizedMetaText = String(extra.metaText || '').trim();
-    return buildEditOption(normalizedLabel, normalizedLabel, {
-      ...extra,
-      metaText: normalizedMetaText && normalizedMetaText !== normalizedLabel ? normalizedMetaText : '',
-      rawValue: normalizedLabel,
-    });
-  }
-
-  function normalizeLabelSuggestionPayload(payload) {
-    if (Array.isArray(payload)) {
-      return payload
-        .map(entry => {
-          if (typeof entry === 'string') {
-            return buildLabelOption(entry);
-          }
-          return buildLabelOption(entry?.label || entry?.value || entry?.name || stripSimpleHtml(entry?.html || entry?.displayName || ''), {
-            metaText: stripSimpleHtml(entry?.html || entry?.displayName || '')
-          });
-        })
-        .filter(option => option.id);
-    }
-    if (Array.isArray(payload?.results)) {
-      return payload.results
-        .map(entry => buildLabelOption(entry?.value || stripSimpleHtml(entry?.displayName || ''), {
-          metaText: stripSimpleHtml(entry?.displayName || '')
-        }))
-        .filter(option => option.id);
-    }
-    if (Array.isArray(payload?.suggestions)) {
-      return payload.suggestions
-        .map(entry => buildLabelOption(entry?.label || stripSimpleHtml(entry?.html || ''), {
-          metaText: stripSimpleHtml(entry?.html || '')
-        }))
-        .filter(option => option.id);
-    }
-    return [];
-  }
-
-  async function getLabelSuggestions(queryText = '') {
-    const outcome = await quickViewIssueData.search({purpose: 'label', query: queryText});
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Could not load labels');
-    }
-    return normalizeLabelSuggestionPayload(outcome.items);
-  }
-
   async function hasLabelSuggestionSupport() {
-    return getLabelSuggestions('').then(() => true).catch(() => false);
+    const labelOutcome = await quickViewIssueData.search({purpose: 'label', query: ''});
+    return labelOutcome.kind === 'loaded';
   }
 
   // ── Custom Fields ──────────────────────────────────────────
@@ -4914,7 +4860,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['assignee', 'fixVersions', 'issuetype', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
+    return ['assignee', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {
@@ -5001,15 +4947,6 @@ async function mainAsyncLocal() {
     runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
   }, 220);
 
-  function scheduleLabelSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
-    if (labelSearchTimeoutId) {
-      clearTimeout(labelSearchTimeoutId);
-    }
-    labelSearchTimeoutId = setTimeout(() => {
-      labelSearchTimeoutId = null;
-      runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
-    }, 180);
-  }
   async function startFieldEdit(fieldKey) {
     if (!popupState?.issueData) {
       return;
@@ -5179,19 +5116,6 @@ async function mainAsyncLocal() {
       };
       renderIssuePopup(popupState).catch(() => {});
 
-      if (popupState.editState.editorType === 'label-search') {
-        const searchRequestId = ++editSearchRequestCounter;
-        popupState = {
-          ...popupState,
-          editState: {
-            ...popupState.editState,
-            loadingOptions: true,
-            searchRequestId
-          }
-        };
-        renderIssuePopup(popupState).catch(() => {});
-        scheduleLabelSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-      }
       return;
     }
     if (popupState.editState.selectionMode === 'text') {
@@ -5217,7 +5141,6 @@ async function mainAsyncLocal() {
 
     const canAutoComplete = popupState.editState.editorType !== 'user-search' &&
       popupState.editState.editorType !== 'issue-search' &&
-      popupState.editState.editorType !== 'label-search' &&
       popupState.editState.editorType !== 'tempo-account-search' &&
       popupState.editState.editorType !== 'multi-select' &&
       typeof selectionStart === 'number' &&
@@ -5252,7 +5175,7 @@ async function mainAsyncLocal() {
     };
     renderIssuePopup(popupState).catch(() => {});
 
-    if (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search' || popupState.editState.editorType === 'tempo-account-search') {
+    if (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search') {
       const searchRequestId = ++editSearchRequestCounter;
       popupState = {
         ...popupState,
@@ -5263,11 +5186,7 @@ async function mainAsyncLocal() {
         }
       };
       renderIssuePopup(popupState).catch(() => {});
-      if (popupState.editState.editorType === 'label-search') {
-        scheduleLabelSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-      } else {
-        triggerSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-      }
+      triggerSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
     }
   }
 

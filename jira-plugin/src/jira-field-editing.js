@@ -58,6 +58,22 @@ function buildAllowedValueOption(value) {
   };
 }
 
+function buildLabelOption(item) {
+  const label = String(typeof item === 'string' ? item : item?.value || item?.label || '').trim();
+  const metaText = String(typeof item === 'string' ? '' : item?.metaText || '').trim();
+  return {
+    id: label,
+    label,
+    metaText: metaText && metaText !== label ? metaText : '',
+    rawValue: label,
+    searchText: `${label} ${metaText}`.trim().toLowerCase(),
+  };
+}
+
+function buildLabelOptions(items) {
+  return (Array.isArray(items) ? items : []).map(buildLabelOption).filter(option => option.id);
+}
+
 function mergeOptions(primary, secondary) {
   const seen = new Set();
   return [...primary, ...secondary].filter(option => {
@@ -389,6 +405,8 @@ export function createJiraFieldEditing(options = {}) {
   let linkageMode = '';
   let mutationFieldId = '';
   let preferredAssigneeIdentifier = '';
+  let labelSearchTimer = null;
+  let resolvePendingLabelSearch = null;
 
   function view() {
     return {
@@ -411,6 +429,14 @@ export function createJiraFieldEditing(options = {}) {
     };
   }
 
+  function cancelPendingLabelSearch() {
+    if (labelSearchTimer) clearTimeout(labelSearchTimer);
+    labelSearchTimer = null;
+    const resolve = resolvePendingLabelSearch;
+    resolvePendingLabelSearch = null;
+    if (resolve) resolve(outcome('ignored'));
+  }
+
   function attach({sessionId, issueSnapshot, requirements = {}} = {}) {
     const normalizedSessionId = String(sessionId || '').trim();
     const issueKey = issueKeyOf(issueSnapshot);
@@ -419,6 +445,7 @@ export function createJiraFieldEditing(options = {}) {
     }
     const sameSession = session?.sessionId === normalizedSessionId && session?.issueKey === issueKey;
     if (!sameSession) {
+      cancelPendingLabelSearch();
       generation += 1;
       edit = null;
       resolvedFieldId = '';
@@ -437,6 +464,7 @@ export function createJiraFieldEditing(options = {}) {
 
   function detach({sessionId} = {}) {
     if (sessionId && session?.sessionId !== sessionId) return view();
+    cancelPendingLabelSearch();
     generation += 1;
     session = null;
     edit = null;
@@ -471,9 +499,10 @@ export function createJiraFieldEditing(options = {}) {
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['assignee', 'fixVersions', 'issuetype', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['assignee', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
+    cancelPendingLabelSearch();
     resolvedFieldId = '';
     linkageMode = '';
     mutationFieldId = '';
@@ -671,6 +700,46 @@ export function createJiraFieldEditing(options = {}) {
         loadingOptions: false,
         status: 'editing',
       };
+    } else if (intent.fieldId === 'labels') {
+      if (!context?.editable) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentOptions = buildLabelOptions(capturedSession.issueSnapshot.core?.fields?.labels);
+      const selectedOptionIds = normalizeOptionIds(currentOptions.map(option => option.id));
+      edit = {
+        ...edit,
+        editorType: 'label-search',
+        fieldKey: 'labels',
+        label: 'Labels',
+        selectionMode: 'multi',
+        inputPlaceholder: 'Search existing labels',
+        options: currentOptions,
+        selectedOptionId: null,
+        selectedOptionIds,
+        originalOptionIds: [...selectedOptionIds],
+        selectedOptions: currentOptions,
+        showActionButtons: true,
+        loadingOptions: true,
+        searchRequestId: ++searchSequence,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({purpose: 'label', query: '', signal: intent.signal});
+      if (!isCurrent(capturedSession, editId)) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (searchOutcome.kind !== 'loaded') {
+        const failure = searchOutcome.failure || normalizeFailure(new Error('Could not load labels'));
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        options: mergeOptions(currentOptions, buildLabelOptions(searchOutcome.items)),
+        loadingOptions: false,
+        status: 'editing',
+      };
     } else if (['fixVersions', 'versions'].includes(intent.fieldId)) {
       const fieldId = intent.fieldId;
       const currentValues = Array.isArray(capturedSession.issueSnapshot.core?.fields?.[fieldId])
@@ -841,6 +910,52 @@ export function createJiraFieldEditing(options = {}) {
       };
       return outcome('changed');
     }
+    if (edit.editorType === 'label-search' && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      cancelPendingLabelSearch();
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        highlightedOptionId: null,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      return new Promise(resolve => {
+        resolvePendingLabelSearch = resolve;
+        labelSearchTimer = setTimeout(async () => {
+          labelSearchTimer = null;
+          resolvePendingLabelSearch = null;
+          const searchOutcome = await issueData.search({purpose: 'label', query: typedValue, signal: intent.signal});
+          if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+            resolve(outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId}));
+            return;
+          }
+          if (searchOutcome.kind !== 'loaded') {
+            const failure = searchOutcome.failure || normalizeFailure(new Error('Could not load labels'));
+            edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+            resolve(outcome('failed', {editId, failure}));
+            return;
+          }
+          const searchedOptions = buildLabelOptions(searchOutcome.items);
+          edit = {
+            ...edit,
+            options: typedValue.trim()
+              ? searchedOptions
+              : mergeOptions(edit.selectedOptions, mergeOptions(searchedOptions, baselineOptions)),
+            loadingOptions: false,
+            status: 'editing',
+          };
+          resolve(outcome('changed'));
+        }, 180);
+      });
+    }
     if (edit.selectionMode === 'multi') {
       edit = {
         ...edit,
@@ -898,6 +1013,7 @@ export function createJiraFieldEditing(options = {}) {
   function cancel(intent) {
     if (!matchesEdit(intent) || edit.saving) return outcome('ignored');
     const editId = edit.editId;
+    cancelPendingLabelSearch();
     edit = null;
     resolvedFieldId = '';
     linkageMode = '';
@@ -914,16 +1030,17 @@ export function createJiraFieldEditing(options = {}) {
       const nextSelectedOptionIds = selectedOptionIds.includes(selectedOption.id)
         ? selectedOptionIds.filter(optionId => optionId !== selectedOption.id)
         : [...selectedOptionIds, selectedOption.id];
+      const inputValue = edit.editorType === 'label-search' ? edit.inputValue : '';
       edit = {
         ...edit,
         errorMessage: '',
         hasChanges: !areSameOptionIds(nextSelectedOptionIds, edit.originalOptionIds),
         highlightedOptionId: selectedOption.id,
-        inputValue: '',
+        inputValue,
         selectedOptionIds: nextSelectedOptionIds,
         selectedOptions: resolveOptions(nextSelectedOptionIds, edit.options, edit.selectedOptions),
-        selectionStart: 0,
-        selectionEnd: 0,
+        selectionStart: inputValue.length,
+        selectionEnd: inputValue.length,
         status: 'editing',
       };
       return outcome('changed');
@@ -1036,6 +1153,14 @@ export function createJiraFieldEditing(options = {}) {
           ? {parent: {key: selectedIssueKey}}
           : {[resolvedFieldId]: selectedIssueKey}},
       };
+    } else if (edit.fieldKey === 'labels') {
+      const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
+      notice = 'Labels updated';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {labels: selectedValues.map(value => value.id)}},
+      };
     } else if (['fixVersions', 'versions'].includes(edit.fieldKey)) {
       const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
       notice = edit.fieldKey === 'fixVersions'
@@ -1127,6 +1252,7 @@ export function createJiraFieldEditing(options = {}) {
       return outcome('savedButRefreshFailed', {editId, failure, notice});
     }
     session = {...session, issueSnapshot: refreshOutcome.snapshot};
+    cancelPendingLabelSearch();
     edit = null;
     resolvedFieldId = '';
     linkageMode = '';
