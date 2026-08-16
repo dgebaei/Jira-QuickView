@@ -67,6 +67,31 @@ function mergeOptions(primary, secondary) {
   });
 }
 
+function normalizeOptionIds(optionIds) {
+  return [...new Set((Array.isArray(optionIds) ? optionIds : [])
+    .map(optionId => String(optionId || '').trim())
+    .filter(Boolean))];
+}
+
+function areSameOptionIds(left, right) {
+  const leftIds = normalizeOptionIds(left).sort();
+  const rightIds = normalizeOptionIds(right).sort();
+  return leftIds.length === rightIds.length && leftIds.every((optionId, index) => optionId === rightIds[index]);
+}
+
+function resolveOptions(optionIds, options, fallbackOptions = []) {
+  const optionsById = new Map();
+  [...fallbackOptions, ...options].forEach(option => {
+    if (option?.id) optionsById.set(String(option.id), option);
+  });
+  return normalizeOptionIds(optionIds).map(optionId => optionsById.get(optionId)).filter(Boolean);
+}
+
+function compareVersionOptions(left, right) {
+  const sortName = option => String(option?.name || '').trim().replace(/^v(?=\d)/i, '');
+  return sortName(right).localeCompare(sortName(left), undefined, {numeric: true, sensitivity: 'base'});
+}
+
 export function createJiraFieldEditing(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -154,7 +179,7 @@ export function createJiraFieldEditing(options = {}) {
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['issuetype', 'priority', 'status', 'summary'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['fixVersions', 'issuetype', 'priority', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
     edit = {
@@ -183,6 +208,7 @@ export function createJiraFieldEditing(options = {}) {
     const fieldOutcome = await issueData.loadFieldContext({
       issueKey: capturedSession.issueKey,
       fieldId: intent.fieldId,
+      includeOptions: ['fixVersions', 'versions'].includes(intent.fieldId),
       includeTransitions: intent.fieldId === 'status',
       signal: intent.signal,
     });
@@ -229,6 +255,42 @@ export function createJiraFieldEditing(options = {}) {
         options: transitions,
         selectedOptionId: null,
         showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (['fixVersions', 'versions'].includes(intent.fieldId)) {
+      const fieldId = intent.fieldId;
+      const currentValues = Array.isArray(capturedSession.issueSnapshot.core?.fields?.[fieldId])
+        ? capturedSession.issueSnapshot.core.fields[fieldId]
+        : [];
+      const currentOptions = currentValues
+        .filter(value => value?.id && value?.name)
+        .map(buildAllowedValueOption);
+      const availableOptions = (context?.options || [])
+        .filter(value => value?.id && value?.name)
+        .slice()
+        .sort(compareVersionOptions)
+        .map(buildAllowedValueOption);
+      const versionOptions = mergeOptions(availableOptions, currentOptions);
+      if (!context?.editable || fieldOutcome.failures?.options) {
+        const failure = fieldOutcome.failures?.options || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const selectedOptionIds = normalizeOptionIds(currentOptions.map(option => option.id));
+      edit = {
+        ...edit,
+        editorType: 'multi-select',
+        fieldKey: fieldId,
+        label: fieldId === 'fixVersions' ? 'Fix version' : 'Affects version',
+        selectionMode: 'multi',
+        inputPlaceholder: `Type to filter ${fieldId === 'fixVersions' ? 'fix' : 'affected'} versions`,
+        options: versionOptions,
+        selectedOptionId: null,
+        selectedOptionIds,
+        originalOptionIds: [...selectedOptionIds],
+        selectedOptions: currentOptions,
+        showActionButtons: true,
         loadingOptions: false,
         status: 'editing',
       };
@@ -280,6 +342,18 @@ export function createJiraFieldEditing(options = {}) {
     let start = Number.isInteger(intent.selection?.start) ? intent.selection.start : inputValue.length;
     let end = Number.isInteger(intent.selection?.end) ? intent.selection.end : start;
     let selectedOptionId = edit.selectedOptionId || null;
+    if (edit.selectionMode === 'multi') {
+      edit = {
+        ...edit,
+        inputValue,
+        highlightedOptionId: null,
+        errorMessage: '',
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
     if (edit.selectionMode !== 'text') {
       const normalizedValue = typedValue.trim().toLowerCase();
       const exactOption = edit.options.find(option => option.label.toLowerCase() === normalizedValue);
@@ -333,6 +407,25 @@ export function createJiraFieldEditing(options = {}) {
     if (!matchesEdit(intent) || edit.loadingOptions || edit.saving) return outcome('ignored');
     const selectedOption = edit.options.find(option => option.id === String(intent.optionId || ''));
     if (!selectedOption) return outcome('ignored');
+    if (edit.selectionMode === 'multi') {
+      const selectedOptionIds = normalizeOptionIds(edit.selectedOptionIds);
+      const nextSelectedOptionIds = selectedOptionIds.includes(selectedOption.id)
+        ? selectedOptionIds.filter(optionId => optionId !== selectedOption.id)
+        : [...selectedOptionIds, selectedOption.id];
+      edit = {
+        ...edit,
+        errorMessage: '',
+        hasChanges: !areSameOptionIds(nextSelectedOptionIds, edit.originalOptionIds),
+        highlightedOptionId: selectedOption.id,
+        inputValue: '',
+        selectedOptionIds: nextSelectedOptionIds,
+        selectedOptions: resolveOptions(nextSelectedOptionIds, edit.options, edit.selectedOptions),
+        selectionStart: 0,
+        selectionEnd: 0,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
     edit = {
       ...edit,
       errorMessage: '',
@@ -398,6 +491,16 @@ export function createJiraFieldEditing(options = {}) {
         method: 'PUT',
         path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
         body: {fields: {[edit.fieldKey]: {id: selectedValue.id}}},
+      };
+    } else if (['fixVersions', 'versions'].includes(edit.fieldKey)) {
+      const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
+      notice = edit.fieldKey === 'fixVersions'
+        ? (selectedValues.length ? 'Fix versions updated' : 'Fix versions cleared')
+        : (selectedValues.length ? 'Affects versions updated' : 'Affects versions cleared');
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {[edit.fieldKey]: selectedValues.map(value => ({id: value.id}))}},
       };
     } else {
       return outcome('ignored', {editId});
@@ -465,6 +568,11 @@ export function createJiraFieldEditing(options = {}) {
       if (intent.key === 'ArrowDown') return moveHighlight(intent, 1);
       if (intent.key === 'ArrowUp') return moveHighlight(intent, -1);
       if (intent.key === 'Enter') {
+        if (edit?.selectionMode === 'multi') {
+          if (intent.ctrlKey || intent.metaKey) return save(intent);
+          const optionId = edit?.highlightedOptionId || visibleOptions()[0]?.id;
+          return optionId ? selectOption({...intent, optionId}) : outcome('ignored');
+        }
         if (edit?.selectionMode !== 'text') {
           const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleOptions()[0]?.id;
           const selected = await selectOption({...intent, optionId: edit?.highlightedOptionId || optionId});

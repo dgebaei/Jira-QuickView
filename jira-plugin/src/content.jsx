@@ -672,7 +672,6 @@ async function mainAsyncLocal() {
     compareSprintState,
     formatSprintOptionLabel,
     formatSprintText,
-    formatVersionText,
     getCustomFieldEditorDefinition,
     getEditableFieldCapability,
     getLabelSuggestions,
@@ -3554,10 +3553,6 @@ async function mainAsyncLocal() {
       .join(', ');
   }
 
-  function formatVersionText(versions) {
-    return formatFixVersionText(versions);
-  }
-
   function formatEnvironmentDisplayText(environment) {
     const normalizedText = String(environment || '')
       .replace(/[\r\n]+/g, ' ')
@@ -4985,7 +4980,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['issuetype', 'priority', 'status', 'summary'].includes(fieldKey);
+    return ['fixVersions', 'issuetype', 'priority', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {
@@ -6046,7 +6041,13 @@ async function mainAsyncLocal() {
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView?.fieldKey === fieldKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
       e.preventDefault();
-      dispatchJiraFieldEditing({type: 'key', editId: fieldView.editId, key: e.key}).catch(() => {});
+      dispatchJiraFieldEditing({
+        type: 'key',
+        editId: fieldView.editId,
+        key: e.key,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+      }).catch(() => {});
       return;
     }
     const editState = popupState?.editState;

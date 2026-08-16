@@ -24,7 +24,6 @@ export function createPopupEditing(deps) {
     compareSprintState,
     formatSprintOptionLabel,
     formatSprintText,
-    formatVersionText,
     getEditableFieldCapability,
     getLabelSuggestions,
     getRecentIssueSearchOptions,
@@ -59,17 +58,6 @@ export function createPopupEditing(deps) {
         mergedOptions.push(option);
       });
     return mergedOptions;
-  }
-
-  function normalizeFixVersionSortName(name) {
-    return String(name || '').trim().replace(/^v(?=\d)/i, '');
-  }
-
-  function compareFixVersionOptions(left, right) {
-    return normalizeFixVersionSortName(right?.name).localeCompare(normalizeFixVersionSortName(left?.name), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
   }
 
   function normalizeMultiSelectOptionIds(optionIds) {
@@ -251,32 +239,6 @@ export function createPopupEditing(deps) {
     ];
   }
 
-  async function getProjectVersionOptions(issueData, cacheKey) {
-    if (!issueData?.key) {
-      return [];
-    }
-    const outcome = await loadFieldContext({
-      issueKey: issueData.key,
-      fieldId: cacheKey,
-      includeOptions: true,
-    });
-    if (!outcome.context) {
-      throw new Error(outcome.failures?.fieldContext?.message || 'Could not load version options');
-    }
-    return (outcome.context.options || [])
-      .slice()
-      .sort(compareFixVersionOptions)
-      .map(version => buildEditOption(version.id, version.name, {rawValue: version}));
-  }
-
-  function getFixVersionOptions(issueData) {
-    return getProjectVersionOptions(issueData, 'fixVersions');
-  }
-
-  function getAffectsVersionOptions(issueData) {
-    return getProjectVersionOptions(issueData, 'versions');
-  }
-
   async function getSprintOptions(issueData) {
     const projectKey = String(issueData?.key || '').split('-')[0];
     if (!projectKey) {
@@ -412,58 +374,6 @@ export function createPopupEditing(deps) {
   }
 
   async function getEditableFieldDefinition(fieldKey, issueData) {
-    if (fieldKey === 'versions') {
-      const capability = await getEditableFieldCapability(issueData, fieldKey);
-      if (!capability.editable) {
-        return null;
-      }
-      const currentVersions = issueData?.fields?.versions || [];
-      return {
-        fieldKey,
-        editorType: 'multi-select',
-        label: 'Affects version',
-        selectionMode: 'multi',
-        currentText: formatVersionText(currentVersions),
-        currentSelections: currentVersions
-          .filter(version => version?.id && version?.name)
-          .map(version => buildEditOption(version.id, version.name, {rawValue: version})),
-        initialInputValue: '',
-        loadOptions: () => getAffectsVersionOptions(issueData),
-        save: selectedOptions => requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-          fields: {
-            versions: selectedOptions.map(option => ({id: option.id})),
-          },
-        }),
-        successMessage: selectedOptions => selectedOptions.length ? 'Affects versions updated' : 'Affects versions cleared',
-      };
-    }
-
-    if (fieldKey === 'fixVersions') {
-      const capability = await getEditableFieldCapability(issueData, fieldKey);
-      if (!capability.editable) {
-        return null;
-      }
-      const currentFixVersions = issueData?.fields?.fixVersions || [];
-      return {
-        fieldKey,
-        editorType: 'multi-select',
-        label: 'Fix version',
-        selectionMode: 'multi',
-        currentText: formatVersionText(currentFixVersions),
-        currentSelections: currentFixVersions
-          .filter(version => version?.id && version?.name)
-          .map(version => buildEditOption(version.id, version.name, {rawValue: version})),
-        initialInputValue: '',
-        loadOptions: () => getFixVersionOptions(issueData),
-        save: selectedOptions => requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-          fields: {
-            fixVersions: selectedOptions.map(option => ({id: option.id})),
-          },
-        }),
-        successMessage: selectedOptions => selectedOptions.length ? 'Fix versions updated' : 'Fix versions cleared',
-      };
-    }
-
     if (fieldKey === 'sprint') {
       const capability = await getEditableFieldCapability(issueData, fieldKey);
       if (!capability.editable) {

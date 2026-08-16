@@ -442,3 +442,143 @@ test('priority editing reuses allowed-value selection with the priority payload'
     writeBody: {fields: {priority: {id: '1'}}},
   });
 });
+
+test('fix version editing owns multi-selection, filtering, keyboard selection, and the Jira payload', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'fixVersions', name: 'Fix Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {fixVersions: {
+        name: 'Fix Version/s',
+        operations: ['set'],
+      }}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [
+        {id: '1', name: 'v1'},
+        {id: '10', name: 'v10'},
+        {id: '2', name: 'v2', archived: true},
+      ]},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}]}}, sections: {}},
+    });
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
+    const filtered = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'v10'});
+    const selected = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const writesBeforeSave = jira.getRequests().filter(request => request.operation === 'write').length;
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter', ctrlKey: true});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        labels: begun.view.edit?.options.map(option => option.label),
+        selectedOptionIds: begun.view.edit?.selectedOptionIds,
+      },
+      filtered: {kind: filtered.kind, inputValue: filtered.view.edit?.inputValue},
+      selected: {
+        kind: selected.kind,
+        selectedOptionIds: selected.view.edit?.selectedOptionIds,
+        hasChanges: selected.view.edit?.hasChanges,
+      },
+      writesBeforeSave,
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', labels: ['v10', 'v1'], selectedOptionIds: ['1']},
+    filtered: {kind: 'changed', inputValue: 'v10'},
+    selected: {kind: 'changed', selectedOptionIds: ['1', '10'], hasChanges: true},
+    writesBeforeSave: 0,
+    saved: {kind: 'saved', notice: 'Fix versions updated'},
+    writeBody: {fields: {fixVersions: [{id: '1'}, {id: '10'}]}},
+  });
+});
+
+test('version chip selection toggles off and saves the cleared Affects version field', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'versions', name: 'Affects Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {versions: {name: 'Affects Version/s'}}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [{id: '1', name: '2026.1'}]},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', versions: []}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', versions: [{id: '1', name: '2026.1'}]}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'versions'});
+    const removed = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '1'});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      removed: {
+        kind: removed.kind,
+        selectedOptionIds: removed.view.edit?.selectedOptionIds,
+        selectedOptions: removed.view.edit?.selectedOptions,
+        hasChanges: removed.view.edit?.hasChanges,
+      },
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    removed: {kind: 'changed', selectedOptionIds: [], selectedOptions: [], hasChanges: true},
+    saved: {kind: 'saved', notice: 'Affects versions cleared'},
+    writeBody: {fields: {versions: []}},
+  });
+});
+
+test('failed version save preserves the selection and remains retryable', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'fixVersions', name: 'Fix Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {fixVersions: {name: 'Fix Version/s', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [{id: '1', name: 'v1'}, {id: '2', name: 'v2'}]},
+      {operation: 'write', method: 'PUT', error: 'Version save unavailable'},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '2', name: 'v2'}]}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}]}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '1'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '2'});
+    const failed = await fields.dispatch({type: 'save', editId: begun.editId});
+    const failedView = fields.view().edit;
+    const retried = await fields.dispatch({type: 'save', editId: begun.editId});
+    return {
+      failed: {kind: failed.kind, failure: failed.failure?.message},
+      failedView: {
+        selectedOptionIds: failedView?.selectedOptionIds,
+        hasChanges: failedView?.hasChanges,
+        errorMessage: failedView?.errorMessage,
+      },
+      retried: {kind: retried.kind, notice: retried.notice},
+      writeCount: jira.getRequests().filter(request => request.operation === 'write').length,
+    };
+  });
+
+  expect(result).toEqual({
+    failed: {kind: 'failed', failure: 'Version save unavailable'},
+    failedView: {selectedOptionIds: ['2'], hasChanges: true, errorMessage: 'Version save unavailable'},
+    retried: {kind: 'saved', notice: 'Fix versions updated'},
+    writeCount: 2,
+  });
+});
