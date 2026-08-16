@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jira QuickView Privacy Policy</title>
+  <meta name="description" content="Privacy policy for the Jira QuickView Chrome extension.">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <main class="page page-narrow">
+    <section class="policy">
+      <p class="eyebrow">Privacy Policy</p>
+      <h1>Jira QuickView</h1>
+      <p class="meta">Effective date: 2026-04-12</p>
+
+      <h2>Overview</h2>
+      <p>Jira QuickView is a Chrome extension that detects Jira issue keys on pages you enable, shows Jira issue details in a hover popup, and lets you perform Jira actions without opening a separate Jira tab.</p>
+      <p>The extension does not operate a developer-run backend service. In the current implementation, it works inside your browser, stores its own settings in Chrome storage, and sends Jira requests directly from your browser to the Jira instance you configure.</p>
+
+      <h2>Information The Extension Handles</h2>
+      <h3>Extension configuration data</h3>
+      <p>Jira QuickView stores extension settings in Chrome storage so the extension can keep working across browser sessions. This can include your configured Jira instance URL, enabled pages or domains, popup layout, custom field IDs, theme settings, hover preferences, Team Sync source details, and Team Sync status metadata.</p>
+
+      <h3>Page content on enabled pages</h3>
+      <p>When Jira QuickView is enabled on a page, it scans page text locally in your browser to detect Jira issue keys such as <code>ABC-123</code>. This page scanning is used only to provide the core user-facing feature of the extension. The extension does not send full page contents to the developer.</p>
+
+      <h3>Jira data</h3>
+      <p>When you configure a Jira instance and use the extension, Jira QuickView may request and display data from that Jira instance using your existing browser session. Depending on the feature you use, this can include issue metadata, descriptions, linked records, comments, reactions, attachments, avatars, workflow options, worklogs, and custom field values.</p>
+      <p>If you use editing features, the extension may also send updates you initiate to your Jira instance, including field edits, comment creation or updates, attachment uploads, workflow transitions, watcher changes, and worklog changes.</p>
+
+      <h3>Authentication and session data</h3>
+      <p>The extension uses your existing browser session with Jira. It does not ask you to create or store a separate Jira password inside the extension.</p>
+
+      <h3>Shared settings file data</h3>
+      <p>If you enable Settings Sync, Jira QuickView may request a shared JSON configuration file from a Jira attachment on your configured Jira instance or from a direct URL that you or your administrator configured in the extension.</p>
+      <p>That shared JSON file can include organization-level Jira QuickView configuration such as layout settings, allowed page patterns, popup behavior, and Team Sync policy metadata.</p>
+
+      <h2>How Information Is Used</h2>
+      <p>Jira QuickView uses the information above only to provide the extension’s user-facing functionality, including detecting Jira issue keys on enabled pages, fetching and showing Jira issue context, rendering avatars and attachments, saving your extension preferences, loading and applying shared Team Sync configuration when you enable Settings Sync, and performing Jira actions that you explicitly trigger.</p>
+
+      <h2>How Information Is Shared</h2>
+      <p>Jira QuickView does not sell personal data. It does not send your data to advertising networks, data brokers, or analytics services run by the developer.</p>
+      <p>Information is transmitted only as needed to your configured Jira instance, using your browser session, to provide the requested feature, and to a user-configured or administrator-provided shared settings URL when you enable Settings Sync URL mode. In the current implementation, pull request information shown in the popup is obtained from Jira issue data returned by Jira, not by separate GitHub API calls from the extension.</p>
+
+      <h2>Data Retention</h2>
+      <p>Extension settings remain in Chrome storage until you change them, clear browser storage, or remove the extension. Team Sync source details and last sync metadata remain in Chrome storage until you change them, disconnect Team Sync, clear browser storage, or remove the extension. Jira issue data, images, and popup state are primarily processed in memory during use and are not stored by the developer on a separate server.</p>
+
+      <h2>Your Choices</h2>
+      <p>You can choose which pages or domains the extension is allowed to run on, change or remove the configured Jira instance URL, change or disconnect the Team Sync source at any time, remove the extension at any time, and revoke site access and Chrome permissions through Chrome’s extension settings.</p>
+
+      <h2>Security</h2>
+      <p>Jira QuickView is designed to use the minimum data needed for its features. Requests to Jira are made from your browser to the Jira instance you configured. If you enable Settings Sync URL mode, the extension also requests the shared JSON settings file from the URL you configured. The extension does not use remote code in its current implementation.</p>
+
+      <h2>Children’s Privacy</h2>
+      <p>Jira QuickView is not directed to children.</p>
+
+      <h2>Changes To This Policy</h2>
+      <p>This policy may be updated if the extension’s functionality or data handling changes. The effective date at the top of this page will be updated when changes are made.</p>
+
+      <h2>Contact</h2>
+      <p>Support: <a href="https://github.com/dgebaei/Jira-QuickView/issues">github.com/dgebaei/Jira-QuickView/issues</a></p>
+      <p>Email: <a href="mailto:dgebaei@gmail.com">dgebaei@gmail.com</a></p>
+    </section>
+  </main>
+</body>
+</html>
