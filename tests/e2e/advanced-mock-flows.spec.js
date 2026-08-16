@@ -276,7 +276,9 @@ test('prefers Jira internal assignee results when public user endpoints miss a c
         ? payload.filter(user => String(user?.displayName || '').toLowerCase() === 'morgan agent')
         : payload;
     }
-    return payload;
+    return Array.isArray(payload)
+      ? payload.filter(user => String(user?.displayName || '').toLowerCase() !== 'morgan agent')
+      : payload;
   });
   await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/user/assignable/search(?:\\?.*)?$', (payload, request) => {
     const url = new URL(request.url());

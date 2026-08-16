@@ -30,7 +30,7 @@ module.exports = {
   projects: [
     {
       name: 'deep-modules',
-      testMatch: /(?:^|\/)deep-modules\/(?:transport-contract|quickview-issue-data)\.spec\.js$/,
+      testMatch: /(?:^|\/)deep-modules\/(?:jira-field-editing|transport-contract|quickview-issue-data)\.spec\.js$/,
     },
     {
       name: 'mock-edge',

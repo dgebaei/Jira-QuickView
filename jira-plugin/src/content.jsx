@@ -34,6 +34,7 @@ import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
+import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
 const {
@@ -498,6 +499,11 @@ async function mainAsyncLocal() {
     instanceUrl: INSTANCE_URL,
     jira,
   });
+  const jiraFieldEditing = createJiraFieldEditing({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+  });
 
   function issueDataError(failure, fallbackMessage) {
     const message = failure?.message || fallbackMessage;
@@ -580,6 +586,8 @@ async function mainAsyncLocal() {
   let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
   let popupState = null;
+  let fieldSessionSequence = 0;
+  let activeFieldSessionId = '';
   let activeCommentContext = null;
   let commentMentionState = emptyCommentMentionState();
   let commentComposerMentionMappings = [];
@@ -3924,9 +3932,12 @@ async function mainAsyncLocal() {
 
   // ── Edit UI Presentation ───────────────────────────────────
 
+  function getActiveFieldEditState(state = popupState) {
+    return jiraFieldEditing.view().edit || state?.editState || null;
+  }
 
   function buildActiveEditPresentation(fieldKey, state, options = {}) {
-    const editState = state?.editState;
+    const editState = getActiveFieldEditState(state);
     if (editState?.fieldKey !== fieldKey) {
       return null;
     }
@@ -4253,13 +4264,14 @@ async function mainAsyncLocal() {
     if (!containerPinned) {
       container.css(computeVisibleContainerPosition(state.pointerX, state.pointerY));
     }
-    if (state.editState?.fieldKey) {
+    const activeFieldEditState = getActiveFieldEditState(state);
+    if (activeFieldEditState?.fieldKey) {
       const input = container.find('._JX_edit_input')[0];
       if (input) {
         input.focus();
         const maxIndex = input.value.length;
-        const selectionStart = Math.min(maxIndex, Number.isInteger(state.editState.selectionStart) ? state.editState.selectionStart : maxIndex);
-        const selectionEnd = Math.min(maxIndex, Number.isInteger(state.editState.selectionEnd) ? state.editState.selectionEnd : maxIndex);
+        const selectionStart = Math.min(maxIndex, Number.isInteger(activeFieldEditState.selectionStart) ? activeFieldEditState.selectionStart : maxIndex);
+        const selectionEnd = Math.min(maxIndex, Number.isInteger(activeFieldEditState.selectionEnd) ? activeFieldEditState.selectionEnd : maxIndex);
         input.setSelectionRange(selectionStart, selectionEnd);
       }
       const highlightedOption = container.find('._JX_edit_option.is-highlighted')[0];
@@ -4956,6 +4968,61 @@ async function mainAsyncLocal() {
       }));
     }
   }
+  function attachJiraFieldEditingToPopup() {
+    if (!popupState?.issueSnapshot?.core) return false;
+    if (!activeFieldSessionId) activeFieldSessionId = `popup-field-${++fieldSessionSequence}`;
+    jiraFieldEditing.attach({
+      sessionId: activeFieldSessionId,
+      issueSnapshot: popupState.issueSnapshot,
+      requirements: {
+        children: showChildren,
+        history: !!popupState.historyOpen,
+        linkedIssues: !!popupState.linkedIssuesState?.open,
+        pullRequests: showPullRequests,
+        reactions: true,
+        watchers: !!popupState.watchersState?.open,
+      },
+    });
+    return true;
+  }
+
+  async function dispatchJiraFieldEditing(intent) {
+    const popupKey = popupState?.key || '';
+    const pendingOutcome = jiraFieldEditing.dispatch(intent);
+    if (popupState?.key === popupKey) await renderIssuePopup(popupState);
+    const fieldOutcome = await pendingOutcome;
+    if (!popupState || popupState.key !== popupKey || fieldOutcome.sessionId !== activeFieldSessionId) return fieldOutcome;
+    if (fieldOutcome.refreshedSnapshot?.core) {
+      const legacySnapshot = snapshotToLegacyPopupState(fieldOutcome.refreshedSnapshot);
+      let quickActions = [];
+      try {
+        quickActions = await resolveQuickActions(legacySnapshot.issueData);
+      } catch (error) {
+        quickActions = [];
+      }
+      if (!popupState || popupState.key !== popupKey) return fieldOutcome;
+      popupState = {
+        ...popupState,
+        issueSnapshot: legacySnapshot.issueSnapshot,
+        issueData: legacySnapshot.issueData,
+        children: legacySnapshot.children,
+        childrenJql: legacySnapshot.childrenJql,
+        childrenError: legacySnapshot.childrenError,
+        pullRequests: legacySnapshot.pullRequests,
+        commentReactionState: legacySnapshot.commentReactionState,
+        quickActions,
+        editState: null,
+        actionError: '',
+        lastActionSuccess: fieldOutcome.notice || '',
+      };
+      await renderIssuePopup(popupState);
+      if (fieldOutcome.notice) scheduleActionNoticeClear(fieldOutcome.notice);
+      return fieldOutcome;
+    }
+    await renderIssuePopup(popupState);
+    return fieldOutcome;
+  }
+
   async function runSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
     if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
       return;
@@ -5016,6 +5083,15 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData) {
       return;
     }
+    if (fieldKey === 'summary') {
+      if (popupState.editState) {
+        popupState = {...popupState, editState: null};
+      }
+      if (!attachJiraFieldEditingToPopup()) return;
+      await dispatchJiraFieldEditing({type: 'begin', fieldId: 'summary'});
+      return;
+    }
+    if (jiraFieldEditing.view().edit) await dispatchJiraFieldEditing({type: 'cancel'});
     if (popupState.editState?.fieldKey === fieldKey) {
       return;
     }
@@ -5140,6 +5216,10 @@ async function mainAsyncLocal() {
   }
 
   function cancelFieldEdit() {
+    if (jiraFieldEditing.view().edit) {
+      dispatchJiraFieldEditing({type: 'cancel'}).catch(() => {});
+      return;
+    }
     if (!popupState?.editState) {
       return;
     }
@@ -5882,7 +5962,7 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
-    if (popupState?.editState?.fieldKey === fieldKey) {
+    if (getActiveFieldEditState()?.fieldKey === fieldKey) {
       cancelFieldEdit();
       return;
     }
@@ -5905,6 +5985,10 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    if (fieldKey === 'summary' && jiraFieldEditing.view().edit?.fieldKey === 'summary') {
+      dispatchJiraFieldEditing({type: 'save', editId: jiraFieldEditing.view().edit.editId}).catch(() => {});
+      return;
+    }
     submitFieldEdit(fieldKey).catch(() => {});
   });
 
@@ -5934,6 +6018,17 @@ async function mainAsyncLocal() {
       return;
     }
     e.stopPropagation();
+    const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldKey === 'summary' && fieldView?.fieldKey === 'summary') {
+      dispatchJiraFieldEditing({
+        type: 'inputChanged',
+        editId: fieldView.editId,
+        value: e.currentTarget.value,
+        selection: {start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd},
+      }).catch(() => {});
+      return;
+    }
     updateFieldEditInput(e.currentTarget.value, e.currentTarget.selectionStart, e.currentTarget.selectionEnd);
   });
 
@@ -5943,6 +6038,12 @@ async function mainAsyncLocal() {
     }
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldKey === 'summary' && fieldView?.fieldKey === 'summary' && (e.key === 'Enter' || e.key === 'Escape')) {
+      e.preventDefault();
+      dispatchJiraFieldEditing({type: 'key', editId: fieldView.editId, key: e.key}).catch(() => {});
+      return;
+    }
     const editState = popupState?.editState;
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editState?.fieldKey === fieldKey && editState.selectionMode !== 'text') {
       e.preventDefault();
@@ -5982,7 +6083,7 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('mousedown', function (e) {
-    if (!popupState?.editState) {
+    if (!getActiveFieldEditState()) {
       return;
     }
     if ($(e.target).closest('._JX_edit_popover, ._JX_field_chip_edit').length) {
@@ -6393,6 +6494,8 @@ async function mainAsyncLocal() {
     clearDescriptionStatusTimer();
     closePreviewOverlay();
     const descriptionStateSnapshot = popupState?.descriptionEditState;
+    jiraFieldEditing.detach({sessionId: activeFieldSessionId});
+    activeFieldSessionId = '';
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
@@ -6735,7 +6838,8 @@ async function mainAsyncLocal() {
       clearDescriptionStatusTimer();
       discardDescriptionEditStateSnapshot(popupState.descriptionEditState, {deleteUploaded: true}).catch(() => {});
     }
-    (async function (cancelToken) {
+    const fieldSessionId = `popup-field-${++fieldSessionSequence}`;
+    (async function (cancelToken, nextFieldSessionId) {
       const issueOutcome = await quickViewIssueData.openIssue({
         issueKey: key,
         requirements: {
@@ -6755,6 +6859,16 @@ async function mainAsyncLocal() {
       if (cancelToken.cancel) {
         return;
       }
+      activeFieldSessionId = nextFieldSessionId;
+      jiraFieldEditing.attach({
+        sessionId: nextFieldSessionId,
+        issueSnapshot: legacySnapshot.issueSnapshot,
+        requirements: {
+          children: showChildren,
+          pullRequests: showPullRequests,
+          reactions: true,
+        },
+      });
       let quickActions = [];
       try {
         quickActions = await resolveQuickActions(issueData);
@@ -6783,7 +6897,7 @@ async function mainAsyncLocal() {
         linkedIssuesState: emptyLinkedIssuesState(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
       });
-    })(cancelToken).catch((error) => {
+    })(cancelToken, fieldSessionId).catch((error) => {
       notifyJiraConnectionFailure(INSTANCE_URL, error);
       lastHoveredKey = '';
     });
