@@ -669,19 +669,12 @@ async function mainAsyncLocal() {
   } = createPopupEditing({
     INSTANCE_URL,
     buildEditFieldError,
-    compareSprintState,
-    formatSprintOptionLabel,
-    formatSprintText,
     getCustomFieldEditorDefinition,
     getEditableFieldCapability,
     getLabelSuggestions,
     getPopupState: () => popupState,
     getRecentIssueSearchOptions,
     hasLabelSuggestionSupport,
-    loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
-    pickSprintFieldId,
-    readSprintBoardRefsFromIssue,
-    readSprintsFromIssue,
     refreshPopupIssueState,
     renderIssuePopup,
     requestJson,
@@ -3505,47 +3498,6 @@ async function mainAsyncLocal() {
     return sprints;
   }
 
-  function readSprintBoardRefsFromIssue(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    const seen = new Set();
-    const boardRefs = [];
-
-    getIssueSprintEntries(issueData).forEach(entry => {
-      const candidateBoardIds = [];
-      if (typeof entry === 'string') {
-        ['rapidViewId', 'boardId', 'originBoardId'].forEach(fieldName => {
-          const match = entry.match(new RegExp(`${fieldName}=([^,\\]]+)`, 'i'));
-          if (match && match[1]) {
-            candidateBoardIds.push(match[1]);
-          }
-        });
-      } else {
-        candidateBoardIds.push(
-          entry.rapidViewId,
-          entry.boardId,
-          entry.originBoardId,
-          entry.board?.id,
-          entry.rapidView?.id
-        );
-      }
-
-      candidateBoardIds.forEach(candidateId => {
-        const boardId = String(candidateId || '').trim();
-        if (!boardId || seen.has(boardId)) {
-          return;
-        }
-        seen.add(boardId);
-        boardRefs.push({
-          id: boardId,
-          name: String(entry?.board?.name || entry?.rapidView?.name || ''),
-          projectKey
-        });
-      });
-    });
-
-    return boardRefs;
-  }
-
   function formatFixVersionText(fixVersions) {
     return (fixVersions || [])
       .map(version => version.name)
@@ -3914,14 +3866,6 @@ async function mainAsyncLocal() {
   }
 
   // ── Edit Options & Multi-Select ────────────────────────────
-
-  function formatSprintOptionLabel(sprint) {
-    if (!sprint) {
-      return '';
-    }
-    return sprint.state ? `${sprint.name} (${String(sprint.state).toUpperCase()})` : sprint.name;
-  }
-
 
   // ── Edit UI Presentation ───────────────────────────────────
 
@@ -4980,7 +4924,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['fixVersions', 'issuetype', 'priority', 'status', 'summary', 'versions'].includes(fieldKey);
+    return ['fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {

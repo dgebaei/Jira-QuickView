@@ -21,16 +21,10 @@ export function createPopupEditing(deps) {
   const {
     INSTANCE_URL,
     buildEditFieldError,
-    compareSprintState,
-    formatSprintOptionLabel,
-    formatSprintText,
     getEditableFieldCapability,
     getLabelSuggestions,
     getRecentIssueSearchOptions,
     hasLabelSuggestionSupport,
-    loadFieldContext,
-    readSprintBoardRefsFromIssue,
-    readSprintsFromIssue,
     refreshPopupIssueState,
     renderIssuePopup,
     requestJson,
@@ -126,53 +120,6 @@ export function createPopupEditing(deps) {
     };
   }
 
-  function compareBoardRefs(left, right, issueProjectKey = '') {
-    const normalizedIssueProjectKey = String(issueProjectKey || '').trim();
-    const leftProjectKey = String(left?.projectKey || '').trim();
-    const rightProjectKey = String(right?.projectKey || '').trim();
-    const leftMatchesProject = normalizedIssueProjectKey && leftProjectKey === normalizedIssueProjectKey;
-    const rightMatchesProject = normalizedIssueProjectKey && rightProjectKey === normalizedIssueProjectKey;
-    if (leftMatchesProject !== rightMatchesProject) {
-      return leftMatchesProject ? -1 : 1;
-    }
-    const nameOrder = String(left?.name || '').localeCompare(String(right?.name || ''), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
-    if (nameOrder !== 0) {
-      return nameOrder;
-    }
-    return String(left?.id || '').localeCompare(String(right?.id || ''), undefined, {
-      numeric: true,
-      sensitivity: 'base',
-    });
-  }
-
-  function pickPreferredSprintBoardRef(sprint, issueProjectKey = '') {
-    const boardRefs = Array.isArray(sprint?.boardRefs) ? sprint.boardRefs : [];
-    const sortedBoardRefs = boardRefs.slice().sort((left, right) => compareBoardRefs(left, right, issueProjectKey));
-    return sortedBoardRefs[0] || null;
-  }
-
-  function getSprintBoardGroupMeta(sprint, issueData, issueBoardIds = []) {
-    const projectName = String(issueData?.fields?.project?.name || '').trim();
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    const preferredBoardRef = pickPreferredSprintBoardRef(sprint, projectKey);
-    const boardId = String(preferredBoardRef?.id || '').trim();
-    const boardName = String(preferredBoardRef?.name || '').trim();
-    const boardProjectKey = String(preferredBoardRef?.projectKey || '').trim();
-    const issueBoardIdSet = new Set((Array.isArray(issueBoardIds) ? issueBoardIds : []).map(id => String(id || '')).filter(Boolean));
-    const isIssueBoard = Array.isArray(sprint?.boardRefs)
-      ? sprint.boardRefs.some(ref => issueBoardIdSet.has(String(ref?.id || '')))
-      : false;
-
-    return {
-      groupKey: boardId ? `board:${boardId}` : '__other_boards__',
-      groupLabel: boardName || (boardProjectKey ? `${boardProjectKey} board` : (projectName || projectKey || 'Other boards')),
-      sortKey: isIssueBoard ? '0' : '1',
-    };
-  }
-
   function buildGroupedOptionList(options, optionsConfig = {}) {
     const list = Array.isArray(options) ? options : [];
     const includeUngrouped = optionsConfig.includeUngrouped !== false;
@@ -236,53 +183,6 @@ export function createPopupEditing(deps) {
             ...group.options,
           ]
         : group.options),
-    ];
-  }
-
-  async function getSprintOptions(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
-      return [];
-    }
-    const issueBoardIdsKey = readSprintBoardRefsFromIssue(issueData)
-      .map(board => String(board.id || ''))
-      .filter(Boolean)
-      .sort()
-      .join(',');
-    const issueBoardIds = issueBoardIdsKey ? issueBoardIdsKey.split(',').filter(Boolean) : [];
-    const outcome = await loadFieldContext({
-      issueKey: issueData.key,
-      fieldId: 'sprint',
-      includeOptions: true,
-    });
-    if (!outcome.context) {
-      throw new Error(outcome.failures?.fieldContext?.message || 'Could not load Sprint options');
-    }
-    const groupedSprintOptions = (outcome.context.options || [])
-        .filter(sprint => String(sprint?.state || '').toLowerCase() !== 'closed')
-        .sort((left, right) => {
-          const stateOrder = compareSprintState(left?.state, right?.state);
-          if (stateOrder !== 0) {
-            return stateOrder;
-          }
-          return String(left?.name || '').localeCompare(String(right?.name || ''));
-        })
-        .map(sprint => {
-          const groupMeta = getSprintBoardGroupMeta(sprint, issueData, issueBoardIds);
-          return buildEditOption(sprint.id, formatSprintOptionLabel(sprint), {
-            groupKey: groupMeta.groupKey,
-            groupLabel: groupMeta.groupLabel,
-            groupSortKey: groupMeta.sortKey,
-            rawValue: sprint,
-          });
-        });
-
-    return [
-      buildEditOption('', 'No sprint'),
-      ...buildGroupedOptionList(groupedSprintOptions, {
-        hideSingleGroup: true,
-        preferredGroupKey: '',
-      }),
     ];
   }
 
@@ -374,43 +274,6 @@ export function createPopupEditing(deps) {
   }
 
   async function getEditableFieldDefinition(fieldKey, issueData) {
-    if (fieldKey === 'sprint') {
-      const capability = await getEditableFieldCapability(issueData, fieldKey);
-      if (!capability.editable) {
-        return null;
-      }
-      const currentSprints = readSprintsFromIssue(issueData);
-      return {
-        fieldKey,
-        editorType: 'single-select',
-        label: 'Sprint',
-        selectionMode: 'single',
-        currentText: formatSprintText(currentSprints),
-        currentOptionId: currentSprints.length === 1 ? String(currentSprints[0]?.id || '') : null,
-        currentSelections: currentSprints.length === 1
-          ? [buildEditOption(currentSprints[0]?.id, formatSprintOptionLabel(currentSprints[0]), {rawValue: currentSprints[0]})]
-          : [],
-        initialInputValue: '',
-        loadOptions: () => getSprintOptions(issueData),
-        save: async selectedOptions => {
-          const option = selectedOptions[0] || buildEditOption('', 'No sprint');
-          const sprintFieldId = capability.fieldKey;
-          if (!sprintFieldId) {
-            throw new Error('Could not resolve the Sprint field');
-          }
-          await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              [sprintFieldId]: option.id ? (Number(option.id) || option.id) : null,
-            },
-          });
-        },
-        successMessage: selectedOptions => {
-          const option = selectedOptions[0] || buildEditOption('', 'No sprint');
-          return option.id ? `Sprint set to ${option.label}` : 'Sprint cleared';
-        },
-      };
-    }
-
     if (fieldKey === 'assignee') {
       const capability = await getEditableFieldCapability(issueData, 'assignee');
       if (!capability.editable) {

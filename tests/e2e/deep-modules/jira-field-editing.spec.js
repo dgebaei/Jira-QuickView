@@ -582,3 +582,142 @@ test('failed version save preserves the selection and remains retryable', async 
     writeCount: 2,
   });
 });
+
+test('Sprint editing owns resolved field ids, board grouping, selection, and the Jira payload', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const sprintField = {id: 'customfield_10020', name: 'Sprint', schema: {custom: 'com.pyxis.greenhopper.jira:gh-sprint'}};
+    const currentIssue = {
+      id: '1',
+      key: 'ABC-1',
+      names: {customfield_10020: 'Sprint'},
+      fields: {
+        project: {key: 'ABC', name: 'Alpha'},
+        summary: 'Issue',
+        customfield_10020: [{id: 41, name: 'Current', state: 'active', boardId: 7}],
+      },
+    };
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [sprintField]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_10020: {...sprintField, operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: currentIssue},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board?'), result: {values: [
+        {id: 7, name: 'Delivery'},
+        {id: 8, name: 'Platform'},
+      ]}},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board/7/sprint?'), result: {values: [
+        {id: 41, name: 'Current', state: 'active'},
+        {id: 42, name: 'Next', state: 'future'},
+      ]}},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board/8/sprint?'), result: {values: [
+        {id: 50, name: 'Platform Future', state: 'future'},
+      ]}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
+        ...currentIssue,
+        fields: {...currentIssue.fields, customfield_10020: [{id: 42, name: 'Next', state: 'future', boardId: 7}]},
+      }},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: currentIssue, sections: {}}});
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'sprint'});
+    const selected = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '42'});
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        labels: begun.view.edit?.options.map(option => option.label),
+        groupLabels: begun.view.edit?.options.filter(option => option.isGroupLabel).map(option => option.label),
+        selectedOptionId: begun.view.edit?.selectedOptionId,
+      },
+      selected: {kind: selected.kind, selectedOptionId: selected.view.edit?.selectedOptionId},
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {
+      kind: 'changed',
+      labels: ['No sprint', 'ABC board', 'Current (ACTIVE)', 'Next (FUTURE)', 'Platform', 'Platform Future (FUTURE)'],
+      groupLabels: ['ABC board', 'Platform'],
+      selectedOptionId: '41',
+    },
+    selected: {kind: 'changed', selectedOptionId: '42'},
+    saved: {kind: 'saved', notice: 'Sprint set to Next (FUTURE)'},
+    writeBody: {fields: {customfield_10020: 42}},
+  });
+});
+
+test('Sprint editing clears the resolved Jira field with null', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const sprintField = {id: 'customfield_10020', name: 'Sprint', schema: {custom: 'com.pyxis.greenhopper.jira:gh-sprint'}};
+    const currentIssue = {
+      id: '1',
+      key: 'ABC-1',
+      names: {customfield_10020: 'Sprint'},
+      fields: {summary: 'Issue', customfield_10020: [{id: 41, name: 'Current', state: 'active', boardId: 7}]},
+    };
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [sprintField]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_10020: sprintField}}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: currentIssue},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board?'), result: {values: [{id: 7, name: 'Delivery'}]}},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board/7/sprint?'), result: {values: [{id: 41, name: 'Current', state: 'active'}]}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
+        ...currentIssue,
+        fields: {...currentIssue.fields, customfield_10020: []},
+      }},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: currentIssue, sections: {}}});
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'sprint'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: ''});
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {saved: {kind: saved.kind, notice: saved.notice}, writeBody: write?.body || null};
+  });
+
+  expect(result).toEqual({
+    saved: {kind: 'saved', notice: 'Sprint cleared'},
+    writeBody: {fields: {customfield_10020: null}},
+  });
+});
+
+test('Sprint option failure leaves the interface retryable', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const sprintField = {id: 'customfield_10020', name: 'Sprint', schema: {custom: 'com.pyxis.greenhopper.jira:gh-sprint'}};
+    const currentIssue = {id: '1', key: 'ABC-1', names: {customfield_10020: 'Sprint'}, fields: {summary: 'Issue', customfield_10020: []}};
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [sprintField]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_10020: sprintField}}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: currentIssue},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board?'), error: 'Boards unavailable'},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board?'), result: {values: [{id: 7, name: 'Delivery'}]}},
+      {operation: 'read', match: request => request.path.includes('/rest/agile/1.0/board/7/sprint?'), result: {values: [{id: 42, name: 'Next', state: 'future'}]}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: currentIssue, sections: {}}});
+    const failed = await fields.dispatch({type: 'begin', fieldId: 'sprint'});
+    const retried = await fields.dispatch({type: 'begin', fieldId: 'sprint'});
+    return {
+      failed: {kind: failed.kind, failure: failed.failure?.message, edit: failed.view.edit},
+      retried: {kind: retried.kind, labels: retried.view.edit?.options.map(option => option.label)},
+      boardRequests: jira.getRequests().filter(request => request.path.includes('/rest/agile/1.0/board?')).length,
+    };
+  });
+
+  expect(result).toEqual({
+    failed: {kind: 'ignored', failure: 'Boards unavailable', edit: null},
+    retried: {kind: 'changed', labels: ['No sprint', 'Next (FUTURE)']},
+    boardRequests: 2,
+  });
+});

@@ -92,6 +92,138 @@ function compareVersionOptions(left, right) {
   return sortName(right).localeCompare(sortName(left), undefined, {numeric: true, sensitivity: 'base'});
 }
 
+function sprintEntries(issue) {
+  const names = issue?.names || {};
+  const fields = issue?.fields || {};
+  return Object.keys(names)
+    .filter(fieldId => String(names[fieldId] || '').toLowerCase().includes('sprint'))
+    .flatMap(fieldId => Array.isArray(fields[fieldId]) ? fields[fieldId] : [fields[fieldId]])
+    .filter(Boolean);
+}
+
+function readSprints(issue) {
+  const seen = new Set();
+  return sprintEntries(issue).map(entry => {
+    if (typeof entry !== 'string') {
+      return {id: String(entry?.id || ''), name: entry?.name || entry?.goal || String(entry?.id || ''), state: entry?.state || ''};
+    }
+    const read = name => entry.match(new RegExp(`${name}=([^,\\]]+)`, 'i'))?.[1] || '';
+    return {id: read('id'), name: read('name') || entry, state: read('state')};
+  }).filter(sprint => {
+    const key = sprint.id || `${sprint.name}::${sprint.state}`;
+    if (!sprint.name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function readSprintBoardRefs(issue) {
+  const projectKey = String(issue?.key || '').split('-')[0];
+  const seen = new Set();
+  const refs = [];
+  sprintEntries(issue).forEach(entry => {
+    const ids = [];
+    if (typeof entry === 'string') {
+      ['rapidViewId', 'boardId', 'originBoardId'].forEach(name => {
+        const value = entry.match(new RegExp(`${name}=([^,\\]]+)`, 'i'))?.[1];
+        if (value) ids.push(value);
+      });
+    } else {
+      ids.push(entry?.rapidViewId, entry?.boardId, entry?.originBoardId, entry?.board?.id, entry?.rapidView?.id);
+    }
+    ids.forEach(id => {
+      const value = String(id || '').trim();
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      refs.push({
+        id: value,
+        name: String(entry?.board?.name || entry?.rapidView?.name || ''),
+        projectKey,
+      });
+    });
+  });
+  return refs;
+}
+
+function compareBoardRefs(left, right, issueProjectKey) {
+  const leftIsLocal = String(left?.projectKey || '') === issueProjectKey;
+  const rightIsLocal = String(right?.projectKey || '') === issueProjectKey;
+  if (leftIsLocal !== rightIsLocal) return leftIsLocal ? -1 : 1;
+  const nameOrder = String(left?.name || '').localeCompare(String(right?.name || ''), undefined, {numeric: true, sensitivity: 'base'});
+  return nameOrder || String(left?.id || '').localeCompare(String(right?.id || ''), undefined, {numeric: true, sensitivity: 'base'});
+}
+
+function sprintGroupMeta(sprint, issue, issueBoardIds) {
+  const projectKey = String(issue?.key || '').split('-')[0];
+  const projectName = String(issue?.fields?.project?.name || '').trim();
+  const boardRefs = Array.isArray(sprint?.boardRefs) ? sprint.boardRefs : [];
+  const preferredBoard = boardRefs.slice().sort((left, right) => compareBoardRefs(left, right, projectKey))[0] || null;
+  const boardId = String(preferredBoard?.id || '').trim();
+  const boardProjectKey = String(preferredBoard?.projectKey || '').trim();
+  return {
+    groupKey: boardId ? `board:${boardId}` : '__other_boards__',
+    groupLabel: preferredBoard?.name || (boardProjectKey ? `${boardProjectKey} board` : (projectName || projectKey || 'Other boards')),
+    groupSortKey: boardRefs.some(ref => issueBoardIds.has(String(ref?.id || ''))) ? '0' : '1',
+  };
+}
+
+function groupOptions(options, {hideSingleGroup = false} = {}) {
+  const ungrouped = options.filter(option => !option.groupKey);
+  const groups = new Map();
+  options.filter(option => option.groupKey).forEach(option => {
+    const group = groups.get(option.groupKey) || {
+      key: option.groupKey,
+      label: option.groupLabel || option.groupKey,
+      sortKey: option.groupSortKey || '9',
+      options: [],
+    };
+    group.options.push(option);
+    groups.set(group.key, group);
+  });
+  const sortedGroups = [...groups.values()].sort((left, right) => {
+    const rank = String(left.sortKey).localeCompare(String(right.sortKey), undefined, {numeric: true, sensitivity: 'base'});
+    return rank || String(left.label).localeCompare(String(right.label), undefined, {numeric: true, sensitivity: 'base'});
+  });
+  const showLabels = !(hideSingleGroup && sortedGroups.length <= 1);
+  return [
+    ...ungrouped,
+    ...sortedGroups.flatMap(group => showLabels ? [{
+      id: `__group__${group.key}`,
+      isGroupLabel: true,
+      label: group.label,
+      searchText: String(group.label).toLowerCase(),
+    }, ...group.options] : group.options),
+  ];
+}
+
+function buildSprintOptions(issue, sprints) {
+  const stateOrder = {active: 0, future: 1, closed: 2};
+  const issueBoardIds = new Set(readSprintBoardRefs(issue).map(board => board.id));
+  const options = (Array.isArray(sprints) ? sprints : [])
+    .filter(sprint => sprint?.id && sprint?.name && String(sprint.state || '').toLowerCase() !== 'closed')
+    .slice()
+    .sort((left, right) => {
+      const stateDelta = (stateOrder[String(left?.state || '').toLowerCase()] ?? 99) -
+        (stateOrder[String(right?.state || '').toLowerCase()] ?? 99);
+      return stateDelta || String(left.name).localeCompare(String(right.name));
+    })
+    .map(sprint => {
+      const state = String(sprint.state || '').toUpperCase();
+      const label = state ? `${sprint.name} (${state})` : sprint.name;
+      return {
+        id: String(sprint.id),
+        label,
+        rawValue: copyValue(sprint),
+        searchText: label.toLowerCase(),
+        ...sprintGroupMeta(sprint, issue, issueBoardIds),
+      };
+    });
+  return [
+    {id: '', label: 'No sprint', rawValue: null, searchText: 'no sprint'},
+    ...groupOptions(options, {hideSingleGroup: true}),
+  ];
+}
+
 export function createJiraFieldEditing(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -107,6 +239,7 @@ export function createJiraFieldEditing(options = {}) {
   let editSequence = 0;
   let session = null;
   let edit = null;
+  let resolvedFieldId = '';
 
   function view() {
     return {
@@ -139,6 +272,7 @@ export function createJiraFieldEditing(options = {}) {
     if (!sameSession) {
       generation += 1;
       edit = null;
+      resolvedFieldId = '';
     }
     session = {
       generation,
@@ -155,6 +289,7 @@ export function createJiraFieldEditing(options = {}) {
     generation += 1;
     session = null;
     edit = null;
+    resolvedFieldId = '';
     return view();
   }
 
@@ -176,12 +311,17 @@ export function createJiraFieldEditing(options = {}) {
     });
   }
 
+  function visibleSelectableOptions() {
+    return visibleOptions().filter(option => !option.isGroupLabel);
+  }
+
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['fixVersions', 'issuetype', 'priority', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['fixVersions', 'issuetype', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
+    resolvedFieldId = '';
     edit = {
       editId,
       fieldKey: String(intent.fieldId),
@@ -208,7 +348,7 @@ export function createJiraFieldEditing(options = {}) {
     const fieldOutcome = await issueData.loadFieldContext({
       issueKey: capturedSession.issueKey,
       fieldId: intent.fieldId,
-      includeOptions: ['fixVersions', 'versions'].includes(intent.fieldId),
+      includeOptions: ['fixVersions', 'sprint', 'versions'].includes(intent.fieldId),
       includeTransitions: intent.fieldId === 'status',
       signal: intent.signal,
     });
@@ -254,6 +394,34 @@ export function createJiraFieldEditing(options = {}) {
         inputPlaceholder: 'Type to filter transitions',
         options: transitions,
         selectedOptionId: null,
+        showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'sprint') {
+      if (!context?.editable || !context.fieldId || fieldOutcome.failures?.options) {
+        const failure = fieldOutcome.failures?.options || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentSprints = readSprints(capturedSession.issueSnapshot.core);
+      const currentSprint = currentSprints.length === 1 ? currentSprints[0] : null;
+      const sprintOptions = buildSprintOptions(capturedSession.issueSnapshot.core, context.options);
+      resolvedFieldId = context.fieldId;
+      edit = {
+        ...edit,
+        editorType: 'single-select',
+        fieldKey: 'sprint',
+        label: 'Sprint',
+        selectionMode: 'single',
+        inputPlaceholder: 'Type to filter Sprint values',
+        options: sprintOptions,
+        selectedOptionId: currentSprint?.id || null,
+        selectedOptions: currentSprint ? [{
+          id: currentSprint.id,
+          label: currentSprint.state ? `${currentSprint.name} (${String(currentSprint.state).toUpperCase()})` : currentSprint.name,
+          rawValue: copyValue(currentSprint),
+        }] : [],
         showActionButtons: false,
         loadingOptions: false,
         status: 'editing',
@@ -388,7 +556,7 @@ export function createJiraFieldEditing(options = {}) {
 
   function moveHighlight(intent, delta) {
     if (!matchesEdit(intent) || edit.selectionMode === 'text' || edit.saving) return outcome('ignored');
-    const options = visibleOptions();
+    const options = visibleSelectableOptions();
     if (!options.length) return outcome('ignored');
     const currentIndex = Math.max(0, options.findIndex(option => option.id === edit.highlightedOptionId));
     const nextIndex = Math.max(0, Math.min(options.length - 1, currentIndex + delta));
@@ -400,13 +568,14 @@ export function createJiraFieldEditing(options = {}) {
     if (!matchesEdit(intent) || edit.saving) return outcome('ignored');
     const editId = edit.editId;
     edit = null;
+    resolvedFieldId = '';
     return outcome('cancelled', {editId});
   }
 
   async function selectOption(intent) {
     if (!matchesEdit(intent) || edit.loadingOptions || edit.saving) return outcome('ignored');
     const selectedOption = edit.options.find(option => option.id === String(intent.optionId || ''));
-    if (!selectedOption) return outcome('ignored');
+    if (!selectedOption || selectedOption.isGroupLabel) return outcome('ignored');
     if (edit.selectionMode === 'multi') {
       const selectedOptionIds = normalizeOptionIds(edit.selectedOptionIds);
       const nextSelectedOptionIds = selectedOptionIds.includes(selectedOption.id)
@@ -502,6 +671,19 @@ export function createJiraFieldEditing(options = {}) {
         path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
         body: {fields: {[edit.fieldKey]: selectedValues.map(value => ({id: value.id}))}},
       };
+    } else if (edit.fieldKey === 'sprint') {
+      const selectedSprint = edit.options.find(option => !option.isGroupLabel && option.id === String(edit.selectedOptionId ?? ''));
+      if (!selectedSprint || !resolvedFieldId) {
+        const failure = normalizeFailure(new Error('Could not resolve the Sprint field'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = selectedSprint.id ? `Sprint set to ${selectedSprint.label}` : 'Sprint cleared';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {[resolvedFieldId]: selectedSprint.id ? (Number(selectedSprint.id) || selectedSprint.id) : null}},
+      };
     } else {
       return outcome('ignored', {editId});
     }
@@ -550,6 +732,7 @@ export function createJiraFieldEditing(options = {}) {
     }
     session = {...session, issueSnapshot: refreshOutcome.snapshot};
     edit = null;
+    resolvedFieldId = '';
     return outcome('saved', {
       editId,
       notice,
@@ -570,11 +753,11 @@ export function createJiraFieldEditing(options = {}) {
       if (intent.key === 'Enter') {
         if (edit?.selectionMode === 'multi') {
           if (intent.ctrlKey || intent.metaKey) return save(intent);
-          const optionId = edit?.highlightedOptionId || visibleOptions()[0]?.id;
+          const optionId = edit?.highlightedOptionId || visibleSelectableOptions()[0]?.id;
           return optionId ? selectOption({...intent, optionId}) : outcome('ignored');
         }
         if (edit?.selectionMode !== 'text') {
-          const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleOptions()[0]?.id;
+          const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleSelectableOptions()[0]?.id;
           const selected = await selectOption({...intent, optionId: edit?.highlightedOptionId || optionId});
           if (edit?.editorType !== 'transition-select' && selected.kind === 'changed') {
             return save(intent);
