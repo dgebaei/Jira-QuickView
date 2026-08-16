@@ -25,6 +25,27 @@ function issueKeyOf(snapshot) {
   return String(snapshot?.issueKey || snapshot?.core?.key || '').trim();
 }
 
+function buildTransitionOptions(transitions) {
+  return (Array.isArray(transitions) ? transitions : [])
+    .filter(transition => transition?.id && transition?.to?.name)
+    .map(transition => {
+      const targetStatusName = String(transition.to.name);
+      const transitionName = transition.name && transition.name !== targetStatusName
+        ? String(transition.name)
+        : '';
+      const label = transitionName ? `${transitionName} -> ${targetStatusName}` : targetStatusName;
+      return {
+        id: String(transition.id),
+        label,
+        iconUrl: transition.to?.iconUrl || '',
+        metaText: transitionName,
+        searchText: `${label} ${targetStatusName} ${transitionName}`.trim().toLowerCase(),
+        targetStatusName,
+        transitionName,
+      };
+    });
+}
+
 export function createJiraFieldEditing(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -101,9 +122,18 @@ export function createJiraFieldEditing(options = {}) {
     return !!edit && (!intent.editId || intent.editId === edit.editId);
   }
 
+  function visibleOptions() {
+    const query = String(edit?.inputValue || '').trim().toLowerCase();
+    if (!query) return edit?.options || [];
+    return (edit?.options || []).filter(option => {
+      return String(option.searchText || option.label || '').toLowerCase().includes(query);
+    });
+  }
+
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
+    if (!['status', 'summary'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
     edit = {
@@ -129,14 +159,10 @@ export function createJiraFieldEditing(options = {}) {
       writeSucceeded: false,
     };
 
-    if (intent.fieldId !== 'summary') {
-      edit = null;
-      return outcome('ignored', {editId});
-    }
-
     const fieldOutcome = await issueData.loadFieldContext({
       issueKey: capturedSession.issueKey,
-      fieldId: 'summary',
+      fieldId: intent.fieldId,
+      includeTransitions: intent.fieldId === 'status',
       signal: intent.signal,
     });
     if (!isCurrent(capturedSession, editId)) {
@@ -147,40 +173,94 @@ export function createJiraFieldEditing(options = {}) {
       });
     }
     const context = fieldOutcome.context;
-    const operations = context?.operations || [];
-    if (!context?.editable || !operations.includes('set')) {
-      const failure = fieldOutcome.failure || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
-      edit = null;
-      return outcome('ignored', {editId, failure});
+    if (intent.fieldId === 'summary') {
+      const operations = context?.operations || [];
+      if (!context?.editable || !operations.includes('set')) {
+        const failure = fieldOutcome.failure || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentSummary = String(capturedSession.issueSnapshot.core?.fields?.summary || '');
+      edit = {
+        ...edit,
+        inputValue: currentSummary,
+        originalInputValue: currentSummary,
+        inputPlaceholder: 'Enter a new issue title',
+        loadingOptions: false,
+        selectionStart: currentSummary.length,
+        selectionEnd: currentSummary.length,
+        status: 'editing',
+      };
+    } else {
+      const transitions = buildTransitionOptions(context?.transitions);
+      if (!transitions.length) {
+        const failure = fieldOutcome.failures?.transitions || fieldOutcome.failures?.fieldContext || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        editorType: 'transition-select',
+        fieldKey: 'status',
+        label: 'Status transition',
+        selectionMode: 'single',
+        inputPlaceholder: 'Type to filter transitions',
+        options: transitions,
+        selectedOptionId: null,
+        showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
     }
-    const currentSummary = String(capturedSession.issueSnapshot.core?.fields?.summary || '');
-    edit = {
-      ...edit,
-      inputValue: currentSummary,
-      originalInputValue: currentSummary,
-      inputPlaceholder: 'Enter a new issue title',
-      loadingOptions: false,
-      selectionStart: currentSummary.length,
-      selectionEnd: currentSummary.length,
-      status: 'editing',
-    };
     return outcome('changed', {editId});
   }
 
   function inputChanged(intent) {
     if (!matchesEdit(intent) || edit.saving) return outcome('ignored');
-    const inputValue = String(intent.value || '');
-    const start = Number.isInteger(intent.selection?.start) ? intent.selection.start : inputValue.length;
-    const end = Number.isInteger(intent.selection?.end) ? intent.selection.end : start;
+    const typedValue = String(intent.value || '');
+    let inputValue = typedValue;
+    let start = Number.isInteger(intent.selection?.start) ? intent.selection.start : inputValue.length;
+    let end = Number.isInteger(intent.selection?.end) ? intent.selection.end : start;
+    let selectedOptionId = edit.selectedOptionId || null;
+    if (edit.selectionMode !== 'text') {
+      const normalizedValue = typedValue.trim().toLowerCase();
+      const exactOption = edit.options.find(option => option.label.toLowerCase() === normalizedValue);
+      selectedOptionId = exactOption?.id || null;
+      const canAutoComplete = !exactOption && normalizedValue && start === end && end === typedValue.length;
+      const prefixOption = canAutoComplete
+        ? edit.options.find(option => option.label.toLowerCase().startsWith(normalizedValue))
+        : null;
+      if (prefixOption) {
+        inputValue = prefixOption.label;
+        selectedOptionId = prefixOption.id;
+        start = typedValue.length;
+        end = prefixOption.label.length;
+      }
+    }
     edit = {
       ...edit,
       inputValue,
-      hasChanges: inputValue !== edit.originalInputValue,
+      selectedOptionId,
+      selectedOptions: selectedOptionId ? edit.options.filter(option => option.id === selectedOptionId) : [],
+      highlightedOptionId: null,
+      hasChanges: edit.selectionMode === 'text'
+        ? inputValue !== edit.originalInputValue
+        : !!selectedOptionId,
       errorMessage: '',
       selectionStart: start,
       selectionEnd: end,
       status: 'editing',
     };
+    return outcome('changed');
+  }
+
+  function moveHighlight(intent, delta) {
+    if (!matchesEdit(intent) || edit.selectionMode === 'text' || edit.saving) return outcome('ignored');
+    const options = visibleOptions();
+    if (!options.length) return outcome('ignored');
+    const currentIndex = Math.max(0, options.findIndex(option => option.id === edit.highlightedOptionId));
+    const nextIndex = Math.max(0, Math.min(options.length - 1, currentIndex + delta));
+    edit = {...edit, errorMessage: '', highlightedOptionId: options[nextIndex].id};
     return outcome('changed');
   }
 
@@ -191,16 +271,65 @@ export function createJiraFieldEditing(options = {}) {
     return outcome('cancelled', {editId});
   }
 
+  async function selectOption(intent) {
+    if (!matchesEdit(intent) || edit.loadingOptions || edit.saving) return outcome('ignored');
+    const selectedOption = edit.options.find(option => option.id === String(intent.optionId || ''));
+    if (!selectedOption) return outcome('ignored');
+    edit = {
+      ...edit,
+      errorMessage: '',
+      hasChanges: true,
+      highlightedOptionId: selectedOption.id,
+      inputValue: selectedOption.label,
+      selectedOptionId: selectedOption.id,
+      selectedOptions: [selectedOption],
+      selectionStart: selectedOption.label.length,
+      selectionEnd: selectedOption.label.length,
+      status: 'editing',
+    };
+    if (edit.editorType === 'transition-select') {
+      return save({...intent, type: 'save'});
+    }
+    return outcome('changed');
+  }
+
   async function save(intent) {
     if (!matchesEdit(intent) || edit.loadingOptions || edit.saving || !session) return outcome('ignored');
     const capturedSession = session;
     const editId = edit.editId;
-    const nextSummary = String(edit.inputValue || '').trim();
     if (!edit.hasChanges) return outcome('ignored', {editId});
-    if (!nextSummary) {
-      const failure = normalizeFailure(new Error('Issue title cannot be empty'));
-      edit = {...edit, errorMessage: failure.message, status: 'failed'};
-      return outcome('failed', {editId, failure});
+    let writeRequest;
+    let notice;
+    if (edit.fieldKey === 'summary') {
+      const nextSummary = String(edit.inputValue || '').trim();
+      if (!nextSummary) {
+        const failure = normalizeFailure(new Error('Issue title cannot be empty'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = 'Issue title updated';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {summary: nextSummary}},
+      };
+    } else if (edit.fieldKey === 'status') {
+      const selectedTransition = edit.options.find(option => option.id === edit.selectedOptionId);
+      if (!selectedTransition) {
+        const failure = normalizeFailure(new Error('Pick a transition before saving'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = selectedTransition.targetStatusName
+        ? `Status moved to ${selectedTransition.targetStatusName}`
+        : 'Status updated';
+      writeRequest = {
+        method: 'POST',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}/transitions`,
+        body: {transition: {id: selectedTransition.id}},
+      };
+    } else {
+      return outcome('ignored', {editId});
     }
     const writeAlreadySucceeded = edit.writeSucceeded === true;
     edit = {...edit, errorMessage: '', saving: true, status: 'saving'};
@@ -208,9 +337,7 @@ export function createJiraFieldEditing(options = {}) {
     if (!writeAlreadySucceeded) {
       try {
         await jira.write({
-          method: 'PUT',
-          path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
-          body: {fields: {summary: nextSummary}},
+          ...writeRequest,
           signal: intent.signal,
         });
       } catch (error) {
@@ -229,7 +356,7 @@ export function createJiraFieldEditing(options = {}) {
     const refreshOutcome = await issueData.refreshAfterMutation({
       issueKey: capturedSession.issueKey,
       priorSnapshot: capturedSession.issueSnapshot,
-      mutation: {kind: 'fieldChanged', fieldId: 'summary'},
+      mutation: {kind: 'fieldChanged', fieldId: edit.fieldKey},
       requirements: capturedSession.requirements,
       signal: intent.signal,
     });
@@ -237,7 +364,7 @@ export function createJiraFieldEditing(options = {}) {
       return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
     }
     if (!refreshOutcome.snapshot?.core) {
-      const failure = normalizeFailure(refreshOutcome.failures?.core?.message || 'The title was saved, but Jira could not refresh the issue');
+      const failure = normalizeFailure(refreshOutcome.failures?.core?.message || 'The field was saved, but Jira could not refresh the issue');
       edit = {
         ...edit,
         errorMessage: failure.message,
@@ -245,13 +372,13 @@ export function createJiraFieldEditing(options = {}) {
         status: 'failed',
         writeSucceeded: true,
       };
-      return outcome('savedButRefreshFailed', {editId, failure, notice: 'Issue title updated'});
+      return outcome('savedButRefreshFailed', {editId, failure, notice});
     }
     session = {...session, issueSnapshot: refreshOutcome.snapshot};
     edit = null;
     return outcome('saved', {
       editId,
-      notice: 'Issue title updated',
+      notice,
       refreshedSnapshot: refreshOutcome.snapshot,
     });
   }
@@ -260,10 +387,19 @@ export function createJiraFieldEditing(options = {}) {
     if (intent.type === 'begin') return begin(intent);
     if (intent.type === 'inputChanged') return inputChanged(intent);
     if (intent.type === 'cancel') return cancel(intent);
+    if (intent.type === 'selectOption') return selectOption(intent);
     if (intent.type === 'save') return save(intent);
     if (intent.type === 'key') {
       if (intent.key === 'Escape') return cancel(intent);
-      if (intent.key === 'Enter') return save(intent);
+      if (intent.key === 'ArrowDown') return moveHighlight(intent, 1);
+      if (intent.key === 'ArrowUp') return moveHighlight(intent, -1);
+      if (intent.key === 'Enter') {
+        if (edit?.selectionMode !== 'text') {
+          const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleOptions()[0]?.id;
+          return selectOption({...intent, optionId});
+        }
+        return save(intent);
+      }
     }
     return outcome('ignored');
   }

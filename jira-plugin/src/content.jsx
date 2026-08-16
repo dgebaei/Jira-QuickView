@@ -678,7 +678,6 @@ async function mainAsyncLocal() {
     getLabelSuggestions,
     getPopupState: () => popupState,
     getRecentIssueSearchOptions,
-    getTransitionOptions,
     hasLabelSuggestionSupport,
     loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
     normalizeIssueTypeOptions,
@@ -4986,6 +4985,10 @@ async function mainAsyncLocal() {
     return true;
   }
 
+  function isDeepFieldEdit(fieldKey) {
+    return fieldKey === 'summary' || fieldKey === 'status';
+  }
+
   async function dispatchJiraFieldEditing(intent) {
     const popupKey = popupState?.key || '';
     const pendingOutcome = jiraFieldEditing.dispatch(intent);
@@ -5083,12 +5086,12 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData) {
       return;
     }
-    if (fieldKey === 'summary') {
+    if (isDeepFieldEdit(fieldKey)) {
       if (popupState.editState) {
         popupState = {...popupState, editState: null};
       }
       if (!attachJiraFieldEditingToPopup()) return;
-      await dispatchJiraFieldEditing({type: 'begin', fieldId: 'summary'});
+      await dispatchJiraFieldEditing({type: 'begin', fieldId: fieldKey});
       return;
     }
     if (jiraFieldEditing.view().edit) await dispatchJiraFieldEditing({type: 'cancel'});
@@ -5376,6 +5379,11 @@ async function mainAsyncLocal() {
   }
 
   function selectFieldEditOption(optionId) {
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldView && fieldView.options?.some(option => option.id === String(optionId || ''))) {
+      dispatchJiraFieldEditing({type: 'selectOption', editId: fieldView.editId, optionId}).catch(() => {});
+      return;
+    }
     if (!popupState?.editState) {
       return;
     }
@@ -5414,9 +5422,6 @@ async function mainAsyncLocal() {
       }
     };
     renderIssuePopup(popupState).catch(() => {});
-    if (popupState.editState.editorType === 'transition-select') {
-      submitFieldEdit(popupState.editState.fieldKey).catch(() => {});
-    }
   }
 
 
@@ -5985,8 +5990,9 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
-    if (fieldKey === 'summary' && jiraFieldEditing.view().edit?.fieldKey === 'summary') {
-      dispatchJiraFieldEditing({type: 'save', editId: jiraFieldEditing.view().edit.editId}).catch(() => {});
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldView?.fieldKey === fieldKey) {
+      dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
       return;
     }
     submitFieldEdit(fieldKey).catch(() => {});
@@ -6020,7 +6026,7 @@ async function mainAsyncLocal() {
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
     const fieldView = jiraFieldEditing.view().edit;
-    if (fieldKey === 'summary' && fieldView?.fieldKey === 'summary') {
+    if (fieldView?.fieldKey === fieldKey) {
       dispatchJiraFieldEditing({
         type: 'inputChanged',
         editId: fieldView.editId,
@@ -6039,7 +6045,7 @@ async function mainAsyncLocal() {
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
     const fieldView = jiraFieldEditing.view().edit;
-    if (fieldKey === 'summary' && fieldView?.fieldKey === 'summary' && (e.key === 'Enter' || e.key === 'Escape')) {
+    if (fieldView?.fieldKey === fieldKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
       e.preventDefault();
       dispatchJiraFieldEditing({type: 'key', editId: fieldView.editId, key: e.key}).catch(() => {});
       return;
@@ -6068,9 +6074,7 @@ async function mainAsyncLocal() {
           return;
         }
         selectFieldEditOption(highlightedOption.id);
-        if (editState.editorType !== 'transition-select') {
-          submitFieldEdit(fieldKey).catch(() => {});
-        }
+        submitFieldEdit(fieldKey).catch(() => {});
       } else {
         submitFieldEdit(fieldKey).catch(() => {});
       }

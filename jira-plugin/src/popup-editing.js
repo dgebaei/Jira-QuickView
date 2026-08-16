@@ -28,7 +28,6 @@ export function createPopupEditing(deps) {
     getEditableFieldCapability,
     getLabelSuggestions,
     getRecentIssueSearchOptions,
-    getTransitionOptions,
     hasLabelSuggestionSupport,
     loadFieldContext,
     normalizeIssueTypeOptions,
@@ -581,41 +580,6 @@ export function createPopupEditing(deps) {
         successMessage: selectedOptions => {
           const selectedIssueType = selectedOptions[0];
           return selectedIssueType?.label ? `Issue type set to ${selectedIssueType.label}` : 'Issue type updated';
-        },
-      };
-    }
-
-    if (fieldKey === 'status') {
-      const transitions = await getTransitionOptions(issueData?.key);
-      if (!transitions.length) {
-        return null;
-      }
-      return {
-        fieldKey,
-        editorType: 'transition-select',
-        label: 'Status transition',
-        selectionMode: 'single',
-        currentText: issueData?.fields?.status?.name || '',
-        currentOptionId: null,
-        currentSelections: [],
-        initialInputValue: '',
-        inputPlaceholder: 'Type to filter transitions',
-        loadOptions: () => transitions,
-        save: selectedOptions => {
-          const selectedTransition = selectedOptions[0];
-          if (!selectedTransition?.id) {
-            throw new Error('Pick a transition before saving');
-          }
-          return requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}/transitions`, {
-            transition: {id: selectedTransition.id},
-          });
-        },
-        successMessage: selectedOptions => {
-          const selectedTransition = selectedOptions[0];
-          if (selectedTransition?.targetStatusName) {
-            return `Status moved to ${selectedTransition.targetStatusName}`;
-          }
-          return 'Status updated';
         },
       };
     }

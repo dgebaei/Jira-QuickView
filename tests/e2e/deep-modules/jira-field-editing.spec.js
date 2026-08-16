@@ -157,3 +157,194 @@ test('a completed write from a detached session cannot start a stale issue refre
     view: {sessionId: 'popup-2', issueKey: 'XYZ-2', edit: null},
   });
 });
+
+test('status editing owns transition options, automatic save, payload, and refresh', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'status', name: 'Status', schema: {type: 'status'}}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {status: {name: 'Status'}}}},
+      {operation: 'read', match: request => request.path.endsWith('/transitions'), result: {transitions: [
+        {id: '31', name: 'Start progress', to: {id: '3', name: 'In Progress', iconUrl: 'https://jira.example/status-3.png'}},
+        {id: '41', name: 'Done', to: {id: '5', name: 'Done', iconUrl: 'https://jira.example/status-5.png'}},
+      ]}},
+      {operation: 'write', method: 'POST', match: request => request.path.endsWith('/transitions'), result: {}},
+      {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
+        id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {id: '3', name: 'In Progress'}},
+      }},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        issueId: '1',
+        revision: 1,
+        core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {id: '1', name: 'To Do'}}},
+        sections: {},
+      },
+    });
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'status'});
+    const selected = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '31'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        editorType: begun.view.edit?.editorType,
+        labels: begun.view.edit?.options.map(option => option.label),
+      },
+      selected: {
+        kind: selected.kind,
+        notice: selected.notice,
+        status: selected.refreshedSnapshot?.core?.fields?.status?.name,
+      },
+      write: write ? {method: write.method, path: write.path, body: write.body} : null,
+      finalView: fields.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {
+      kind: 'changed',
+      editorType: 'transition-select',
+      labels: ['Start progress -> In Progress', 'Done'],
+    },
+    selected: {kind: 'saved', notice: 'Status moved to In Progress', status: 'In Progress'},
+    write: {
+      method: 'POST',
+      path: 'https://jira.example/rest/api/2/issue/ABC-1/transitions',
+      body: {transition: {id: '31'}},
+    },
+    finalView: {sessionId: 'popup-1', issueKey: 'ABC-1', edit: null},
+  });
+});
+
+test('status keyboard filtering completes the highlighted transition and saves with Enter', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'status', name: 'Status'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {status: {name: 'Status'}}}},
+      {operation: 'read', match: request => request.path.endsWith('/transitions'), result: {transitions: [
+        {id: '31', name: 'Start progress', to: {id: '3', name: 'In Progress'}},
+        {id: '41', name: 'Done', to: {id: '5', name: 'Done'}},
+      ]}},
+      {operation: 'write', method: 'POST', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {id: '5', name: 'Done'}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {name: 'To Do'}}}, sections: {}},
+    });
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'status'});
+    const filtered = await fields.dispatch({
+      type: 'inputChanged',
+      editId: begun.editId,
+      value: 'Do',
+      selection: {start: 2, end: 2},
+    });
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      filtered: {
+        inputValue: filtered.view.edit?.inputValue,
+        selectedOptionId: filtered.view.edit?.selectedOptionId,
+        selectionStart: filtered.view.edit?.selectionStart,
+        selectionEnd: filtered.view.edit?.selectionEnd,
+      },
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    filtered: {inputValue: 'Done', selectedOptionId: '41', selectionStart: 2, selectionEnd: 4},
+    saved: {kind: 'saved', notice: 'Status moved to Done'},
+    writeBody: {transition: {id: '41'}},
+  });
+});
+
+test('failed status transition preserves the selection and remains retryable', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'status', name: 'Status'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {status: {name: 'Status'}}}},
+      {operation: 'read', match: request => request.path.endsWith('/transitions'), result: {transitions: [
+        {id: '31', name: 'Start progress', to: {id: '3', name: 'In Progress'}},
+      ]}},
+      {operation: 'write', method: 'POST', error: 'Transition unavailable'},
+      {operation: 'write', method: 'POST', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {id: '3', name: 'In Progress'}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {name: 'To Do'}}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'status'});
+    const failed = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '31'});
+    const failedView = fields.view();
+    const retried = await fields.dispatch({type: 'save', editId: begun.editId});
+    return {
+      failed: {kind: failed.kind, message: failed.failure?.message},
+      failedView: {
+        error: failedView.edit?.errorMessage,
+        inputValue: failedView.edit?.inputValue,
+        selectedOptionId: failedView.edit?.selectedOptionId,
+      },
+      retried: {kind: retried.kind, notice: retried.notice},
+      writeCount: jira.getRequests().filter(request => request.operation === 'write').length,
+    };
+  });
+
+  expect(result).toEqual({
+    failed: {kind: 'failed', message: 'Transition unavailable'},
+    failedView: {error: 'Transition unavailable', inputValue: 'Start progress -> In Progress', selectedOptionId: '31'},
+    retried: {kind: 'saved', notice: 'Status moved to In Progress'},
+    writeCount: 2,
+  });
+});
+
+test('status arrow navigation selects the next transition before Enter saves it', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'status', name: 'Status'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {status: {name: 'Status'}}}},
+      {operation: 'read', match: request => request.path.endsWith('/transitions'), result: {transitions: [
+        {id: '31', name: 'Start progress', to: {id: '3', name: 'In Progress'}},
+        {id: '41', name: 'Done', to: {id: '5', name: 'Done'}},
+      ]}},
+      {operation: 'write', method: 'POST', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {id: '5', name: 'Done'}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', status: {name: 'To Do'}}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'status'});
+    const moved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'ArrowDown'});
+    const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      highlightedOptionId: moved.view.edit?.highlightedOptionId,
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    highlightedOptionId: '41',
+    saved: {kind: 'saved', notice: 'Status moved to Done'},
+    writeBody: {transition: {id: '41'}},
+  });
+});
