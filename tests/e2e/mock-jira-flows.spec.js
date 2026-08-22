@@ -524,6 +524,60 @@ test('renders text custom fields with a plain prefilled input instead of select-
   await page.close();
 });
 
+test('edits multiline Environment text without treating bare Enter as save @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Environment editing coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  let currentEnvironment = 'Linux\nChrome';
+  await optionsPage.context().route(jiraApiPattern(target.instanceUrl, '/rest/api/2/issue/[^/]+(?:\\?.*)?$'), async route => {
+    const request = route.request();
+    if (request.method() === 'PUT') {
+      const payload = JSON.parse(request.postData() || '{}');
+      if (Object.prototype.hasOwnProperty.call(payload?.fields || {}, 'environment')) {
+        currentEnvironment = payload.fields.environment;
+      }
+      await route.fulfill({status: 204, headers: {'access-control-allow-origin': '*'}, body: ''});
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json();
+    await route.fulfill({
+      status: response.status(),
+      headers: {...response.headers(), 'content-type': 'application/json; charset=utf-8'},
+      body: JSON.stringify({
+        ...payload,
+        fields: {...payload.fields, environment: currentEnvironment},
+      }),
+    });
+  });
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      environment: {name: 'Environment', operations: ['set'], schema: {type: 'string'}},
+    },
+  }));
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  await expect(popup.root).toContainText('Environment: Linux Chrome');
+  await popup.editButton('environment').click();
+  const textarea = page.locator('textarea[data-field-key="environment"]');
+  await expect(textarea).toHaveValue('Linux\nChrome');
+  await textarea.press('End');
+  await textarea.press('Enter');
+  await expect(textarea).toHaveValue('Linux\nChrome\n');
+
+  await textarea.fill('Linux\nFirefox');
+  await page.locator('._JX_edit_save[data-field-key="environment"]').click();
+  await expect(popup.root).toContainText('Environment updated');
+  await expect(popup.root).toContainText('Environment: Linux Firefox');
+  expect(currentEnvironment).toBe('Linux\nFirefox');
+  await page.close();
+});
+
 test('supports editing non-custom Jira fields added through popup layout configuration @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'System field layout coverage is deterministic in mocked mode only.');

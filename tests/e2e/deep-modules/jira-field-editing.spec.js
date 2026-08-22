@@ -1124,3 +1124,88 @@ test('Labels input debounce cancels superseded searches inside the editing inter
     searchPaths: ['https://jira.example/rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=new'],
   });
 });
+
+test('Environment editing owns textarea state, exact payload, notice, and refresh', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'environment', name: 'Environment', schema: {type: 'string'}}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {environment: {name: 'Environment', operations: ['set'], schema: {type: 'string'}}}}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', environment: '  Linux staging  '}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', environment: 'Linux'}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'environment'});
+    const changed = await fields.dispatch({
+      type: 'inputChanged',
+      editId: begun.editId,
+      value: '  Linux staging  ',
+      selection: {start: 4, end: 9},
+    });
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {
+        kind: begun.kind,
+        editorType: begun.view.edit?.editorType,
+        inputValue: begun.view.edit?.inputValue,
+        placeholder: begun.view.edit?.inputPlaceholder,
+      },
+      changed: {
+        kind: changed.kind,
+        inputValue: changed.view.edit?.inputValue,
+        selectionStart: changed.view.edit?.selectionStart,
+        selectionEnd: changed.view.edit?.selectionEnd,
+      },
+      saved: {kind: saved.kind, notice: saved.notice, environment: saved.refreshedSnapshot?.core?.fields?.environment},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', editorType: 'textarea', inputValue: 'Linux', placeholder: 'Describe the environment'},
+    changed: {kind: 'changed', inputValue: '  Linux staging  ', selectionStart: 4, selectionEnd: 9},
+    saved: {kind: 'saved', notice: 'Environment updated', environment: '  Linux staging  '},
+    writeBody: {fields: {environment: '  Linux staging  '}},
+  });
+});
+
+test('Environment clearing uses null and a failed save remains retryable', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'environment', name: 'Environment'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {environment: {name: 'Environment', operations: ['set']}}}},
+      {operation: 'write', method: 'PUT', error: 'Environment update failed'},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', environment: null}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', environment: 'Linux'}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'environment'});
+    await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: '   '});
+    const failed = await fields.dispatch({type: 'save', editId: begun.editId});
+    const retried = await fields.dispatch({type: 'save', editId: begun.editId});
+    const writes = jira.getRequests().filter(request => request.operation === 'write');
+    return {
+      failed: {kind: failed.kind, errorMessage: failed.view.edit?.errorMessage, inputValue: failed.view.edit?.inputValue},
+      retried: {kind: retried.kind, notice: retried.notice},
+      writeBodies: writes.map(request => request.body),
+    };
+  });
+
+  expect(result).toEqual({
+    failed: {kind: 'failed', errorMessage: 'Environment update failed', inputValue: '   '},
+    retried: {kind: 'saved', notice: 'Environment cleared'},
+    writeBodies: [{fields: {environment: null}}, {fields: {environment: null}}],
+  });
+});

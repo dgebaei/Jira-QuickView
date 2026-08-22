@@ -661,14 +661,11 @@ async function mainAsyncLocal() {
     submitFieldEdit,
     toggleMultiSelectOptionFromInput,
   } = createPopupEditing({
-    INSTANCE_URL,
     buildEditFieldError,
     getCustomFieldEditorDefinition,
-    getEditableFieldCapability,
     getPopupState: () => popupState,
     refreshPopupIssueState,
     renderIssuePopup,
-    requestJson,
     setPopupState: nextState => {
       popupState = nextState;
     },
@@ -4860,7 +4857,7 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['assignee', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
+    return ['assignee', 'environment', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {
@@ -5893,6 +5890,9 @@ async function mainAsyncLocal() {
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView?.fieldKey === fieldKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
+      if (e.key === 'Enter' && fieldView.selectionMode === 'text' && fieldView.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) {
+        return;
+      }
       e.preventDefault();
       dispatchJiraFieldEditing({
         type: 'key',

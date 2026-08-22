@@ -19,12 +19,9 @@ export function buildEditOption(id, label, extra = {}) {
 
 export function createPopupEditing(deps) {
   const {
-    INSTANCE_URL,
     buildEditFieldError,
-    getEditableFieldCapability,
     refreshPopupIssueState,
     renderIssuePopup,
-    requestJson,
     getCustomFieldEditorDefinition,
     getPopupState,
     setPopupState,
@@ -112,72 +109,6 @@ export function createPopupEditing(deps) {
   }
 
   async function getEditableFieldDefinition(fieldKey, issueData) {
-    if (fieldKey === 'summary') {
-      const capability = await getEditableFieldCapability(issueData, 'summary');
-      const operations = capability.operations || [];
-      if (!capability.editable || !operations.includes('set')) {
-        return null;
-      }
-      const currentSummary = String(issueData?.fields?.summary || '');
-      return {
-        fieldKey,
-        editorType: 'text',
-        label: 'Issue title',
-        selectionMode: 'text',
-        currentText: currentSummary,
-        currentSelections: [],
-        initialInputValue: currentSummary,
-        inputPlaceholder: 'Enter a new issue title',
-        showActionButtons: true,
-        loadOptions: async () => [],
-        save: (selectedOptions, editState) => {
-          const nextSummary = String(editState?.inputValue || '').trim();
-          if (!nextSummary) {
-            throw new Error('Issue title cannot be empty');
-          }
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              summary: nextSummary,
-            },
-          });
-        },
-        successMessage: () => 'Issue title updated',
-      };
-    }
-
-    if (fieldKey === 'environment') {
-      const capability = await getEditableFieldCapability(issueData, 'environment');
-      const operations = capability.operations || [];
-      if (!capability.editable || !operations.includes('set')) {
-        return null;
-      }
-      const currentEnvironment = String(issueData?.fields?.environment || '');
-      return {
-        fieldKey,
-        editorType: 'textarea',
-        label: 'Environment',
-        selectionMode: 'text',
-        currentText: currentEnvironment,
-        currentSelections: [],
-        initialInputValue: currentEnvironment,
-        inputPlaceholder: 'Describe the environment',
-        showActionButtons: true,
-        loadOptions: async () => [],
-        save: (selectedOptions, editState) => {
-          const nextEnvironment = String(editState?.inputValue || '');
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              environment: nextEnvironment.trim() ? nextEnvironment : null,
-            },
-          });
-        },
-        successMessage: (selectedOptions, editState) => {
-          const nextEnvironment = String(editState?.inputValue || '').trim();
-          return nextEnvironment ? 'Environment updated' : 'Environment cleared';
-        },
-      };
-    }
-
     const fieldEditorDefinition = await getCustomFieldEditorDefinition(fieldKey, issueData);
     if (fieldEditorDefinition) {
       return fieldEditorDefinition;

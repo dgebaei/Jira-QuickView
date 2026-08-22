@@ -499,7 +499,7 @@ export function createJiraFieldEditing(options = {}) {
   async function begin(intent) {
     if (!session || !intent.fieldId) return outcome('ignored');
     if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
-    if (!['assignee', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
+    if (!['assignee', 'environment', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
     const capturedSession = session;
     const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
     cancelPendingLabelSearch();
@@ -544,22 +544,25 @@ export function createJiraFieldEditing(options = {}) {
       });
     }
     const context = fieldOutcome.context;
-    if (intent.fieldId === 'summary') {
+    if (['environment', 'summary'].includes(intent.fieldId)) {
       const operations = context?.operations || [];
       if (!context?.editable || !operations.includes('set')) {
         const failure = fieldOutcome.failure || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
         edit = null;
         return outcome('ignored', {editId, failure});
       }
-      const currentSummary = String(capturedSession.issueSnapshot.core?.fields?.summary || '');
+      const isSummary = intent.fieldId === 'summary';
+      const currentValue = String(capturedSession.issueSnapshot.core?.fields?.[intent.fieldId] || '');
       edit = {
         ...edit,
-        inputValue: currentSummary,
-        originalInputValue: currentSummary,
-        inputPlaceholder: 'Enter a new issue title',
+        editorType: isSummary ? 'text' : 'textarea',
+        label: isSummary ? 'Issue title' : 'Environment',
+        inputValue: currentValue,
+        originalInputValue: currentValue,
+        inputPlaceholder: isSummary ? 'Enter a new issue title' : 'Describe the environment',
         loadingOptions: false,
-        selectionStart: currentSummary.length,
-        selectionEnd: currentSummary.length,
+        selectionStart: currentValue.length,
+        selectionEnd: currentValue.length,
         status: 'editing',
       };
     } else if (intent.fieldId === 'status') {
@@ -1083,6 +1086,14 @@ export function createJiraFieldEditing(options = {}) {
         method: 'PUT',
         path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
         body: {fields: {summary: nextSummary}},
+      };
+    } else if (edit.fieldKey === 'environment') {
+      const nextEnvironment = String(edit.inputValue || '');
+      notice = nextEnvironment.trim() ? 'Environment updated' : 'Environment cleared';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {environment: nextEnvironment.trim() ? nextEnvironment : null}},
       };
     } else if (edit.fieldKey === 'status') {
       const selectedTransition = edit.options.find(option => option.id === edit.selectedOptionId);
