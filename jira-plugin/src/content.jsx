@@ -523,7 +523,7 @@ async function mainAsyncLocal() {
     }
     return history.data || {histories: []};
   }
-  const {formatChangelogForDisplay} = createContentHistoryHelpers({
+  const historyPresentation = createContentHistoryHelpers({
     areSameJiraUser,
     buildAttachmentImagesByName,
     buildHistoryAttachmentLookup,
@@ -2823,26 +2823,26 @@ async function mainAsyncLocal() {
     buildLinkHoverTitle,
     buildTimeTrackingSectionPresentation,
     comments: commentLifecycle,
-    customFields,
-    displayFields,
-    emptyWatchersState,
+    configuration: {
+      customFields,
+      displayFields,
+      instanceUrl: INSTANCE_URL,
+      layoutContentBlocks,
+      loaderGifUrl,
+      showPullRequests,
+      tooltipLayout,
+    },
     encodeJqlValue,
-    formatChangelogForDisplay,
     getEditableFieldCapability,
     getTransitionOptions,
     issueData: quickViewIssueData,
-    instanceUrl: INSTANCE_URL,
-    layoutContentBlocks,
-    loaderGifUrl,
-    normalizeCommentSortOrder,
+    history: historyPresentation,
     normalizeRichHtml,
     people,
     quickActions: popupQuickActions,
     readSprintsFromIssue,
     resolveIssueLinkage,
     scopeJqlToProject,
-    showPullRequests,
-    tooltipLayout,
   });
 
 

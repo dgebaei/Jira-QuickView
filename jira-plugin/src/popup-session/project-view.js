@@ -1,6 +1,14 @@
 import {buildLinkedIssuesPanelView} from 'src/content-linked-issues-helpers';
 
 export function createPopupProjectView(options) {
+  const configuration = options?.configuration || {};
+  const customFields = configuration.customFields || [];
+  const displayFields = configuration.displayFields || {};
+  const instanceUrl = configuration.instanceUrl || '';
+  const layoutContentBlocks = configuration.layoutContentBlocks || [];
+  const loaderGifUrl = configuration.loaderGifUrl || '';
+  const showPullRequests = !!configuration.showPullRequests;
+  const tooltipLayout = configuration.tooltipLayout || {};
   const attachmentPresentation = options?.attachments;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
@@ -11,22 +19,32 @@ export function createPopupProjectView(options) {
   const people = options?.people;
   const quickActionModule = options?.quickActions;
   const buildActiveEditPresentation = options?.buildActiveEditPresentation;
-  const displayFields = options?.displayFields || {};
   const encodeJqlValue = options?.encodeJqlValue;
   const getEditableFieldCapability = options?.getEditableFieldCapability;
   const comments = options?.comments;
   const getTransitionOptions = options?.getTransitionOptions;
   const issueDataModule = options?.issueData;
-  const instanceUrl = options?.instanceUrl || '';
-  const layoutContentBlocks = options?.layoutContentBlocks || [];
-  const loaderGifUrl = options?.loaderGifUrl || '';
-  const normalizeCommentSortOrder = options?.normalizeCommentSortOrder || (value => value === 'newest' ? 'newest' : 'oldest');
+  const history = options?.history;
   const normalizeRichHtml = options?.normalizeRichHtml;
   const readSprintsFromIssue = options?.readSprintsFromIssue;
   const resolveIssueLinkage = options?.resolveIssueLinkage;
   const scopeJqlToProject = options?.scopeJqlToProject;
-  const showPullRequests = !!options?.showPullRequests;
-  const tooltipLayout = options?.tooltipLayout || {};
+
+  function normalizeCommentSortOrder(value) {
+    return value === 'newest' ? 'newest' : 'oldest';
+  }
+
+  function emptyWatchersState() {
+    return {
+      open: false,
+      loading: false,
+      errorMessage: '',
+      watchers: [],
+      searchResults: [],
+      pendingAddIds: [],
+      pendingRemoveIds: [],
+    };
+  }
 
   function normalizeSecondaryStatusChip(chip) {
     if (!chip) {
@@ -147,7 +165,6 @@ export function createPopupProjectView(options) {
   }
 
   function buildWatchersPanelView(state) {
-    const emptyWatchersState = options?.emptyWatchersState;
     const watcherState = state?.watchersState || emptyWatchersState();
     const watchers = Array.isArray(watcherState.watchers) ? watcherState.watchers : [];
     const pendingAddIds = new Set(watcherState.pendingAddIds || []);
@@ -427,7 +444,7 @@ export function createPopupProjectView(options) {
       getEditableFieldCapability(issueData, 'summary').catch(() => ({editable: false, operations: []})),
       getEditableFieldCapability(issueData, 'description').catch(() => ({editable: false, operations: []})),
       getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false})),
-      buildCustomFieldChips(issueData, options?.customFields || [], state)
+      buildCustomFieldChips(issueData, customFields, state)
     ]);
     const statusEditable = Array.isArray(transitionOptions) && transitionOptions.length > 0;
     const issueTypeEditable = !!issueTypeCapability?.editable && hasMultipleIssueTypeOptions(issueTypeCapability.allowedValues, issueData.fields.issuetype);
@@ -811,7 +828,7 @@ export function createPopupProjectView(options) {
     displayData.hasPrimaryStatusRow = row1Chips.length > 0 || displayData.hasRow1Meta;
     displayData.historyOpen = !!historyOpen;
     displayData.changelogLoading = !!changelogLoading;
-    displayData.changelogEntries = historyOpen ? await options?.formatChangelogForDisplay(changelogData, issueData) : [];
+    displayData.changelogEntries = historyOpen ? await history.formatChangelogForDisplay(changelogData, issueData) : [];
     displayData.hasChangelogEntries = historyOpen && displayData.changelogEntries.length > 0;
     displayData.showChangelogEmpty = historyOpen && !changelogLoading && displayData.changelogEntries.length === 0;
     return displayData;
