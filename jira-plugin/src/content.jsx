@@ -18,7 +18,7 @@ import {
   getLinkedIssueKeys,
   parseLinkedIssueKeys,
 } from 'src/content-linked-issues-helpers';
-import {createContentDisplayHelpers} from 'src/content-display-helpers';
+import {createPopupProjectView} from 'src/popup-session/project-view';
 import {createContentPeopleHelpers} from 'src/content-people-helpers';
 import {createContentPopupStateHelpers} from 'src/content-popup-state-helpers';
 import {createContentShellHelpers} from 'src/content-shell-helpers';
@@ -2910,7 +2910,7 @@ async function mainAsyncLocal() {
     buildEditOption,
   });
 
-  const {buildPopupDisplayData} = createContentDisplayHelpers({
+  const {buildPopupDisplayData} = createPopupProjectView({
     buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
     buildActiveEditPresentation,
     buildHistoryAttachmentLookup,
@@ -2927,6 +2927,7 @@ async function mainAsyncLocal() {
     buildQuickActionViewData,
     buildTimeTrackingSectionPresentation,
     buildUserView,
+    comments: commentLifecycle,
     customFields,
     displayFields,
     emptyWatchersState,
@@ -2939,7 +2940,6 @@ async function mainAsyncLocal() {
     formatPullRequestTitle,
     formatSprintText,
     getEditableFieldCapability,
-    getCommentLifecycleView: () => commentLifecycle.view(),
     getTransitionOptions,
     getVisibleSprintsForDisplay,
     hasLabelSuggestionSupport,

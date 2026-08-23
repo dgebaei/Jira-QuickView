@@ -1,4 +1,4 @@
-export function createContentDisplayHelpers(options) {
+export function createPopupProjectView(options) {
   const buildActivityIndicatorsDefault = options?.buildActivityIndicatorsDefault;
   const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
@@ -19,7 +19,7 @@ export function createContentDisplayHelpers(options) {
   const formatPullRequestTitle = options?.formatPullRequestTitle;
   const formatSprintText = options?.formatSprintText;
   const getEditableFieldCapability = options?.getEditableFieldCapability;
-  const getCommentLifecycleView = options?.getCommentLifecycleView;
+  const comments = options?.comments;
   const getTransitionOptions = options?.getTransitionOptions;
   const getVisibleSprintsForDisplay = options?.getVisibleSprintsForDisplay;
   const hasLabelSuggestionSupport = options?.hasLabelSuggestionSupport;
@@ -327,7 +327,7 @@ export function createContentDisplayHelpers(options) {
       imageMaxHeight: 180
     });
     const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
-    const commentsForDisplay = [...(getCommentLifecycleView()?.comments || [])].sort((left, right) => {
+    const commentsForDisplay = [...(comments.view()?.comments || [])].sort((left, right) => {
       const comparison = Number(left?.createdTimestamp || 0) - Number(right?.createdTimestamp || 0);
       return normalizedCommentSortOrder === 'newest' ? comparison * -1 : comparison;
     });
