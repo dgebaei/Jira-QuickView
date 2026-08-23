@@ -468,8 +468,6 @@ async function mainAsyncLocal() {
   let popupState = null;
   function buildPopupInteractionReset(overrides = {}) {
     return {
-      actionLoadingKey: '',
-      actionError: '',
       lastActionSuccess: '',
       changelogData: null,
       changelogLoading: false,
@@ -563,12 +561,6 @@ async function mainAsyncLocal() {
     const refreshedWatcherData = ['ready', 'empty', 'staleRetained'].includes(watcherSection?.status)
       ? watcherSection.data
       : null;
-    let quickActions = [];
-    try {
-      quickActions = await resolveQuickActions(refreshedIssueData);
-    } catch (error) {
-      quickActions = [];
-    }
     if (!popupState || popupState.key !== popupKey) return;
     clearActionNoticeTimer();
     await renderUpdatedPopupState(currentState => ({
@@ -576,7 +568,6 @@ async function mainAsyncLocal() {
       issueSnapshot: issueOutcome.snapshot,
       issueData: refreshedIssueData,
       pullRequests: refreshedPullRequests,
-      quickActions,
       ...buildPopupInteractionReset({
         lastActionSuccess: showSnackBar ? '' : successMessage,
         changelogData: shouldKeepHistoryOpen ? (refreshedChangelog || {histories: []}) : null,
@@ -651,48 +642,38 @@ async function mainAsyncLocal() {
     INSTANCE_URL,
     formatSprintActionLabel,
     getProjectSprintOptions,
+    issueData: quickViewIssueData,
+    jira,
     loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
-    loadViewer: async issueKey => {
-      const activeIssueKey = issueKey || popupState?.issueData?.key || '';
-      if (!activeIssueKey) {
-        throw new Error('Issue key is required to load the Jira viewer');
-      }
-      const outcome = await quickViewIssueData.openIssue({
-        issueKey: activeIssueKey,
-        requirements: {viewer: true},
-      });
-      if (!outcome.snapshot?.viewer?.user) {
-        throw new Error(outcome.snapshot?.viewer?.failure?.message || 'Could not load the Jira viewer');
-      }
-      return outcome.snapshot.viewer.user;
-    },
+    loadViewer: getCurrentUserInfo,
     readSprintsFromIssue,
-    requestJson,
   });
-  const {
-    buildQuickActionError,
-    executeQuickAction,
-    getCurrentUserInfo,
-    resolveQuickActions,
-  } = popupQuickActions;
 
   const popupSurface = createBrowserPopupSurface({
     async commitCurrent(frame, context) {
       if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
-      popupState = applyPopupPresentation(popupState, frame.presentation);
+      const legacySnapshot = frame.issueSnapshot?.core && frame.issueSnapshot !== popupState.issueSnapshot
+        ? snapshotToLegacyPopupState(frame.issueSnapshot)
+        : null;
+      popupState = applyPopupPresentation({
+        ...popupState,
+        ...(legacySnapshot ? {
+          issueSnapshot: legacySnapshot.issueSnapshot,
+          issueData: legacySnapshot.issueData,
+          children: legacySnapshot.children,
+          childrenJql: legacySnapshot.childrenJql,
+          childrenError: legacySnapshot.childrenError,
+          pullRequests: legacySnapshot.pullRequests,
+          commentReactionState: legacySnapshot.commentReactionState,
+        } : {}),
+        quickActionView: frame.quickActions,
+      }, frame.presentation);
       await popupRenderer.render(popupState, context);
     },
     async commitVisible(frame, context) {
       if (!context.isCurrent()) return;
       const legacySnapshot = snapshotToLegacyPopupState(frame.issueSnapshot);
       const issueData = legacySnapshot.issueData;
-      let quickActions = [];
-      try {
-        quickActions = await resolveQuickActions(issueData);
-      } catch (error) {
-        quickActions = [];
-      }
-      if (!context.isCurrent()) return;
       const initialPopupState = applyPopupPresentation({
         key: frame.issueKey,
         issueSnapshot: legacySnapshot.issueSnapshot,
@@ -703,7 +684,7 @@ async function mainAsyncLocal() {
         pullRequests: legacySnapshot.pullRequests,
         pointerX: Number(frame.anchor?.x) || 0,
         pointerY: Number(frame.anchor?.y) || 0,
-        quickActions,
+        quickActionView: frame.quickActions,
         commentReactionState: legacySnapshot.commentReactionState,
         ...buildPopupInteractionReset(),
         descriptionEditState: createDescriptionEditState(issueData),
@@ -727,6 +708,7 @@ async function mainAsyncLocal() {
     issueData: quickViewIssueData,
     fieldEditing: jiraFieldEditing,
     comments: commentLifecycle,
+    quickActions: popupQuickActions,
     surface: popupSurface,
   });
 
@@ -2062,6 +2044,19 @@ async function mainAsyncLocal() {
 
   // ── Issue Data & Metadata ──────────────────────────────────
 
+  async function getCurrentUserInfo(issueKey = '') {
+    const activeIssueKey = issueKey || popupState?.issueData?.key || '';
+    if (!activeIssueKey) throw new Error('Issue key is required to load the Jira viewer');
+    const outcome = await quickViewIssueData.openIssue({
+      issueKey: activeIssueKey,
+      requirements: {viewer: true},
+    });
+    if (!outcome.snapshot?.viewer?.user) {
+      throw new Error(outcome.snapshot?.viewer?.failure?.message || 'Could not load the Jira viewer');
+    }
+    return outcome.snapshot.viewer.user;
+  }
+
   async function getIssueWatchers(issueKey) {
     if (!issueKey) {
       return {
@@ -2169,6 +2164,12 @@ async function mainAsyncLocal() {
     }
     actionNoticeTimeoutId = setTimeout(() => {
       actionNoticeTimeoutId = null;
+      if (popupQuickActions.view().notice === noticeText) {
+        popupQuickActions.dispatch({type: 'clearNotice', notice: noticeText}).then(() => {
+          return renderCurrentPopup('quick-action-notice-cleared');
+        }).catch(() => {});
+        return;
+      }
       if (!popupState?.lastActionSuccess || popupState.lastActionSuccess !== noticeText) {
         return;
       }
@@ -2832,7 +2833,6 @@ async function mainAsyncLocal() {
     history: historyPresentation,
     normalizeRichHtml,
     people,
-    quickActions: popupQuickActions,
     readSprintsFromIssue,
     scopeJqlToProject,
   });
@@ -3505,36 +3505,27 @@ async function mainAsyncLocal() {
   }
   // ── Field Editing ─────────────────────────────────────────
   async function handleQuickAction(actionKey) {
-    if (!popupState?.issueData || popupState.actionLoadingKey) {
-      return;
-    }
-    const action = (popupState.quickActions || []).find(candidate => candidate.key === actionKey);
-    if (!action) {
-      return;
-    }
-
-    popupState = {
-      ...popupState,
-      actionLoadingKey: action.key,
-      actionError: '',
-      lastActionSuccess: '',
-    };
+    if (!popupState?.issueData || popupQuickActions.view().loadingKey) return;
+    const pending = popupQuickActions.dispatch({
+      type: 'execute',
+      actionKey,
+      requirements: {
+        history: !!popupState.historyOpen,
+        linkedIssues: !!popupState.linkedIssuesState?.open,
+        pullRequests: showPullRequests,
+        watchers: !!popupState.watchersState?.open,
+      },
+    });
     const closed = await popupSession.dispatch({type: 'close-actions'});
     if (closed.kind === 'ignored') await renderCurrentPopup('quick-action-started');
-
-    try {
-      const successMessage = await executeQuickAction(action, popupState.issueData);
-      await refreshPopupIssueState(successMessage, {
-        mutation: {kind: 'quickAction', action: action.key},
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        actionLoadingKey: '',
-        actionError: buildQuickActionError(error),
-        lastActionSuccess: '',
-      }));
-    }
+    const outcome = await pending;
+    if (outcome.sessionId !== currentPopupSessionId()) return;
+    await popupSession.dispatch({
+      type: 'render',
+      reason: `quick-action-${outcome.kind}`,
+      issueSnapshot: outcome.refreshedSnapshot || popupState.issueSnapshot,
+    });
+    if (outcome.kind === 'executed') scheduleActionNoticeClear(outcome.notice);
   }
   function attachJiraFieldEditingToPopup() {
     if (!popupState?.issueSnapshot?.core) return false;
@@ -3563,12 +3554,6 @@ async function mainAsyncLocal() {
     if (!popupState || popupState.key !== popupKey || fieldOutcome.sessionId !== currentPopupSessionId()) return fieldOutcome;
     if (fieldOutcome.refreshedSnapshot?.core) {
       const legacySnapshot = snapshotToLegacyPopupState(fieldOutcome.refreshedSnapshot);
-      let quickActions = [];
-      try {
-        quickActions = await resolveQuickActions(legacySnapshot.issueData);
-      } catch (error) {
-        quickActions = [];
-      }
       if (!popupState || popupState.key !== popupKey) return fieldOutcome;
       popupState = {
         ...popupState,
@@ -3579,8 +3564,6 @@ async function mainAsyncLocal() {
         childrenError: legacySnapshot.childrenError,
         pullRequests: legacySnapshot.pullRequests,
         commentReactionState: legacySnapshot.commentReactionState,
-        quickActions,
-        actionError: '',
         lastActionSuccess: fieldOutcome.notice || '',
       };
       await renderCurrentPopup('field-edit-complete');
@@ -3700,13 +3683,6 @@ async function mainAsyncLocal() {
         const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
         const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
 
-        let quickActions = [];
-        try {
-          quickActions = await resolveQuickActions(refreshedIssueData);
-        } catch (ex) {
-          quickActions = [];
-        }
-
         if (!popupState || popupState.key !== issueKey) {
           return;
         }
@@ -3727,7 +3703,6 @@ async function mainAsyncLocal() {
           issueSnapshot: issueOutcome.snapshot,
           issueData: refreshedIssueData,
           pullRequests: refreshedPullRequests,
-          quickActions,
           ...buildPopupInteractionReset(),
           timeTrackingEditState: refreshedTimeTrackingState,
         }));

@@ -17,7 +17,6 @@ export function createPopupProjectView(options) {
   const buildLinkHoverTitle = options?.buildLinkHoverTitle;
   const buildTimeTrackingSectionPresentation = options?.buildTimeTrackingSectionPresentation;
   const people = options?.people;
-  const quickActionModule = options?.quickActions;
   const buildActiveEditPresentation = options?.buildActiveEditPresentation;
   const encodeJqlValue = options?.encodeJqlValue;
   const fieldEditing = options?.fieldEditing;
@@ -387,11 +386,9 @@ export function createPopupProjectView(options) {
       commentSortOrder,
       pullRequests,
       pullRequestsSort,
-      actionLoadingKey,
-      actionError,
       lastActionSuccess,
       actionsOpen,
-      quickActions,
+      quickActionView = {},
       historyOpen,
       changelogData,
       changelogLoading,
@@ -657,7 +654,11 @@ export function createPopupProjectView(options) {
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'branch', 'Branch'),
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'status', 'Status')
     ];
-    const quickActionData = quickActionModule.buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
+    const quickActionData = {
+      actionsOpen: !!actionsOpen && !!quickActionView.hasQuickActions,
+      hasQuickActions: !!quickActionView.hasQuickActions,
+      quickActions: quickActionView.actions || [],
+    };
     const reporterView = displayFields.reporter && issueData.fields.reporter
       ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
       : null;
@@ -798,11 +799,11 @@ export function createPopupProjectView(options) {
       hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
       activityIndicators: [],
       loaderGifUrl,
-      actionNoticeText: titleStatusText || actionError || lastActionSuccess,
+      actionNoticeText: titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess,
       actionNoticeClass: titleStatusText
         ? '_JX_action_notice_info'
-        : (actionError ? '_JX_action_notice_error' : '_JX_action_notice_success'),
-      hasActionNotice: !!(titleStatusText || actionError || lastActionSuccess),
+        : (quickActionView.errorMessage ? '_JX_action_notice_error' : '_JX_action_notice_success'),
+      hasActionNotice: !!(titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess),
       ...quickActionData
     };
     if (issueData.fields.comment?.comments?.[0]?.id) {

@@ -19,7 +19,7 @@ function normalizeFailure(error, fallback = 'Unable to load issue') {
   };
 }
 
-export function createPopupSession({issueData, fieldEditing, comments, surface}) {
+export function createPopupSession({issueData, fieldEditing, comments, quickActions, surface}) {
   requireOperation(issueData, 'openIssue');
   requireOperation(fieldEditing, 'attach');
   requireOperation(fieldEditing, 'detach');
@@ -27,6 +27,10 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
   requireOperation(comments, 'attach');
   requireOperation(comments, 'detach');
   requireOperation(comments, 'view');
+  requireOperation(quickActions, 'attach');
+  requireOperation(quickActions, 'detach');
+  requireOperation(quickActions, 'dispatch');
+  requireOperation(quickActions, 'view');
   requireOperation(surface, 'render');
   requireOperation(surface, 'hide');
 
@@ -80,6 +84,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
       presentation: state.presentation,
       fieldEditing: fieldEditing.view(),
       comments: comments.view(),
+      quickActions: quickActions.view(),
       ...details,
     };
     const context = {
@@ -99,6 +104,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
     previous.controller?.abort();
     await fieldEditing.detach({sessionId: previous.sessionId, reason});
     await comments.detach({sessionId: previous.sessionId, reason});
+    await quickActions.detach({sessionId: previous.sessionId, reason});
   }
 
   async function activate({
@@ -159,6 +165,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
     const issueSnapshot = acquisition.snapshot;
     await fieldEditing.attach({sessionId, issueSnapshot, requirements});
     await comments.attach({sessionId, issueSnapshot});
+    await quickActions.attach({sessionId, issueSnapshot});
     if (!isCurrent(sessionId) || requestId !== activationRequest) {
       return outcome('ignored', {reason: 'superseded'});
     }
@@ -218,12 +225,17 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
   async function dispatch(intent = {}) {
     if (disposed || !state.sessionId) return outcome('ignored', {reason: 'inactive'});
     if (intent.type === 'render') {
+      const sessionId = state.sessionId;
       const nextSnapshot = intent.issueSnapshot;
       const nextIssueKey = normalizeIssueKey(nextSnapshot?.issueKey || nextSnapshot?.core?.key);
       if (nextSnapshot?.core && nextIssueKey !== state.issueKey) {
         return outcome('ignored', {reason: 'stale-issue-snapshot'});
       }
-      if (nextSnapshot?.core) state = {...state, snapshot: nextSnapshot};
+      if (nextSnapshot?.core) {
+        state = {...state, snapshot: nextSnapshot};
+        await quickActions.dispatch({type: 'snapshotChanged', issueSnapshot: nextSnapshot});
+        if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      }
       return scheduleRender(String(intent.reason || 'feature-changed'));
     }
     const transition = transitionPopupPresentation(state.presentation, intent);

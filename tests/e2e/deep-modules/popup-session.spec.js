@@ -31,8 +31,9 @@ test('a reversed older issue load cannot attach features or replace the newer po
       async detach(request) { featureCalls.push({feature: 'comments', operation: 'detach', sessionId: request.sessionId}); },
       view() { return {comments: [], protectFromAutoHide: false}; },
     };
+    const quickActions = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
     const surface = createFixturePopupSurface();
-    const popup = createPopupSession({issueData, fieldEditing, comments, surface});
+    const popup = createPopupSession({issueData, fieldEditing, comments, quickActions, surface});
     const oldActivation = popup.activate({issueKey: 'OLD-1', anchor: {x: 10, y: 20}, activation: 'hover'});
     while (requests.length < 1) await Promise.resolve();
     const newActivation = popup.activate({issueKey: 'NEW-2', anchor: {x: 30, y: 40}, activation: 'modifier'});
@@ -101,6 +102,7 @@ test('a slow surface projection cannot commit after a newer popup session starts
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const oldActivation = popup.activate({issueKey: 'OLD-1'});
@@ -138,6 +140,7 @@ test('close while loading aborts acquisition and prevents a late popup commit', 
       issueData: {openIssue(request) { signal = request.signal; return issue.promise; }},
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const activation = popup.activate({issueKey: 'ABC-1'});
@@ -178,6 +181,7 @@ test('a core failure is observable and the same issue can retry in a fresh sessi
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {edit: null}; }},
       comments: {async attach() {}, async detach() {}, view() { return {comments: []}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const failed = await popup.activate({issueKey: 'ABC-1'});
@@ -219,6 +223,7 @@ test('feature rerenders advance the session revision and publish current feature
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {value: fieldValue}; }},
       comments: {async attach() {}, async detach() {}, view() { return {value: commentValue}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -263,6 +268,7 @@ test('synchronous feature rerenders coalesce into one current surface commit', a
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {revision: featureRevision}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -303,6 +309,7 @@ test('popup session owns sorting transitions and publishes their observable pres
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({
@@ -420,6 +427,7 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -469,6 +477,7 @@ test('popup session owns quick-action menu visibility', async ({page}) => {
       }},
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
