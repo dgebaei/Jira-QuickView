@@ -288,3 +288,85 @@ test('synchronous feature rerenders coalesce into one current surface commit', a
     view: {status: 'visible', sessionId: 'popup-1', issueKey: 'ABC-1', stateRevision: 3},
   });
 });
+
+test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup"></div>';
+    const container = $('#popup');
+    const continuityCalls = [];
+    let fieldView = null;
+    const renderer = createBrowserPopupRenderer({
+      comments: {dispatch() { return Promise.resolve(); }, view() { return {issueKey: 'ABC-1', rowAction: null}; }},
+      container,
+      contentBlockOrder: ['first', 'second'],
+      continuity: {
+        constrainPopovers() { continuityCalls.push('constrain'); },
+        renderComposeMentions() { continuityCalls.push('composeMentions'); },
+        renderEditMentions() { continuityCalls.push('editMentions'); },
+        renderUploads() { continuityCalls.push('uploads'); },
+        restoreComposer() { continuityCalls.push('restore'); },
+        syncComposer() { continuityCalls.push('sync'); },
+      },
+      fieldEditing: {view() { return fieldView; }},
+      position: {compute() { return {left: 15, top: 25}; }, isPinned() { return false; }},
+      projectState(state) { return {value: state.value}; },
+      template: '<div class="_JX_content_blocks" style="width:50px;height:20px;overflow:scroll"><div data-content-block="second">second</div><div data-content-block="first">first</div><div style="width:200px;height:100px"></div></div><input class="_JX_edit_input" value="{{value}}">',
+    });
+    const context = {isCurrent() { return true; }};
+    await renderer.render({issueData: {key: 'ABC-1'}, key: 'ABC-1', pointerX: 1, pointerY: 2, value: 'initial'}, context);
+    container.find('._JX_content_blocks').scrollLeft(12).scrollTop(18);
+    continuityCalls.length = 0;
+    fieldView = {fieldKey: 'summary', selectionStart: 2, selectionEnd: 5};
+    const receipt = await renderer.render({issueData: {key: 'ABC-1'}, key: 'ABC-1', pointerX: 1, pointerY: 2, value: 'updated'}, context);
+    const input = container.find('._JX_edit_input').get(0);
+    return {
+      receipt,
+      blockOrder: container.find('[data-content-block]').map((index, element) => element.getAttribute('data-content-block')).get(),
+      scroll: {
+        left: container.find('._JX_content_blocks').scrollLeft(),
+        top: container.find('._JX_content_blocks').scrollTop(),
+      },
+      selection: {start: input.selectionStart, end: input.selectionEnd, active: document.activeElement === input},
+      position: {left: container.css('left'), top: container.css('top')},
+      continuityCalls,
+    };
+  });
+
+  expect(result).toEqual({
+    receipt: {kind: 'committed'},
+    blockOrder: ['first', 'second'],
+    scroll: {left: 12, top: 18},
+    selection: {start: 2, end: 5, active: true},
+    position: {left: '15px', top: '25px'},
+    continuityCalls: ['restore', 'uploads', 'composeMentions', 'sync', 'editMentions', 'constrain'],
+  });
+});
+
+test('browser renderer rejects a stale asynchronous projection before DOM commit', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupRenderer, createDeferred, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup">current</div>';
+    const projection = createDeferred();
+    let current = true;
+    const renderer = createBrowserPopupRenderer({
+      comments: {dispatch() { return Promise.resolve(); }, view() { return {}; }},
+      container: $('#popup'),
+      contentBlockOrder: [],
+      continuity: {
+        constrainPopovers() {}, renderComposeMentions() {}, renderEditMentions() {}, renderUploads() {}, restoreComposer() {}, syncComposer() {},
+      },
+      fieldEditing: {view() { return null; }},
+      position: {compute() { return {}; }, isPinned() { return true; }},
+      projectState() { return projection.promise; },
+      template: '<div>{{value}}</div>',
+    });
+    const pending = renderer.render({issueData: {key: 'OLD-1'}, key: 'OLD-1'}, {isCurrent() { return current; }});
+    current = false;
+    projection.resolve({value: 'stale'});
+    const receipt = await pending;
+    return {receipt, html: $('#popup').html()};
+  });
+
+  expect(result).toEqual({receipt: {kind: 'stale'}, html: 'current'});
+});

@@ -3,11 +3,14 @@ import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {createPopupSession} from 'src/popup-session';
+import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createDeferred, createMockJiraAdapter} from './mock-jira-adapter';
 import {createFixturePopupSurface} from './fixture-popup-surface';
+import jquery from 'jquery';
 
 window.JiraQuickViewDeepModules = {
   createBrowserMessageJiraAdapter,
+  createBrowserPopupRenderer,
   createCommentLifecycle,
   createDeferred,
   createFixturePopupSurface,
@@ -15,4 +18,5 @@ window.JiraQuickViewDeepModules = {
   createMockJiraAdapter,
   createPopupSession,
   createQuickViewIssueData,
+  jquery,
 };
