@@ -14,6 +14,15 @@ function normalizeInstanceUrl(value) {
   return instanceUrl && !instanceUrl.endsWith('/') ? `${instanceUrl}/` : instanceUrl;
 }
 
+function toAbsoluteUrl(value, instanceUrl) {
+  if (!value) return '';
+  try {
+    return new URL(String(value), instanceUrl).toString();
+  } catch (error) {
+    return String(value);
+  }
+}
+
 function normalizeFailure(error, fallback = 'Comment operation failed') {
   return {
     name: String(error?.name || 'Error'),
@@ -152,7 +161,60 @@ function emptyComposeState() {
     saving: false,
     errorMessage: '',
     mention: emptyMentionState(),
+    uploads: [],
   };
+}
+
+function pastedImageExtension(file) {
+  const extensionByMimeType = {
+    'image/bmp': 'bmp',
+    'image/gif': 'gif',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  return extensionByMimeType[String(file?.type || '').toLowerCase()] || 'png';
+}
+
+function uploadTimestamp(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  const usableDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return usableDate.toISOString().replace(/[^\d]/g, '').slice(0, 14);
+}
+
+function insertImageMarkup(value, selection, markup) {
+  const text = String(value || '');
+  const normalizedSelection = normalizeSelection(selection, text);
+  const prefix = normalizedSelection.start > 0 && text.charAt(normalizedSelection.start - 1) !== '\n' ? '\n' : '';
+  const suffix = normalizedSelection.end < text.length
+    ? (text.charAt(normalizedSelection.end) !== '\n' ? '\n' : '')
+    : '\n';
+  const insertedText = `${prefix}${markup}${suffix}`;
+  const nextValue = text.slice(0, normalizedSelection.start) + insertedText + text.slice(normalizedSelection.end);
+  const caret = normalizedSelection.start + insertedText.length;
+  return {value: nextValue, selection: {start: caret, end: caret}};
+}
+
+function replaceFirstMarkup(value, searchValue, replaceValue = '') {
+  const text = String(value || '');
+  const index = text.indexOf(searchValue);
+  if (index === -1) return {value: text, delta: 0};
+  const nextValue = (text.slice(0, index) + replaceValue + text.slice(index + searchValue.length)).replace(/\n{3,}/g, '\n\n');
+  return {value: nextValue, delta: replaceValue.length - searchValue.length};
+}
+
+function removeMarkupLine(value, markup) {
+  const text = String(value || '');
+  const index = text.indexOf(markup);
+  if (index === -1) return text;
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  const newlineIndex = text.indexOf('\n', index + markup.length);
+  const lineEnd = newlineIndex === -1 ? text.length : newlineIndex;
+  if (text.slice(lineStart, lineEnd).trim() === markup) {
+    return text.slice(0, lineStart) + text.slice(newlineIndex === -1 ? lineEnd : lineEnd + 1);
+  }
+  return replaceFirstMarkup(text, markup, '').value;
 }
 
 function emptyMentionState() {
@@ -217,7 +279,10 @@ export function createCommentLifecycle(options = {}) {
   const scheduler = options.scheduler && typeof options.scheduler.wait === 'function'
     ? options.scheduler
     : {wait: milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))};
+  const clock = typeof options.clock === 'function' ? options.clock : () => new Date();
+  const attachmentMedia = options.attachmentMedia || {createPreview: () => '', revokePreview() {}};
   let generation = 0;
+  let uploadSequence = 0;
   let state = null;
   const activeOperations = {compose: null, composeMention: null, rowAction: null, rowMention: null};
 
@@ -243,11 +308,13 @@ export function createCommentLifecycle(options = {}) {
   }
 
   function attach({sessionId, issueSnapshot} = {}) {
+    const previousUploads = state?.compose?.uploads || [];
     Object.values(activeOperations).forEach(controller => controller?.abort());
     activeOperations.compose = null;
     activeOperations.composeMention = null;
     activeOperations.rowAction = null;
     activeOperations.rowMention = null;
+    releaseUploads(previousUploads, {deleteUploaded: true}).catch(() => {});
     const issueKey = String(issueSnapshot?.issueKey || issueSnapshot?.core?.key || '').trim();
     generation += 1;
     state = {
@@ -264,6 +331,7 @@ export function createCommentLifecycle(options = {}) {
   function detach({sessionId} = {}) {
     if (!state || (sessionId && String(sessionId) !== state.sessionId)) return outcome('ignored');
     const detachedIdentity = identityOf();
+    const detachedUploads = state.compose.uploads;
     Object.values(activeOperations).forEach(controller => controller?.abort());
     activeOperations.compose = null;
     activeOperations.composeMention = null;
@@ -271,6 +339,7 @@ export function createCommentLifecycle(options = {}) {
     activeOperations.rowMention = null;
     generation += 1;
     state = null;
+    releaseUploads(detachedUploads, {deleteUploaded: true}).catch(() => {});
     return outcome('detached', {}, detachedIdentity);
   }
 
@@ -299,8 +368,20 @@ export function createCommentLifecycle(options = {}) {
         focused: compose.focused,
         saving: compose.saving,
         errorMessage: compose.errorMessage,
-        canSave: !!compose.value.trim() && !compose.saving,
+        canSave: !!compose.value.trim() && !compose.saving && !compose.uploads.some(upload => upload.status === 'uploading'),
         mention: projectMention(compose.mention),
+        uploads: compose.uploads.map(upload => ({
+          attachmentId: upload.attachmentId,
+          canRetry: upload.status === 'error',
+          contentUrl: upload.contentUrl,
+          displayUrl: upload.displayUrl,
+          errorMessage: upload.errorMessage,
+          fileName: upload.fileName,
+          localId: upload.localId,
+          previewUrl: upload.previewUrl,
+          status: upload.status,
+          thumbnailUrl: upload.thumbnailUrl,
+        })),
       },
       rowAction: state.rowAction ? {
         commentId: state.rowAction.commentId,
@@ -312,8 +393,161 @@ export function createCommentLifecycle(options = {}) {
         canSave: state.rowAction.mode === 'edit' && !!state.rowAction.draft.trim() && !state.rowAction.saving,
         mention: projectMention(state.rowAction.mention),
       } : null,
-      protectFromAutoHide: !!compose.value || compose.saving || !!state.rowAction,
+      protectFromAutoHide: !!compose.value || compose.saving || !!compose.uploads.length || !!state.rowAction,
     };
+  }
+
+  async function deleteUploadedAttachment(attachmentId) {
+    if (!attachmentId) return null;
+    try {
+      await jira.write({
+        method: 'DELETE',
+        path: `${instanceUrl}rest/api/2/attachment/${encodeURIComponent(attachmentId)}`,
+      });
+      return null;
+    } catch (error) {
+      return normalizeFailure(error, 'Could not delete draft attachment');
+    }
+  }
+
+  async function releaseUploads(uploads, {deleteUploaded = false} = {}) {
+    const items = Array.isArray(uploads) ? uploads : [];
+    const previewFailures = [];
+    items.forEach(item => {
+      if (!item.previewUrl) return;
+      try {
+        attachmentMedia.revokePreview(item.previewUrl);
+      } catch (error) {
+        previewFailures.push(normalizeFailure(error, 'Could not release attachment preview'));
+      }
+    });
+    if (!deleteUploaded) return previewFailures;
+    const failures = await Promise.all(items
+      .filter(item => item.attachmentId)
+      .map(item => deleteUploadedAttachment(item.attachmentId)));
+    return [...previewFailures, ...failures.filter(Boolean)];
+  }
+
+  function uploadItem(localId) {
+    return state?.compose?.uploads?.find(item => item.localId === localId) || null;
+  }
+
+  function updateUpload(localId, changes) {
+    if (!state) return;
+    state.compose = {
+      ...state.compose,
+      uploads: state.compose.uploads.map(item => item.localId === localId ? {...item, ...changes} : item),
+    };
+  }
+
+  function renamedUploadFile(file, fileName) {
+    if (typeof File === 'function') {
+      return new File([file], fileName, {type: file?.type || 'image/png'});
+    }
+    return {...file, name: fileName};
+  }
+
+  async function runUpload(localId, identity, {insertMarkup = false} = {}) {
+    let item = uploadItem(localId);
+    if (!item || !isCurrent(identity)) return outcome('ignored', {}, identity);
+    if (insertMarkup && !state.compose.value.includes(item.markup)) {
+      const inserted = insertImageMarkup(state.compose.value, state.compose.selection, item.markup);
+      state.compose = {...state.compose, ...inserted};
+    }
+    updateUpload(localId, {attachmentId: '', errorMessage: '', status: 'uploading'});
+    state.compose = {...state.compose, errorMessage: ''};
+    item = uploadItem(localId);
+    try {
+      const result = await jira.upload({
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(identity.issueKey)}/attachments`,
+        file: renamedUploadFile(item.file, item.fileName),
+      });
+      const attachment = (Array.isArray(result) ? result : [result]).find(candidate => candidate?.id);
+      if (!attachment) throw new Error('Attachment upload failed');
+      if (!isCurrent(identity) || !uploadItem(localId)) {
+        await deleteUploadedAttachment(String(attachment.id));
+        return outcome('ignored', {}, identity);
+      }
+      const currentItem = uploadItem(localId);
+      const nextFileName = String(attachment.filename || currentItem.fileName);
+      const nextMarkup = `!${nextFileName}!`;
+      if (nextMarkup !== currentItem.markup) {
+        const replaced = replaceFirstMarkup(state.compose.value, currentItem.markup, nextMarkup);
+        const selection = normalizeSelection({
+          start: state.compose.selection.start + replaced.delta,
+          end: state.compose.selection.end + replaced.delta,
+        }, replaced.value);
+        state.compose = {...state.compose, value: replaced.value, selection};
+      }
+      const uploadedAttachment = {
+        ...copyValue(attachment),
+        id: String(attachment.id),
+        filename: nextFileName,
+        content: toAbsoluteUrl(attachment.content, instanceUrl),
+        thumbnail: toAbsoluteUrl(attachment.thumbnail || attachment.content, instanceUrl),
+        displayContent: currentItem.previewUrl,
+      };
+      updateUpload(localId, {
+        attachmentId: uploadedAttachment.id,
+        contentUrl: uploadedAttachment.content,
+        errorMessage: '',
+        fileName: nextFileName,
+        markup: nextMarkup,
+        status: 'uploaded',
+        thumbnailUrl: uploadedAttachment.thumbnail,
+      });
+      return outcome('attachmentUploaded', {uploadedAttachment}, identity);
+    } catch (error) {
+      if (!isCurrent(identity) || !uploadItem(localId)) return outcome('ignored', {}, identity);
+      const currentItem = uploadItem(localId);
+      const nextValue = removeMarkupLine(state.compose.value, currentItem.markup);
+      const failure = normalizeFailure(error, 'Could not upload pasted image');
+      state.compose = {
+        ...state.compose,
+        value: nextValue,
+        selection: normalizeSelection(state.compose.selection, nextValue),
+        errorMessage: failure.message,
+      };
+      updateUpload(localId, {errorMessage: failure.message, status: 'error'});
+      return outcome('failed', {failure}, identity);
+    }
+  }
+
+  function startImageUpload(file) {
+    if (!file || !state?.issueKey) return outcome('ignored');
+    const identity = identityOf();
+    uploadSequence += 1;
+    const fileName = `pasted-image-${uploadTimestamp(clock())}-${uploadSequence}.${pastedImageExtension(file)}`;
+    const markup = `!${fileName}!`;
+    const localId = `upload-${uploadSequence}`;
+    const previewUrl = String(attachmentMedia.createPreview(file) || '');
+    const inserted = insertImageMarkup(state.compose.value, state.compose.selection, markup);
+    state.compose = {
+      ...state.compose,
+      ...inserted,
+      errorMessage: '',
+      uploads: [...state.compose.uploads, {
+        attachmentId: '',
+        contentUrl: '',
+        displayUrl: previewUrl,
+        errorMessage: '',
+        file,
+        fileName,
+        localId,
+        markup,
+        previewUrl,
+        status: 'uploading',
+        thumbnailUrl: '',
+      }],
+    };
+    return runUpload(localId, identity);
+  }
+
+  async function discardCompose(intent) {
+    const uploads = state.compose.uploads;
+    state.compose = emptyComposeState();
+    const cleanupFailures = await releaseUploads(uploads, {deleteUploaded: intent.deleteUploaded !== false});
+    return outcome('changed', {cleanupFailures});
   }
 
   function mentionLane(lane) {
@@ -439,7 +673,9 @@ export function createCommentLifecycle(options = {}) {
   }
 
   async function saveNewComment(intent) {
-    if (!state?.issueKey || state.compose.saving || !state.compose.value.trim()) return outcome('ignored');
+    if (!state?.issueKey || state.compose.saving || !state.compose.value.trim() || state.compose.uploads.some(upload => upload.status === 'uploading')) {
+      return outcome('ignored');
+    }
     const identity = identityOf();
     const priorSnapshot = copyValue(state.issueSnapshot);
     const value = state.compose.value.trim();
@@ -466,7 +702,9 @@ export function createCommentLifecycle(options = {}) {
       });
       if (!isCurrent(identity)) return outcome('ignored', {}, identity);
       state.issueSnapshot = copyValue(refreshed.snapshot || state.issueSnapshot);
+      const completedUploads = state.compose.uploads;
       state.compose = emptyComposeState();
+      await releaseUploads(completedUploads, {deleteUploaded: false});
       activeOperations.compose = null;
       const refreshFailure = !refreshed.snapshot?.core
         ? copyValue(refreshed.failures?.core || {name: 'Error', message: 'Could not refresh issue'})
@@ -565,10 +803,13 @@ export function createCommentLifecycle(options = {}) {
       return outcome('changed');
     }
     if (intent.type === 'saveNewComment') return saveNewComment(intent);
-    if (intent.type === 'discardCompose') {
-      state.compose = emptyComposeState();
-      return outcome('changed');
+    if (intent.type === 'imagePasted') return startImageUpload(intent.file);
+    if (intent.type === 'retryUpload') {
+      const item = uploadItem(String(intent.localId || ''));
+      if (!item || item.status !== 'error') return outcome('ignored');
+      return runUpload(item.localId, identityOf(), {insertMarkup: true});
     }
+    if (intent.type === 'discardCompose') return discardCompose(intent);
     if (intent.type === 'startEdit') {
       const comment = issueComment(intent.commentId);
       if (!comment) return outcome('ignored');

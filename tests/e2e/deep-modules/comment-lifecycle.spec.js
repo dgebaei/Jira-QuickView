@@ -431,3 +431,173 @@ test('compose and edit mention failures remain isolated by lane', async ({page})
   expect(result.compose.mention).toMatchObject({visible: true, errorMessage: 'Could not load people.', suggestions: []});
   expect(result.rowAction.mention).toMatchObject({visible: true, errorMessage: '', suggestions: []});
 });
+
+test('pasted image upload owns draft markup, progress, Jira identity, and observable completion', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [{operation: 'upload', deferred}]});
+    const revoked = [];
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      clock: () => new Date('2026-08-23T10:15:30Z'),
+      attachmentMedia: {
+        createPreview: () => 'blob:preview-1',
+        revokePreview: url => revoked.push(url),
+      },
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'composeChanged', value: 'Evidence:', selection: {start: 9, end: 9}});
+    const pending = comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    const uploading = comments.view();
+    deferred.resolve([{
+      id: 'attachment-1',
+      filename: 'jira-renamed.png',
+      content: '/rest/api/2/attachment/content/attachment-1',
+      thumbnail: '/rest/api/2/attachment/thumbnail/attachment-1',
+    }]);
+    const completed = await pending;
+    return {
+      uploading,
+      completed: {
+        kind: completed.kind,
+        uploadedAttachment: completed.uploadedAttachment,
+      },
+      finalView: comments.view(),
+      requests: jira.getRequests(),
+      revoked,
+    };
+  });
+
+  expect(result.uploading.compose).toMatchObject({
+    value: 'Evidence:\n!pasted-image-20260823101530-1.png!\n',
+    canSave: false,
+    uploads: [{
+      localId: 'upload-1',
+      fileName: 'pasted-image-20260823101530-1.png',
+      previewUrl: 'blob:preview-1',
+      status: 'uploading',
+    }],
+  });
+  expect(result.completed).toMatchObject({
+    kind: 'attachmentUploaded',
+    uploadedAttachment: {
+      id: 'attachment-1',
+      filename: 'jira-renamed.png',
+      content: 'https://jira.example/rest/api/2/attachment/content/attachment-1',
+      thumbnail: 'https://jira.example/rest/api/2/attachment/thumbnail/attachment-1',
+      displayContent: 'blob:preview-1',
+    },
+  });
+  expect(result.finalView.compose).toMatchObject({
+    value: 'Evidence:\n!jira-renamed.png!\n',
+    canSave: true,
+    uploads: [{attachmentId: 'attachment-1', fileName: 'jira-renamed.png', status: 'uploaded'}],
+  });
+  expect(result.requests[0]).toMatchObject({
+    operation: 'upload',
+    path: 'https://jira.example/rest/api/2/issue/ABC-1/attachments',
+    fileName: 'pasted-image-20260823101530-1.png',
+    contentType: 'image/png',
+    size: 3,
+  });
+  expect(result.revoked).toEqual([]);
+});
+
+test('failed pasted image upload remains retryable through the lifecycle interface', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'upload', error: 'Upload unavailable'},
+      {operation: 'upload', result: [{id: 'attachment-2', filename: 'retry.png'}]},
+    ]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      clock: () => new Date('2026-08-23T10:15:30Z'),
+      attachmentMedia: {createPreview: () => 'blob:retry', revokePreview() {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const failed = await comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    const failedView = comments.view();
+    const retried = await comments.dispatch({type: 'retryUpload', localId: failedView.compose.uploads[0].localId});
+    return {failed, failedView, retried, finalView: comments.view(), requests: jira.getRequests()};
+  });
+
+  expect(result.failed).toMatchObject({kind: 'failed', failure: {message: 'Upload unavailable'}});
+  expect(result.failedView.compose).toMatchObject({
+    value: '',
+    errorMessage: 'Upload unavailable',
+    uploads: [{status: 'error', canRetry: true, errorMessage: 'Upload unavailable'}],
+  });
+  expect(result.retried).toMatchObject({kind: 'attachmentUploaded', uploadedAttachment: {id: 'attachment-2'}});
+  expect(result.finalView.compose).toMatchObject({
+    value: '!retry.png!\n',
+    errorMessage: '',
+    uploads: [{status: 'uploaded', canRetry: false, attachmentId: 'attachment-2'}],
+  });
+  expect(result.requests).toHaveLength(2);
+});
+
+test('discard deletes uploaded draft attachments and revokes local previews', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'upload', result: [{id: 'attachment-3', filename: 'draft.png'}]},
+      {operation: 'write', method: 'DELETE', result: null},
+    ]});
+    const revoked = [];
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      attachmentMedia: {createPreview: () => 'blob:draft', revokePreview: url => revoked.push(url)},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    const discarded = await comments.dispatch({type: 'discardCompose', deleteUploaded: true});
+    return {discarded, view: comments.view(), requests: jira.getRequests(), revoked};
+  });
+
+  expect(result.discarded).toMatchObject({kind: 'changed', cleanupFailures: []});
+  expect(result.view.compose).toMatchObject({value: '', uploads: [], errorMessage: '', canSave: false});
+  expect(result.requests.map(request => ({operation: request.operation, method: request.method, path: request.path}))).toEqual([
+    {operation: 'upload', method: undefined, path: 'https://jira.example/rest/api/2/issue/ABC-1/attachments'},
+    {operation: 'write', method: 'DELETE', path: 'https://jira.example/rest/api/2/attachment/attachment-3'},
+  ]);
+  expect(result.revoked).toEqual(['blob:draft']);
+});
+
+test('an upload completed for a detached popup is deleted instead of leaking into the next issue', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'upload', deferred},
+      {operation: 'write', method: 'DELETE', result: null},
+    ]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      attachmentMedia: {createPreview: () => 'blob:stale', revokePreview() {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const pending = comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    comments.attach({sessionId: 'popup-2', issueSnapshot: {issueKey: 'XYZ-2', core: {key: 'XYZ-2'}, sections: {}}});
+    deferred.resolve([{id: 'attachment-stale', filename: 'stale.png'}]);
+    const completion = await pending;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return {completion, view: comments.view(), requests: jira.getRequests()};
+  });
+
+  expect(result.completion).toMatchObject({kind: 'ignored', issueKey: 'ABC-1', sessionId: 'popup-1'});
+  expect(result.view).toMatchObject({issueKey: 'XYZ-2', sessionId: 'popup-2', compose: {value: '', uploads: []}});
+  expect(result.requests.map(request => ({operation: request.operation, method: request.method, path: request.path}))).toEqual([
+    {operation: 'upload', method: undefined, path: 'https://jira.example/rest/api/2/issue/ABC-1/attachments'},
+    {operation: 'write', method: 'DELETE', path: 'https://jira.example/rest/api/2/attachment/attachment-stale'},
+  ]);
+});

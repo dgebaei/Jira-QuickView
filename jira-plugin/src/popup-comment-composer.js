@@ -2,37 +2,20 @@ import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 
 export function createPopupCommentComposer(deps) {
   const {
-    INSTANCE_URL,
-    emptyCommentUploadState,
     escapeHtml,
-    getActiveCommentContext,
     getCommentComposerErrorMessage,
     getCommentComposerHadFocus,
     getCommentComposerSelectionEnd,
     getCommentComposerSelectionStart,
     getCommentComposerDraftValue,
     getCommentLifecycleView,
-    getCommentUploadSequence,
-    getCommentUploadSessionId,
-    getCommentUploadState,
     getContainer,
-    getDisplayImageUrl,
-    rememberDisplayImageUrl,
-    onAttachmentUploaded,
     keepContainerVisible,
-    requestJson,
     setCommentComposerErrorMessage,
     setCommentComposerHadFocus,
     setCommentComposerSelectionEnd,
     setCommentComposerSelectionStart,
     setCommentComposerDraftValue,
-    setCommentUploadSequence,
-    setCommentUploadSessionId,
-    setCommentUploadState,
-    setPopupState,
-    textToLinkedHtml,
-    toAbsoluteJiraUrl,
-    uploadAttachment,
   } = deps;
 
   function getCommentComposerElements() {
@@ -97,28 +80,20 @@ export function createPopupCommentComposer(deps) {
     }
   }
 
-  function hasCommentUploadInFlight() {
-    return getCommentUploadState().items.some(item => item.status === 'uploading');
-  }
-
-  function getUploadedCommentAttachments() {
-    return getCommentUploadState().items.filter(item => item.status === 'uploaded' && item.attachmentId);
-  }
-
   function renderCommentUploads() {
     const {uploads} = getCommentComposerElements();
     if (!uploads.length) {
       return;
     }
 
-    const commentUploadState = getCommentUploadState();
-    if (!commentUploadState.items.length) {
+    const uploadsView = getCommentLifecycleView().compose?.uploads || [];
+    if (!uploadsView.length) {
       uploads.attr('hidden', 'hidden').empty();
       keepContainerVisible();
       return;
     }
 
-    uploads.removeAttr('hidden').html(commentUploadState.items.map(item => {
+    uploads.removeAttr('hidden').html(uploadsView.map(item => {
       const stateClass = item.status === 'error' ? ' is-error' : '';
       const statusText = item.status === 'uploading'
         ? 'Uploading to Jira...'
@@ -126,12 +101,16 @@ export function createPopupCommentComposer(deps) {
       const previewHtml = item.previewUrl
         ? `<img class="_JX_comment_upload_preview" src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.fileName)}" />`
         : '<span class="_JX_comment_upload_preview"></span>';
+      const retryHtml = item.canRetry
+        ? `<button class="_JX_comment_upload_retry" type="button" data-upload-id="${escapeHtml(item.localId)}">Retry</button>`
+        : '';
       return `
-        <div class="_JX_comment_upload${stateClass}">
+        <div class="_JX_comment_upload${stateClass}" data-upload-id="${escapeHtml(item.localId)}">
           ${previewHtml}
           <span>
             <span class="_JX_comment_upload_name">${escapeHtml(item.fileName)}</span>
             <span class="_JX_comment_upload_status">${escapeHtml(statusText)}</span>
+            ${retryHtml}
           </span>
         </div>
       `;
@@ -139,121 +118,7 @@ export function createPopupCommentComposer(deps) {
     keepContainerVisible();
   }
 
-  function updateCommentUploadItem(localId, updater) {
-    const nextItems = getCommentUploadState().items.map(item => {
-      if (item.localId !== localId) {
-        return item;
-      }
-      return typeof updater === 'function' ? updater(item) : {...item, ...updater};
-    });
-    setCommentUploadState({items: nextItems});
-    renderCommentUploads();
-    syncCommentComposerState();
-  }
-
-  function buildPastedImageFileName(file) {
-    const mimeType = String(file?.type || '').toLowerCase();
-    const extensionByMimeType = {
-      'image/bmp': 'bmp',
-      'image/gif': 'gif',
-      'image/jpeg': 'jpg',
-      'image/jpg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-    };
-    const extension = extensionByMimeType[mimeType] || 'png';
-    setCommentUploadSequence(getCommentUploadSequence() + 1);
-    const timestamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 14);
-    return `pasted-image-${timestamp}-${getCommentUploadSequence()}.${extension}`;
-  }
-
-  function buildCommentImageMarkup(fileName) {
-    return `!${fileName}!`;
-  }
-
-  function replaceCommentInputText(searchValue, replaceValue = '') {
-    const {input} = getCommentComposerElements();
-    const inputElement = input.get(0);
-    if (!inputElement || !searchValue) {
-      return false;
-    }
-    const currentValue = inputElement.value || '';
-    const nextValue = currentValue.replace(searchValue, replaceValue).replace(/\n{3,}/g, '\n\n');
-    if (nextValue === currentValue) {
-      return false;
-    }
-    input.val(nextValue);
-    setCommentComposerDraftValue(nextValue);
-    const caretPosition = Math.min(nextValue.length, (typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : nextValue.length));
-    inputElement.setSelectionRange(caretPosition, caretPosition);
-    return true;
-  }
-
-  function insertCommentInputText(text) {
-    const {input} = getCommentComposerElements();
-    const inputElement = input.get(0);
-    if (!inputElement) {
-      return false;
-    }
-    const value = inputElement.value || '';
-    const selectionStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
-    const selectionEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : selectionStart;
-    const prefix = selectionStart > 0 && value.charAt(selectionStart - 1) !== '\n' ? '\n' : '';
-    const suffix = selectionEnd < value.length ? (value.charAt(selectionEnd) !== '\n' ? '\n' : '') : '\n';
-    const insertedText = `${prefix}${text}${suffix}`;
-    const nextValue = value.slice(0, selectionStart) + insertedText + value.slice(selectionEnd);
-    input.val(nextValue);
-    setCommentComposerDraftValue(nextValue);
-    inputElement.focus();
-    const caretPosition = selectionStart + insertedText.length;
-    inputElement.setSelectionRange(caretPosition, caretPosition);
-    return true;
-  }
-
-  function revokeCommentUploadPreview(item) {
-    if (item?.previewUrl && item.previewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(item.previewUrl);
-    }
-  }
-
-  async function fileToDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(reader.error || new Error('Could not read file'));
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function deleteCommentDraftAttachment(attachmentId) {
-    if (!attachmentId) {
-      return;
-    }
-    try {
-      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/attachment/${attachmentId}`);
-    } catch (error) {
-      console.warn('[Jira QuickView] Could not delete draft attachment', {
-        attachmentId,
-        error: error?.message || String(error),
-      });
-    }
-  }
-
-  async function clearCommentUploads(options = {}) {
-    const {deleteUploaded = false} = options;
-    const previousItems = getCommentUploadState().items;
-    setCommentUploadSessionId(getCommentUploadSessionId() + 1);
-    setCommentUploadState(emptyCommentUploadState());
-    renderCommentUploads();
-    syncCommentComposerState();
-    previousItems.forEach(revokeCommentUploadPreview);
-    if (deleteUploaded) {
-      await Promise.all(previousItems.map(item => deleteCommentDraftAttachment(item.attachmentId)));
-    }
-  }
-
-  async function discardCommentComposerDraft(options = {}) {
-    const {deleteUploaded = true} = options;
+  async function discardCommentComposerDraft() {
     setCommentComposerDraftValue('');
     setCommentComposerHadFocus(false);
     setCommentComposerSelectionStart(0);
@@ -263,105 +128,7 @@ export function createPopupCommentComposer(deps) {
       input.val('');
     }
     setCommentComposerError('');
-    await clearCommentUploads({deleteUploaded});
     syncCommentComposerState();
-  }
-
-  async function buildOptimisticCommentBodyHtml(commentText, uploadedAttachments = []) {
-    const attachmentImagesByName = {};
-    for (const attachment of uploadedAttachments) {
-      if (!attachment?.fileName) {
-        continue;
-      }
-      const imageUrl = attachment.displayUrl || attachment.thumbnailUrl || attachment.contentUrl;
-      if (!imageUrl) {
-        continue;
-      }
-      const displaySrc = await getDisplayImageUrl(imageUrl).catch(() => imageUrl);
-      const previewSrc = attachment.displayUrl || attachment.contentUrl || imageUrl;
-      attachmentImagesByName[attachment.fileName] = `<img class="_JX_previewable" src="${escapeHtml(displaySrc || imageUrl)}" data-jx-preview-src="${escapeHtml(previewSrc)}" alt="${escapeHtml(attachment.fileName)}" style="max-height: 100px;" />`;
-    }
-    return textToLinkedHtml(commentText || '', {attachmentImagesByName});
-  }
-
-  async function uploadPastedImage(file) {
-    const activeCommentContext = getActiveCommentContext();
-    if (!activeCommentContext?.issueKey) {
-      return;
-    }
-
-    const issueKey = activeCommentContext.issueKey;
-    const fileName = buildPastedImageFileName(file);
-    const markup = buildCommentImageMarkup(fileName);
-    const localId = `upload-${Date.now()}-${getCommentUploadSequence()}`;
-    const previewUrl = URL.createObjectURL(file);
-    const previewDataUrl = await fileToDataUrl(file).catch(() => '');
-    const sessionId = getCommentUploadSessionId();
-    setCommentUploadState({
-      items: [...getCommentUploadState().items, {
-        attachmentId: '',
-        contentUrl: '',
-        displayUrl: previewDataUrl,
-        errorMessage: '',
-        fileName,
-        localId,
-        markup,
-        previewUrl,
-        status: 'uploading',
-        thumbnailUrl: '',
-      }],
-    });
-    renderCommentUploads();
-    insertCommentInputText(markup);
-    setCommentComposerError('');
-    syncCommentComposerState();
-
-    try {
-      const uploadResult = await uploadAttachment(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/attachments`, new File([file], fileName, {type: file.type || 'image/png'}));
-      const uploadedAttachment = (Array.isArray(uploadResult) ? uploadResult : [uploadResult]).find(item => item && item.id);
-      if (!uploadedAttachment) {
-        throw new Error('Attachment upload failed');
-      }
-
-      if (sessionId !== getCommentUploadSessionId() || getActiveCommentContext()?.issueKey !== issueKey) {
-        await deleteCommentDraftAttachment(uploadedAttachment.id);
-        return;
-      }
-
-      const nextFileName = uploadedAttachment.filename || fileName;
-      const nextMarkup = buildCommentImageMarkup(nextFileName);
-      if (nextMarkup !== markup) {
-        replaceCommentInputText(markup, nextMarkup);
-      }
-      updateCommentUploadItem(localId, {
-        attachmentId: uploadedAttachment.id,
-        contentUrl: toAbsoluteJiraUrl(uploadedAttachment.content),
-        displayUrl: previewDataUrl,
-        errorMessage: '',
-        fileName: nextFileName,
-        markup: nextMarkup,
-        status: 'uploaded',
-        thumbnailUrl: toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
-      });
-      rememberDisplayImageUrl(toAbsoluteJiraUrl(uploadedAttachment.content), previewDataUrl);
-      rememberDisplayImageUrl(toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content), previewDataUrl);
-      await onAttachmentUploaded?.({
-        ...uploadedAttachment,
-        content: toAbsoluteJiraUrl(uploadedAttachment.content),
-        displayContent: previewDataUrl,
-        thumbnail: previewDataUrl || toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
-      });
-    } catch (error) {
-      if (sessionId !== getCommentUploadSessionId()) {
-        return;
-      }
-      replaceCommentInputText(markup, '');
-      updateCommentUploadItem(localId, {
-        errorMessage: error?.message || error?.inner || 'Upload failed',
-        status: 'error',
-      });
-      setCommentComposerError(error?.message || error?.inner || 'Could not upload pasted image');
-    }
   }
 
   function getClipboardImageFiles(event) {
@@ -445,9 +212,10 @@ export function createPopupCommentComposer(deps) {
       return;
     }
     const isSaving = elements.root.attr('data-saving') === 'true';
-    const hasUploadsInFlight = hasCommentUploadInFlight();
+    const uploadsView = getCommentLifecycleView().compose?.uploads || [];
+    const hasUploadsInFlight = uploadsView.some(item => item.status === 'uploading');
     const hasText = !!elements.input.val().trim();
-    const hasDraftUploads = getCommentUploadState().items.length > 0;
+    const hasDraftUploads = uploadsView.length > 0;
     elements.input.prop('disabled', isSaving);
     elements.save.prop('disabled', !hasText || isSaving || hasUploadsInFlight).text(isSaving ? 'Saving...' : (hasUploadsInFlight ? 'Uploading...' : 'Save'));
     elements.discard.prop('disabled', (!hasText && !hasDraftUploads) || isSaving);
@@ -474,11 +242,7 @@ export function createPopupCommentComposer(deps) {
   }
 
   return {
-    buildOptimisticCommentBodyHtml,
-    clearCommentUploads,
     getCommentComposerElements,
-    getUploadedCommentAttachments,
-    hasCommentUploadInFlight,
     captureCommentComposerDraft,
     discardCommentComposerDraft,
     getClipboardImageFiles,
@@ -488,6 +252,5 @@ export function createPopupCommentComposer(deps) {
     restoreCommentComposerState,
     setCommentComposerError,
     syncCommentComposerState,
-    uploadPastedImage,
   };
 }

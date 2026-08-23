@@ -34,6 +34,7 @@ import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
+import {createBrowserAttachmentMediaAdapter} from 'src/browser-attachment-media-adapter';
 import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
@@ -423,9 +424,6 @@ async function mainAsyncLocal() {
 
   const annotationTemplate = await fetch(chrome.runtime.getURL('resources/annotation.html')).then(response => response.text());
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
-  const emptyCommentUploadState = () => ({
-    items: []
-  });
   const emptyDescriptionEditState = () => ({
     errorMessage: '',
     hadFocus: false,
@@ -494,6 +492,7 @@ async function mainAsyncLocal() {
     jira,
   });
   const commentLifecycle = createCommentLifecycle({
+    attachmentMedia: createBrowserAttachmentMediaAdapter(),
     instanceUrl: INSTANCE_URL,
     issueData: quickViewIssueData,
     jira,
@@ -578,9 +577,6 @@ async function mainAsyncLocal() {
   let activeFieldSessionId = '';
   let activeCommentSessionId = '';
   let activeCommentContext = null;
-  let commentUploadState = emptyCommentUploadState();
-  let commentUploadSessionId = 0;
-  let commentUploadSequence = 0;
   let commentComposerDraftValue = '';
   let commentComposerErrorMessage = '';
   let commentComposerHadFocus = false;
@@ -662,51 +658,31 @@ async function mainAsyncLocal() {
 
   const {
     captureCommentComposerDraft,
-    clearCommentUploads,
     discardCommentComposerDraft,
     getClipboardImageFiles,
     getCommentComposerElements,
-    hasCommentUploadInFlight,
     renderCommentMentionSuggestions,
     renderCommentUploads,
     restoreCommentComposerDraft,
     restoreCommentComposerState,
     setCommentComposerError,
     syncCommentComposerState,
-    uploadPastedImage,
   } = createPopupCommentComposer({
-    INSTANCE_URL,
-    emptyCommentUploadState,
     escapeHtml,
-    getActiveCommentContext: () => activeCommentContext,
     getCommentComposerErrorMessage: () => commentComposerErrorMessage,
     getCommentComposerHadFocus: () => commentComposerHadFocus,
     getCommentComposerSelectionEnd: () => commentComposerSelectionEnd,
     getCommentComposerSelectionStart: () => commentComposerSelectionStart,
     getCommentComposerDraftValue: () => commentComposerDraftValue,
     getCommentLifecycleView: () => commentLifecycle.view(),
-    getCommentUploadSequence: () => commentUploadSequence,
-    getCommentUploadSessionId: () => commentUploadSessionId,
-    getCommentUploadState: () => commentUploadState,
     getContainer: () => container,
-    getDisplayImageUrl,
-    rememberDisplayImageUrl,
-    onAttachmentUploaded: handleDraftAttachmentUploaded,
     keepContainerVisible,
-    requestJson,
     setActiveCommentContext: nextValue => { activeCommentContext = nextValue; },
     setCommentComposerErrorMessage: nextValue => { commentComposerErrorMessage = nextValue; },
     setCommentComposerHadFocus: nextValue => { commentComposerHadFocus = nextValue; },
     setCommentComposerSelectionEnd: nextValue => { commentComposerSelectionEnd = nextValue; },
     setCommentComposerSelectionStart: nextValue => { commentComposerSelectionStart = nextValue; },
     setCommentComposerDraftValue: nextValue => { commentComposerDraftValue = nextValue; },
-    setCommentUploadSequence: nextValue => { commentUploadSequence = nextValue; },
-    setCommentUploadSessionId: nextValue => { commentUploadSessionId = nextValue; },
-    setCommentUploadState: nextValue => { commentUploadState = nextValue; },
-    setPopupState: nextValue => { popupState = nextValue; },
-    textToLinkedHtml,
-    toAbsoluteJiraUrl,
-    uploadAttachment,
   });
 
 
@@ -1935,7 +1911,7 @@ async function mainAsyncLocal() {
       syncCommentComposerState();
       return;
     }
-    if (hasCommentUploadInFlight()) {
+    if (commentLifecycle.view().compose?.uploads?.some(item => item.status === 'uploading')) {
       setCommentComposerError('Wait for image uploads to finish.');
       syncCommentComposerState();
       return;
@@ -1980,7 +1956,6 @@ async function mainAsyncLocal() {
       commentComposerHadFocus = false;
       commentComposerSelectionStart = 0;
       commentComposerSelectionEnd = 0;
-      await clearCommentUploads({deleteUploaded: false});
       setCommentComposerError('');
       await renderIssuePopup(popupState);
       if (outcome.failure) {
@@ -2001,8 +1976,8 @@ async function mainAsyncLocal() {
     if (!elements.root.length || elements.root.attr('data-saving') === 'true') {
       return;
     }
+    await commentLifecycle.dispatch({type: 'discardCompose', deleteUploaded: true});
     await discardCommentComposerDraft();
-    await commentLifecycle.dispatch({type: 'discardCompose'});
   }
 
 
@@ -5162,6 +5137,7 @@ async function mainAsyncLocal() {
     commentComposerDraftValue = composeView.value;
     commentComposerSelectionStart = composeView.selection.start;
     commentComposerSelectionEnd = composeView.selection.end;
+    setCommentComposerError(composeView.errorMessage || '');
     if (applyValue) {
       inputElement.focus();
       inputElement.setSelectionRange(composeView.selection.start, composeView.selection.end);
@@ -5235,8 +5211,41 @@ async function mainAsyncLocal() {
     }
     e.preventDefault();
     imageFiles.forEach(file => {
-      uploadPastedImage(file).catch(() => {});
+      const sessionId = activeCommentSessionId;
+      const pending = commentLifecycle.dispatch({type: 'imagePasted', file});
+      renderCommentComposeLifecycleView({applyValue: true});
+      renderCommentUploads();
+      pending.then(async outcome => {
+        if (outcome.sessionId !== sessionId || sessionId !== activeCommentSessionId) {
+          return;
+        }
+        if (outcome.kind === 'attachmentUploaded' && outcome.uploadedAttachment) {
+          await handleDraftAttachmentUploaded(outcome.uploadedAttachment);
+        }
+        renderCommentComposeLifecycleView({applyValue: true});
+        renderCommentUploads();
+      }).catch(() => {});
     });
+  });
+
+  $(document.body).on('click', '._JX_comment_upload_retry', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const localId = e.currentTarget.getAttribute('data-upload-id') || '';
+    const sessionId = activeCommentSessionId;
+    const pending = commentLifecycle.dispatch({type: 'retryUpload', localId});
+    renderCommentComposeLifecycleView({applyValue: true});
+    renderCommentUploads();
+    pending.then(async outcome => {
+      if (outcome.sessionId !== sessionId || sessionId !== activeCommentSessionId) {
+        return;
+      }
+      if (outcome.kind === 'attachmentUploaded' && outcome.uploadedAttachment) {
+        await handleDraftAttachmentUploaded(outcome.uploadedAttachment);
+      }
+      renderCommentComposeLifecycleView({applyValue: true});
+      renderCommentUploads();
+    }).catch(() => {});
   });
 
   $(document.body).on('keydown', '._JX_comment_input', function (e) {

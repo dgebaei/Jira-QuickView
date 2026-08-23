@@ -261,6 +261,7 @@ test('shows a composer error when pasted image upload fails', async ({extensionA
 
   await expect(page.locator('._JX_comment_error')).toContainText(/HTTP 500|Could not upload pasted image/);
   await expect(page.locator('._JX_comment_upload_status')).toContainText(/HTTP 500|Could not upload pasted image/);
+  await expect(page.locator('._JX_comment_upload_retry')).toBeVisible();
 
   await page.close();
 });
