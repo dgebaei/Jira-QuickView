@@ -1,11 +1,12 @@
+import {buildLinkedIssuesPanelView} from 'src/content-linked-issues-helpers';
+
 export function createPopupProjectView(options) {
-  const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
+  const attachmentPresentation = options?.attachments;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
   const buildFilterChip = options?.buildFilterChip;
   const buildLabelsChip = options?.buildLabelsChip;
   const buildLinkHoverTitle = options?.buildLinkHoverTitle;
-  const buildLinkedIssuesPanelView = options?.buildLinkedIssuesPanelView;
   const buildTimeTrackingSectionPresentation = options?.buildTimeTrackingSectionPresentation;
   const people = options?.people;
   const quickActionModule = options?.quickActions;
@@ -375,7 +376,7 @@ export function createPopupProjectView(options) {
       changelogData,
       changelogLoading,
     } = state;
-    const descriptionAttachmentLookup = buildHistoryAttachmentLookup(issueData.fields.attachment || []);
+    const descriptionAttachmentLookup = attachmentPresentation.buildHistoryAttachmentLookup(issueData.fields.attachment || []);
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
       attachmentLookup: descriptionAttachmentLookup,
       imageMaxHeight: 180
@@ -390,7 +391,7 @@ export function createPopupProjectView(options) {
     const sprints = readSprintsFromIssue(issueData);
     const commentsTotal = commentsForDisplay.length;
     const attachments = issueData.fields.attachment || [];
-    const previewAttachments = options?.buildPreviewAttachments(attachments);
+    const previewAttachments = attachmentPresentation.buildPreviewAttachments(attachments);
     const labels = issueData.fields.labels || [];
     const linkageData = await resolveIssueLinkage(issueData);
     const issueTypeName = issueData.fields.issuetype?.name;
@@ -646,9 +647,11 @@ export function createPopupProjectView(options) {
     const watches = issueData.fields.watches || {};
     const watcherCount = Number.isFinite(Number(watches.watchCount)) ? Number(watches.watchCount) : 0;
     const watchersPanel = buildWatchersPanelView(state);
-    const linkedIssuesPanel = typeof buildLinkedIssuesPanelView === 'function'
-      ? buildLinkedIssuesPanelView(state, issueData)
-      : {isOpen: false, count: 0, groups: []};
+    const linkedIssuesPanel = buildLinkedIssuesPanelView(state, issueData, {
+      buildLinkHoverTitle,
+      buildUserView: people.buildUserView,
+      instanceUrl,
+    });
     const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
     const rawDescription = typeof issueData?.fields?.description === 'string' ? issueData.fields.description : '';
     const descriptionState = state.descriptionEditState || null;

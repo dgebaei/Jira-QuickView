@@ -11,7 +11,6 @@ import {createContentHistoryHelpers} from 'src/content-history-helpers';
 import {createContentIssueLinkageHelpers} from 'src/content-issue-linkage-helpers';
 import {
   buildIssueLinkCreatePayload,
-  buildLinkedIssuesPanelView,
   buildRelationshipOptions,
   createContentLinkedIssuesHelpers,
   createEmptyLinkedIssuesState,
@@ -443,6 +442,9 @@ async function mainAsyncLocal() {
   });
   const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
   let contentShellHelpers = null;
+  const attachmentPresentation = createContentAttachmentHelpers({
+    buildLinkHoverTitle,
+  });
   const {
     buildHistoryAttachmentLookup,
     buildHistoryAttachmentView,
@@ -450,9 +452,7 @@ async function mainAsyncLocal() {
     collectReferencedHistoryAttachmentNames,
     dedupeHistoryAttachments,
     normalizeHistoryAttachmentName,
-  } = createContentAttachmentHelpers({
-    buildLinkHoverTitle,
-  });
+  } = attachmentPresentation;
   const {
     buildAttachmentImagesByName,
     buildHistoryPreviewText,
@@ -2814,18 +2814,13 @@ async function mainAsyncLocal() {
   } = people;
 
   const {buildPopupDisplayData} = createPopupProjectView({
+    attachments: attachmentPresentation,
     buildActiveEditPresentation,
-    buildHistoryAttachmentLookup,
     buildCustomFieldChips,
     buildEditableFieldChip,
     buildFilterChip,
     buildLabelsChip,
     buildLinkHoverTitle,
-    buildLinkedIssuesPanelView: (state, issueData) => buildLinkedIssuesPanelView(state, issueData, {
-      buildLinkHoverTitle,
-      buildUserView,
-      instanceUrl: INSTANCE_URL,
-    }),
     buildTimeTrackingSectionPresentation,
     comments: commentLifecycle,
     customFields,
@@ -2848,7 +2843,6 @@ async function mainAsyncLocal() {
     scopeJqlToProject,
     showPullRequests,
     tooltipLayout,
-    buildPreviewAttachments,
   });
 
 
