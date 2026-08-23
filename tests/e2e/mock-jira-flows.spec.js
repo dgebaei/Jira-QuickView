@@ -1305,10 +1305,11 @@ test('views, searches, adds, and removes linked issues in mocked mode @mock-only
   await expect(existingRow.locator('._JX_linked_issues_assignee')).toHaveAttribute('title', 'Assignee: Morgan Agent');
 
   const searchInput = panel.getByTestId('jira-popup-linked-issues-search');
+  const results = panel.locator('._JX_linked_issues_search_result');
   await searchInput.fill('PI');
+  await expect(results).toHaveCount(3);
   await searchInput.evaluate(input => input.setSelectionRange(0, 0));
   await searchInput.press('A');
-  const results = panel.locator('._JX_linked_issues_search_result');
   await expect(results).toHaveCount(3);
   await expect(searchInput).toHaveValue('API');
   await expect(searchInput).toHaveJSProperty('selectionStart', 1);

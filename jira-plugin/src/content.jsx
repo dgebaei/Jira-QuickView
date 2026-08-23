@@ -423,15 +423,6 @@ async function mainAsyncLocal() {
 
   const annotationTemplate = await fetch(chrome.runtime.getURL('resources/annotation.html')).then(response => response.text());
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
-  const emptyCommentMentionState = () => ({
-    error: '',
-    loading: false,
-    query: '',
-    range: null,
-    selectedIndex: 0,
-    suggestions: [],
-    visible: false
-  });
   const emptyCommentUploadState = () => ({
     items: []
   });
@@ -587,11 +578,6 @@ async function mainAsyncLocal() {
   let activeFieldSessionId = '';
   let activeCommentSessionId = '';
   let activeCommentContext = null;
-  let commentMentionState = emptyCommentMentionState();
-  let commentComposerMentionMappings = [];
-  let commentMentionRequestId = 0;
-  let commentEditMentionState = {...emptyCommentMentionState(), commentId: ''};
-  let commentEditMentionRequestId = 0;
   let commentUploadState = emptyCommentUploadState();
   let commentUploadSessionId = 0;
   let commentUploadSequence = 0;
@@ -675,38 +661,30 @@ async function mainAsyncLocal() {
   });
 
   const {
-    applyCommentMentionSelection,
     captureCommentComposerDraft,
     clearCommentUploads,
     discardCommentComposerDraft,
     getClipboardImageFiles,
     getCommentComposerElements,
     hasCommentUploadInFlight,
-    moveCommentMentionSelection,
     renderCommentMentionSuggestions,
     renderCommentUploads,
-    resetCommentMentionState,
     restoreCommentComposerDraft,
     restoreCommentComposerState,
     setCommentComposerError,
     syncCommentComposerState,
-    syncCommentMentionSuggestions,
     uploadPastedImage,
   } = createPopupCommentComposer({
     INSTANCE_URL,
-    emptyCommentMentionState,
     emptyCommentUploadState,
     escapeHtml,
-    get,
     getActiveCommentContext: () => activeCommentContext,
     getCommentComposerErrorMessage: () => commentComposerErrorMessage,
     getCommentComposerHadFocus: () => commentComposerHadFocus,
-    getCommentComposerMentionMappings: () => commentComposerMentionMappings,
     getCommentComposerSelectionEnd: () => commentComposerSelectionEnd,
     getCommentComposerSelectionStart: () => commentComposerSelectionStart,
     getCommentComposerDraftValue: () => commentComposerDraftValue,
-    getCommentMentionRequestId: () => commentMentionRequestId,
-    getCommentMentionState: () => commentMentionState,
+    getCommentLifecycleView: () => commentLifecycle.view(),
     getCommentUploadSequence: () => commentUploadSequence,
     getCommentUploadSessionId: () => commentUploadSessionId,
     getCommentUploadState: () => commentUploadState,
@@ -719,12 +697,9 @@ async function mainAsyncLocal() {
     setActiveCommentContext: nextValue => { activeCommentContext = nextValue; },
     setCommentComposerErrorMessage: nextValue => { commentComposerErrorMessage = nextValue; },
     setCommentComposerHadFocus: nextValue => { commentComposerHadFocus = nextValue; },
-    setCommentComposerMentionMappings: nextValue => { commentComposerMentionMappings = nextValue; },
     setCommentComposerSelectionEnd: nextValue => { commentComposerSelectionEnd = nextValue; },
     setCommentComposerSelectionStart: nextValue => { commentComposerSelectionStart = nextValue; },
     setCommentComposerDraftValue: nextValue => { commentComposerDraftValue = nextValue; },
-    setCommentMentionRequestId: nextValue => { commentMentionRequestId = nextValue; },
-    setCommentMentionState: nextValue => { commentMentionState = nextValue; },
     setCommentUploadSequence: nextValue => { commentUploadSequence = nextValue; },
     setCommentUploadSessionId: nextValue => { commentUploadSessionId = nextValue; },
     setCommentUploadState: nextValue => { commentUploadState = nextValue; },
@@ -886,8 +861,8 @@ async function mainAsyncLocal() {
       ...(fields.comment?.comments || []).map(comment => comment?.author),
       ...(popupState?.watchersState?.watchers || []),
       ...(popupState?.watchersState?.searchResults || []),
-      ...(commentMentionState?.suggestions || []),
-      ...(commentEditMentionState?.suggestions || []),
+      ...(commentLifecycle.view().compose?.mention?.suggestions || []),
+      ...(commentLifecycle.view().rowAction?.mention?.suggestions || []),
     ];
     Object.keys(fields).filter(key => key.startsWith('customfield_')).forEach(key => {
       users.push(...(Array.isArray(fields[key]) ? fields[key] : [fields[key]]));
@@ -1837,70 +1812,6 @@ async function mainAsyncLocal() {
     };
   }
 
-
-  function getCommentMentionMarkup(candidate) {
-    const username = candidate?.name || candidate?.username || '';
-    if (username) {
-      return `[~${username}]`;
-    }
-    const accountId = candidate?.accountId || '';
-    if (accountId) {
-      return `[~accountid:${accountId}]`;
-    }
-    return '';
-  }
-
-  async function searchCommentMentionCandidates(query) {
-    const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(query)}`);
-    const rawCandidates = Array.isArray(response)
-      ? response
-      : response?.users || response?.items || [];
-    const seen = new Set();
-    return rawCandidates
-      .map(candidate => {
-        const mentionMarkup = getCommentMentionMarkup(candidate);
-        if (!mentionMarkup || seen.has(mentionMarkup)) {
-          return null;
-        }
-        seen.add(mentionMarkup);
-        const displayName = candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || 'Unknown user';
-        const username = candidate?.name || candidate?.username || '';
-        const secondaryText = (username && username !== displayName)
-          ? `@${username}`
-          : ((candidate?.emailAddress && candidate.emailAddress !== displayName) ? candidate.emailAddress : '');
-        return {
-          displayName,
-          mentionMarkup,
-          secondaryText
-        };
-      })
-      .filter(Boolean)
-      .slice(0, 6);
-  }
-
-  function getActiveTextMentionRange(inputElement) {
-    if (!inputElement) {
-      return null;
-    }
-    const value = inputElement.value || '';
-    const caretStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
-    const caretEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : caretStart;
-    if (caretStart !== caretEnd) {
-      return null;
-    }
-    const beforeCaret = value.slice(0, caretStart);
-    const mentionMatch = beforeCaret.match(/(^|[\s(])@([^\s@]{1,50})$/);
-    if (!mentionMatch) {
-      return null;
-    }
-    let end = caretEnd;
-    while (end < value.length && !/\s/.test(value.charAt(end))) {
-      end += 1;
-    }
-    return {end, query: mentionMatch[2], start: caretStart - mentionMatch[2].length - 1};
-  }
-
-
   function setCommentReactionEntry(commentId, emojiId, changes) {
     if (!popupState) {
       return;
@@ -2016,7 +1927,6 @@ async function mainAsyncLocal() {
       return;
     }
 
-    resetCommentMentionState();
     const elements = getCommentComposerElements();
     const commentDraftText = String(elements.input.val() || '');
     const commentText = commentDraftText.trim();
@@ -2031,15 +1941,14 @@ async function mainAsyncLocal() {
       return;
     }
 
-    await commentLifecycle.dispatch({
+    commentLifecycle.dispatch({
       type: 'composeChanged',
       value: commentDraftText,
       selection: {
         start: typeof elements.input.get(0)?.selectionStart === 'number' ? elements.input.get(0).selectionStart : commentDraftText.length,
         end: typeof elements.input.get(0)?.selectionEnd === 'number' ? elements.input.get(0).selectionEnd : commentDraftText.length,
       },
-      mentionMappings: commentComposerMentionMappings,
-    });
+    }).catch(() => {});
     const pendingSave = commentLifecycle.dispatch({
       type: 'saveNewComment',
       requirements: {history: !!popupState?.historyOpen},
@@ -2068,7 +1977,6 @@ async function mainAsyncLocal() {
       }
       elements.input.val('');
       commentComposerDraftValue = '';
-      commentComposerMentionMappings = [];
       commentComposerHadFocus = false;
       commentComposerSelectionStart = 0;
       commentComposerSelectionEnd = 0;
@@ -2103,9 +2011,7 @@ async function mainAsyncLocal() {
   }
 
   function resetCommentEditMentionState() {
-    commentEditMentionRequestId += 1;
-    debouncedLoadCommentEditMentionSuggestions.cancel();
-    commentEditMentionState = {...emptyCommentMentionState(), commentId: ''};
+    commentLifecycle.dispatch({type: 'dismissMention', lane: 'edit'}).catch(() => {});
   }
 
   function setCommentSession(nextSession) {
@@ -2177,87 +2083,23 @@ async function mainAsyncLocal() {
     }).catch(() => {});
   }
 
-  async function loadCommentEditMentionSuggestions(commentId, mention) {
-    const requestId = ++commentEditMentionRequestId;
-    try {
-      const suggestions = await searchCommentMentionCandidates(mention.query);
-      if (requestId !== commentEditMentionRequestId) {
-        return;
-      }
-      commentEditMentionState = {
-        commentId: String(commentId || ''),
-        error: '',
-        loading: false,
-        query: mention.query,
-        range: mention,
-        selectedIndex: 0,
-        suggestions,
-        visible: true,
-      };
-    } catch (error) {
-      if (requestId !== commentEditMentionRequestId) {
-        return;
-      }
-      commentEditMentionState = {
-        commentId: String(commentId || ''),
-        error: 'Could not load people.',
-        loading: false,
-        query: mention.query,
-        range: mention,
-        selectedIndex: 0,
-        suggestions: [],
-        visible: true,
-      };
-    }
-    renderIssuePopup(popupState).catch(() => {});
-  }
-
-  const debouncedLoadCommentEditMentionSuggestions = debounce((commentId, mention) => {
-    loadCommentEditMentionSuggestions(commentId, mention).catch(() => {});
-  }, 150);
-
-  function syncCommentEditMentionSuggestions(inputElement, commentId) {
-    const mention = getActiveTextMentionRange(inputElement);
-    if (!mention || !commentId) {
-      if (commentEditMentionState.visible) {
-        resetCommentEditMentionState();
-        renderIssuePopup(popupState).catch(() => {});
-      }
-      return;
-    }
-    commentEditMentionState = {
-      commentId: String(commentId),
-      error: '',
-      loading: true,
-      query: mention.query,
-      range: mention,
-      selectedIndex: 0,
-      suggestions: [],
-      visible: true,
-    };
-    renderIssuePopup(popupState).catch(() => {});
-    debouncedLoadCommentEditMentionSuggestions(commentId, mention);
-  }
-
   function moveCommentEditMentionSelection(delta) {
-    if (!commentEditMentionState.visible || !commentEditMentionState.suggestions.length) {
-      return;
-    }
-    const suggestionsTotal = commentEditMentionState.suggestions.length;
-    commentEditMentionState = {
-      ...commentEditMentionState,
-      selectedIndex: (commentEditMentionState.selectedIndex + delta + suggestionsTotal) % suggestionsTotal,
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'moveMention', lane: 'edit', delta}).then(() => {
+      syncCommentSessionFromLifecycle();
+      return renderIssuePopup(popupState);
+    }).catch(() => {});
   }
 
   function renderCommentEditMentionSuggestions() {
     container.find('._JX_comment_edit_mentions').attr('hidden', 'hidden').empty();
-    if (!commentEditMentionState.visible || !commentEditMentionState.commentId) {
+    const rowAction = commentLifecycle.view().rowAction;
+    const commentEditMentionState = rowAction?.mention;
+    const commentId = rowAction?.commentId || '';
+    if (!commentEditMentionState?.visible || !commentId) {
       return;
     }
-    const mentions = container.find(`._JX_comment_edit_mentions[data-comment-id="${commentEditMentionState.commentId}"]`);
-    const input = container.find(`._JX_comment_edit_input[data-comment-id="${commentEditMentionState.commentId}"]`);
+    const mentions = container.find(`._JX_comment_edit_mentions[data-comment-id="${commentId}"]`);
+    const input = container.find(`._JX_comment_edit_input[data-comment-id="${commentId}"]`);
     const mentionsElement = mentions.get(0);
     const inputElement = input.get(0);
     if (!mentions.length) {
@@ -2280,8 +2122,8 @@ async function mainAsyncLocal() {
       positionSuggestions('<div class="_JX_comment_mentions_status">Searching people...</div>');
       return;
     }
-    if (commentEditMentionState.error) {
-      positionSuggestions(`<div class="_JX_comment_mentions_status">${escapeHtml(commentEditMentionState.error)}</div>`);
+    if (commentEditMentionState.errorMessage) {
+      positionSuggestions(`<div class="_JX_comment_mentions_status">${escapeHtml(commentEditMentionState.errorMessage)}</div>`);
       return;
     }
     if (!commentEditMentionState.suggestions.length) {
@@ -2292,7 +2134,7 @@ async function mainAsyncLocal() {
       const selectedClass = index === commentEditMentionState.selectedIndex ? ' is-selected' : '';
       const secondary = candidate.secondaryText ? `<span class="_JX_comment_mention_secondary">${escapeHtml(candidate.secondaryText)}</span>` : '';
       return `
-        <button class="_JX_comment_mention_option${selectedClass} _JX_comment_edit_mention_option" type="button" data-comment-id="${escapeHtml(commentEditMentionState.commentId)}" data-mention-index="${index}">
+        <button class="_JX_comment_mention_option${selectedClass} _JX_comment_edit_mention_option" type="button" data-comment-id="${escapeHtml(commentId)}" data-mention-index="${index}">
           <span>
             <span class="_JX_comment_mention_primary">${escapeHtml(candidate.displayName)}</span>
             ${secondary}
@@ -2304,28 +2146,13 @@ async function mainAsyncLocal() {
 
   function applyCommentEditMentionSelection(index) {
     const activeSession = getActiveCommentSession();
-    const suggestionState = commentEditMentionState;
-    const candidate = suggestionState.suggestions[index];
-    const mentionRange = suggestionState.range;
-    if (!activeSession || activeSession.mode !== 'edit' || !candidate || !mentionRange) {
+    if (!activeSession || activeSession.mode !== 'edit') {
       return;
     }
-    const displayText = `@${candidate.displayName || candidate.name || candidate.username || 'mention'}`;
-    const nextDraft = String(activeSession.draft || '').slice(0, mentionRange.start) + `${displayText} ` + String(activeSession.draft || '').slice(mentionRange.end);
-    resetCommentEditMentionState();
     commentLifecycle.dispatch({
-      type: 'editChanged',
-      commentId: activeSession.commentId,
-      value: nextDraft,
-      selection: {
-        start: mentionRange.start + displayText.length + 1,
-        end: mentionRange.start + displayText.length + 1,
-      },
-      insertedMention: {
-        start: mentionRange.start,
-        displayText,
-        markup: candidate.mentionMarkup,
-      },
+      type: 'chooseMention',
+      lane: 'edit',
+      index,
     }).then(() => {
       syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
@@ -2348,12 +2175,15 @@ async function mainAsyncLocal() {
     if (!activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit') {
       return;
     }
-    commentLifecycle.dispatch({
+    const pending = commentLifecycle.dispatch({
       type: 'editChanged',
       commentId,
       value: draft,
       selection: {start: selectionStart, end: selectionEnd},
-    }).then(() => {
+    });
+    syncCommentSessionFromLifecycle();
+    renderIssuePopup(popupState).catch(() => {});
+    pending.then(() => {
       syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
@@ -5318,18 +5148,51 @@ async function mainAsyncLocal() {
     }
   });
 
-  $(document.body).on('input', '._JX_comment_input', function () {
-    commentComposerDraftValue = this.value || '';
-    commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : commentComposerDraftValue.length;
-    commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : commentComposerDraftValue.length;
-    commentLifecycle.dispatch({
-      type: 'composeChanged',
-      value: commentComposerDraftValue,
-      selection: {start: commentComposerSelectionStart, end: commentComposerSelectionEnd},
-      mentionMappings: commentComposerMentionMappings,
-    }).catch(() => {});
+  function renderCommentComposeLifecycleView({applyValue = false} = {}) {
+    const composeView = commentLifecycle.view().compose;
+    const elements = getCommentComposerElements();
+    const inputElement = elements.input.get(0);
+    if (!composeView || !inputElement) {
+      renderCommentMentionSuggestions();
+      return;
+    }
+    if (applyValue && inputElement.value !== composeView.value) {
+      elements.input.val(composeView.value);
+    }
+    commentComposerDraftValue = composeView.value;
+    commentComposerSelectionStart = composeView.selection.start;
+    commentComposerSelectionEnd = composeView.selection.end;
+    if (applyValue) {
+      inputElement.focus();
+      inputElement.setSelectionRange(composeView.selection.start, composeView.selection.end);
+    }
+    renderCommentMentionSuggestions();
     syncCommentComposerState();
-    syncCommentMentionSuggestions(this);
+  }
+
+  function syncCommentComposeLifecycle(inputElement) {
+    const value = inputElement?.value || '';
+    const selectionStart = typeof inputElement?.selectionStart === 'number' ? inputElement.selectionStart : value.length;
+    const selectionEnd = typeof inputElement?.selectionEnd === 'number' ? inputElement.selectionEnd : value.length;
+    commentComposerDraftValue = value;
+    commentComposerSelectionStart = selectionStart;
+    commentComposerSelectionEnd = selectionEnd;
+    const sessionId = activeCommentSessionId;
+    const pending = commentLifecycle.dispatch({
+      type: 'composeChanged',
+      value,
+      selection: {start: selectionStart, end: selectionEnd},
+    });
+    renderCommentComposeLifecycleView();
+    pending.then(outcome => {
+      if (outcome.sessionId === sessionId && sessionId === activeCommentSessionId) {
+        renderCommentComposeLifecycleView();
+      }
+    }).catch(() => {});
+  }
+
+  $(document.body).on('input', '._JX_comment_input', function () {
+    syncCommentComposeLifecycle(this);
   });
 
   $(document.body).on('focusin', '._JX_comment_input', function () {
@@ -5338,13 +5201,18 @@ async function mainAsyncLocal() {
     pinContainer({showNotice: false});
   });
 
-  $(document.body).on('click keyup select', '._JX_comment_input', function () {
-    commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length;
-    commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length;
+  $(document.body).on('click select', '._JX_comment_input', function () {
+    syncCommentComposeLifecycle(this);
+  });
+
+  $(document.body).on('keyup', '._JX_comment_input', function (e) {
+    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) === -1) {
+      syncCommentComposeLifecycle(this);
+    }
   });
 
   $(document.body).on('scroll', '._JX_comment_input', function () {
-    if (commentMentionState.visible) {
+    if (commentLifecycle.view().compose?.mention?.visible) {
       renderCommentMentionSuggestions();
     }
   });
@@ -5352,7 +5220,6 @@ async function mainAsyncLocal() {
   $(document.body).on('input', '._JX_comment_edit_input', function (e) {
     e.stopPropagation();
     const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
-    syncCommentEditMentionSuggestions(e.currentTarget, commentId);
     updateCommentEditDraft(
       commentId,
       e.currentTarget.value,
@@ -5372,43 +5239,37 @@ async function mainAsyncLocal() {
     });
   });
 
-  $(document.body).on('click', '._JX_comment_input', function () {
-    syncCommentMentionSuggestions(this);
-  });
-
-  $(document.body).on('keyup', '._JX_comment_input', function (e) {
-    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
-      return;
-    }
-    syncCommentMentionSuggestions(this);
-  });
-
   $(document.body).on('keydown', '._JX_comment_input', function (e) {
-    if (e.key === 'Escape' && commentMentionState.visible) {
+    const mentionView = commentLifecycle.view().compose?.mention;
+    if (e.key === 'Escape' && mentionView?.visible) {
       e.preventDefault();
-      resetCommentMentionState();
+      commentLifecycle.dispatch({type: 'dismissMention', lane: 'compose'}).catch(() => {});
+      renderCommentComposeLifecycleView();
       return;
     }
 
-    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
+    if (!mentionView?.visible || !mentionView.suggestions.length) {
       return;
     }
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      moveCommentMentionSelection(1);
+      commentLifecycle.dispatch({type: 'moveMention', lane: 'compose', delta: 1}).catch(() => {});
+      renderCommentComposeLifecycleView();
       return;
     }
 
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      moveCommentMentionSelection(-1);
+      commentLifecycle.dispatch({type: 'moveMention', lane: 'compose', delta: -1}).catch(() => {});
+      renderCommentComposeLifecycleView();
       return;
     }
 
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      applyCommentMentionSelection(commentMentionState.selectedIndex);
+      commentLifecycle.dispatch({type: 'chooseMention', lane: 'compose', index: mentionView.selectedIndex}).catch(() => {});
+      renderCommentComposeLifecycleView({applyValue: true});
     }
   });
 
@@ -5419,7 +5280,8 @@ async function mainAsyncLocal() {
     if (Number.isNaN(index)) {
       return;
     }
-    applyCommentMentionSelection(index);
+    commentLifecycle.dispatch({type: 'chooseMention', lane: 'compose', index}).catch(() => {});
+    renderCommentComposeLifecycleView({applyValue: true});
   });
 
   $(document.body).on('mousedown', '._JX_comment_edit_mention_option', function (e) {
@@ -5436,14 +5298,17 @@ async function mainAsyncLocal() {
     if ($(e.target).closest('._JX_comment_compose').length) {
       return;
     }
-    resetCommentMentionState();
+    if (commentLifecycle.view().compose?.mention?.visible) {
+      commentLifecycle.dispatch({type: 'dismissMention', lane: 'compose'}).catch(() => {});
+      renderCommentComposeLifecycleView();
+    }
   });
 
   $(document.body).on('mousedown', function (e) {
     if ($(e.target).closest('._JX_comment_editor').length) {
       return;
     }
-    if (!commentEditMentionState.visible) {
+    if (!commentLifecycle.view().rowAction?.mention?.visible) {
       return;
     }
     resetCommentEditMentionState();
@@ -5512,7 +5377,8 @@ async function mainAsyncLocal() {
   $(document.body).on('keydown', '._JX_comment_edit_input', function (e) {
     e.stopPropagation();
     const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
-    if (commentEditMentionState.visible && commentEditMentionState.commentId === commentId) {
+    const commentEditMentionState = commentLifecycle.view().rowAction?.mention;
+    if (commentEditMentionState?.visible && commentLifecycle.view().rowAction?.commentId === commentId) {
       if (e.key === 'Escape') {
         e.preventDefault();
         resetCommentEditMentionState();
@@ -5546,17 +5412,6 @@ async function mainAsyncLocal() {
     }
   });
 
-  $(document.body).on('click', '._JX_comment_edit_input', function () {
-    syncCommentEditMentionSuggestions(this, this.getAttribute('data-comment-id') || '');
-  });
-
-  $(document.body).on('keyup', '._JX_comment_edit_input', function (e) {
-    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
-      return;
-    }
-    syncCommentEditMentionSuggestions(this, this.getAttribute('data-comment-id') || '');
-  });
-
   $(document.body).on('click keyup select', '._JX_comment_edit_input', function () {
     const commentId = this.getAttribute('data-comment-id') || '';
     const activeSession = getActiveCommentSession();
@@ -5575,7 +5430,7 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('scroll', '._JX_comment_edit_input', function () {
-    if (commentEditMentionState.visible) {
+    if (commentLifecycle.view().rowAction?.mention?.visible) {
       renderCommentEditMentionSuggestions();
     }
   });
@@ -5733,7 +5588,6 @@ async function mainAsyncLocal() {
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
     activeCommentContext = null;
-    resetCommentMentionState();
     containerPinned = false;
     container.html('').css({
       left: -5000,

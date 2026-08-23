@@ -151,7 +151,58 @@ function emptyComposeState() {
     focused: false,
     saving: false,
     errorMessage: '',
+    mention: emptyMentionState(),
   };
+}
+
+function emptyMentionState() {
+  return {
+    visible: false,
+    loading: false,
+    errorMessage: '',
+    query: '',
+    range: null,
+    selectedIndex: 0,
+    suggestions: [],
+    requestId: 0,
+  };
+}
+
+function activeMention(value, selection) {
+  const text = String(value || '');
+  const normalizedSelection = normalizeSelection(selection, text);
+  if (normalizedSelection.start !== normalizedSelection.end) return null;
+  const beforeCaret = text.slice(0, normalizedSelection.start);
+  const match = beforeCaret.match(/(^|[\s(])@([^\s@]{1,50})$/);
+  if (!match) return null;
+  let end = normalizedSelection.end;
+  while (end < text.length && !/\s/.test(text.charAt(end))) end += 1;
+  return {start: normalizedSelection.start - match[2].length - 1, end, query: match[2]};
+}
+
+function mentionCandidate(user) {
+  const username = String(user?.name || user?.username || '').trim();
+  const accountId = String(user?.accountId || '').trim();
+  const mentionMarkup = username ? `[~${username}]` : (accountId ? `[~accountid:${accountId}]` : '');
+  if (!mentionMarkup) return null;
+  const displayName = String(user?.displayName || username || user?.emailAddress || 'Unknown user');
+  return {
+    displayName,
+    displayText: `@${displayName}`,
+    mentionMarkup,
+    secondaryText: username && username !== displayName
+      ? `@${username}`
+      : ((user?.emailAddress && user.emailAddress !== displayName) ? String(user.emailAddress) : ''),
+  };
+}
+
+function mentionCandidates(users) {
+  const seen = new Set();
+  return (Array.isArray(users) ? users : []).map(mentionCandidate).filter(candidate => {
+    if (!candidate || seen.has(candidate.mentionMarkup)) return false;
+    seen.add(candidate.mentionMarkup);
+    return true;
+  }).slice(0, 6);
 }
 
 export function createCommentLifecycle(options = {}) {
@@ -163,9 +214,12 @@ export function createCommentLifecycle(options = {}) {
   }
 
   const instanceUrl = normalizeInstanceUrl(options.instanceUrl);
+  const scheduler = options.scheduler && typeof options.scheduler.wait === 'function'
+    ? options.scheduler
+    : {wait: milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))};
   let generation = 0;
   let state = null;
-  const activeOperations = {compose: null, rowAction: null};
+  const activeOperations = {compose: null, composeMention: null, rowAction: null, rowMention: null};
 
   function isCurrent(identity) {
     return !!state && state.sessionId === identity.sessionId && state.issueKey === identity.issueKey && state.generation === identity.generation;
@@ -191,7 +245,9 @@ export function createCommentLifecycle(options = {}) {
   function attach({sessionId, issueSnapshot} = {}) {
     Object.values(activeOperations).forEach(controller => controller?.abort());
     activeOperations.compose = null;
+    activeOperations.composeMention = null;
     activeOperations.rowAction = null;
+    activeOperations.rowMention = null;
     const issueKey = String(issueSnapshot?.issueKey || issueSnapshot?.core?.key || '').trim();
     generation += 1;
     state = {
@@ -210,10 +266,24 @@ export function createCommentLifecycle(options = {}) {
     const detachedIdentity = identityOf();
     Object.values(activeOperations).forEach(controller => controller?.abort());
     activeOperations.compose = null;
+    activeOperations.composeMention = null;
     activeOperations.rowAction = null;
+    activeOperations.rowMention = null;
     generation += 1;
     state = null;
     return outcome('detached', {}, detachedIdentity);
+  }
+
+  function projectMention(mention) {
+    return {
+      visible: mention.visible,
+      loading: mention.loading,
+      errorMessage: mention.errorMessage,
+      query: mention.query,
+      range: copyValue(mention.range),
+      selectedIndex: mention.selectedIndex,
+      suggestions: copyValue(mention.suggestions),
+    };
   }
 
   function view() {
@@ -230,6 +300,7 @@ export function createCommentLifecycle(options = {}) {
         saving: compose.saving,
         errorMessage: compose.errorMessage,
         canSave: !!compose.value.trim() && !compose.saving,
+        mention: projectMention(compose.mention),
       },
       rowAction: state.rowAction ? {
         commentId: state.rowAction.commentId,
@@ -239,9 +310,132 @@ export function createCommentLifecycle(options = {}) {
         saving: state.rowAction.saving,
         errorMessage: state.rowAction.errorMessage,
         canSave: state.rowAction.mode === 'edit' && !!state.rowAction.draft.trim() && !state.rowAction.saving,
+        mention: projectMention(state.rowAction.mention),
       } : null,
       protectFromAutoHide: !!compose.value || compose.saving || !!state.rowAction,
     };
+  }
+
+  function mentionLane(lane) {
+    if (lane === 'compose') return state?.compose || null;
+    if (lane === 'edit' && state?.rowAction?.mode === 'edit') return state.rowAction;
+    return null;
+  }
+
+  function setLaneMention(lane, mention) {
+    if (lane === 'compose' && state) state.compose = {...state.compose, mention};
+    if (lane === 'edit' && state?.rowAction?.mode === 'edit') state.rowAction = {...state.rowAction, mention};
+  }
+
+  function laneValue(lane) {
+    const laneState = mentionLane(lane);
+    return lane === 'compose' ? laneState?.value : laneState?.draft;
+  }
+
+  function laneOperationName(lane) {
+    return lane === 'compose' ? 'composeMention' : 'rowMention';
+  }
+
+  async function syncMention(lane) {
+    const laneState = mentionLane(lane);
+    if (!laneState) return outcome('ignored');
+    const mention = activeMention(laneValue(lane), laneState.selection);
+    const operationName = laneOperationName(lane);
+    if (!mention) {
+      activeOperations[operationName]?.abort();
+      activeOperations[operationName] = null;
+      setLaneMention(lane, emptyMentionState());
+      return outcome('changed');
+    }
+    const identity = identityOf();
+    const requestId = (laneState.mention?.requestId || 0) + 1;
+    const controller = new AbortController();
+    activeOperations[operationName]?.abort();
+    activeOperations[operationName] = controller;
+    setLaneMention(lane, {
+      ...emptyMentionState(),
+      visible: true,
+      loading: true,
+      query: mention.query,
+      range: mention,
+      requestId,
+    });
+    await scheduler.wait(150);
+    const latestLane = mentionLane(lane);
+    if (!isCurrent(identity) || latestLane?.mention?.requestId !== requestId) return outcome('ignored', {}, identity);
+    let search;
+    try {
+      search = await issueData.search({
+        purpose: 'userPicker',
+        issueKey: identity.issueKey,
+        query: mention.query,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      search = {kind: 'failed', failure: normalizeFailure(error, 'Could not search Jira users')};
+    }
+    const currentLane = mentionLane(lane);
+    if (!isCurrent(identity) || currentLane?.mention?.requestId !== requestId) return outcome('ignored', {}, identity);
+    const failure = search.kind === 'failed' ? search.failure : null;
+    setLaneMention(lane, {
+      ...currentLane.mention,
+      loading: false,
+      errorMessage: failure ? 'Could not load people.' : '',
+      suggestions: failure ? [] : mentionCandidates(search.items),
+      selectedIndex: 0,
+    });
+    activeOperations[operationName] = null;
+    return outcome('changed');
+  }
+
+  function moveMention(lane, delta) {
+    const laneState = mentionLane(lane);
+    const mention = laneState?.mention;
+    if (!mention?.visible || !mention.suggestions.length) return outcome('ignored');
+    const selectedIndex = (mention.selectedIndex + Number(delta || 0) + mention.suggestions.length) % mention.suggestions.length;
+    setLaneMention(lane, {...mention, selectedIndex});
+    return outcome('changed');
+  }
+
+  function chooseMention(lane, index) {
+    const laneState = mentionLane(lane);
+    const mention = laneState?.mention;
+    const candidate = mention?.suggestions?.[Number.isInteger(index) ? index : mention?.selectedIndex];
+    if (!candidate || !mention?.range) return outcome('ignored');
+    const value = String(laneValue(lane) || '');
+    const nextValue = value.slice(0, mention.range.start) + `${candidate.displayText} ` + value.slice(mention.range.end);
+    const selection = {
+      start: mention.range.start + candidate.displayText.length + 1,
+      end: mention.range.start + candidate.displayText.length + 1,
+    };
+    const mapping = {
+      displayText: candidate.displayText,
+      markup: candidate.mentionMarkup,
+      start: mention.range.start,
+      beforeContext: nextValue.slice(Math.max(0, mention.range.start - 24), mention.range.start),
+      afterContext: nextValue.slice(mention.range.start + candidate.displayText.length,
+        mention.range.start + candidate.displayText.length + 24),
+    };
+    if (lane === 'compose') {
+      state.compose = {
+        ...state.compose,
+        value: nextValue,
+        selection,
+        mentionMappings: [...state.compose.mentionMappings, mapping],
+        mention: emptyMentionState(),
+      };
+    } else {
+      state.rowAction = {
+        ...state.rowAction,
+        draft: nextValue,
+        selection,
+        mentionMappings: [...state.rowAction.mentionMappings, mapping],
+        mention: emptyMentionState(),
+      };
+    }
+    activeOperations[laneOperationName(lane)]?.abort();
+    activeOperations[laneOperationName(lane)] = null;
+    return outcome('changed');
   }
 
   async function saveNewComment(intent) {
@@ -362,10 +556,9 @@ export function createCommentLifecycle(options = {}) {
         ...state.compose,
         value,
         selection: normalizeSelection(intent.selection, value),
-        mentionMappings: copyValue(intent.mentionMappings || state.compose.mentionMappings),
         errorMessage: '',
       };
-      return outcome('changed');
+      return syncMention('compose');
     }
     if (intent.type === 'composeFocusChanged') {
       state.compose = {...state.compose, focused: !!intent.focused};
@@ -388,6 +581,7 @@ export function createCommentLifecycle(options = {}) {
         selection: {start: editable.draft.length, end: editable.draft.length},
         saving: false,
         errorMessage: '',
+        mention: emptyMentionState(),
       };
       return outcome('changed');
     }
@@ -397,25 +591,13 @@ export function createCommentLifecycle(options = {}) {
         return outcome('ignored');
       }
       const draft = String(intent.value || '');
-      const insertedMention = intent.insertedMention;
-      const nextMentionMappings = insertedMention?.displayText && insertedMention?.markup
-        ? [...state.rowAction.mentionMappings, {
-            displayText: String(insertedMention.displayText),
-            markup: String(insertedMention.markup),
-            start: Number(insertedMention.start) || 0,
-            beforeContext: draft.slice(Math.max(0, (Number(insertedMention.start) || 0) - 24), Number(insertedMention.start) || 0),
-            afterContext: draft.slice((Number(insertedMention.start) || 0) + String(insertedMention.displayText).length,
-              (Number(insertedMention.start) || 0) + String(insertedMention.displayText).length + 24),
-          }]
-        : copyValue(intent.mentionMappings || state.rowAction.mentionMappings);
       state.rowAction = {
         ...state.rowAction,
         draft,
-        mentionMappings: nextMentionMappings,
         selection: normalizeSelection(intent.selection, draft),
         errorMessage: '',
       };
-      return outcome('changed');
+      return syncMention('edit');
     }
     if (intent.type === 'saveEdit') {
       const rowAction = state.rowAction;
@@ -434,6 +616,7 @@ export function createCommentLifecycle(options = {}) {
         selection: {start: 0, end: 0},
         saving: false,
         errorMessage: '',
+        mention: emptyMentionState(),
       };
       return outcome('changed');
     }
@@ -445,6 +628,16 @@ export function createCommentLifecycle(options = {}) {
       activeOperations.rowAction?.abort();
       activeOperations.rowAction = null;
       state.rowAction = null;
+      return outcome('changed');
+    }
+    if (intent.type === 'moveMention') return moveMention(intent.lane, intent.delta);
+    if (intent.type === 'chooseMention') return chooseMention(intent.lane, intent.index);
+    if (intent.type === 'dismissMention') {
+      const laneState = mentionLane(intent.lane);
+      if (!laneState) return outcome('ignored');
+      activeOperations[laneOperationName(intent.lane)]?.abort();
+      activeOperations[laneOperationName(intent.lane)] = null;
+      setLaneMention(intent.lane, emptyMentionState());
       return outcome('changed');
     }
     return outcome('ignored');

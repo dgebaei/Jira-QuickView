@@ -40,15 +40,8 @@ test('new-comment lifecycle owns draft, write, refresh, and observable outcome',
     });
     await comments.dispatch({
       type: 'composeChanged',
-      value: 'Ready for @Ada',
-      selection: {start: 14, end: 14},
-      mentionMappings: [{
-        displayText: '@Ada',
-        markup: '[~accountid:abc]',
-        start: 10,
-        beforeContext: 'Ready for ',
-        afterContext: '',
-      }],
+      value: 'Ready for review',
+      selection: {start: 16, end: 16},
     });
     const beforeSave = comments.view();
     const saved = await comments.dispatch({type: 'saveNewComment', requirements: {history: true}});
@@ -71,8 +64,8 @@ test('new-comment lifecycle owns draft, write, refresh, and observable outcome',
     sessionId: 'popup-1',
     issueKey: 'ABC-1',
     compose: {
-      value: 'Ready for @Ada',
-      selection: {start: 14, end: 14},
+      value: 'Ready for review',
+      selection: {start: 16, end: 16},
       saving: false,
       errorMessage: '',
       canSave: true,
@@ -92,7 +85,7 @@ test('new-comment lifecycle owns draft, write, refresh, and observable outcome',
   expect(result.write).toEqual({
     method: 'POST',
     path: 'https://jira.example/rest/api/2/issue/ABC-1/comment',
-    body: {body: 'Ready for [~accountid:abc]'},
+    body: {body: 'Ready for review'},
   });
   expect(result.refreshes).toEqual([{
     issueKey: 'ABC-1',
@@ -325,4 +318,116 @@ test('comment delete confirmation owns success and recoverable failure', async (
     {method: 'DELETE', path: 'https://jira.example/rest/api/2/issue/ABC-1/comment/11'},
     {method: 'DELETE', path: 'https://jira.example/rest/api/2/issue/ABC-1/comment/11'},
   ]);
+});
+
+test('compose mention lookup, keyboard selection, and save share lifecycle state', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', result: {id: '12'}}]});
+    const issueData = {
+      async search(request) {
+        return {kind: 'loaded', items: [
+          {accountId: 'user-me', displayName: 'Morgan Agent', emailAddress: 'morgan@example.com'},
+          {name: 'alex', displayName: 'Alex Reviewer'},
+        ], query: request.query};
+      },
+      async refreshAfterMutation(request) {
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey}, sections: {}}};
+      },
+    };
+    const comments = createCommentLifecycle({
+      jira,
+      issueData,
+      instanceUrl: 'https://jira.example/',
+      scheduler: {wait: async () => {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const loaded = await comments.dispatch({type: 'composeChanged', value: 'Hi @mo', selection: {start: 6, end: 6}});
+    await comments.dispatch({type: 'moveMention', lane: 'compose', delta: 1});
+    const selected = await comments.dispatch({type: 'chooseMention', lane: 'compose', index: 0});
+    await comments.dispatch({type: 'saveNewComment'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {loaded, selected, write};
+  });
+
+  expect(result.loaded).toMatchObject({
+    kind: 'changed',
+    view: {compose: {mention: {
+      visible: true,
+      loading: false,
+      errorMessage: '',
+      selectedIndex: 0,
+      suggestions: [
+        {displayName: 'Morgan Agent', displayText: '@Morgan Agent', mentionMarkup: '[~accountid:user-me]'},
+        {displayName: 'Alex Reviewer', displayText: '@Alex Reviewer', mentionMarkup: '[~alex]'},
+      ],
+    }}},
+  });
+  expect(result.selected).toMatchObject({
+    view: {compose: {value: 'Hi @Morgan Agent ', selection: {start: 17, end: 17}, mention: {visible: false}}},
+  });
+  expect(result.write.body).toEqual({body: 'Hi [~accountid:user-me]'});
+});
+
+test('stale mention results cannot replace a newer compose query', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const oldSearch = createDeferred();
+    const newSearch = createDeferred();
+    const issueData = {
+      search(request) { return request.query === 'old' ? oldSearch.promise : newSearch.promise; },
+      refreshAfterMutation() { throw new Error('not used'); },
+    };
+    const comments = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData,
+      instanceUrl: 'https://jira.example/',
+      scheduler: {wait: async () => {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const first = comments.dispatch({type: 'composeChanged', value: '@old', selection: {start: 4, end: 4}});
+    const second = comments.dispatch({type: 'composeChanged', value: '@new', selection: {start: 4, end: 4}});
+    newSearch.resolve({kind: 'loaded', items: [{name: 'new-user', displayName: 'New User'}]});
+    await second;
+    oldSearch.resolve({kind: 'loaded', items: [{name: 'old-user', displayName: 'Old User'}]});
+    const stale = await first;
+    return {stale, view: comments.view()};
+  });
+
+  expect(result.stale.kind).toBe('ignored');
+  expect(result.view.compose.mention).toMatchObject({
+    query: 'new',
+    loading: false,
+    suggestions: [{displayName: 'New User', mentionMarkup: '[~new-user]'}],
+  });
+});
+
+test('compose and edit mention failures remain isolated by lane', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const issueData = {
+      async search(request) {
+        if (request.query === 'bad') return {kind: 'failed', items: [], failure: {message: 'Lookup unavailable'}};
+        return {kind: 'loaded', items: []};
+      },
+      refreshAfterMutation() { throw new Error('not used'); },
+    };
+    const comments = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData,
+      instanceUrl: 'https://jira.example/',
+      scheduler: {wait: async () => {}},
+    });
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11', body: 'Before'}]}}}, sections: {}},
+    });
+    await comments.dispatch({type: 'composeChanged', value: '@bad', selection: {start: 4, end: 4}});
+    await comments.dispatch({type: 'startEdit', commentId: '11'});
+    await comments.dispatch({type: 'editChanged', commentId: '11', value: 'Before @none', selection: {start: 12, end: 12}});
+    return comments.view();
+  });
+
+  expect(result.compose.mention).toMatchObject({visible: true, errorMessage: 'Could not load people.', suggestions: []});
+  expect(result.rowAction.mention).toMatchObject({visible: true, errorMessage: '', suggestions: []});
 });

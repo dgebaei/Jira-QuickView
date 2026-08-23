@@ -1,23 +1,17 @@
-import debounce from 'lodash/debounce';
-import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 
 export function createPopupCommentComposer(deps) {
   const {
     INSTANCE_URL,
-    emptyCommentMentionState,
     emptyCommentUploadState,
     escapeHtml,
-    get,
     getActiveCommentContext,
     getCommentComposerErrorMessage,
     getCommentComposerHadFocus,
-    getCommentComposerMentionMappings,
     getCommentComposerSelectionEnd,
     getCommentComposerSelectionStart,
     getCommentComposerDraftValue,
-    getCommentMentionRequestId,
-    getCommentMentionState,
+    getCommentLifecycleView,
     getCommentUploadSequence,
     getCommentUploadSessionId,
     getCommentUploadState,
@@ -29,12 +23,9 @@ export function createPopupCommentComposer(deps) {
     requestJson,
     setCommentComposerErrorMessage,
     setCommentComposerHadFocus,
-    setCommentComposerMentionMappings,
     setCommentComposerSelectionEnd,
     setCommentComposerSelectionStart,
     setCommentComposerDraftValue,
-    setCommentMentionRequestId,
-    setCommentMentionState,
     setCommentUploadSequence,
     setCommentUploadSessionId,
     setCommentUploadState,
@@ -43,67 +34,6 @@ export function createPopupCommentComposer(deps) {
     toAbsoluteJiraUrl,
     uploadAttachment,
   } = deps;
-
-  function getCommentMentionMarkup(candidate) {
-    const username = candidate?.name || candidate?.username || '';
-    if (username) {
-      return `[~${username}]`;
-    }
-    const accountId = candidate?.accountId || '';
-    if (accountId) {
-      return `[~accountid:${accountId}]`;
-    }
-    return '';
-  }
-
-  function getCommentMentionDisplayText(candidate) {
-    const displayName = candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || '';
-    return displayName ? `@${displayName}` : '@mention';
-  }
-
-  function buildCommentMentionMapping(draftText, start, displayText, markup) {
-    const normalizedDraftText = String(draftText || '');
-    const normalizedDisplayText = String(displayText || '');
-    const normalizedStart = Number.isFinite(Number(start)) ? Number(start) : normalizedDraftText.indexOf(normalizedDisplayText);
-    const safeStart = Math.max(0, normalizedStart);
-    const end = safeStart + normalizedDisplayText.length;
-    return {
-      afterContext: normalizedDraftText.slice(end, end + MENTION_CONTEXT_WINDOW),
-      beforeContext: normalizedDraftText.slice(Math.max(0, safeStart - MENTION_CONTEXT_WINDOW), safeStart),
-      displayText: normalizedDisplayText,
-      markup: String(markup || ''),
-      start: safeStart,
-    };
-  }
-
-  async function searchCommentMentionCandidates(query) {
-    const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(query)}`);
-    const rawCandidates = Array.isArray(response)
-      ? response
-      : response?.users || response?.items || [];
-    const seen = new Set();
-    return rawCandidates
-      .map(candidate => {
-        const mentionMarkup = getCommentMentionMarkup(candidate);
-        if (!mentionMarkup || seen.has(mentionMarkup)) {
-          return null;
-        }
-        seen.add(mentionMarkup);
-        const displayName = candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || 'Unknown user';
-        const username = candidate?.name || candidate?.username || '';
-        const secondaryText = (username && username !== displayName)
-          ? `@${username}`
-          : ((candidate?.emailAddress && candidate.emailAddress !== displayName) ? candidate.emailAddress : '');
-        return {
-          displayName,
-          displayText: getCommentMentionDisplayText(candidate),
-          mentionMarkup,
-          secondaryText,
-        };
-      })
-      .filter(Boolean)
-      .slice(0, 6);
-  }
 
   function getCommentComposerElements() {
     const container = getContainer();
@@ -324,8 +254,6 @@ export function createPopupCommentComposer(deps) {
 
   async function discardCommentComposerDraft(options = {}) {
     const {deleteUploaded = true} = options;
-    resetCommentMentionState();
-    setCommentComposerMentionMappings([]);
     setCommentComposerDraftValue('');
     setCommentComposerHadFocus(false);
     setCommentComposerSelectionStart(0);
@@ -465,7 +393,7 @@ export function createPopupCommentComposer(deps) {
         positionMentionMenuAtCaret({
           caretIndex: typeof inputElement.selectionStart === 'number'
             ? inputElement.selectionStart
-            : getCommentMentionState().range?.start,
+            : getCommentLifecycleView().compose?.mention?.range?.start,
           hostElement: input.closest('._JX_comment_input_wrap').get(0),
           inputElement,
           menuElement: mentionsElement,
@@ -473,7 +401,13 @@ export function createPopupCommentComposer(deps) {
       }
       keepContainerVisible();
     };
-    const commentMentionState = getCommentMentionState();
+    const commentMentionState = getCommentLifecycleView().compose?.mention || {
+      visible: false,
+      loading: false,
+      errorMessage: '',
+      suggestions: [],
+      selectedIndex: 0,
+    };
     if (!commentMentionState.visible) {
       mentions.attr('hidden', 'hidden').empty();
       keepContainerVisible();
@@ -483,8 +417,8 @@ export function createPopupCommentComposer(deps) {
       positionSuggestions('<div class="_JX_comment_mentions_status">Searching people...</div>');
       return;
     }
-    if (commentMentionState.error) {
-      positionSuggestions(`<div class="_JX_comment_mentions_status">${escapeHtml(commentMentionState.error)}</div>`);
+    if (commentMentionState.errorMessage) {
+      positionSuggestions(`<div class="_JX_comment_mentions_status">${escapeHtml(commentMentionState.errorMessage)}</div>`);
       return;
     }
     if (!commentMentionState.suggestions.length) {
@@ -503,103 +437,6 @@ export function createPopupCommentComposer(deps) {
         </button>
       `;
     }).join(''));
-  }
-
-  function resetCommentMentionState() {
-    setCommentMentionRequestId(getCommentMentionRequestId() + 1);
-    debouncedLoadCommentMentionSuggestions.cancel();
-    setCommentMentionState(emptyCommentMentionState());
-    renderCommentMentionSuggestions();
-  }
-
-  function getActiveCommentMention(inputElement) {
-    if (!inputElement) {
-      return null;
-    }
-    const value = inputElement.value || '';
-    const caretStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
-    const caretEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : caretStart;
-    if (caretStart !== caretEnd) {
-      return null;
-    }
-    const beforeCaret = value.slice(0, caretStart);
-    const mentionMatch = beforeCaret.match(/(^|[\s(])@([^\s@]{1,50})$/);
-    if (!mentionMatch) {
-      return null;
-    }
-    let end = caretEnd;
-    while (end < value.length && !/\s/.test(value.charAt(end))) {
-      end += 1;
-    }
-    return {end, query: mentionMatch[2], start: caretStart - mentionMatch[2].length - 1};
-  }
-
-  async function loadCommentMentionSuggestions(mention) {
-    const requestId = getCommentMentionRequestId() + 1;
-    setCommentMentionRequestId(requestId);
-    try {
-      const suggestions = await searchCommentMentionCandidates(mention.query);
-      if (requestId !== getCommentMentionRequestId()) {
-        return;
-      }
-      setCommentMentionState({error: '', loading: false, query: mention.query, range: mention, selectedIndex: 0, suggestions, visible: true});
-    } catch (error) {
-      if (requestId !== getCommentMentionRequestId()) {
-        return;
-      }
-      setCommentMentionState({error: 'Could not load people.', loading: false, query: mention.query, range: mention, selectedIndex: 0, suggestions: [], visible: true});
-    }
-    renderCommentMentionSuggestions();
-  }
-
-  const debouncedLoadCommentMentionSuggestions = debounce(function (mention) {
-    loadCommentMentionSuggestions(mention).catch(() => {});
-  }, 150);
-
-  function syncCommentMentionSuggestions(inputElement) {
-    const mention = getActiveCommentMention(inputElement);
-    if (!mention) {
-      resetCommentMentionState();
-      return;
-    }
-    setCommentMentionState({error: '', loading: true, query: mention.query, range: mention, selectedIndex: 0, suggestions: [], visible: true});
-    renderCommentMentionSuggestions();
-    debouncedLoadCommentMentionSuggestions(mention);
-  }
-
-  function moveCommentMentionSelection(delta) {
-    const commentMentionState = getCommentMentionState();
-    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
-      return;
-    }
-    const suggestionsTotal = commentMentionState.suggestions.length;
-    const nextIndex = (commentMentionState.selectedIndex + delta + suggestionsTotal) % suggestionsTotal;
-    setCommentMentionState({...commentMentionState, selectedIndex: nextIndex});
-    renderCommentMentionSuggestions();
-  }
-
-  function applyCommentMentionSelection(index) {
-    const {input} = getCommentComposerElements();
-    const inputElement = input.get(0);
-    const commentMentionState = getCommentMentionState();
-    const candidate = commentMentionState.suggestions[index];
-    const mentionRange = commentMentionState.range;
-    if (!inputElement || !candidate || !mentionRange) {
-      return;
-    }
-    const displayText = candidate.displayText || getCommentMentionDisplayText(candidate);
-    const nextValue = inputElement.value.slice(0, mentionRange.start) + `${displayText} ` + inputElement.value.slice(mentionRange.end);
-    input.val(nextValue);
-    setCommentComposerDraftValue(nextValue);
-    setCommentComposerMentionMappings([
-      ...getCommentComposerMentionMappings(),
-      buildCommentMentionMapping(nextValue, mentionRange.start, displayText, candidate.mentionMarkup),
-    ]);
-    inputElement.focus();
-    const caretPosition = mentionRange.start + displayText.length + 1;
-    inputElement.setSelectionRange(caretPosition, caretPosition);
-    resetCommentMentionState();
-    syncCommentComposerState();
   }
 
   function syncCommentComposerState() {
@@ -642,19 +479,15 @@ export function createPopupCommentComposer(deps) {
     getCommentComposerElements,
     getUploadedCommentAttachments,
     hasCommentUploadInFlight,
-    applyCommentMentionSelection,
     captureCommentComposerDraft,
     discardCommentComposerDraft,
     getClipboardImageFiles,
     renderCommentMentionSuggestions,
     renderCommentUploads,
-    resetCommentMentionState,
     restoreCommentComposerDraft,
     restoreCommentComposerState,
     setCommentComposerError,
     syncCommentComposerState,
-    syncCommentMentionSuggestions,
     uploadPastedImage,
-    moveCommentMentionSelection,
   };
 }

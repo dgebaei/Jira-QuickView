@@ -1542,6 +1542,10 @@ async function createMockJiraServer() {
     }
 
     if ((pathname === '/rest/api/2/user/assignable/search' || pathname === '/rest/api/2/user/search') && req.method === 'GET') {
+      if (pathname === '/rest/api/2/user/search' && scenarioIn('mention-search-fails')) {
+        json(res, 500, {errorMessages: ['Could not load people']});
+        return;
+      }
       const query = String(url.searchParams.get('query') || url.searchParams.get('username') || '').toLowerCase();
       const users = state.assignableUsers.filter(user => !query || user.displayName.toLowerCase().includes(query) || user.name.toLowerCase().includes(query));
       json(res, 200, users);
