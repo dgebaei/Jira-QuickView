@@ -35,13 +35,16 @@ export function createContentPopupStateHelpers(options) {
     };
   }
 
-  async function renderUpdatedPopupState(nextStateOrUpdater) {
+  async function renderUpdatedPopupState(nextStateOrUpdater, renderOptions = {}) {
     const currentState = getPopupState();
     const nextState = typeof nextStateOrUpdater === 'function'
       ? nextStateOrUpdater(currentState)
       : nextStateOrUpdater;
+    if (typeof renderOptions.isCurrent === 'function' && !renderOptions.isCurrent()) {
+      return currentState;
+    }
     setPopupState(nextState);
-    await renderIssuePopup(nextState);
+    await renderIssuePopup(nextState, renderOptions);
     return nextState;
   }
 
