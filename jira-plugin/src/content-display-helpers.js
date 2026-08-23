@@ -330,7 +330,6 @@ export function createContentDisplayHelpers(options) {
     const commentsForDisplay = await buildCommentsForDisplay(
       issueData,
       state.commentSession,
-      state.commentReactionState,
       normalizedCommentSortOrder
     );
     const fixVersions = issueData.fields.fixVersions || [];

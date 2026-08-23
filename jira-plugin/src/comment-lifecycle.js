@@ -9,6 +9,15 @@ function copyValue(value) {
   return value;
 }
 
+const COMMENT_REACTION_OPTIONS = [
+  {emoji: '👍', emojiId: '1f44d', label: 'thumbs up'},
+  {emoji: '👎', emojiId: '1f44e', label: 'thumbs down'},
+  {emoji: '🔥', emojiId: '1f525', label: 'fire'},
+  {emoji: '😍', emojiId: '1f60d', label: 'heart eyes'},
+  {emoji: '😂', emojiId: '1f602', label: 'joy'},
+  {emoji: '😢', emojiId: '1f622', label: 'cry'},
+];
+
 function normalizeInstanceUrl(value) {
   const instanceUrl = String(value || '').trim();
   return instanceUrl && !instanceUrl.endsWith('/') ? `${instanceUrl}/` : instanceUrl;
@@ -267,6 +276,65 @@ function mentionCandidates(users) {
   }).slice(0, 6);
 }
 
+function reactionStateFromSnapshot(issueSnapshot, fallback = null) {
+  const section = issueSnapshot?.sections?.reactions;
+  if (!section || !['ready', 'empty'].includes(section.status)) {
+    return fallback || {byCommentId: {}, errorsByCommentId: {}, supported: section?.supported !== false};
+  }
+  return {
+    byCommentId: copyValue(section.byCommentId || {}),
+    errorsByCommentId: {},
+    supported: section.supported !== false,
+  };
+}
+
+function reactionEntry(reactions, commentId, emojiId) {
+  return reactions?.byCommentId?.[String(commentId)]?.[String(emojiId)] || {};
+}
+
+function projectReactionComment(reactions, commentId) {
+  if (!reactions.supported) return {errorMessage: '', pills: [], menuOptions: []};
+  const pills = [];
+  const menuOptions = COMMENT_REACTION_OPTIONS.map(option => {
+    const entry = reactionEntry(reactions, commentId, option.emojiId);
+    const count = Number(entry.count) || 0;
+    const reacted = !!entry.reacted;
+    const pending = !!entry.pending;
+    if (count > 0) {
+      pills.push({
+        commentId,
+        emoji: option.emoji,
+        emojiId: option.emojiId,
+        count,
+        reacted,
+        pending,
+        title: pending ? `${option.label}...` : `${option.label} (${count})`,
+        disabledAttr: pending ? 'disabled' : '',
+      });
+    }
+    return {
+      commentId,
+      emoji: option.emoji,
+      emojiId: option.emojiId,
+      label: option.label,
+      title: pending ? `${option.label}...` : option.label,
+      isReacted: reacted,
+      isPending: pending,
+      disabledAttr: pending ? 'disabled' : '',
+    };
+  });
+  return {
+    errorMessage: reactions.errorsByCommentId[String(commentId)] || '',
+    pills,
+    menuOptions,
+  };
+}
+
+function isUnsupportedReactionFailure(error) {
+  const message = String(error?.message || error?.inner || error || '');
+  return /http\s+(401|403|404|405)\b/i.test(message) || /forbidden|not found|method not allowed/i.test(message);
+}
+
 export function createCommentLifecycle(options = {}) {
   const jira = options.jira;
   const issueData = options.issueData;
@@ -285,6 +353,7 @@ export function createCommentLifecycle(options = {}) {
   let uploadSequence = 0;
   let state = null;
   const activeOperations = {compose: null, composeMention: null, rowAction: null, rowMention: null};
+  const reactionOperations = new Map();
 
   function isCurrent(identity) {
     return !!state && state.sessionId === identity.sessionId && state.issueKey === identity.issueKey && state.generation === identity.generation;
@@ -310,6 +379,8 @@ export function createCommentLifecycle(options = {}) {
   function attach({sessionId, issueSnapshot} = {}) {
     const previousUploads = state?.compose?.uploads || [];
     Object.values(activeOperations).forEach(controller => controller?.abort());
+    reactionOperations.forEach(controller => controller.abort());
+    reactionOperations.clear();
     activeOperations.compose = null;
     activeOperations.composeMention = null;
     activeOperations.rowAction = null;
@@ -323,6 +394,7 @@ export function createCommentLifecycle(options = {}) {
       generation,
       issueSnapshot: copyValue(issueSnapshot || null),
       compose: emptyComposeState(),
+      reactions: reactionStateFromSnapshot(issueSnapshot),
       rowAction: null,
     };
     return outcome('attached');
@@ -333,6 +405,8 @@ export function createCommentLifecycle(options = {}) {
     const detachedIdentity = identityOf();
     const detachedUploads = state.compose.uploads;
     Object.values(activeOperations).forEach(controller => controller?.abort());
+    reactionOperations.forEach(controller => controller.abort());
+    reactionOperations.clear();
     activeOperations.compose = null;
     activeOperations.composeMention = null;
     activeOperations.rowAction = null;
@@ -356,8 +430,16 @@ export function createCommentLifecycle(options = {}) {
   }
 
   function view() {
-    if (!state) return {sessionId: '', issueKey: '', generation, compose: null, rowAction: null, protectFromAutoHide: false};
+    if (!state) return {sessionId: '', issueKey: '', generation, compose: null, reactions: {supported: false, byCommentId: {}}, rowAction: null, protectFromAutoHide: false};
     const compose = state.compose;
+    const commentIds = new Set([
+      ...(state.issueSnapshot?.core?.fields?.comment?.comments || []).map(comment => String(comment?.id || '')).filter(Boolean),
+      ...Object.keys(state.reactions.byCommentId || {}),
+    ]);
+    const reactionsByCommentId = {};
+    commentIds.forEach(commentId => {
+      reactionsByCommentId[commentId] = projectReactionComment(state.reactions, commentId);
+    });
     return {
       sessionId: state.sessionId,
       issueKey: state.issueKey,
@@ -383,6 +465,10 @@ export function createCommentLifecycle(options = {}) {
           thumbnailUrl: upload.thumbnailUrl,
         })),
       },
+      reactions: {
+        supported: state.reactions.supported,
+        byCommentId: reactionsByCommentId,
+      },
       rowAction: state.rowAction ? {
         commentId: state.rowAction.commentId,
         mode: state.rowAction.mode,
@@ -395,6 +481,99 @@ export function createCommentLifecycle(options = {}) {
       } : null,
       protectFromAutoHide: !!compose.value || compose.saving || !!compose.uploads.length || !!state.rowAction,
     };
+  }
+
+  function setReactionEntry(commentId, emojiId, changes) {
+    const normalizedCommentId = String(commentId);
+    const normalizedEmojiId = String(emojiId);
+    const currentComment = state.reactions.byCommentId[normalizedCommentId] || {};
+    state.reactions = {
+      ...state.reactions,
+      byCommentId: {
+        ...state.reactions.byCommentId,
+        [normalizedCommentId]: {
+          ...currentComment,
+          [normalizedEmojiId]: {...(currentComment[normalizedEmojiId] || {}), ...changes},
+        },
+      },
+    };
+  }
+
+  function setReactionError(commentId, message) {
+    state.reactions = {
+      ...state.reactions,
+      errorsByCommentId: {...state.reactions.errorsByCommentId, [String(commentId)]: String(message || '')},
+    };
+  }
+
+  async function toggleReaction(intent) {
+    const commentId = String(intent.commentId || '');
+    const emojiId = String(intent.emojiId || '');
+    if (!state?.reactions?.supported || !commentId || !COMMENT_REACTION_OPTIONS.some(option => option.emojiId === emojiId)) {
+      return outcome('ignored');
+    }
+    const current = reactionEntry(state.reactions, commentId, emojiId);
+    if (current.pending) return outcome('ignored');
+    const identity = identityOf();
+    const operationKey = `${commentId}:${emojiId}`;
+    const controller = new AbortController();
+    reactionOperations.get(operationKey)?.abort();
+    reactionOperations.set(operationKey, controller);
+    const wasReacted = !!current.reacted;
+    const oldCount = Number(current.count) || 0;
+    setReactionError(commentId, '');
+    setReactionEntry(commentId, emojiId, {
+      count: wasReacted ? Math.max(0, oldCount - 1) : oldCount + 1,
+      reacted: !wasReacted,
+      pending: true,
+    });
+    try {
+      await jira.write(wasReacted ? {
+        method: 'DELETE',
+        path: `${instanceUrl}rest/internal/2/reactions?commentId=${encodeURIComponent(commentId)}&emojiId=${encodeURIComponent(emojiId)}`,
+        headers: {'X-Atlassian-Token': 'no-check'},
+        signal: controller.signal,
+      } : {
+        method: 'POST',
+        path: `${instanceUrl}rest/internal/2/reactions`,
+        body: {commentId, emojiId},
+        headers: {'X-Atlassian-Token': 'no-check'},
+        signal: controller.signal,
+      });
+      if (!isCurrent(identity)) return outcome('ignored', {}, identity);
+      const mutation = {kind: 'reactionChanged', commentIds: [commentId]};
+      const refreshed = await issueData.refreshAfterMutation({
+        issueKey: identity.issueKey,
+        priorSnapshot: copyValue(state.issueSnapshot),
+        mutation,
+        requirements: {reactions: true},
+        signal: controller.signal,
+      });
+      if (!isCurrent(identity)) return outcome('ignored', {}, identity);
+      state.issueSnapshot = copyValue(refreshed.snapshot || state.issueSnapshot);
+      state.reactions = reactionStateFromSnapshot(refreshed.snapshot, state.reactions);
+      setReactionEntry(commentId, emojiId, {pending: false});
+      reactionOperations.delete(operationKey);
+      const failure = refreshed.failures?.reactions || null;
+      return outcome('mutationCommitted', {
+        mutation,
+        refreshedSnapshot: copyValue(refreshed.snapshot || null),
+        failure: copyValue(failure),
+        notice: failure ? 'Reaction updated; refresh unavailable' : 'Reaction updated',
+        writeCommitted: true,
+      }, identity);
+    } catch (error) {
+      if (!isCurrent(identity)) return outcome('ignored', {}, identity);
+      reactionOperations.delete(operationKey);
+      if (!wasReacted && isUnsupportedReactionFailure(error)) {
+        state.reactions = {...state.reactions, supported: false};
+        return outcome('unsupported', {notice: 'Comment reactions are not available in this Jira context'}, identity);
+      }
+      const failure = normalizeFailure(error, 'Could not update reaction');
+      setReactionEntry(commentId, emojiId, {count: oldCount, reacted: wasReacted, pending: false});
+      setReactionError(commentId, failure.message);
+      return outcome('failed', {failure}, identity);
+    }
   }
 
   async function deleteUploadedAttachment(attachmentId) {
@@ -803,6 +982,7 @@ export function createCommentLifecycle(options = {}) {
       return outcome('changed');
     }
     if (intent.type === 'saveNewComment') return saveNewComment(intent);
+    if (intent.type === 'toggleReaction') return toggleReaction(intent);
     if (intent.type === 'imagePasted') return startImageUpload(intent.file);
     if (intent.type === 'retryUpload') {
       const item = uploadItem(String(intent.localId || ''));

@@ -641,7 +641,7 @@ test('reaction refresh invalidates only reactions and reuses core and history fa
     const jira = createMockJiraAdapter({scripts: [
       {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'summary', name: 'Summary'}]},
       {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
-        id: '10001', key: 'ABC-1', fields: {summary: 'Stable', comment: {comments: [{id: '11'}]}},
+        id: '10001', key: 'ABC-1', fields: {summary: 'Stable', comment: {comments: [{id: '11'}, {id: '12'}]}},
       }},
       {operation: 'read', match: request => request.path.includes('expand=changelog'), result: {changelog: {histories: [{id: 'h1'}]}}},
       {operation: 'write', match: request => request.path.endsWith('/rest/internal/2/reactions/view'), result: [

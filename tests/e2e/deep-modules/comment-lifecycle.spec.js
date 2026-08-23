@@ -601,3 +601,143 @@ test('an upload completed for a detached popup is deleted instead of leaking int
     {operation: 'write', method: 'DELETE', path: 'https://jira.example/rest/api/2/attachment/attachment-stale'},
   ]);
 });
+
+test('reaction toggle owns optimistic projection, Jira write, authoritative refresh, and completion', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', deferred}]});
+    const refreshes = [];
+    const issueData = {
+      async refreshAfterMutation(request) {
+        refreshes.push(request);
+        return {
+          kind: 'loaded',
+          snapshot: {
+            ...request.priorSnapshot,
+            sections: {
+              ...request.priorSnapshot.sections,
+              reactions: {status: 'ready', supported: true, byCommentId: {'11': {'1f44d': {count: 2, reacted: true, pending: false}}}},
+            },
+          },
+        };
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11'}]}}},
+        sections: {reactions: {status: 'empty', supported: true, byCommentId: {}}},
+      },
+    });
+    const pending = comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    const optimistic = comments.view();
+    deferred.resolve({ok: true});
+    const completed = await pending;
+    return {optimistic, completed, finalView: comments.view(), requests: jira.getRequests(), refreshes};
+  });
+
+  expect(result.optimistic.reactions.byCommentId['11']).toMatchObject({
+    errorMessage: '',
+    pills: [{emoji: '👍', emojiId: '1f44d', count: 1, reacted: true, pending: true}],
+  });
+  expect(result.optimistic.reactions.byCommentId['11'].menuOptions).toEqual(expect.arrayContaining([
+    expect.objectContaining({emojiId: '1f44d', isReacted: true, isPending: true}),
+  ]));
+  expect(result.completed).toMatchObject({kind: 'mutationCommitted', mutation: {kind: 'reactionChanged', commentIds: ['11']}});
+  expect(result.finalView.reactions.byCommentId['11']).toMatchObject({
+    pills: [{emojiId: '1f44d', count: 2, reacted: true, pending: false}],
+  });
+  expect(result.requests[0]).toMatchObject({
+    operation: 'write',
+    method: 'POST',
+    path: 'https://jira.example/rest/internal/2/reactions',
+    body: {commentId: '11', emojiId: '1f44d'},
+    headers: {'X-Atlassian-Token': 'no-check'},
+  });
+  expect(result.refreshes[0]).toMatchObject({
+    issueKey: 'ABC-1',
+    mutation: {kind: 'reactionChanged', commentIds: ['11']},
+    requirements: {reactions: true},
+  });
+});
+
+test('failed reaction toggle rolls back the optimistic change and exposes recoverable feedback', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'DELETE', error: 'Reaction unavailable'}]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+    });
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11'}]}}},
+        sections: {reactions: {status: 'ready', supported: true, byCommentId: {'11': {'1f44d': {count: 2, reacted: true, pending: false}}}}},
+      },
+    });
+    const failed = await comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    return {failed, view: comments.view()};
+  });
+
+  expect(result.failed).toMatchObject({kind: 'failed', failure: {message: 'Reaction unavailable'}});
+  expect(result.view.reactions.byCommentId['11']).toMatchObject({
+    errorMessage: 'Reaction unavailable',
+    pills: [{emojiId: '1f44d', count: 2, reacted: true, pending: false}],
+  });
+});
+
+test('unsupported reaction write hides reaction controls for the attached Jira session', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', error: 'HTTP 404 - Not Found'}]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+    });
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11'}]}}},
+        sections: {reactions: {status: 'empty', supported: true, byCommentId: {}}},
+      },
+    });
+    const unsupported = await comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    return {unsupported, view: comments.view()};
+  });
+
+  expect(result.unsupported).toMatchObject({kind: 'unsupported', notice: 'Comment reactions are not available in this Jira context'});
+  expect(result.view.reactions).toMatchObject({supported: false, byCommentId: {'11': {pills: [], menuOptions: []}}});
+});
+
+test('reaction response for an old issue cannot update the current lifecycle session', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', deferred}]});
+    const issueData = {async refreshAfterMutation() { throw new Error('A stale reaction must not refresh'); }};
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    const snapshot = issueKey => ({
+      issueKey,
+      core: {key: issueKey, fields: {comment: {comments: [{id: issueKey === 'ABC-1' ? '11' : '22'}]}}},
+      sections: {reactions: {status: 'empty', supported: true, byCommentId: {}}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: snapshot('ABC-1')});
+    const pending = comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    comments.attach({sessionId: 'popup-2', issueSnapshot: snapshot('XYZ-2')});
+    deferred.resolve({ok: true});
+    const completion = await pending;
+    return {completion, view: comments.view()};
+  });
+
+  expect(result.completion).toMatchObject({kind: 'ignored', issueKey: 'ABC-1', sessionId: 'popup-1'});
+  expect(result.view).toMatchObject({issueKey: 'XYZ-2', sessionId: 'popup-2', reactions: {supported: true}});
+  expect(result.view.reactions.byCommentId['22'].pills).toEqual([]);
+});

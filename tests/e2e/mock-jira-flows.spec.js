@@ -1529,6 +1529,27 @@ test('silently pins the popup when starting a new comment so pointer exit does n
   await page.close();
 });
 
+test('adds and removes a comment reaction through authoritative refresh in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Reaction mutation coverage is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const firstComment = page.locator('._JX_comment').first();
+  await firstComment.locator('._JX_comment_reaction_more').click();
+  await firstComment.locator('._JX_comment_reaction_button[data-emoji-id="1f44d"]').click();
+
+  const pill = firstComment.locator('._JX_comment_reaction_pill[data-emoji-id="1f44d"]');
+  await expect(pill).toBeVisible();
+  await expect(pill.locator('._JX_comment_reaction_count')).toHaveText('1');
+  await expect(pill).toHaveClass(/is-reacted/);
+
+  await pill.click();
+  await expect(firstComment.locator('._JX_comment_reaction_pill[data-emoji-id="1f44d"]')).toHaveCount(0);
+  await page.close();
+});
+
 test('supports user tagging while editing comments in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Edit mention coverage is deterministic in mocked mode only.');

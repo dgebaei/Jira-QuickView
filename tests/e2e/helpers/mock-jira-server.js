@@ -377,6 +377,7 @@ function createState(origin) {
       },
     ],
     labels: ['needs-triage', 'ux-bug', 'release-candidate'],
+    reactions: {},
     boards: [{id: 77, name: 'Mock Board'}],
     sprints: [
       {id: 42, name: 'Sprint 42', state: 'active'},
@@ -1316,6 +1317,63 @@ async function createMockJiraServer() {
       state.issue.watchers = state.issue.watchers.filter(user => {
         return user.accountId !== accountId && user.name !== username && user.key !== key;
       });
+      noContent(res);
+      return;
+    }
+
+    if (pathname === '/rest/internal/2/reactions/view' && req.method === 'POST') {
+      if (scenarioIn('reaction-unsupported')) {
+        json(res, 404, {errorMessages: ['Reactions are not available']});
+        return;
+      }
+      const body = await parseJsonBody(req);
+      const requestedIds = new Set((body?.commentIds || []).map(String));
+      const entries = [];
+      Object.entries(state.reactions).forEach(([commentId, byEmojiId]) => {
+        if (!requestedIds.has(String(commentId))) return;
+        Object.entries(byEmojiId || {}).forEach(([emojiId, entry]) => {
+          entries.push({commentId, emojiId, count: entry.count, reacted: entry.reacted});
+        });
+      });
+      json(res, 200, entries);
+      return;
+    }
+
+    if (pathname === '/rest/internal/2/reactions' && req.method === 'POST') {
+      if (scenarioIn('reaction-unsupported')) {
+        json(res, 404, {errorMessages: ['Reactions are not available']});
+        return;
+      }
+      if (scenarioIn('reaction-update-fails')) {
+        json(res, 500, {errorMessages: ['Could not update reaction']});
+        return;
+      }
+      const body = await parseJsonBody(req);
+      const commentId = String(body?.commentId || '');
+      const emojiId = String(body?.emojiId || '');
+      state.reactions[commentId] = state.reactions[commentId] || {};
+      const current = state.reactions[commentId][emojiId] || {count: 0, reacted: false};
+      state.reactions[commentId][emojiId] = {
+        count: current.reacted ? current.count : current.count + 1,
+        reacted: true,
+      };
+      json(res, 200, state.reactions[commentId][emojiId]);
+      return;
+    }
+
+    if (pathname === '/rest/internal/2/reactions' && req.method === 'DELETE') {
+      if (scenarioIn('reaction-update-fails')) {
+        json(res, 500, {errorMessages: ['Could not update reaction']});
+        return;
+      }
+      const commentId = String(url.searchParams.get('commentId') || '');
+      const emojiId = String(url.searchParams.get('emojiId') || '');
+      const current = state.reactions[commentId]?.[emojiId] || {count: 0, reacted: false};
+      state.reactions[commentId] = state.reactions[commentId] || {};
+      state.reactions[commentId][emojiId] = {
+        count: current.reacted ? Math.max(0, current.count - 1) : current.count,
+        reacted: false,
+      };
       noContent(res);
       return;
     }

@@ -282,12 +282,10 @@ export function createOptionalSectionAcquisition(options = {}) {
       cache.invalidate('watchers', issueKey);
     }
     if (mutation.kind === 'issueChanged' || mutation.kind === 'commentChanged' || mutation.kind === 'reactionChanged') {
-      const commentIds = Array.isArray(mutation.commentIds) ? mutation.commentIds.map(String).filter(Boolean) : [];
-      if (commentIds.length) {
-        cache.invalidate('reactions', commentIds.join(','));
-      } else {
-        cache.invalidateFamily('reactions');
-      }
+      // Reaction reads are keyed by the complete ordered comment-id set for an issue.
+      // A mutation names only the changed comment, so it cannot reconstruct the read
+      // key safely. Keep that cache-key knowledge private and invalidate the family.
+      cache.invalidateFamily('reactions');
     }
     if (mutation.kind === 'issueChanged' && issueId) cache.invalidate('pullRequests', issueId);
   }

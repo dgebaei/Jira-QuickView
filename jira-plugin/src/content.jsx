@@ -201,22 +201,6 @@ if (!window.__JX_runtimeMessageListenerInstalled) {
 
 let ui_tips_shown_local = [];
 const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
-  const COMMENT_REACTION_OPTIONS = [
-  {emoji: '👍', emojiId: '1f44d', label: 'thumbs up'},
-  {emoji: '👎', emojiId: '1f44e', label: 'thumbs down'},
-  {emoji: '🔥', emojiId: '1f525', label: 'fire'},
-  {emoji: '😍', emojiId: '1f60d', label: 'heart eyes'},
-  {emoji: '😂', emojiId: '1f602', label: 'joy'},
-  {emoji: '😢', emojiId: '1f622', label: 'cry'}
-];
-
-function emptyCommentReactionState() {
-  return {
-    byCommentId: {},
-    supported: true
-  };
-}
-
 async function showTip(tipName, tipMessage) {
   if (ui_tips_shown_local.indexOf(tipName) !== -1) {
     return;
@@ -1640,7 +1624,6 @@ async function mainAsyncLocal() {
   async function buildCommentsForDisplay(
     issueData,
     commentSession = null,
-    reactionState = popupState?.commentReactionState,
     commentSortOrder = popupState?.commentSortOrder
   ) {
     const issueKey = issueData?.key || '';
@@ -1677,7 +1660,11 @@ async function mainAsyncLocal() {
       const hasEditDraft = !!editDraft.trim();
       const commentPermalink = buildCommentPermalink(issueKey, commentId);
       const commentLinkTitleText = `[${issueKey}] ${issueData?.fields?.summary || ''}`.trim();
-      const reactionUi = buildCommentReactionUi(commentId, reactionState);
+      const reactionUi = commentLifecycle.view().reactions?.byCommentId?.[commentId] || {
+        errorMessage: '',
+        menuOptions: [],
+        pills: [],
+      };
       const authorView = buildUserView(comment.author);
       return {
         id: commentId,
@@ -1714,186 +1701,32 @@ async function mainAsyncLocal() {
         commentEditSaveText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Saving...' : 'Save',
         commentDeleteConfirmText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Deleting...' : 'Yes',
         commentDeleteCancelText: 'No',
-        reactionError: getCommentReactionError(commentId, reactionState),
-        ...reactionUi
+        reactionError: reactionUi.errorMessage,
+        hasReactionOptions: reactionUi.menuOptions.length > 0,
+        reactionPills: reactionUi.pills,
+        hasReactionPills: reactionUi.pills.length > 0,
+        menuReactionOptions: reactionUi.menuOptions,
       };
     }));
-  }
-
-  function normalizeCommentReactionState(state) {
-    if (state && typeof state === 'object') {
-      return {
-        byCommentId: state.byCommentId || {},
-        supported: state.supported !== false
-      };
-    }
-    return emptyCommentReactionState();
-  }
-
-  function getCommentReactionEntry(commentId, emojiId, reactionState = popupState?.commentReactionState) {
-    const normalizedState = normalizeCommentReactionState(reactionState);
-    return normalizedState.byCommentId?.[String(commentId)]?.[emojiId] || {};
-  }
-
-  function getCommentReactionError(commentId, reactionState = popupState?.commentReactionState) {
-    const reactionEntry = getCommentReactionEntry(commentId, '__comment__', reactionState);
-    return reactionEntry.error || '';
-  }
-
-  function buildCommentReactionOptions(commentId, reactionState = popupState?.commentReactionState) {
-    const normalizedState = normalizeCommentReactionState(reactionState);
-    if (!normalizedState.supported || !commentId) {
-      return {pills: [], menuOptions: []};
-    }
-    const pills = [];
-    const menuOptions = [];
-    for (const option of COMMENT_REACTION_OPTIONS) {
-      const entry = getCommentReactionEntry(commentId, option.emojiId, normalizedState);
-      const count = Number(entry.count) || 0;
-      const reacted = !!entry.reacted;
-      const pending = !!entry.pending;
-      menuOptions.push({
-        commentId,
-        emoji: option.emoji,
-        emojiId: option.emojiId,
-        label: option.label,
-        title: pending ? `${option.label}...` : option.label,
-        isReacted: reacted,
-        isPending: pending,
-        disabledAttr: pending ? 'disabled' : ''
-      });
-      if (count > 0) {
-        pills.push({
-          commentId,
-          emoji: option.emoji,
-          emojiId: option.emojiId,
-          count,
-          reacted,
-          pending,
-          title: pending ? `${option.label}...` : `${option.label} (${count})`,
-          disabledAttr: pending ? 'disabled' : ''
-        });
-      }
-    }
-    return {pills, menuOptions};
-  }
-
-  function buildCommentReactionUi(commentId, reactionState = popupState?.commentReactionState) {
-    const {pills, menuOptions} = buildCommentReactionOptions(commentId, reactionState);
-    return {
-      hasReactionOptions: menuOptions.length > 0,
-      reactionPills: pills,
-      hasReactionPills: pills.length > 0,
-      menuReactionOptions: menuOptions
-    };
-  }
-
-  function setCommentReactionEntry(commentId, emojiId, changes) {
-    if (!popupState) {
-      return;
-    }
-    const normalizedCommentId = String(commentId || '');
-    const normalizedEmojiId = String(emojiId || '');
-    const currentState = normalizeCommentReactionState(popupState.commentReactionState);
-    const currentCommentState = currentState.byCommentId[normalizedCommentId] || {};
-    const currentEntry = currentCommentState[normalizedEmojiId] || {};
-    popupState = {
-      ...popupState,
-      commentReactionState: {
-        ...currentState,
-        byCommentId: {
-          ...currentState.byCommentId,
-          [normalizedCommentId]: {
-            ...currentCommentState,
-            [normalizedEmojiId]: {
-              ...currentEntry,
-              ...changes
-            }
-          }
-        }
-      }
-    };
-  }
-
-  function disableCommentReactions() {
-    if (!popupState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      commentReactionState: {
-        ...normalizeCommentReactionState(popupState.commentReactionState),
-        supported: false
-      }
-    };
-  }
-
-  function isCommentReactionUnsupportedError(error) {
-    const message = String(error?.message || error?.inner || error || '');
-    return /http\s+(401|403|404|405)\b/i.test(message) || /forbidden|not found|method not allowed/i.test(message);
-  }
-
-  async function addCommentReaction(commentId, emojiId) {
-    return requestJson('POST', `${INSTANCE_URL}rest/internal/2/reactions`, {
-      commentId: String(commentId),
-      emojiId
-    }, {
-      'X-Atlassian-Token': 'no-check'
-    });
-  }
-
-  async function deleteCommentReaction(commentId, emojiId) {
-    return requestJson('DELETE', `${INSTANCE_URL}rest/internal/2/reactions?commentId=${encodeURIComponent(commentId)}&emojiId=${encodeURIComponent(emojiId)}`, undefined, {
-      'X-Atlassian-Token': 'no-check'
-    });
   }
 
   async function handleCommentReactionClick(commentId, emojiId) {
     if (!popupState?.issueData || !commentId || !emojiId) {
       return;
     }
-    const currentEntry = getCommentReactionEntry(commentId, emojiId);
-    if (currentEntry.pending) {
+    const sessionId = activeCommentSessionId;
+    const pending = commentLifecycle.dispatch({type: 'toggleReaction', commentId, emojiId});
+    await renderIssuePopup(popupState);
+    const outcome = await pending;
+    if (outcome.sessionId !== sessionId || sessionId !== activeCommentSessionId) {
       return;
     }
-
-    const wasReacted = !!currentEntry.reacted;
-    const oldCount = Number(currentEntry.count) || 0;
-
-    setCommentReactionEntry(commentId, '__comment__', {error: ''});
-    setCommentReactionEntry(commentId, emojiId, {
-      count: wasReacted ? Math.max(0, oldCount - 1) : oldCount + 1,
-      reacted: !wasReacted,
-      pending: true
-    });
+    if (outcome.refreshedSnapshot) {
+      popupState = {...popupState, issueSnapshot: outcome.refreshedSnapshot};
+    }
     await renderIssuePopup(popupState);
-
-    try {
-      if (wasReacted) {
-        await deleteCommentReaction(commentId, emojiId);
-      } else {
-        await addCommentReaction(commentId, emojiId);
-      }
-      setCommentReactionEntry(commentId, emojiId, {pending: false});
-      await renderIssuePopup(popupState);
-    } catch (error) {
-      if (!wasReacted && isCommentReactionUnsupportedError(error)) {
-        disableCommentReactions();
-        await renderIssuePopup(popupState);
-        snackBar('Comment reactions are not available in this Jira context');
-        return;
-      }
-      setCommentReactionEntry(commentId, emojiId, {
-        count: oldCount,
-        reacted: wasReacted,
-        pending: false
-      });
-      if (!wasReacted) {
-        setCommentReactionEntry(commentId, '__comment__', {
-          error: error?.message || error?.inner || 'Could not update reaction'
-        });
-      }
-      await renderIssuePopup(popupState);
+    if (outcome.kind === 'unsupported') {
+      snackBar(outcome.notice);
     }
   }
 
