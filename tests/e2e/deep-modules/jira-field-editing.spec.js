@@ -1209,3 +1209,183 @@ test('Environment clearing uses null and a failed save remains retryable', async
     writeBodies: [{fields: {environment: null}}, {fields: {environment: null}}],
   });
 });
+
+test('custom text fields expose a presentation projection and preserve exact text payloads', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const field = {
+      id: 'customfield_12345',
+      name: 'Customer impact',
+      schema: {type: 'string', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:textarea'},
+    };
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [field]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_12345: {...field, operations: ['set']}}}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', names: {customfield_12345: 'Customer impact'}, fields: {summary: 'Issue', customfield_12345: '  High\nimpact  '}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {id: '1', key: 'ABC-1', names: {customfield_12345: 'Customer impact'}, fields: {summary: 'Issue', customfield_12345: null}},
+        sections: {},
+      },
+    });
+
+    const described = await fields.dispatch({type: 'describeField', fieldId: 'customfield_12345'});
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'customfield_12345'});
+    await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: '  High\nimpact  ', selection: {start: 2, end: 6}});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      described: {kind: described.kind, field: described.field},
+      begun: {kind: begun.kind, editorType: begun.view.edit?.editorType, label: begun.view.edit?.label},
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    described: {
+      kind: 'described',
+      field: {
+        editable: true,
+        empty: true,
+        fieldId: 'customfield_12345',
+        jqlClause: '',
+        linkLabel: '',
+        supported: true,
+        text: 'Customer impact: --',
+        visibleWhenEmpty: true,
+      },
+    },
+    begun: {kind: 'changed', editorType: 'textarea', label: 'Customer impact'},
+    saved: {kind: 'saved', notice: 'Customer impact updated'},
+    writeBody: {fields: {customfield_12345: '  High\nimpact  '}},
+  });
+});
+
+test('multi-select custom fields own selected values, direct removal, and Jira payload shape', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const field = {id: 'customfield_22222', name: 'Regions', schema: {type: 'array', items: 'option'}};
+    const current = [{id: '1', value: 'North'}, {id: '2', value: 'South'}];
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [field]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_22222: {...field, operations: ['set'], allowedValues: [...current, {id: '3', value: 'West'}]}}}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', customfield_22222: [{id: '2', value: 'South'}, {id: '3', value: 'West'}]}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', customfield_22222: current}}, sections: {}}});
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'customfield_22222'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '1'});
+    const selected = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '3'});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      begun: {kind: begun.kind, editorType: begun.view.edit?.editorType, selectedIds: begun.view.edit?.selectedOptionIds},
+      selectedIds: selected.view.edit?.selectedOptionIds,
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', editorType: 'multi-select', selectedIds: ['1', '2']},
+    selectedIds: ['2', '3'],
+    saved: {kind: 'saved', notice: 'Regions updated'},
+    writeBody: {fields: {customfield_22222: [{id: '2'}, {id: '3'}]}},
+  });
+});
+
+test('user-picker custom fields merge both search strategies and retry Jira identity payloads', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const field = {id: 'customfield_54321', name: 'Approver', schema: {type: 'user'}};
+    const alex = {accountId: 'cloud-alex', name: 'alex', key: 'ALEX', displayName: 'Alex Reviewer'};
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [field]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_54321: {...field, operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('/users/assignee'), result: []},
+      {operation: 'read', match: request => request.path.includes('/user/picker'), result: {users: [alex]}},
+      {operation: 'read', match: request => request.path.includes('/users/assignee'), result: [alex]},
+      {operation: 'read', match: request => request.path.includes('/user/picker'), result: {users: [alex]}},
+      {operation: 'write', method: 'PUT', error: 'accountId unsupported'},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', customfield_54321: alex}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', customfield_54321: null}}, sections: {}}});
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'customfield_54321'});
+    const searched = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'Alex'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: 'cloud-alex'});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const writes = jira.getRequests().filter(request => request.operation === 'write');
+    return {
+      begun: {kind: begun.kind, editorType: begun.view.edit?.editorType, labels: begun.view.edit?.options.map(option => option.label)},
+      searched: {kind: searched.kind, labels: searched.view.edit?.options.map(option => option.label)},
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBodies: writes.map(request => request.body),
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', editorType: 'user-search', labels: ['Clear Approver', 'Alex Reviewer']},
+    searched: {kind: 'changed', labels: ['Clear Approver', 'Alex Reviewer']},
+    saved: {kind: 'saved', notice: 'Approver set to Alex Reviewer'},
+    writeBodies: [
+      {fields: {customfield_54321: {accountId: 'cloud-alex'}}},
+      {fields: {customfield_54321: {name: 'alex'}}},
+    ],
+  });
+});
+
+test('Tempo account custom fields own search, clearing, and payload fallback order', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const field = {id: 'customfield_77777', name: 'Account', schema: {type: 'account', custom: 'com.tempoplugin.tempo-accounts:accounts.customfield'}};
+    const account = {id: 42, key: 'ACME', name: 'Acme delivery', customer: {name: 'Acme'}};
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [field]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_77777: {...field, operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.includes('/tempo-accounts/1/account/search'), result: {accounts: [account]}},
+      {operation: 'read', match: request => request.path.includes('/tempo-accounts/1/account/search'), result: {accounts: [account]}},
+      {operation: 'write', method: 'PUT', error: 'object id unsupported'},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', project: {id: '10000'}, customfield_77777: account}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', project: {id: '10000'}, customfield_77777: null}}, sections: {}}});
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'customfield_77777'});
+    const searched = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'Acme'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '42'});
+    const saved = await fields.dispatch({type: 'save', editId: begun.editId});
+    const writes = jira.getRequests().filter(request => request.operation === 'write');
+    return {
+      begun: {kind: begun.kind, editorType: begun.view.edit?.editorType, labels: begun.view.edit?.options.map(option => option.label)},
+      searched: {kind: searched.kind, labels: searched.view.edit?.options.map(option => option.label)},
+      saved: {kind: saved.kind, notice: saved.notice},
+      writeBodies: writes.map(request => request.body),
+    };
+  });
+
+  expect(result).toEqual({
+    begun: {kind: 'changed', editorType: 'tempo-account-search', labels: ['Clear Account', 'Acme delivery']},
+    searched: {kind: 'changed', labels: ['Clear Account', 'Acme delivery']},
+    saved: {kind: 'saved', notice: 'Account set to Acme delivery'},
+    writeBodies: [
+      {fields: {customfield_77777: {id: 42}}},
+      {fields: {customfield_77777: 42}},
+    ],
+  });
+});

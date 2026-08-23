@@ -662,7 +662,6 @@ async function mainAsyncLocal() {
     toggleMultiSelectOptionFromInput,
   } = createPopupEditing({
     buildEditFieldError,
-    getCustomFieldEditorDefinition,
     getPopupState: () => popupState,
     refreshPopupIssueState,
     renderIssuePopup,
@@ -2508,38 +2507,6 @@ async function mainAsyncLocal() {
 
   // ── Issue Data & Metadata ──────────────────────────────────
 
-  // ── Assignee Search ────────────────────────────────────────
-
-  async function searchAssignableUsers(query, issueData) {
-    const issueKey = issueData?.key || '';
-    if (!issueKey) {
-      return [];
-    }
-    const outcome = await quickViewIssueData.search({purpose: 'assignee', issueKey, query});
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Could not search assignable users');
-    }
-    const users = outcome.items;
-    return normalizeAssignableUsers(users);
-  }
-
-  async function searchUserPicker(query) {
-    const outcome = await quickViewIssueData.search({purpose: 'userPicker', query});
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Could not search Jira users');
-    }
-    const users = outcome.items;
-    return normalizeAssignableUsers(users);
-  }
-
-  function buildClearFieldOption(label = 'Clear value') {
-    return buildEditOption('__clear__', label, {
-      metaText: 'Remove the current value',
-      rawValue: null,
-    });
-  }
-
-
   async function getIssueWatchers(issueKey) {
     if (!issueKey) {
       return {
@@ -2657,382 +2624,11 @@ async function mainAsyncLocal() {
     }, 5000);
   }
 
-  async function searchGenericUsers(query) {
-    return searchUserPicker(query);
-  }
-
-  async function loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query = '') {
-    const normalizedQuery = String(query || '').trim();
-    const [assignableResults, pickerResults] = await Promise.all([
-      searchAssignableUsers(normalizedQuery, issueData).catch(() => []),
-      searchGenericUsers(normalizedQuery).catch(() => [])
-    ]);
-    return mergeEditOptions(
-      currentSelections,
-      mergeEditOptions(assignableResults, pickerResults)
-    );
-  }
   // ── Labels ────────────────────────────────────────────────
 
   async function hasLabelSuggestionSupport() {
     const labelOutcome = await quickViewIssueData.search({purpose: 'label', query: ''});
     return labelOutcome.kind === 'loaded';
-  }
-
-  // ── Custom Fields ──────────────────────────────────────────
-
-  function getCustomFieldPrimitive(entry) {
-    if (entry === undefined || entry === null) {
-      return '';
-    }
-    if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
-      return String(entry);
-    }
-    if (entry.accountId || entry.avatarUrls || entry.emailAddress) {
-      return String(entry.displayName || entry.name || entry.value || entry.key || entry.id || '');
-    }
-    return String(entry.name || entry.value || entry.displayName || entry.key || entry.id || '');
-  }
-
-  function buildCustomFieldOption(fieldName, entry) {
-    const label = getCustomFieldPrimitive(entry);
-    if (!label) {
-      return null;
-    }
-    if (entry && typeof entry === 'object' && (entry.accountId || entry.avatarUrls || entry.emailAddress)) {
-      const view = buildUserView(entry);
-      const id = view.accountId || view.name || view.key;
-      if (!id) {
-        return null;
-      }
-      return buildEditOption(id, label, {
-        avatarUrl: view.avatarUrl,
-        initials: view.initials,
-        metaText: view.emailAddress || view.name || view.key || '',
-        rawValue: entry
-      });
-    }
-    const optionId = String(entry?.id || entry?.value || entry?.name || entry?.key || label).trim();
-    if (!optionId) {
-      return null;
-    }
-    const metaText = entry?.description || entry?.child?.value || '';
-    return buildEditOption(optionId, label, {
-      iconUrl: entry?.iconUrl || '',
-      metaText,
-      rawValue: entry
-    });
-  }
-
-  function buildCustomFieldValueText(fieldName, value) {
-    if (Array.isArray(value)) {
-      const parts = value.map(entry => getCustomFieldPrimitive(entry)).filter(Boolean);
-      return `${fieldName}: ${parts.join(', ') || '--'}`;
-    }
-    const primitive = getCustomFieldPrimitive(value);
-    return `${fieldName}: ${primitive || '--'}`;
-  }
-
-  function buildUserFieldOption(user) {
-    const optionId = String(user?.accountId || user?.name || user?.key || '').trim();
-    const label = String(user?.displayName || user?.name || user?.key || '').trim();
-    if (!optionId || !label) {
-      return null;
-    }
-    return buildEditOption(optionId, label, {
-      avatarUrl: user?.avatarUrls?.['48x48'] || '',
-      metaText: user?.emailAddress || user?.name || user?.key || '',
-      rawValue: {
-        accountId: user?.accountId || '',
-        displayName: user?.displayName || label,
-        name: user?.name || '',
-        key: user?.key || '',
-      }
-    });
-  }
-
-  function buildUserFieldPayloadCandidates(rawUser) {
-    if (!rawUser) {
-      return [];
-    }
-    const candidates = [];
-    const accountId = String(rawUser.accountId || '').trim();
-    const name = String(rawUser.name || '').trim();
-    const key = String(rawUser.key || '').trim();
-    if (accountId) {
-      candidates.push({accountId});
-    }
-    if (name) {
-      candidates.push({name});
-    }
-    if (key) {
-      candidates.push({key});
-    }
-    return candidates;
-  }
-
-  async function saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue) {
-    if (!issueData?.key || !fieldId) {
-      throw new Error('Missing issue key or field id');
-    }
-
-    if (isMultiValue) {
-      const fieldValue = selectedOptions
-        .map(option => buildUserFieldPayloadCandidates(option?.rawValue || option)[0])
-        .filter(Boolean);
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-        fields: {
-          [fieldId]: fieldValue
-        }
-      });
-      return;
-    }
-
-    const selectedOption = selectedOptions[0];
-    if (!selectedOption || selectedOption.id === '__clear__' || selectedOption.rawValue === null) {
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-        fields: {
-          [fieldId]: null
-        }
-      });
-      return;
-    }
-
-    const payloadCandidates = buildUserFieldPayloadCandidates(selectedOption.rawValue || selectedOption);
-    let lastError = null;
-    for (const payload of payloadCandidates) {
-      try {
-        await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-          fields: {
-            [fieldId]: payload
-          }
-        });
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not update user field');
-  }
-
-  function buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta) {
-    if (value === undefined || value === null || value === '') {
-      return '';
-    }
-    if (isTempoAccountField(fieldMeta)) {
-      const accountId = value?.id || value;
-      return String(accountId || '').trim();
-    }
-    if (supportDescriptor?.valueKind === 'user') {
-      return String(value?.accountId || value?.key || value?.name || value?.displayName || '').trim();
-    }
-    if (supportDescriptor?.valueKind === 'primitive') {
-      return encodeJqlValue(String(value));
-    }
-    const comparableValue = value?.value || value?.name || value?.displayName || value?.key || value?.id;
-    return comparableValue ? encodeJqlValue(String(comparableValue)) : '';
-  }
-
-  function buildCustomFieldChipData(fieldId, fieldName, rawValue, fieldMeta, supportDescriptor) {
-    const currentValues = Array.isArray(rawValue) ? rawValue.filter(value => value !== undefined && value !== null && value !== '') : [rawValue].filter(value => value !== undefined && value !== null && value !== '');
-    const jqlValues = currentValues
-      .map(value => buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta))
-      .filter(Boolean);
-    const jqlClause = !jqlValues.length
-      ? ''
-      : jqlValues.length === 1
-        ? `${fieldName} = ${jqlValues[0]}`
-        : `${fieldName} in (${jqlValues.join(', ')})`;
-    const linkLabel = Array.isArray(rawValue)
-      ? currentValues.map(entry => getCustomFieldPrimitive(entry)).filter(Boolean).join(', ')
-      : getCustomFieldPrimitive(rawValue);
-    return buildFilterChip(buildCustomFieldValueText(fieldName, rawValue), jqlClause, {
-      linkLabel
-    });
-  }
-
-  function isTempoAccountField(fieldMeta) {
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
-    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
-    return schemaType === 'account' || schemaCustom.includes('tempo-accounts');
-  }
-
-  function buildTempoAccountOption(account) {
-    const id = account?.id;
-    const key = String(account?.key || '').trim();
-    const name = String(account?.name || key || '').trim();
-    if (!id || !name) {
-      return null;
-    }
-    const customerName = String(account?.customer?.name || '').trim();
-    const categoryName = String(account?.category?.name || '').trim();
-    const metaText = [key, customerName, categoryName].filter(Boolean).join(' | ');
-    return buildEditOption(String(id), name, {
-      metaText,
-      searchText: `${name} ${key} ${customerName} ${categoryName}`,
-      rawValue: account
-    });
-  }
-
-  async function searchTempoAccounts(queryText, issueData) {
-    const projectId = String(issueData?.fields?.project?.id || '').trim();
-    if (!projectId) {
-      return [];
-    }
-    const outcome = await quickViewIssueData.search({
-      purpose: 'tempo',
-      projectId,
-      query: queryText,
-    });
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Could not load Tempo accounts');
-    }
-    return outcome.items.map(buildTempoAccountOption).filter(Boolean);
-  }
-
-  async function saveTempoAccountSelection(issueData, fieldId, selectedOptions) {
-    const selectedOption = selectedOptions[0];
-    if (selectedOption?.id === '__clear__' || selectedOption?.rawValue === null) {
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-        fields: {
-          [fieldId]: null
-        }
-      });
-      return;
-    }
-    if (!selectedOption?.id) {
-      throw new Error('Pick an account before saving');
-    }
-    const accountId = Number(selectedOption.id);
-    const accountKey = String(selectedOption?.rawValue?.key || '').trim();
-    const payloadCandidates = [
-      {fields: {[fieldId]: {id: accountId}}},
-      {fields: {[fieldId]: accountId}},
-      {fields: {[fieldId]: {id: String(selectedOption.id)}}},
-      ...(accountKey ? [{fields: {[fieldId]: {key: accountKey}}}] : [])
-    ];
-
-    let lastError;
-    for (const payload of payloadCandidates) {
-      try {
-        await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, payload);
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not update account');
-  }
-
-  function getCustomFieldSupportDescriptor(fieldMeta) {
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
-    const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
-    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
-
-    if (schemaCustom.includes('cascadingselect')) {
-      return null;
-    }
-
-    if (schemaType === 'option') {
-      return {
-        selectionMode: 'single',
-        valueKind: 'option'
-      };
-    }
-
-    if (schemaType === 'string') {
-      return {
-        selectionMode: 'single',
-        valueKind: 'primitive'
-      };
-    }
-
-    if (schemaType === 'user') {
-      return {
-        selectionMode: 'single',
-        valueKind: 'user'
-      };
-    }
-
-    if (schemaType === 'array' && itemType === 'option') {
-      return {
-        selectionMode: 'multi',
-        valueKind: 'option'
-      };
-    }
-
-    if (schemaType === 'array' && itemType === 'string') {
-      return {
-        selectionMode: 'multi',
-        valueKind: 'primitive'
-      };
-    }
-
-    if (schemaType === 'array' && itemType === 'user') {
-      return {
-        selectionMode: 'multi',
-        valueKind: 'user'
-      };
-    }
-
-    return null;
-  }
-
-  function getPrimitiveCustomFieldEditorType(fieldMeta) {
-    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
-    return schemaCustom.includes('textarea') ? 'textarea' : 'text';
-  }
-
-  function isSupportedCustomFieldAllowedValue(entry, supportDescriptor) {
-    if (!supportDescriptor) {
-      return false;
-    }
-    if (supportDescriptor.valueKind === 'primitive') {
-      return typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean';
-    }
-    if (!entry || typeof entry !== 'object') {
-      return false;
-    }
-    if (supportDescriptor.valueKind === 'user') {
-      return !!(entry.accountId || entry.name || entry.key || entry.displayName);
-    }
-    return !!(entry.id || entry.value || entry.name);
-  }
-
-  function buildCustomFieldSaveValue(rawValue, supportDescriptor) {
-    if (rawValue === undefined || rawValue === null) {
-      return rawValue;
-    }
-    if (supportDescriptor?.valueKind === 'primitive') {
-      return rawValue;
-    }
-    if (supportDescriptor?.valueKind === 'user' && rawValue && typeof rawValue === 'object') {
-      if (rawValue.accountId) {
-        return {accountId: String(rawValue.accountId)};
-      }
-      if (rawValue.name) {
-        return {name: String(rawValue.name)};
-      }
-      if (rawValue.key) {
-        return {key: String(rawValue.key)};
-      }
-    }
-    if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
-      return rawValue;
-    }
-    if (rawValue.id) {
-      return {id: String(rawValue.id)};
-    }
-    if (rawValue.value) {
-      return {value: rawValue.value};
-    }
-    if (rawValue.name) {
-      return {name: rawValue.name};
-    }
-    if (rawValue.key) {
-      return {key: rawValue.key};
-    }
-    return rawValue;
   }
 
   function normalizeIssueTypeOptions(allowedIssueTypes, currentIssueType) {
@@ -3050,216 +2646,6 @@ async function mainAsyncLocal() {
         metaText: issueType.description || '',
         rawValue: issueType
       }));
-  }
-
-  async function getCustomFieldEditorDefinition(fieldId, issueData) {
-    const capability = await getEditableFieldCapability(issueData, fieldId);
-    const fieldMeta = capability.fieldMeta;
-    const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
-    const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
-
-    if (capability.editable && fieldMeta && isTempoAccountField(fieldMeta)) {
-      const currentAccount = issueData?.fields?.[fieldId];
-      const currentOption = currentAccount
-        ? buildTempoAccountOption(currentAccount)
-        : null;
-      const clearOption = buildClearFieldOption(`Clear ${fieldName}`);
-      return {
-        fieldKey: fieldId,
-        editorType: 'tempo-account-search',
-        label: fieldName,
-        fieldMeta,
-        supportDescriptor: {selectionMode: 'single', valueKind: 'tempo-account'},
-        selectionMode: 'single',
-        currentText: currentAccount ? buildCustomFieldValueText(fieldName, currentAccount) : `${fieldName}: --`,
-        currentOptionId: currentOption?.id || null,
-        currentSelections: currentOption ? [currentOption] : [],
-        initialInputValue: '',
-        inputPlaceholder: 'Search accounts',
-        loadOptions: async () => mergeEditOptions([clearOption], mergeEditOptions(currentOption ? [currentOption] : [], await searchTempoAccounts('', issueData))),
-        searchOptions: async query => mergeEditOptions([clearOption], await searchTempoAccounts(query, issueData)),
-        save: selectedOptions => saveTempoAccountSelection(issueData, fieldId, selectedOptions),
-        successMessage: selectedOptions => {
-          const selectedOption = selectedOptions[0];
-          if (selectedOption?.id === '__clear__') {
-            return `${fieldName} cleared`;
-          }
-          return selectedOption?.label
-            ? `${fieldName} set to ${selectedOption.label}`
-            : `${fieldName} updated`;
-        }
-      };
-    }
-
-    if (capability.editable && fieldMeta && (schemaType === 'user' || (schemaType === 'array' && itemType === 'user'))) {
-      const operations = capability.operations || [];
-      if (!operations.includes('set')) {
-        return null;
-      }
-
-      const isMultiValue = schemaType === 'array' && itemType === 'user';
-      const currentValue = issueData?.fields?.[fieldId];
-      const currentEntries = isMultiValue
-        ? (Array.isArray(currentValue) ? currentValue : [])
-        : (currentValue ? [currentValue] : []);
-      const currentSelections = currentEntries
-        .map(buildUserFieldOption)
-        .filter(Boolean);
-      const clearOption = isMultiValue ? null : buildClearFieldOption(`Clear ${fieldName}`);
-      return {
-        fieldKey: fieldId,
-        editorType: 'user-search',
-        label: fieldName,
-        fieldMeta,
-        supportDescriptor: {selectionMode: isMultiValue ? 'multi' : 'single', valueKind: 'user'},
-        selectionMode: isMultiValue ? 'multi' : 'single',
-        currentText: buildCustomFieldValueText(fieldName, currentValue),
-        currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
-        currentSelections,
-        initialInputValue: '',
-        inputPlaceholder: 'Search users',
-        loadOptions: async () => clearOption
-          ? mergeEditOptions([clearOption], await loadCustomUserFieldOptions(fieldId, issueData, currentSelections))
-          : loadCustomUserFieldOptions(fieldId, issueData, currentSelections),
-        searchOptions: async query => clearOption
-          ? mergeEditOptions([clearOption], await loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query))
-          : loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query),
-        save: selectedOptions => saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue),
-        successMessage: selectedOptions => {
-          if (!selectedOptions.length || selectedOptions[0]?.id === '__clear__') {
-            return `${fieldName} cleared`;
-          }
-          return isMultiValue
-            ? `${fieldName} updated`
-            : `${fieldName} set to ${selectedOptions[0].label}`;
-        }
-      };
-    }
-
-    return getSupportedCustomFieldDefinition(fieldId, issueData);
-  }
-
-  async function getSupportedCustomFieldDefinition(fieldId, issueData) {
-    const capability = await getEditableFieldCapability(issueData, fieldId);
-    const fieldMeta = capability.fieldMeta;
-    const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    if (!capability.editable || !fieldMeta) {
-      return null;
-    }
-
-    const supportDescriptor = getCustomFieldSupportDescriptor(fieldMeta);
-    if (!supportDescriptor) {
-      return null;
-    }
-
-    const operations = capability.operations || [];
-    const isMultiValue = supportDescriptor.selectionMode === 'multi';
-    const currentValue = issueData?.fields?.[fieldId];
-    const currentEntries = isMultiValue
-      ? (Array.isArray(currentValue) ? currentValue : [])
-      : (currentValue ? [currentValue] : []);
-    const currentSelections = currentEntries
-      .map(entry => buildCustomFieldOption(fieldName, entry))
-      .filter(Boolean);
-    const allowedOptions = (Array.isArray(capability.allowedValues) ? capability.allowedValues : [])
-      .filter(entry => isSupportedCustomFieldAllowedValue(entry, supportDescriptor))
-      .map(entry => buildCustomFieldOption(fieldName, entry))
-      .filter(Boolean);
-    const allOptions = mergeEditOptions(currentSelections, allowedOptions);
-
-    if (!allOptions.length && supportDescriptor.valueKind !== 'user') {
-      return null;
-    }
-
-    if (isMultiValue && !operations.includes('set')) {
-      return null;
-    }
-    if (!isMultiValue && !operations.includes('set')) {
-      return null;
-    }
-
-    const isUserField = supportDescriptor.valueKind === 'user';
-    const isPrimitiveField = supportDescriptor.valueKind === 'primitive';
-    const clearOption = isMultiValue ? null : buildClearFieldOption(`Clear ${fieldName}`);
-
-    if (isPrimitiveField && !isMultiValue) {
-      const currentInputValue = currentValue === undefined || currentValue === null
-        ? ''
-        : String(currentValue);
-      const editorType = getPrimitiveCustomFieldEditorType(fieldMeta);
-      return {
-        fieldKey: fieldId,
-        editorType,
-        label: fieldName,
-        fieldMeta,
-        supportDescriptor,
-        selectionMode: 'text',
-        currentText: buildCustomFieldValueText(fieldName, currentValue),
-        currentOptionId: null,
-        currentSelections,
-        initialInputValue: currentInputValue,
-        inputPlaceholder: editorType === 'textarea' ? `Enter ${fieldName.toLowerCase()}` : `Type ${fieldName.toLowerCase()}`,
-        showActionButtons: true,
-        loadOptions: async () => [],
-        save: (selectedOptions, editState) => {
-          const nextValue = String(editState?.inputValue || '');
-          const hasValue = nextValue.trim().length > 0;
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              [fieldId]: hasValue ? nextValue : null
-            }
-          });
-        },
-        successMessage: (selectedOptions, editState) => {
-          const nextValue = String(editState?.inputValue || '').trim();
-          return nextValue ? `${fieldName} updated` : `${fieldName} cleared`;
-        }
-      };
-    }
-
-    if (isPrimitiveField && isMultiValue) {
-      return null;
-    }
-
-    return {
-      fieldKey: fieldId,
-      editorType: isUserField ? 'user-search' : (isMultiValue ? 'multi-select' : 'single-select'),
-      label: fieldName,
-      fieldMeta,
-      supportDescriptor,
-      selectionMode: isMultiValue ? 'multi' : 'single',
-      currentText: buildCustomFieldValueText(fieldName, currentValue),
-      currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
-      currentSelections,
-      initialInputValue: isMultiValue ? '' : '',
-      inputPlaceholder: isUserField ? 'Search users' : undefined,
-      loadOptions: async () => isUserField
-        ? mergeEditOptions([clearOption], currentSelections)
-        : mergeEditOptions([clearOption], allOptions),
-      searchOptions: isUserField ? (async query => {
-        const [pickerResults, assignableResults] = await Promise.all([
-          searchUserPicker(query),
-          searchAssignableUsers(query, issueData).catch(() => [])
-        ]);
-        const baseline = getPopupState()?.editState?.options || currentSelections;
-        const merged = mergeEditOptions(pickerResults, mergeEditOptions(assignableResults, baseline));
-        return mergeEditOptions([clearOption], merged);
-      }) : undefined,
-      save: selectedOptions => {
-        const fieldValue = isMultiValue
-          ? selectedOptions.map(option => buildCustomFieldSaveValue(option.rawValue, supportDescriptor))
-          : buildCustomFieldSaveValue(selectedOptions[0]?.rawValue, supportDescriptor);
-        return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-          fields: {
-            [fieldId]: isMultiValue ? fieldValue : (fieldValue ?? null)
-          }
-        });
-      },
-      successMessage: selectedOptions => !selectedOptions.length || selectedOptions[0]?.id === '__clear__'
-        ? `${fieldName} cleared`
-        : `${fieldName} updated`
-    };
   }
 
   function getCustomFieldRowFromLayout(fieldId, tooltipLayout) {
@@ -3328,30 +2714,20 @@ async function mainAsyncLocal() {
     for (const {fieldId, row} of customFields) {
       const rawValue = fields[fieldId];
       const fieldName = String(names[fieldId] || fieldId);
-      const supportedDefinition = await getCustomFieldEditorDefinition(fieldId, issueData).catch(() => null);
       const hasDisplayValue = Array.isArray(rawValue)
         ? rawValue.some(value => value !== undefined && value !== null && value !== '')
         : !(rawValue === undefined || rawValue === null || rawValue === '');
-      if (supportedDefinition) {
-        const baseChip = hasDisplayValue
-          ? buildCustomFieldChipData(fieldId, fieldName, rawValue, supportedDefinition.fieldMeta, supportedDefinition.supportDescriptor)
-          : buildFilterChip(`${fieldName}: --`, '');
+      const fieldOutcome = await jiraFieldEditing.dispatch({type: 'describeField', fieldId}).catch(() => null);
+      const field = fieldOutcome?.field;
+      if (field?.supported && (hasDisplayValue || field.visibleWhenEmpty)) {
+        const baseChip = buildFilterChip(field.text, field.jqlClause, {linkLabel: field.linkLabel});
         chipsByRow[row].push(buildEditableFieldChip(fieldId, baseChip, state, {
-          canEdit: true,
+          canEdit: field.editable,
           editTitle: `Edit ${fieldName}`
         }));
         continue;
       }
       if (!hasDisplayValue) {
-        const capability = await getEditableFieldCapability(issueData, fieldId).catch(() => null);
-        const supportDescriptor = capability?.fieldMeta
-          ? getCustomFieldSupportDescriptor(capability.fieldMeta)
-          : null;
-        if (supportDescriptor?.valueKind === 'user') {
-          chipsByRow[row].push(buildEditableFieldChip(fieldId, buildFilterChip(`${fieldName}: --`, ''), state, {
-            canEdit: false
-          }));
-        }
         continue;
       }
       const entries = Array.isArray(rawValue) ? rawValue : [rawValue];
@@ -4857,7 +4233,9 @@ async function mainAsyncLocal() {
   }
 
   function isDeepFieldEdit(fieldKey) {
-    return ['assignee', 'environment', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
+    return String(fieldKey || '').startsWith('customfield_') ||
+      customFields.some(field => field.fieldId === fieldKey) ||
+      ['assignee', 'environment', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
   }
 
   async function dispatchJiraFieldEditing(intent) {
@@ -4953,7 +4331,11 @@ async function mainAsyncLocal() {
         popupState = {...popupState, editState: null};
       }
       if (!attachJiraFieldEditingToPopup()) return;
-      await dispatchJiraFieldEditing({type: 'begin', fieldId: fieldKey});
+      await dispatchJiraFieldEditing({
+        type: 'begin',
+        fieldId: fieldKey,
+        configured: customFields.some(field => field.fieldId === fieldKey),
+      });
       return;
     }
     if (jiraFieldEditing.view().edit) await dispatchJiraFieldEditing({type: 'cancel'});

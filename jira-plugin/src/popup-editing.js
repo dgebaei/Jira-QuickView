@@ -22,7 +22,6 @@ export function createPopupEditing(deps) {
     buildEditFieldError,
     refreshPopupIssueState,
     renderIssuePopup,
-    getCustomFieldEditorDefinition,
     getPopupState,
     setPopupState,
   } = deps;
@@ -108,12 +107,7 @@ export function createPopupEditing(deps) {
     };
   }
 
-  async function getEditableFieldDefinition(fieldKey, issueData) {
-    const fieldEditorDefinition = await getCustomFieldEditorDefinition(fieldKey, issueData);
-    if (fieldEditorDefinition) {
-      return fieldEditorDefinition;
-    }
-
+  async function getEditableFieldDefinition() {
     return null;
   }
 
