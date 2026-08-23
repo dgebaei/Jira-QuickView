@@ -37,6 +37,7 @@ import {createBrowserPopupSurface} from 'src/browser-popup-surface';
 import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createPopupSession} from 'src/popup-session';
+import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
@@ -4165,63 +4166,38 @@ async function mainAsyncLocal() {
     pinContainer();
   });
 
-  $(document.body).on('click', '._JX_actions_toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
+  async function handlePopupPresentationIntent(intent) {
+    if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
+      return popupSession.dispatch(intent);
     }
-    popupSession.dispatch({type: 'toggle-actions'}).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_children_sort', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    const column = e.currentTarget.getAttribute('data-sort-column') || '';
-    popupSession.dispatch({type: 'sort-children', column}).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_pr_sort', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    const column = e.currentTarget.getAttribute('data-sort-column') || '';
-    popupSession.dispatch({type: 'sort-pull-requests', column}).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_comment_sort_toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    popupSession.dispatch({type: 'toggle-comment-sort'}).then(outcome => {
+    if (intent.type === 'toggle-comment-sort') {
+      const outcome = await popupSession.dispatch(intent);
       const nextCommentSortOrder = outcome.presentation?.commentSortOrder;
-      if (!nextCommentSortOrder) return;
+      if (!nextCommentSortOrder) return outcome;
       commentSortOrderPreference = nextCommentSortOrder;
-      storageLocalSet({
-        [COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder
-      }).catch(() => {});
-    }).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_watchers_trigger', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (popupState?.watchersState?.open) {
-      closeWatchersPanel();
-      return;
+      storageLocalSet({[COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder}).catch(() => {});
+      return outcome;
     }
-    openWatchersPanel().catch(() => {});
-  });
+    if (intent.type === 'toggle-watchers') {
+      if (popupState?.watchersState?.open) return closeWatchersPanel();
+      return openWatchersPanel();
+    }
+    if (intent.type === 'close-watchers') return closeWatchersPanel();
+    if (intent.type === 'toggle-linkedIssues') {
+      if (popupState?.linkedIssuesState?.open) return closeLinkedIssuesPanel();
+      return openLinkedIssuesPanel();
+    }
+    if (intent.type === 'close-linkedIssues') return closeLinkedIssuesPanel();
+    if (intent.type === 'toggle-history') return toggleHistoryFlyout();
+    if (intent.type === 'close-history') return closeHistoryFlyout();
+    return {kind: 'ignored', reason: 'unsupported-presentation-intent'};
+  }
 
-  $(document.body).on('click', '._JX_watchers_close', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    closeWatchersPanel();
+  const popupEvents = createBrowserPopupEvents({
+    root: $(document.body),
+    emit: handlePopupPresentationIntent,
   });
+  popupEvents.install();
 
   $(document.body).on('click', '._JX_watchers_search_result', function (e) {
     e.preventDefault();
@@ -4241,22 +4217,6 @@ async function mainAsyncLocal() {
   $(document.body).on('input', '._JX_watchers_search_input', function (e) {
     e.stopPropagation();
     updateWatchersSearch(e.currentTarget.value);
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_trigger', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (popupState?.linkedIssuesState?.open) {
-      closeLinkedIssuesPanel();
-      return;
-    }
-    openLinkedIssuesPanel().catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_close', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    closeLinkedIssuesPanel();
   });
 
   $(document.body).on('change', '._JX_linked_issues_type_select', function (e) {
@@ -4375,21 +4335,6 @@ async function mainAsyncLocal() {
       return;
     }
     closeLinkedIssuesPanel();
-  });
-
-  $(document.body).on('click', '._JX_history_toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    toggleHistoryFlyout().catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_history_close', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    closeHistoryFlyout();
   });
 
   $(document.body).on('click', function (e) {

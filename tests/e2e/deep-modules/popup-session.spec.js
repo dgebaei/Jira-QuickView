@@ -497,6 +497,62 @@ test('popup session owns quick-action menu visibility', async ({page}) => {
   });
 });
 
+test('browser popup events translate presentation DOM interactions into semantic intents', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = `
+      <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button></div>
+      <button class="_JX_children_sort" data-sort-column="status">Children</button>
+      <button class="_JX_pr_sort" data-sort-column="author">Pull requests</button>
+      <button class="_JX_comment_sort_toggle">Comments</button>
+      <div class="_JX_watchers_group">
+        <button class="_JX_watchers_trigger">Watchers</button>
+        <button class="_JX_watchers_close">Close watchers</button>
+      </div>
+      <div class="_JX_linked_issues_group">
+        <button class="_JX_linked_issues_trigger">Linked issues</button>
+        <button class="_JX_linked_issues_close">Close linked issues</button>
+      </div>
+      <button class="_JX_history_toggle">History</button>
+      <div class="_JX_history_flyout"><button class="_JX_history_close">Close history</button></div>
+    `;
+    const intents = [];
+    const events = createBrowserPopupEvents({
+      root: $(document.body),
+      emit(intent) { intents.push(intent); },
+    });
+    events.install();
+    $('._JX_actions_toggle').trigger('click');
+    $('._JX_children_sort').trigger('click');
+    $('._JX_pr_sort').trigger('click');
+    $('._JX_comment_sort_toggle').trigger('click');
+    $('._JX_watchers_trigger').trigger('click');
+    $('._JX_watchers_close').trigger('click');
+    $('._JX_linked_issues_trigger').trigger('click');
+    $('._JX_linked_issues_close').trigger('click');
+    $('._JX_history_toggle').trigger('click');
+    $('._JX_history_close').trigger('click');
+    events.dispose();
+    $('._JX_actions_toggle').trigger('click');
+    return {intents};
+  });
+
+  expect(result).toEqual({
+    intents: [
+      {type: 'toggle-actions'},
+      {type: 'sort-children', column: 'status'},
+      {type: 'sort-pull-requests', column: 'author'},
+      {type: 'toggle-comment-sort'},
+      {type: 'toggle-watchers'},
+      {type: 'close-watchers'},
+      {type: 'toggle-linkedIssues'},
+      {type: 'close-linkedIssues'},
+      {type: 'toggle-history'},
+      {type: 'close-history'},
+    ],
+  });
+});
+
 test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
