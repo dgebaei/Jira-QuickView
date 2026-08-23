@@ -202,3 +202,89 @@ test('a core failure is observable and the same issue can retry in a fresh sessi
     view: {status: 'visible', sessionId: 'popup-2', issueKey: 'ABC-1', stateRevision: 4},
   });
 });
+
+test('feature rerenders advance the session revision and publish current feature views', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    let fieldValue = 'idle';
+    let commentValue = 'draft-one';
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {value: fieldValue}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {value: commentValue}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    fieldValue = 'editing';
+    commentValue = 'draft-two';
+    const rendered = await popup.dispatch({type: 'render', reason: 'feature-changed'});
+    return {
+      rendered: rendered.kind,
+      frames: surface.getFrames().map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        fieldValue: frame.fieldEditing.value,
+        commentValue: frame.comments.value,
+      })),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    rendered: 'rendered',
+    frames: [
+      {kind: 'loading', reason: '', fieldValue: 'idle', commentValue: 'draft-one'},
+      {kind: 'visible', reason: '', fieldValue: 'idle', commentValue: 'draft-one'},
+      {kind: 'update', reason: 'feature-changed', fieldValue: 'editing', commentValue: 'draft-two'},
+    ],
+    view: {status: 'visible', sessionId: 'popup-1', issueKey: 'ABC-1', stateRevision: 3},
+  });
+});
+
+test('synchronous feature rerenders coalesce into one current surface commit', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    let featureRevision = 0;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {revision: featureRevision}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const pending = [];
+    for (let index = 1; index <= 10; index += 1) {
+      featureRevision = index;
+      pending.push(popup.dispatch({type: 'render', reason: `feature-${index}`}));
+    }
+    const outcomes = await Promise.all(pending);
+    return {
+      outcomes: [...new Set(outcomes.map(item => item.kind))],
+      updates: surface.getFrames().filter(frame => frame.kind === 'update').map(frame => ({
+        reason: frame.reason,
+        featureRevision: frame.fieldEditing.revision,
+      })),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: ['rendered'],
+    updates: [{reason: 'feature-10', featureRevision: 10}],
+    view: {status: 'visible', sessionId: 'popup-1', issueKey: 'ABC-1', stateRevision: 3},
+  });
+});

@@ -28,6 +28,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
   let activationRequest = 0;
   let disposed = false;
   let renderRevision = 0;
+  let scheduledRender = null;
   let sessionSequence = 0;
   let stateRevision = 0;
   let state = {
@@ -69,6 +70,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
       renderRevision: expectedRenderRevision,
       activation: state.activation,
       anchor: state.anchor,
+      issueSnapshot: state.snapshot,
       fieldEditing: fieldEditing.view(),
       comments: comments.view(),
       ...details,
@@ -177,9 +179,38 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
     return outcome('hidden');
   }
 
+  function scheduleRender(reason) {
+    const sessionId = state.sessionId;
+    if (scheduledRender?.sessionId === sessionId) {
+      scheduledRender.reason = reason;
+      return scheduledRender.promise;
+    }
+    const scheduled = {
+      promise: null,
+      reason,
+      sessionId,
+    };
+    scheduled.promise = Promise.resolve().then(async () => {
+      if (scheduledRender === scheduled) scheduledRender = null;
+      if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      stateRevision += 1;
+      return publish('update', {reason: scheduled.reason});
+    });
+    scheduledRender = scheduled;
+    return scheduled.promise;
+  }
+
   async function dispatch(intent = {}) {
     if (disposed || !state.sessionId) return outcome('ignored', {reason: 'inactive'});
-    if (intent.type === 'render') return publish(state.status);
+    if (intent.type === 'render') {
+      const nextSnapshot = intent.issueSnapshot;
+      const nextIssueKey = normalizeIssueKey(nextSnapshot?.issueKey || nextSnapshot?.core?.key);
+      if (nextSnapshot?.core && nextIssueKey !== state.issueKey) {
+        return outcome('ignored', {reason: 'stale-issue-snapshot'});
+      }
+      if (nextSnapshot?.core) state = {...state, snapshot: nextSnapshot};
+      return scheduleRender(String(intent.reason || 'feature-changed'));
+    }
     return outcome('ignored', {reason: 'unsupported-intent'});
   }
 

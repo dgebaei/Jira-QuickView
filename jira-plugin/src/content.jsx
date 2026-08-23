@@ -658,6 +658,10 @@ async function mainAsyncLocal() {
   });
 
   const popupSurface = createBrowserPopupSurface({
+    async commitCurrent(frame, context) {
+      if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
+      await renderIssuePopup(popupState, context);
+    },
     async commitVisible(frame, context) {
       if (!context.isCurrent()) return;
       const legacySnapshot = snapshotToLegacyPopupState(frame.issueSnapshot);
@@ -708,6 +712,10 @@ async function mainAsyncLocal() {
 
   function currentPopupSessionId() {
     return popupSession.view().sessionId;
+  }
+
+  function renderCurrentPopup(reason = 'feature-changed') {
+    return popupSession.dispatch({type: 'render', reason, issueSnapshot: popupState?.issueSnapshot});
   }
 
 
@@ -1668,7 +1676,7 @@ async function mainAsyncLocal() {
     }
     const sessionId = currentPopupSessionId();
     const pending = commentLifecycle.dispatch({type: 'toggleReaction', commentId, emojiId});
-    await renderIssuePopup(popupState);
+    await renderCurrentPopup('comment-reaction-pending');
     const outcome = await pending;
     if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
       return;
@@ -1676,7 +1684,7 @@ async function mainAsyncLocal() {
     if (outcome.refreshedSnapshot) {
       popupState = {...popupState, issueSnapshot: outcome.refreshedSnapshot};
     }
-    await renderIssuePopup(popupState);
+    await renderCurrentPopup('comment-reaction-complete');
     if (outcome.kind === 'unsupported') {
       snackBar(outcome.notice);
     }
@@ -1737,7 +1745,7 @@ async function mainAsyncLocal() {
       }
       elements.input.val('');
       setCommentComposerError('');
-      await renderIssuePopup(popupState);
+      await renderCurrentPopup('comment-save-complete');
       if (outcome.failure) {
         snackBar(outcome.notice);
       } else {
@@ -1785,7 +1793,7 @@ async function mainAsyncLocal() {
         lastActionSuccess: outcome.notice,
       };
     }
-    await renderIssuePopup(popupState);
+    await renderCurrentPopup('comment-row-action-complete');
     if (outcome.kind === 'failed') snackBar(outcome.failure?.message || 'Comment operation failed');
     else if (outcome.failure) snackBar(outcome.notice);
     else if (outcome.kind === 'mutationCommitted') scheduleActionNoticeClear(outcome.notice);
@@ -1797,7 +1805,7 @@ async function mainAsyncLocal() {
     }
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'cancelRowAction'}).then(() => {
-      return renderIssuePopup(popupState);
+      return renderCurrentPopup('comment-row-action-cancelled');
     }).catch(() => {});
   }
 
@@ -1808,13 +1816,13 @@ async function mainAsyncLocal() {
     pinContainer({showNotice: false});
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'startEdit', commentId}).then(() => {
-      return renderIssuePopup(popupState);
+      return renderCurrentPopup('comment-edit-started');
     }).catch(() => {});
   }
 
   function moveCommentEditMentionSelection(delta) {
     commentLifecycle.dispatch({type: 'moveMention', lane: 'edit', delta}).then(() => {
-      return renderIssuePopup(popupState);
+      return renderCurrentPopup('comment-edit-mention-moved');
     }).catch(() => {});
   }
 
@@ -1882,7 +1890,7 @@ async function mainAsyncLocal() {
       lane: 'edit',
       index,
     }).then(() => {
-      return renderIssuePopup(popupState);
+      return renderCurrentPopup('comment-edit-mention-chosen');
     }).catch(() => {});
   }
 
@@ -1892,7 +1900,7 @@ async function mainAsyncLocal() {
     }
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'startDelete', commentId}).then(() => {
-      return renderIssuePopup(popupState);
+      return renderCurrentPopup('comment-delete-started');
     }).catch(() => {});
   }
 
@@ -1907,9 +1915,9 @@ async function mainAsyncLocal() {
       value: draft,
       selection: {start: selectionStart, end: selectionEnd},
     });
-    renderIssuePopup(popupState).catch(() => {});
+    renderCurrentPopup('comment-edit-changed').catch(() => {});
     pending.then(() => {
-      return renderIssuePopup(popupState);
+      return renderCurrentPopup('comment-edit-mention-updated');
     }).catch(() => {});
   }
 
@@ -1924,7 +1932,7 @@ async function mainAsyncLocal() {
       commentId,
       requirements: {history: !!popupState?.historyOpen},
     });
-    await renderIssuePopup(popupState);
+    await renderCurrentPopup('comment-edit-saving');
     await applyCommentRowActionOutcome(await pending);
   }
 
@@ -1939,7 +1947,7 @@ async function mainAsyncLocal() {
       commentId,
       requirements: {history: !!popupState?.historyOpen},
     });
-    await renderIssuePopup(popupState);
+    await renderCurrentPopup('comment-delete-saving');
     await applyCommentRowActionOutcome(await pending);
   }
 
@@ -3760,7 +3768,7 @@ async function mainAsyncLocal() {
   async function dispatchJiraFieldEditing(intent) {
     const popupKey = popupState?.key || '';
     const pendingOutcome = jiraFieldEditing.dispatch(intent);
-    if (popupState?.key === popupKey) await renderIssuePopup(popupState);
+    if (popupState?.key === popupKey) await renderCurrentPopup('field-edit-pending');
     const fieldOutcome = await pendingOutcome;
     if (!popupState || popupState.key !== popupKey || fieldOutcome.sessionId !== currentPopupSessionId()) return fieldOutcome;
     if (fieldOutcome.refreshedSnapshot?.core) {
@@ -3786,11 +3794,11 @@ async function mainAsyncLocal() {
         actionError: '',
         lastActionSuccess: fieldOutcome.notice || '',
       };
-      await renderIssuePopup(popupState);
+      await renderCurrentPopup('field-edit-complete');
       if (fieldOutcome.notice) scheduleActionNoticeClear(fieldOutcome.notice);
       return fieldOutcome;
     }
-    await renderIssuePopup(popupState);
+    await renderCurrentPopup('field-edit-updated');
     return fieldOutcome;
   }
 
@@ -5047,7 +5055,7 @@ async function mainAsyncLocal() {
       return;
     }
     resetCommentEditMentionState();
-    renderIssuePopup(popupState).catch(() => {});
+    renderCurrentPopup('comment-edit-mention-dismissed').catch(() => {});
   });
 
   $(document.body).on('click', '._JX_comment_save', function (e) {
@@ -5117,7 +5125,7 @@ async function mainAsyncLocal() {
       if (e.key === 'Escape') {
         e.preventDefault();
         resetCommentEditMentionState();
-        renderIssuePopup(popupState).catch(() => {});
+        renderCurrentPopup('comment-edit-mention-dismissed').catch(() => {});
         return;
       }
       if (e.key === 'ArrowDown') {

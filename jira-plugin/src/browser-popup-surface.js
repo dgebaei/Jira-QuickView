@@ -4,7 +4,8 @@ function requireOperation(operation, name) {
   }
 }
 
-export function createBrowserPopupSurface({commitVisible, hidePopup, reportFailure}) {
+export function createBrowserPopupSurface({commitCurrent, commitVisible, hidePopup, reportFailure}) {
+  requireOperation(commitCurrent, 'commitCurrent');
   requireOperation(commitVisible, 'commitVisible');
   requireOperation(hidePopup, 'hidePopup');
   requireOperation(reportFailure, 'reportFailure');
@@ -15,6 +16,12 @@ export function createBrowserPopupSurface({commitVisible, hidePopup, reportFailu
     if (frame.kind === 'error') {
       reportFailure(frame.failure);
       return {kind: 'reported'};
+    }
+    if (frame.kind === 'update') {
+      await commitCurrent(frame, context);
+      return typeof context.isCurrent === 'function' && !context.isCurrent()
+        ? {kind: 'stale'}
+        : {kind: 'committed'};
     }
     if (frame.kind !== 'visible') return {kind: 'ignored'};
     await commitVisible(frame, context);
