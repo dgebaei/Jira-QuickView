@@ -2,6 +2,7 @@ const EVENT_NAMESPACE = '.jiraQuickViewPopupPresentation';
 
 const PRESENTATION_EVENTS = [
   {selector: '._JX_actions_toggle', intent: () => ({type: 'toggle-actions'})},
+  {selector: '._JX_pin_button', intent: () => ({type: 'pin'})},
   {
     selector: '._JX_children_sort',
     intent: element => ({type: 'sort-children', column: element.getAttribute('data-sort-column') || ''}),

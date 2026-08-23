@@ -502,6 +502,7 @@ test('browser popup events translate presentation DOM interactions into semantic
     const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
     document.body.innerHTML = `
       <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button></div>
+      <button class="_JX_pin_button">Pin</button>
       <button class="_JX_children_sort" data-sort-column="status">Children</button>
       <button class="_JX_pr_sort" data-sort-column="author">Pull requests</button>
       <button class="_JX_comment_sort_toggle">Comments</button>
@@ -524,6 +525,7 @@ test('browser popup events translate presentation DOM interactions into semantic
     });
     events.install();
     $('._JX_actions_toggle').trigger('click');
+    $('._JX_pin_button').trigger('click');
     $('._JX_children_sort').trigger('click');
     $('._JX_pr_sort').trigger('click');
     $('._JX_comment_sort_toggle').trigger('click');
@@ -545,6 +547,7 @@ test('browser popup events translate presentation DOM interactions into semantic
   expect(result).toEqual({
     direct: [
       {type: 'toggle-actions'},
+      {type: 'pin'},
       {type: 'sort-children', column: 'status'},
       {type: 'sort-pull-requests', column: 'author'},
       {type: 'toggle-comment-sort'},
@@ -570,6 +573,100 @@ test('browser popup events translate presentation DOM interactions into semantic
   });
 });
 
+test('browser popup shell owns pinning, preview identity, hide scheduling, and viewport position', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupShell, createDeferred, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = `
+      <div id="popup" style="position:absolute;left:100px;top:120px;width:200px;height:100px">Issue</div>
+      <div id="preview"><img></div>
+    `;
+    const oldPreview = createDeferred();
+    const closeCalls = [];
+    const announcements = [];
+    let scheduled = null;
+    const shell = createBrowserPopupShell({
+      announce(message) { announcements.push(message); },
+      close(details) { closeCalls.push(details); },
+      container: $('#popup'),
+      media: {displayUrl(source) {
+        return source === 'old.png' ? oldPreview.promise : Promise.resolve(`display:${source}`);
+      }},
+      previewOverlay: $('#preview'),
+      scheduler: {
+        clear(id) { if (scheduled?.id === id) scheduled = null; },
+        set(callback, delay) { scheduled = {callback, delay, id: 7}; return 7; },
+      },
+    });
+    const initial = shell.view();
+    const nearEdge = shell.position({x: -100, y: -100});
+    const farEdge = shell.position({x: 100000, y: 100000});
+    await shell.dispatch({type: 'schedule-hide', delay: 250, reason: 'pointer-exit'});
+    const scheduledDelay = scheduled?.delay;
+    scheduled.callback();
+    await Promise.resolve();
+    const pinned = await shell.dispatch({type: 'pin', announce: true});
+    const pinnedState = {
+      outcome: pinned.kind,
+      className: $('#popup').attr('class') || '',
+      announcements: announcements.slice(),
+    };
+    const oldPending = shell.dispatch({type: 'open-preview', source: 'old.png'});
+    const currentPreview = await shell.dispatch({type: 'open-preview', source: 'new.png'});
+    oldPreview.resolve('display:old.png');
+    const oldOutcome = await oldPending;
+    const preview = {
+      outcome: currentPreview.kind,
+      oldOutcome: oldOutcome.kind,
+      className: $('#preview').attr('class') || '',
+      src: $('#preview img').attr('src'),
+      view: shell.view(),
+    };
+    const cleared = await shell.dispatch({type: 'clear'});
+    return {
+      initial,
+      nearEdge,
+      farEdgeInsideViewport: farEdge.left >= 8 && farEdge.top >= 8 &&
+        farEdge.left + 200 <= window.innerWidth - 8 && farEdge.top + 100 <= window.innerHeight - 8,
+      pinned: pinnedState,
+      preview,
+      scheduledDelay,
+      closeCalls,
+      cleared: {
+        outcome: cleared.kind,
+        html: $('#popup').html(),
+        previewClassName: $('#preview').attr('class') || '',
+        view: shell.view(),
+      },
+    };
+  });
+
+  expect(result).toEqual({
+    initial: {pinned: false, previewOpen: false, previewSource: ''},
+    nearEdge: {left: 8, top: 8},
+    farEdgeInsideViewport: true,
+    pinned: {
+      outcome: 'pinned',
+      className: 'container-pinned',
+      announcements: ['Ticket Pinned! Hit esc to close !'],
+    },
+    preview: {
+      outcome: 'preview-opened',
+      oldOutcome: 'ignored',
+      className: 'is-open',
+      src: 'display:new.png',
+      view: {pinned: true, previewOpen: true, previewSource: 'new.png'},
+    },
+    scheduledDelay: 250,
+    closeCalls: [{reason: 'pointer-exit'}],
+    cleared: {
+      outcome: 'cleared',
+      html: '',
+      previewClassName: '',
+      view: {pinned: false, previewOpen: false, previewSource: ''},
+    },
+  });
+});
+
 test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
@@ -590,7 +687,7 @@ test('browser renderer commits one deterministic DOM path and restores continuit
         syncComposer() { continuityCalls.push('sync'); },
       },
       fieldEditing: {view() { return fieldView; }},
-      position: {compute() { return {left: 15, top: 25}; }, isPinned() { return false; }},
+      shell: {position() { return {left: 15, top: 25}; }, view() { return {pinned: false}; }},
       projectState(state) { return {value: state.value}; },
       template: '<div class="_JX_content_blocks" style="width:50px;height:20px;overflow:scroll"><div data-content-block="second">second</div><div data-content-block="first">first</div><div style="width:200px;height:100px"></div></div><input class="_JX_edit_input" value="{{value}}">',
     });
@@ -638,7 +735,7 @@ test('browser renderer rejects a stale asynchronous projection before DOM commit
         constrainPopovers() {}, renderComposeMentions() {}, renderEditMentions() {}, renderUploads() {}, restoreComposer() {}, syncComposer() {},
       },
       fieldEditing: {view() { return null; }},
-      position: {compute() { return {}; }, isPinned() { return true; }},
+      shell: {position() { return {}; }, view() { return {pinned: true}; }},
       projectState() { return projection.promise; },
       template: '<div>{{value}}</div>',
     });

@@ -20,7 +20,6 @@ import {
 import {createPopupProjectView} from 'src/popup-session/project-view';
 import {createContentPeopleHelpers} from 'src/content-people-helpers';
 import {createContentPopupStateHelpers} from 'src/content-popup-state-helpers';
-import {createContentShellHelpers} from 'src/content-shell-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
@@ -39,6 +38,7 @@ import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createPopupSession} from 'src/popup-session';
 import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
+import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
 const {
@@ -372,7 +372,7 @@ async function mainAsyncLocal() {
     focusSearch: false,
   });
   const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
-  let contentShellHelpers = null;
+  let popupShell = null;
   const attachmentPresentation = createContentAttachmentHelpers({
     buildLinkHoverTitle,
   });
@@ -1384,7 +1384,7 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData) {
       return;
     }
-    pinContainer({showNotice: false});
+    popupShell?.dispatch({type: 'pin', announce: false}).catch(() => {});
     clearDescriptionStatusTimer();
     setDescriptionEditState(createDescriptionEditState(popupState.issueData, {open: true}));
     renderIssuePopup(popupState).catch(() => {});
@@ -1781,7 +1781,7 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData || !commentId) {
       return;
     }
-    pinContainer({showNotice: false});
+    popupShell?.dispatch({type: 'pin', announce: false}).catch(() => {});
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'startEdit', commentId}).then(() => {
       return renderCurrentPopup('comment-edit-started');
@@ -2805,31 +2805,12 @@ async function mainAsyncLocal() {
     return href;
   }
 
-  function clampContainerPosition(left, top) {
-    if (!contentShellHelpers) {
-      return {left, top};
-    }
-    return contentShellHelpers.clampContainerPosition(left, top);
-  }
-
   function keepContainerVisible() {
-    if (!contentShellHelpers) {
-      return;
-    }
-    contentShellHelpers.keepContainerVisible();
-  }
-
-  function computeVisibleContainerPosition(pointerX, pointerY) {
-    if (!contentShellHelpers) {
-      return {left: pointerX, top: pointerY};
-    }
-    return contentShellHelpers.computeVisibleContainerPosition(pointerX, pointerY);
+    popupShell?.dispatch({type: 'keep-visible'}).catch(() => {});
   }
 
   // ── Popup Rendering & State ────────────────────────────────
-  let hideTimeOut;
   let hoverDelayTimeout;
-  let containerPinned = false;
   let lastHoveredKey = '';
   const container = $('<div class="_JX_container" data-testid="jira-popup-root">');
   const previewOverlay = $(`
@@ -2839,13 +2820,12 @@ async function mainAsyncLocal() {
   `);
   $(document.body).append(container);
   $(document.body).append(previewOverlay);
-  contentShellHelpers = createContentShellHelpers({
+  popupShell = createBrowserPopupShell({
+    announce: snackBar,
+    close: ({reason}) => hideContainer(reason),
     container,
+    media: {displayUrl: getDisplayImageUrl},
     previewOverlay,
-    getDisplayImageUrl,
-    isContainerPinned: () => containerPinned,
-    clearHideTimeout: () => clearTimeout(hideTimeOut),
-    pinContainer,
   });
   const popupRenderer = createBrowserPopupRenderer({
     comments: commentLifecycle,
@@ -2860,10 +2840,7 @@ async function mainAsyncLocal() {
       syncComposer: syncCommentComposerState,
     },
     fieldEditing: {view: getActiveFieldEditState},
-    position: {
-      compute: computeVisibleContainerPosition,
-      isPinned: () => containerPinned,
-    },
+    shell: popupShell,
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
   });
@@ -4139,33 +4116,6 @@ async function mainAsyncLocal() {
     passiveCancel(200);
   });
 
-  function pinContainer(options = {}) {
-    const {showNotice = true} = options;
-    if (containerPinned || !container.html()) {
-      clearTimeout(hideTimeOut);
-      return false;
-    }
-    const scrollingElement = document.scrollingElement || document.documentElement;
-    if (showNotice) {
-      snackBar('Ticket Pinned! Hit esc to close !');
-    }
-    container.addClass('container-pinned');
-    const position = container.position();
-    container.css({
-      left: position.left - scrollingElement.scrollLeft,
-      top: position.top - scrollingElement.scrollTop,
-    });
-    containerPinned = true;
-    clearTimeout(hideTimeOut);
-    return true;
-  }
-
-  $(document.body).on('click', '._JX_pin_button', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    pinContainer();
-  });
-
   async function handlePopupPresentationIntent(intent) {
     if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
       return popupSession.dispatch(intent);
@@ -4191,6 +4141,7 @@ async function mainAsyncLocal() {
     if (intent.type === 'toggle-history') return toggleHistoryFlyout();
     if (intent.type === 'close-history' || intent.type === 'dismiss-history') return closeHistoryFlyout();
     if (intent.type === 'dismiss-actions') return popupSession.dispatch({type: 'close-actions'});
+    if (intent.type === 'pin') return popupShell.dispatch({type: 'pin', announce: true});
     return {kind: 'ignored', reason: 'unsupported-presentation-intent'};
   }
 
@@ -4309,7 +4260,7 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('click', function (e) {
-    if (!container.html() || containerPinned) {
+    if (!container.html() || popupShell.view().pinned) {
       return;
     }
     if ($(e.target).closest('._JX_container').length) {
@@ -4510,7 +4461,7 @@ async function mainAsyncLocal() {
 
   $(document.body).on('focusin', '._JX_comment_input', function () {
     commentLifecycle.dispatch({type: 'composeFocusChanged', focused: true}).catch(() => {});
-    pinContainer({showNotice: false});
+    popupShell.dispatch({type: 'pin', announce: false}).catch(() => {});
   });
 
   $(document.body).on('click select', '._JX_comment_input', function () {
@@ -4873,17 +4824,11 @@ async function mainAsyncLocal() {
 
   // ── Image Preview ─────────────────────────────────────────
   function closePreviewOverlay() {
-    if (!contentShellHelpers) {
-      return;
-    }
-    contentShellHelpers.closePreviewOverlay();
+    popupShell?.dispatch({type: 'close-preview'}).catch(() => {});
   }
 
   async function openPreviewOverlay(imageUrl) {
-    if (!contentShellHelpers) {
-      return;
-    }
-    await contentShellHelpers.openPreviewOverlay(imageUrl);
+    await popupShell?.dispatch({type: 'open-preview', source: imageUrl});
   }
 
   previewOverlay.on('click', function (e) {
@@ -4919,36 +4864,28 @@ async function mainAsyncLocal() {
   });
 
   // ── Container Lifecycle ────────────────────────────────────
-  function clearPopupSurface() {
+  async function clearPopupSurface() {
     lastHoveredKey = '';
     clearWatchersFeedbackTimer();
     clearDescriptionStatusTimer();
-    closePreviewOverlay();
     const descriptionStateSnapshot = popupState?.descriptionEditState;
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
-    containerPinned = false;
-    container.html('').css({
-      left: -5000,
-      top: -5000,
-      position: 'absolute',
-    }).removeClass('container-pinned');
+    await popupShell.dispatch({type: 'clear'});
 
     passiveCancel(0);
   }
 
   function hideContainer(reason = 'explicit') {
-    popupSession.close({reason}).catch(() => {
-      clearPopupSurface();
-    });
+    return popupSession.close({reason}).catch(() => clearPopupSurface());
   }
 
   $(document.body).on('keydown', function (e) {
     // TODO: escape not captured in google docs
     const ESCAPE_KEY_CODE = 27;
     if (e.keyCode === ESCAPE_KEY_CODE) {
-      if (previewOverlay.hasClass('is-open')) {
+      if (popupShell.view().previewOpen) {
         closePreviewOverlay();
         return;
       }
@@ -4978,7 +4915,7 @@ async function mainAsyncLocal() {
   }
 
   container.on('dragstop', () => {
-    pinContainer();
+    popupShell.dispatch({type: 'pin', announce: true}).catch(() => {});
   });
   function extractKeysFromNode(node) {
     let keys = getJiraKeysFromTexts(getNodeSearchTexts(node));
@@ -5299,7 +5236,7 @@ async function mainAsyncLocal() {
 
   if (hoverModifierKey !== 'none') {
     document.addEventListener('keydown', function (e) {
-      if (containerPinned || isTypingTargetBlockingModifierTrigger(currentPointer.clientX, currentPointer.clientY)) {
+      if (popupShell.view().pinned || isTypingTargetBlockingModifierTrigger(currentPointer.clientX, currentPointer.clientY)) {
         return;
       }
       if (isModifierSatisfied(e)) {
@@ -5323,8 +5260,8 @@ async function mainAsyncLocal() {
       pageX: e.pageX,
       pageY: e.pageY,
     };
-    if (previewOverlay.hasClass('is-open')) {
-      clearTimeout(hideTimeOut);
+    if (popupShell.view().previewOpen) {
+      popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
       return;
     }
     const element = document.elementFromPoint(e.clientX, e.clientY);
@@ -5341,13 +5278,13 @@ async function mainAsyncLocal() {
       return;
     }
     if (isInPaddedZone) {
-      clearTimeout(hideTimeOut);
+      popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
       return;
     }
-    if (!containerPinned && container.html()) {
+    if (!popupShell.view().pinned && container.html()) {
       clearTimeout(hoverDelayTimeout);
       lastHoveredKey = '';
-      hideTimeOut = setTimeout(hideContainer, 250);
+      popupShell.dispatch({type: 'schedule-hide', delay: 250, reason: 'pointer-exit'}).catch(() => {});
       return;
     }
     if (element) {
@@ -5357,10 +5294,10 @@ async function mainAsyncLocal() {
           return;
         }
         if (!isModifierSatisfied(e)) {
-          clearTimeout(hideTimeOut);
+          popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
           return;
         }
-        clearTimeout(hideTimeOut);
+        popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
         triggerPopupForKey(resolvedKey, e.pageX, e.pageY, true);
         return;
       }
@@ -5372,7 +5309,7 @@ async function mainAsyncLocal() {
 
       if (size(keys)) {
         const key = keys[0].replace(' ', '-');
-        clearTimeout(hideTimeOut);
+        popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
         triggerPopupForKey(key, e.pageX, e.pageY, false);
       }
     }

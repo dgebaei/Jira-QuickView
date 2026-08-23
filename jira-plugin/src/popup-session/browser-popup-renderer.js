@@ -28,7 +28,7 @@ export function createBrowserPopupRenderer({
   contentBlockOrder,
   continuity,
   fieldEditing,
-  position,
+  shell,
   projectState,
   template,
 }) {
@@ -65,8 +65,8 @@ export function createBrowserPopupRenderer({
     continuity.renderUploads();
     continuity.renderComposeMentions();
     continuity.syncComposer();
-    if (!position.isPinned()) {
-      container.css(position.compute(state.pointerX, state.pointerY));
+    if (!shell.view().pinned) {
+      container.css(shell.position({x: state.pointerX, y: state.pointerY}));
     }
 
     const activeFieldEditState = fieldEditing.view(state);
