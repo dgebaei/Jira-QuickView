@@ -1,5 +1,4 @@
 export function createPopupProjectView(options) {
-  const buildActivityIndicatorsDefault = options?.buildActivityIndicatorsDefault;
   const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
@@ -14,19 +13,15 @@ export function createPopupProjectView(options) {
   const displayFields = options?.displayFields || {};
   const encodeJqlValue = options?.encodeJqlValue;
   const formatFixVersionText = options?.formatFixVersionText;
-  const formatPullRequestAuthor = options?.formatPullRequestAuthor;
-  const formatPullRequestBranch = options?.formatPullRequestBranch;
-  const formatPullRequestTitle = options?.formatPullRequestTitle;
   const formatSprintText = options?.formatSprintText;
   const getEditableFieldCapability = options?.getEditableFieldCapability;
   const comments = options?.comments;
   const getTransitionOptions = options?.getTransitionOptions;
   const getVisibleSprintsForDisplay = options?.getVisibleSprintsForDisplay;
-  const hasLabelSuggestionSupport = options?.hasLabelSuggestionSupport;
+  const issueDataModule = options?.issueData;
   const instanceUrl = options?.instanceUrl || '';
   const layoutContentBlocks = options?.layoutContentBlocks || [];
   const loaderGifUrl = options?.loaderGifUrl || '';
-  const normalizeIssueTypeOptions = options?.normalizeIssueTypeOptions;
   const normalizeCommentSortOrder = options?.normalizeCommentSortOrder || (value => value === 'newest' ? 'newest' : 'oldest');
   const normalizeRichHtml = options?.normalizeRichHtml;
   const readSprintsFromIssue = options?.readSprintsFromIssue;
@@ -85,10 +80,46 @@ export function createPopupProjectView(options) {
   }
 
   function buildActivityIndicators() {
-    if (typeof buildActivityIndicatorsDefault === 'function') {
-      return buildActivityIndicatorsDefault();
-    }
-    return [];
+    return [{
+      iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
+      label: 'History',
+      isHistory: true,
+      clickable: true,
+      title: 'View change history',
+      ariaLabel: 'View change history'
+    }];
+  }
+
+  async function hasLabelSuggestionSupport() {
+    const outcome = await issueDataModule.search({purpose: 'label', query: ''});
+    return outcome.kind === 'loaded';
+  }
+
+  function hasMultipleIssueTypeOptions(allowedIssueTypes, currentIssueType) {
+    const currentIsSubtask = currentIssueType?.subtask === true;
+    return (Array.isArray(allowedIssueTypes) ? allowedIssueTypes : [])
+      .filter(issueType => issueType?.id && issueType?.name)
+      .filter(issueType => {
+        if (typeof issueType?.subtask !== 'boolean' || typeof currentIssueType?.subtask !== 'boolean') return true;
+        return issueType.subtask === currentIsSubtask;
+      }).length > 1;
+  }
+
+  function formatPullRequestTitle(pullRequest) {
+    const id = pullRequest?.id || pullRequest?.number || pullRequest?.key || '';
+    const title = pullRequest?.name || pullRequest?.title || 'Untitled pull request';
+    return id ? `[${id}] ${title}` : title;
+  }
+
+  function formatPullRequestAuthor(pullRequest) {
+    return pullRequest?.author?.name || pullRequest?.author?.displayName || pullRequest?.author?.username || pullRequest?.author?.email || '--';
+  }
+
+  function formatPullRequestBranch(pullRequest) {
+    const source = pullRequest?.source?.branch || pullRequest?.sourceBranch || pullRequest?.fromRef?.displayId || pullRequest?.fromRef?.id || pullRequest?.source?.displayId || '';
+    const target = pullRequest?.destination?.branch || pullRequest?.targetBranch || pullRequest?.toRef?.displayId || pullRequest?.toRef?.id || pullRequest?.destination?.displayId || '';
+    if (source && target) return `${source} --> ${target}`;
+    return source || target || '--';
   }
 
   function buildWatchersPanelView(state) {
@@ -375,7 +406,7 @@ export function createPopupProjectView(options) {
       buildCustomFieldChips(issueData, options?.customFields || [], state)
     ]);
     const statusEditable = Array.isArray(transitionOptions) && transitionOptions.length > 0;
-    const issueTypeEditable = !!issueTypeCapability?.editable && normalizeIssueTypeOptions(issueTypeCapability.allowedValues || [], issueData.fields.issuetype).length > 1;
+    const issueTypeEditable = !!issueTypeCapability?.editable && hasMultipleIssueTypeOptions(issueTypeCapability.allowedValues, issueData.fields.issuetype);
     const priorityEditable = !!priorityCapability?.editable;
     const assigneeEditable = !!assigneeCapability?.editable;
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;

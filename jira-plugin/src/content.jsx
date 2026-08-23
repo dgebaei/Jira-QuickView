@@ -2186,28 +2186,6 @@ async function mainAsyncLocal() {
 
   // ── Labels ────────────────────────────────────────────────
 
-  async function hasLabelSuggestionSupport() {
-    const labelOutcome = await quickViewIssueData.search({purpose: 'label', query: ''});
-    return labelOutcome.kind === 'loaded';
-  }
-
-  function normalizeIssueTypeOptions(allowedIssueTypes, currentIssueType) {
-    const currentIsSubtask = currentIssueType?.subtask === true;
-    return (Array.isArray(allowedIssueTypes) ? allowedIssueTypes : [])
-      .filter(issueType => issueType?.id && issueType?.name)
-      .filter(issueType => {
-        if (typeof issueType?.subtask !== 'boolean' || typeof currentIssueType?.subtask !== 'boolean') {
-          return true;
-        }
-        return issueType.subtask === currentIsSubtask;
-      })
-      .map(issueType => buildEditOption(issueType.id, issueType.name, {
-        iconUrl: issueType.iconUrl || '',
-        metaText: issueType.description || '',
-        rawValue: issueType
-      }));
-  }
-
   function getCustomFieldRowFromLayout(fieldId, tooltipLayout) {
     const layoutKey = fieldId ? `custom_${fieldId}` : '';
     if (!layoutKey) {
@@ -2536,27 +2514,6 @@ async function mainAsyncLocal() {
     };
   }
 
-  // ── Pull Request Display ───────────────────────────────────
-
-  function formatPullRequestTitle(pr) {
-    const id = pr?.id || pr?.number || pr?.key || '';
-    const title = pr?.name || pr?.title || 'Untitled pull request';
-    return id ? '[' + id + '] ' + title : title;
-  }
-
-  function formatPullRequestAuthor(pr) {
-    return pr?.author?.name || pr?.author?.displayName || pr?.author?.username || pr?.author?.email || '--';
-  }
-
-  function formatPullRequestBranch(pr) {
-    const source = pr?.source?.branch || pr?.sourceBranch || pr?.fromRef?.displayId || pr?.fromRef?.id || pr?.source?.displayId || '';
-    const target = pr?.destination?.branch || pr?.targetBranch || pr?.toRef?.displayId || pr?.toRef?.id || pr?.destination?.displayId || '';
-    if (source && target) {
-      return source + ' --> ' + target;
-    }
-    return source || target || '--';
-  }
-
   function areSameJiraUser(left, right) {
     if (!left || !right) {
       return false;
@@ -2882,23 +2839,6 @@ async function mainAsyncLocal() {
     }
   }
 
-  function buildDefaultActivityIndicators() {
-    return [
-      {
-        iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
-        label: 'History',
-        isHistory: true,
-        clickable: true,
-        title: 'View change history',
-        ariaLabel: 'View change history'
-      }
-    ].map(item => ({
-      ...item,
-      title: item.title || (item.hasCount ? item.count + ' ' + item.label.toLowerCase() : item.label),
-      ariaLabel: item.ariaLabel || item.title || item.label
-    }));
-  }
-
   // ── Quick Actions ──────────────────────────────────────────
 
   const {
@@ -2911,7 +2851,6 @@ async function mainAsyncLocal() {
   });
 
   const {buildPopupDisplayData} = createPopupProjectView({
-    buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
     buildActiveEditPresentation,
     buildHistoryAttachmentLookup,
     buildCustomFieldChips,
@@ -2935,19 +2874,15 @@ async function mainAsyncLocal() {
     formatChangelogForDisplay,
     formatEnvironmentDisplayText,
     formatFixVersionText,
-    formatPullRequestAuthor,
-    formatPullRequestBranch,
-    formatPullRequestTitle,
     formatSprintText,
     getEditableFieldCapability,
     getTransitionOptions,
     getVisibleSprintsForDisplay,
-    hasLabelSuggestionSupport,
+    issueData: quickViewIssueData,
     instanceUrl: INSTANCE_URL,
     layoutContentBlocks,
     loaderGifUrl,
     normalizeCommentSortOrder,
-    normalizeIssueTypeOptions,
     normalizeRichHtml,
     readSprintsFromIssue,
     resolveIssueLinkage,
