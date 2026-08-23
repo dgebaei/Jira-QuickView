@@ -567,9 +567,6 @@ async function mainAsyncLocal() {
   let descriptionStatusTimeoutId = null;
   let popupState = null;
   let popupRenderSequence = 0;
-  let fieldSessionSequence = 0;
-  let activeFieldSessionId = '';
-  let activeCommentSessionId = '';
   const {
     buildQuickActionError,
     buildQuickActionViewData,
@@ -672,8 +669,6 @@ async function mainAsyncLocal() {
         quickActions = [];
       }
       if (!context.isCurrent()) return;
-      activeFieldSessionId = frame.sessionId;
-      activeCommentSessionId = frame.sessionId;
       await renderUpdatedPopupState({
         key: frame.issueKey,
         issueSnapshot: legacySnapshot.issueSnapshot,
@@ -710,6 +705,10 @@ async function mainAsyncLocal() {
     comments: commentLifecycle,
     surface: popupSurface,
   });
+
+  function currentPopupSessionId() {
+    return popupSession.view().sessionId;
+  }
 
 
   // ── URL & Image Handling ───────────────────────────────────
@@ -1667,11 +1666,11 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData || !commentId || !emojiId) {
       return;
     }
-    const sessionId = activeCommentSessionId;
+    const sessionId = currentPopupSessionId();
     const pending = commentLifecycle.dispatch({type: 'toggleReaction', commentId, emojiId});
     await renderIssuePopup(popupState);
     const outcome = await pending;
-    if (outcome.sessionId !== sessionId || sessionId !== activeCommentSessionId) {
+    if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
       return;
     }
     if (outcome.refreshedSnapshot) {
@@ -1720,7 +1719,7 @@ async function mainAsyncLocal() {
 
     const outcome = await pendingSave;
     const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey &&
-      outcome.sessionId === activeCommentSessionId;
+      outcome.sessionId === currentPopupSessionId();
     elements.root.attr('data-saving', 'false');
     if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
       if (outcome.refreshedSnapshot?.core) {
@@ -1771,7 +1770,7 @@ async function mainAsyncLocal() {
   }
 
   async function applyCommentRowActionOutcome(outcome) {
-    const isCurrent = popupState?.key === outcome.issueKey && outcome.sessionId === activeCommentSessionId;
+    const isCurrent = popupState?.key === outcome.issueKey && outcome.sessionId === currentPopupSessionId();
     if (!isCurrent) return;
     if (outcome.kind === 'mutationCommitted' && outcome.refreshedSnapshot?.core) {
       const historySection = outcome.refreshedSnapshot.sections?.history;
@@ -3735,9 +3734,10 @@ async function mainAsyncLocal() {
   }
   function attachJiraFieldEditingToPopup() {
     if (!popupState?.issueSnapshot?.core) return false;
-    if (!activeFieldSessionId) activeFieldSessionId = `popup-field-${++fieldSessionSequence}`;
+    const sessionId = currentPopupSessionId();
+    if (!sessionId) return false;
     jiraFieldEditing.attach({
-      sessionId: activeFieldSessionId,
+      sessionId,
       issueSnapshot: popupState.issueSnapshot,
       requirements: {
         children: showChildren,
@@ -3762,7 +3762,7 @@ async function mainAsyncLocal() {
     const pendingOutcome = jiraFieldEditing.dispatch(intent);
     if (popupState?.key === popupKey) await renderIssuePopup(popupState);
     const fieldOutcome = await pendingOutcome;
-    if (!popupState || popupState.key !== popupKey || fieldOutcome.sessionId !== activeFieldSessionId) return fieldOutcome;
+    if (!popupState || popupState.key !== popupKey || fieldOutcome.sessionId !== currentPopupSessionId()) return fieldOutcome;
     if (fieldOutcome.refreshedSnapshot?.core) {
       const legacySnapshot = snapshotToLegacyPopupState(fieldOutcome.refreshedSnapshot);
       let quickActions = [];
@@ -4880,7 +4880,7 @@ async function mainAsyncLocal() {
     const value = inputElement?.value || '';
     const selectionStart = typeof inputElement?.selectionStart === 'number' ? inputElement.selectionStart : value.length;
     const selectionEnd = typeof inputElement?.selectionEnd === 'number' ? inputElement.selectionEnd : value.length;
-    const sessionId = activeCommentSessionId;
+    const sessionId = currentPopupSessionId();
     const pending = commentLifecycle.dispatch({
       type: 'composeChanged',
       value,
@@ -4888,7 +4888,7 @@ async function mainAsyncLocal() {
     });
     renderCommentComposeLifecycleView();
     pending.then(outcome => {
-      if (outcome.sessionId === sessionId && sessionId === activeCommentSessionId) {
+      if (outcome.sessionId === sessionId && sessionId === currentPopupSessionId()) {
         renderCommentComposeLifecycleView();
       }
     }).catch(() => {});
@@ -4937,12 +4937,12 @@ async function mainAsyncLocal() {
     }
     e.preventDefault();
     imageFiles.forEach(file => {
-      const sessionId = activeCommentSessionId;
+      const sessionId = currentPopupSessionId();
       const pending = commentLifecycle.dispatch({type: 'imagePasted', file});
       renderCommentComposeLifecycleView({applyValue: true});
       renderCommentUploads();
       pending.then(async outcome => {
-        if (outcome.sessionId !== sessionId || sessionId !== activeCommentSessionId) {
+        if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
           return;
         }
         if (outcome.kind === 'attachmentUploaded' && outcome.uploadedAttachment) {
@@ -4958,12 +4958,12 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const localId = e.currentTarget.getAttribute('data-upload-id') || '';
-    const sessionId = activeCommentSessionId;
+    const sessionId = currentPopupSessionId();
     const pending = commentLifecycle.dispatch({type: 'retryUpload', localId});
     renderCommentComposeLifecycleView({applyValue: true});
     renderCommentUploads();
     pending.then(async outcome => {
-      if (outcome.sessionId !== sessionId || sessionId !== activeCommentSessionId) {
+      if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
         return;
       }
       if (outcome.kind === 'attachmentUploaded' && outcome.uploadedAttachment) {
@@ -5316,8 +5316,6 @@ async function mainAsyncLocal() {
     clearDescriptionStatusTimer();
     closePreviewOverlay();
     const descriptionStateSnapshot = popupState?.descriptionEditState;
-    activeFieldSessionId = '';
-    activeCommentSessionId = '';
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
@@ -5363,13 +5361,14 @@ async function mainAsyncLocal() {
   });
 
   // ── Hover Detection & Script Bootstrap ─────────────────────
-  let cancelToken = {};
+  let hoverCooldownActive = false;
+  let hoverCooldownTimeoutId = null;
 
   function passiveCancel(cooldown) {
-    // does not actually cancel xhr calls
-    cancelToken.cancel = true;
-    setTimeout(function () {
-      cancelToken = {};
+    hoverCooldownActive = true;
+    clearTimeout(hoverCooldownTimeoutId);
+    hoverCooldownTimeoutId = setTimeout(function () {
+      hoverCooldownActive = false;
     }, cooldown);
   }
 
@@ -5709,7 +5708,7 @@ async function mainAsyncLocal() {
   }
 
   $(document.body).on('mousemove', debounce(function (e) {
-    if (e.buttons || cancelToken.cancel) {
+    if (e.buttons || hoverCooldownActive) {
       return;
     }
     currentPointer = {
