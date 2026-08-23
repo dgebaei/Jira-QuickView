@@ -553,6 +553,7 @@ export function createJiraFieldEditing(options = {}) {
       failure: details.failure || null,
     };
     if (details.field) result.field = copyValue(details.field);
+    if (details.linkage) result.linkage = copyValue(details.linkage);
     return result;
   }
 
@@ -632,12 +633,24 @@ export function createJiraFieldEditing(options = {}) {
     const fieldOutcome = await issueData.loadFieldContext({
       issueKey: capturedSession.issueKey,
       fieldId,
+      includeTransitions: fieldId === 'status',
       signal: intent.signal,
     });
     if (!isCurrent(capturedSession)) {
       return outcome('ignored', {issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
     }
     const context = fieldOutcome.context;
+    if (!String(fieldId).startsWith('customfield_') && intent.configured !== true) {
+      return outcome('described', {
+        field: {
+          allowedValues: copyValue(context?.allowedValues || []),
+          editable: !!context?.editable,
+          fieldId: context?.fieldId || fieldId,
+          operations: copyValue(context?.operations || []),
+          transitions: fieldId === 'status' ? buildTransitionOptions(context?.transitions) : [],
+        },
+      });
+    }
     const support = customFieldSupport(context?.field);
     const operations = context?.operations || [];
     const hasSelectableValues = support?.valueKind !== 'option' || (context?.allowedValues || []).length > 0 ||
@@ -654,6 +667,49 @@ export function createJiraFieldEditing(options = {}) {
         support,
         editable
       ),
+    });
+  }
+
+  async function describeLinkage(intent) {
+    if (!session) return outcome('ignored');
+    const capturedSession = session;
+    const fieldOutcome = await issueData.loadFieldContext({
+      issueKey: capturedSession.issueKey,
+      fieldId: 'parent',
+      signal: intent.signal,
+    });
+    if (!isCurrent(capturedSession)) {
+      return outcome('ignored', {issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+    }
+    const linkage = resolveLinkage(capturedSession.issueSnapshot.core, fieldOutcome.context);
+    let currentSummary = linkage.currentSummary || linkage.currentKey;
+    if (linkage.currentKey && currentSummary === linkage.currentKey && typeof issueData.openIssue === 'function') {
+      try {
+        const summaryOutcome = await issueData.openIssue({
+          issueKey: linkage.currentKey,
+          requirements: {core: 'summary'},
+          signal: intent.signal,
+        });
+        if (!isCurrent(capturedSession)) {
+          return outcome('ignored', {issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+        }
+        currentSummary = summaryOutcome.snapshot?.core?.summary || linkage.currentKey;
+      } catch (error) {
+        currentSummary = linkage.currentKey;
+      }
+    }
+    return outcome('described', {
+      linkage: {
+        currentLink: linkage.currentKey ? {
+          key: linkage.currentKey,
+          summary: currentSummary,
+          url: `${instanceUrl}browse/${linkage.currentKey}`,
+        } : null,
+        editable: !!linkage.editable,
+        fieldId: linkage.fieldId || '',
+        label: 'Parent',
+        mode: linkage.mode || '',
+      },
     });
   }
 
@@ -1784,6 +1840,7 @@ export function createJiraFieldEditing(options = {}) {
 
   async function dispatch(intent = {}) {
     if (intent.type === 'describeField') return describeField(intent);
+    if (intent.type === 'describeLinkage') return describeLinkage(intent);
     if (intent.type === 'begin') return begin(intent);
     if (intent.type === 'inputChanged') return inputChanged(intent);
     if (intent.type === 'cancel') return cancel(intent);

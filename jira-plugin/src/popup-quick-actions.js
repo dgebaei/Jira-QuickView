@@ -5,7 +5,6 @@ export function createPopupQuickActions(deps) {
     getProjectSprintOptions,
     loadFieldContext,
     loadViewer,
-    pickSprintFieldId,
     readSprintsFromIssue,
     requestJson,
   } = deps;
@@ -98,9 +97,9 @@ export function createPopupQuickActions(deps) {
     const currentUser = actionResults[0].status === 'fulfilled' ? actionResults[0].value : null;
     const transitions = actionResults[1].status === 'fulfilled' ? actionResults[1].value : [];
     const sprintOptions = actionResults[2].status === 'fulfilled' ? actionResults[2].value : {activeSprints: [], upcomingSprint: null};
-    const sprintFieldIds = actionResults[3].status === 'fulfilled'
-      ? (actionResults[3].value.context?.fieldIds?.sprint || [])
-      : [];
+    const sprintFieldId = actionResults[3].status === 'fulfilled'
+      ? (actionResults[3].value.context?.fieldId || '')
+      : '';
     const actions = [];
 
     if (currentUser && !areSameJiraUser(issueData.fields.assignee, currentUser)) {
@@ -122,7 +121,6 @@ export function createPopupQuickActions(deps) {
       });
     }
 
-    const sprintFieldId = pickSprintFieldId(issueData, sprintFieldIds);
     const existingSprints = readSprintsFromIssue(issueData)
       .map(sprint => String(sprint.id || ''))
       .filter(Boolean);

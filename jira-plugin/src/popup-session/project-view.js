@@ -20,14 +20,12 @@ export function createPopupProjectView(options) {
   const quickActionModule = options?.quickActions;
   const buildActiveEditPresentation = options?.buildActiveEditPresentation;
   const encodeJqlValue = options?.encodeJqlValue;
-  const getEditableFieldCapability = options?.getEditableFieldCapability;
+  const fieldEditing = options?.fieldEditing;
   const comments = options?.comments;
-  const getTransitionOptions = options?.getTransitionOptions;
   const issueDataModule = options?.issueData;
   const history = options?.history;
   const normalizeRichHtml = options?.normalizeRichHtml;
   const readSprintsFromIssue = options?.readSprintsFromIssue;
-  const resolveIssueLinkage = options?.resolveIssueLinkage;
   const scopeJqlToProject = options?.scopeJqlToProject;
 
   function normalizeCommentSortOrder(value) {
@@ -109,6 +107,11 @@ export function createPopupProjectView(options) {
   async function hasLabelSuggestionSupport() {
     const outcome = await issueDataModule.search({purpose: 'label', query: ''});
     return outcome.kind === 'loaded';
+  }
+
+  async function describeField(fieldId) {
+    const outcome = await fieldEditing.dispatch({type: 'describeField', fieldId});
+    return outcome.field || {allowedValues: [], editable: false, fieldId, operations: [], transitions: []};
   }
 
   function hasMultipleIssueTypeOptions(allowedIssueTypes, currentIssueType) {
@@ -410,7 +413,8 @@ export function createPopupProjectView(options) {
     const attachments = issueData.fields.attachment || [];
     const previewAttachments = attachmentPresentation.buildPreviewAttachments(attachments);
     const labels = issueData.fields.labels || [];
-    const linkageData = await resolveIssueLinkage(issueData);
+    const linkageOutcome = await fieldEditing.dispatch({type: 'describeLinkage'});
+    const linkageData = linkageOutcome.linkage || {mode: '', label: 'Parent', editable: false, fieldId: '', currentLink: null};
     const issueTypeName = issueData.fields.issuetype?.name;
     const statusName = issueData.fields.status?.name;
     const priorityName = issueData.fields.priority?.name;
@@ -419,7 +423,7 @@ export function createPopupProjectView(options) {
       issueTypeCapability,
       priorityCapability,
       assigneeCapability,
-      transitionOptions,
+      statusCapability,
       sprintCapability,
       affectsCapability,
       fixVersionsCapability,
@@ -431,21 +435,22 @@ export function createPopupProjectView(options) {
       timeTrackingCapability,
       customFieldChips,
     ] = await Promise.all([
-      displayFields.issueType ? getEditableFieldCapability(issueData, 'issuetype') : Promise.resolve({editable: false, allowedValues: []}),
-      displayFields.priority ? getEditableFieldCapability(issueData, 'priority') : Promise.resolve({editable: false}),
-      displayFields.assignee ? getEditableFieldCapability(issueData, 'assignee') : Promise.resolve({editable: false}),
-      displayFields.status ? getTransitionOptions(issueData.key).catch(() => []) : Promise.resolve([]),
-      displayFields.sprint ? getEditableFieldCapability(issueData, 'sprint') : Promise.resolve({editable: false}),
-      displayFields.affects ? getEditableFieldCapability(issueData, 'versions') : Promise.resolve({editable: false}),
-      displayFields.fixVersions ? getEditableFieldCapability(issueData, 'fixVersions') : Promise.resolve({editable: false}),
-      displayFields.labels ? getEditableFieldCapability(issueData, 'labels') : Promise.resolve({editable: false}),
-      displayFields.environment ? getEditableFieldCapability(issueData, 'environment') : Promise.resolve({editable: false, operations: []}),
+      displayFields.issueType ? describeField('issuetype') : Promise.resolve({editable: false, allowedValues: []}),
+      displayFields.priority ? describeField('priority') : Promise.resolve({editable: false}),
+      displayFields.assignee ? describeField('assignee') : Promise.resolve({editable: false}),
+      displayFields.status ? describeField('status') : Promise.resolve({transitions: []}),
+      displayFields.sprint ? describeField('sprint') : Promise.resolve({editable: false}),
+      displayFields.affects ? describeField('versions') : Promise.resolve({editable: false}),
+      displayFields.fixVersions ? describeField('fixVersions') : Promise.resolve({editable: false}),
+      displayFields.labels ? describeField('labels') : Promise.resolve({editable: false}),
+      displayFields.environment ? describeField('environment') : Promise.resolve({editable: false, operations: []}),
       displayFields.labels ? hasLabelSuggestionSupport() : Promise.resolve(false),
-      getEditableFieldCapability(issueData, 'summary').catch(() => ({editable: false, operations: []})),
-      getEditableFieldCapability(issueData, 'description').catch(() => ({editable: false, operations: []})),
-      getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false})),
+      describeField('summary').catch(() => ({editable: false, operations: []})),
+      describeField('description').catch(() => ({editable: false, operations: []})),
+      describeField('timetracking').catch(() => ({editable: false})),
       buildCustomFieldChips(issueData, customFields, state)
     ]);
+    const transitionOptions = statusCapability.transitions || [];
     const statusEditable = Array.isArray(transitionOptions) && transitionOptions.length > 0;
     const issueTypeEditable = !!issueTypeCapability?.editable && hasMultipleIssueTypeOptions(issueTypeCapability.allowedValues, issueData.fields.issuetype);
     const priorityEditable = !!priorityCapability?.editable;

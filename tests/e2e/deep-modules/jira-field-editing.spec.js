@@ -269,6 +269,69 @@ test('status keyboard filtering completes the highlighted transition and saves w
   });
 });
 
+test('field editing describes built-in capabilities and Parent linkage through its interface', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [
+        {id: 'status', name: 'Status', schema: {type: 'status'}},
+        {id: 'parent', name: 'Parent'},
+      ]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {
+        status: {name: 'Status', operations: ['set']},
+        parent: {name: 'Parent', operations: ['set']},
+      }}},
+      {operation: 'read', match: request => request.path.endsWith('/transitions'), result: {transitions: [
+        {id: '31', name: 'Start progress', to: {id: '3', name: 'In Progress'}},
+      ]}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({sessionId: 'popup-1', issueSnapshot: {
+      issueKey: 'ABC-1',
+      core: {id: '1', key: 'ABC-1', fields: {parent: {key: 'ABC-9', fields: {summary: 'Current parent'}}}},
+      sections: {},
+    }});
+    const status = await fields.dispatch({type: 'describeField', fieldId: 'status'});
+    const linkage = await fields.dispatch({type: 'describeLinkage'});
+    return {
+      status: {kind: status.kind, field: status.field},
+      linkage: {kind: linkage.kind, linkage: linkage.linkage},
+    };
+  });
+
+  expect(result).toEqual({
+    status: {
+      kind: 'described',
+      field: {
+        allowedValues: [],
+        editable: true,
+        fieldId: 'status',
+        operations: ['set'],
+        transitions: [{
+          id: '31',
+          label: 'Start progress -> In Progress',
+          iconUrl: '',
+          metaText: 'Start progress',
+          searchText: 'start progress -> in progress in progress start progress',
+          targetStatusName: 'In Progress',
+          transitionName: 'Start progress',
+        }],
+      },
+    },
+    linkage: {
+      kind: 'described',
+      linkage: {
+        currentLink: {key: 'ABC-9', summary: 'Current parent', url: 'https://jira.example/browse/ABC-9'},
+        editable: true,
+        fieldId: 'parent',
+        label: 'Parent',
+        mode: 'parent',
+      },
+    },
+  });
+});
+
 test('failed status transition preserves the selection and remains retryable', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;

@@ -6,9 +6,7 @@ import {waitForDocument} from 'src/utils';
 import {sendMessage, storageGet, storageSet, storageLocalGet, storageLocalSet} from 'src/chrome';
 import {snackBar} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
-import {createContentFieldCapabilityHelpers} from 'src/content-field-capability-helpers';
 import {createContentHistoryHelpers} from 'src/content-history-helpers';
-import {createContentIssueLinkageHelpers} from 'src/content-issue-linkage-helpers';
 import {
   buildIssueLinkCreatePayload,
   buildRelationshipOptions,
@@ -427,20 +425,6 @@ async function mainAsyncLocal() {
     return error;
   }
 
-  async function getIssueSummary(issueKey) {
-    if (!issueKey) {
-      return null;
-    }
-    const outcome = await quickViewIssueData.openIssue({
-      issueKey,
-      requirements: {core: 'summary'},
-    });
-    if (!outcome.snapshot?.core) {
-      throw issueDataError(outcome.failures?.core, 'Could not load issue summary');
-    }
-    return outcome.snapshot.core;
-  }
-
   async function getIssueChangelog(issueKey) {
     const outcome = await quickViewIssueData.openIssue({
       issueKey,
@@ -468,18 +452,6 @@ async function mainAsyncLocal() {
     normalizeIssueKey,
     normalizeRichHtml,
     textToLinkedHtml,
-  });
-  const {
-    getEditableFieldCapability,
-    getTransitionOptions,
-    pickSprintFieldId,
-  } = createContentFieldCapabilityHelpers({
-    issueData: quickViewIssueData,
-  });
-  const {resolveIssueLinkage} = createContentIssueLinkageHelpers({
-    getIssueSummary,
-    instanceUrl: INSTANCE_URL,
-    issueData: quickViewIssueData,
   });
   const {
     getIssueLinkTypes,
@@ -693,7 +665,6 @@ async function mainAsyncLocal() {
       }
       return outcome.snapshot.viewer.user;
     },
-    pickSprintFieldId,
     readSprintsFromIssue,
     requestJson,
   });
@@ -2881,15 +2852,13 @@ async function mainAsyncLocal() {
       tooltipLayout,
     },
     encodeJqlValue,
-    getEditableFieldCapability,
-    getTransitionOptions,
+    fieldEditing: jiraFieldEditing,
     issueData: quickViewIssueData,
     history: historyPresentation,
     normalizeRichHtml,
     people,
     quickActions: popupQuickActions,
     readSprintsFromIssue,
-    resolveIssueLinkage,
     scopeJqlToProject,
   });
 
@@ -3691,7 +3660,8 @@ async function mainAsyncLocal() {
     }
     const issueData = popupState.issueData;
     const issueKey = issueData.key;
-    const timeTrackingCapability = await getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false}));
+    const timeTrackingOutcome = await jiraFieldEditing.dispatch({type: 'describeField', fieldId: 'timetracking'});
+    const timeTrackingCapability = timeTrackingOutcome.field || {editable: false};
     const currentState = popupState.timeTrackingEditState || createTimeTrackingEditState(issueData);
     const savePlan = buildTimeTrackingSavePlan(currentState, {
       canEditEstimates: !!timeTrackingCapability?.editable
