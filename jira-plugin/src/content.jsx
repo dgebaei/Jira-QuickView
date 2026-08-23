@@ -2,7 +2,6 @@
 import size from 'lodash/size';
 import debounce from 'lodash/debounce';
 import regexEscape from 'escape-string-regexp';
-import Mustache from 'mustache';
 import {waitForDocument} from 'src/utils';
 import {sendMessage, storageGet, storageSet, storageLocalGet, storageLocalSet} from 'src/chrome';
 import {snackBar} from 'src/snack';
@@ -39,6 +38,7 @@ import {createBrowserPopupSurface} from 'src/browser-popup-surface';
 import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createPopupSession} from 'src/popup-session';
+import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
 const {
@@ -612,7 +612,7 @@ async function mainAsyncLocal() {
   const popupSurface = createBrowserPopupSurface({
     async commitCurrent(frame, context) {
       if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
-      await commitPopupStateToDom(popupState, context);
+      await popupRenderer.render(popupState, context);
     },
     async commitVisible(frame, context) {
       if (!context.isCurrent()) return;
@@ -648,7 +648,7 @@ async function mainAsyncLocal() {
       };
       if (!context.isCurrent()) return;
       popupState = initialPopupState;
-      await commitPopupStateToDom(initialPopupState, context);
+      await popupRenderer.render(initialPopupState, context);
     },
     async hidePopup() {
       await clearPopupSurface();
@@ -3010,122 +3010,26 @@ async function mainAsyncLocal() {
     clearHideTimeout: () => clearTimeout(hideTimeOut),
     pinContainer,
   });
-  async function commitPopupStateToDom(state, renderOptions = {}) {
-    if (!state?.issueData) {
-      return;
-    }
-    const existingCommentInput = container.find('._JX_comment_input').get(0);
-    if (existingCommentInput && state.key === commentLifecycle.view().issueKey) {
-      commentLifecycle.dispatch({
-        type: 'composeFocusChanged',
-        focused: document.activeElement === existingCommentInput,
-      }).catch(() => {});
-    }
-    const displayData = await buildPopupDisplayData(state);
-    if (state !== popupState ||
-        (typeof renderOptions.isCurrent === 'function' && !renderOptions.isCurrent())) {
-      return;
-    }
-    const existingContentBlocks = container.find('._JX_content_blocks');
-    const savedScrollLeft = existingContentBlocks.length ? existingContentBlocks.scrollLeft() : 0;
-    const savedScrollTop = existingContentBlocks.length ? existingContentBlocks.scrollTop() : 0;
-    container.html(Mustache.render(annotationTemplate, displayData));
-    const contentBlocksContainer = container.find('._JX_content_blocks');
-    if (contentBlocksContainer.length) {
-      const blocks = contentBlocksContainer.children('[data-content-block]');
-      const order = layoutContentBlocks;
-      blocks.sort((a, b) => {
-        const ai = order.indexOf(a.getAttribute('data-content-block'));
-        const bi = order.indexOf(b.getAttribute('data-content-block'));
-        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-      });
-      contentBlocksContainer.prepend(blocks);
-    }
-    const nextContentBlocks = container.find('._JX_content_blocks');
-    if (nextContentBlocks.length) {
-      nextContentBlocks.scrollLeft(savedScrollLeft);
-      nextContentBlocks.scrollTop(savedScrollTop);
-    }
-    restoreCommentComposerState();
-    renderCommentUploads();
-    renderCommentMentionSuggestions();
-    syncCommentComposerState();
-    if (!containerPinned) {
-      container.css(computeVisibleContainerPosition(state.pointerX, state.pointerY));
-    }
-    const activeFieldEditState = getActiveFieldEditState(state);
-    if (activeFieldEditState?.fieldKey) {
-      const input = container.find('._JX_edit_input')[0];
-      if (input) {
-        input.focus();
-        const maxIndex = input.value.length;
-        const selectionStart = Math.min(maxIndex, Number.isInteger(activeFieldEditState.selectionStart) ? activeFieldEditState.selectionStart : maxIndex);
-        const selectionEnd = Math.min(maxIndex, Number.isInteger(activeFieldEditState.selectionEnd) ? activeFieldEditState.selectionEnd : maxIndex);
-        input.setSelectionRange(selectionStart, selectionEnd);
-      }
-      const highlightedOption = container.find('._JX_edit_option.is-highlighted')[0];
-      if (highlightedOption) {
-        highlightedOption.scrollIntoView({block: 'nearest'});
-      }
-      } else if (state.timeTrackingEditState?.activeInputField) {
-        const input = container.find(`._JX_time_tracking_input[data-time-tracking-field="${state.timeTrackingEditState.activeInputField}"]`)[0];
-        if (input) {
-          input.focus();
-        if (typeof input.setSelectionRange === 'function' && input.type !== 'date') {
-          const maxIndex = input.value.length;
-          const selectionStart = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionStart) ? state.timeTrackingEditState.selectionStart : maxIndex);
-          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionEnd) ? state.timeTrackingEditState.selectionEnd : maxIndex);
-          input.setSelectionRange(selectionStart, selectionEnd);
-          }
-        }
-      } else if (state.descriptionEditState?.open) {
-        const input = container.find('._JX_description_input')[0];
-        if (input) {
-          const nextValue = String(state.descriptionEditState.inputValue || '');
-          if (input.value !== nextValue) {
-            input.value = nextValue;
-          }
-          input.focus();
-          const maxIndex = input.value.length;
-          const selectionStart = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionStart) ? state.descriptionEditState.selectionStart : maxIndex);
-          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionEnd) ? state.descriptionEditState.selectionEnd : maxIndex);
-          input.setSelectionRange(selectionStart, selectionEnd);
-        }
-      } else if (state.linkedIssuesState?.open && state.linkedIssuesState.focusSearch) {
-        const input = container.find('._JX_linked_issues_search_input')[0];
-        if (input) {
-          input.focus();
-          const maxIndex = input.value.length;
-          const selectionStart = Math.min(maxIndex, Number.isInteger(state.linkedIssuesState.searchSelectionStart)
-            ? state.linkedIssuesState.searchSelectionStart
-            : maxIndex);
-          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.linkedIssuesState.searchSelectionEnd)
-            ? state.linkedIssuesState.searchSelectionEnd
-            : selectionStart);
-          input.setSelectionRange(selectionStart, selectionEnd);
-        }
-      } else if (state.watchersState?.open && state.watchersState.focusSearch) {
-        const input = container.find('._JX_watchers_search_input')[0];
-        if (input) {
-          input.focus();
-          const maxIndex = input.value.length;
-          input.setSelectionRange(maxIndex, maxIndex);
-        }
-      }
-    const commentRowAction = commentLifecycle.view().rowAction;
-    if (commentRowAction?.mode === 'edit' && commentRowAction.commentId) {
-      const commentInput = container.find(`._JX_comment_edit_input[data-comment-id="${commentRowAction.commentId}"]`)[0];
-      if (commentInput) {
-        commentInput.focus();
-        const maxIndex = commentInput.value.length;
-        const selectionStart = Math.min(maxIndex, Number.isInteger(commentRowAction.selection?.start) ? commentRowAction.selection.start : maxIndex);
-        const selectionEnd = Math.min(maxIndex, Number.isInteger(commentRowAction.selection?.end) ? commentRowAction.selection.end : maxIndex);
-        commentInput.setSelectionRange(selectionStart, selectionEnd);
-      }
-    }
-    renderCommentEditMentionSuggestions();
-    constrainEditPopoversToViewport();
-  }
+  const popupRenderer = createBrowserPopupRenderer({
+    comments: commentLifecycle,
+    container,
+    contentBlockOrder: layoutContentBlocks,
+    continuity: {
+      constrainPopovers: constrainEditPopoversToViewport,
+      renderComposeMentions: renderCommentMentionSuggestions,
+      renderEditMentions: renderCommentEditMentionSuggestions,
+      renderUploads: renderCommentUploads,
+      restoreComposer: restoreCommentComposerState,
+      syncComposer: syncCommentComposerState,
+    },
+    fieldEditing: {view: getActiveFieldEditState},
+    position: {
+      compute: computeVisibleContainerPosition,
+      isPinned: () => containerPinned,
+    },
+    projectState: buildPopupDisplayData,
+    template: annotationTemplate,
+  });
   async function runWatcherSearch(queryText, requestId) {
     const normalizedQuery = String(queryText || '').trim();
     try {
