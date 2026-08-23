@@ -34,6 +34,7 @@ import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
+import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
@@ -479,14 +480,11 @@ async function mainAsyncLocal() {
   });
   const {
     buildAttachmentImagesByName,
-    buildDraftMentionMapping,
-    buildEditableCommentDraft,
     buildHistoryPreviewText,
     formatRelativeDate,
     getMentionDisplayText,
     normalizeCommentImageReference,
     replaceMentionMarkupWithDisplayText,
-    restoreEditableCommentMentions,
     textToLinkedHtml,
   } = createContentCommentHelpers({
     mentionContextWindow: MENTION_CONTEXT_WINDOW,
@@ -500,6 +498,11 @@ async function mainAsyncLocal() {
     jira,
   });
   const jiraFieldEditing = createJiraFieldEditing({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+  });
+  const commentLifecycle = createCommentLifecycle({
     instanceUrl: INSTANCE_URL,
     issueData: quickViewIssueData,
     jira,
@@ -582,6 +585,7 @@ async function mainAsyncLocal() {
   let popupState = null;
   let fieldSessionSequence = 0;
   let activeFieldSessionId = '';
+  let activeCommentSessionId = '';
   let activeCommentContext = null;
   let commentMentionState = emptyCommentMentionState();
   let commentComposerMentionMappings = [];
@@ -712,7 +716,6 @@ async function mainAsyncLocal() {
     onAttachmentUploaded: handleDraftAttachmentUploaded,
     keepContainerVisible,
     requestJson,
-    restoreEditableCommentMentions,
     setActiveCommentContext: nextValue => { activeCommentContext = nextValue; },
     setCommentComposerErrorMessage: nextValue => { commentComposerErrorMessage = nextValue; },
     setCommentComposerHadFocus: nextValue => { commentComposerHadFocus = nextValue; },
@@ -2007,39 +2010,6 @@ async function mainAsyncLocal() {
     }
   }
 
-  function addSavedCommentToPopupState(savedComment, commentText, fallbackAuthor = null) {
-    if (!popupState?.issueData?.fields) {
-      return;
-    }
-    const nextComment = {
-      ...savedComment,
-      id: String(savedComment?.id || ''),
-      body: commentText || savedComment?.body || '',
-      author: savedComment?.author || fallbackAuthor || null,
-      created: savedComment?.created || new Date().toISOString(),
-    };
-    const existingComments = Array.isArray(popupState.issueData.fields.comment?.comments)
-      ? popupState.issueData.fields.comment.comments
-      : [];
-    const nextComments = [
-      ...existingComments.filter(comment => String(comment?.id || '') !== nextComment.id),
-      nextComment,
-    ];
-    popupState = {
-      ...popupState,
-      issueData: {
-        ...popupState.issueData,
-        fields: {
-          ...popupState.issueData.fields,
-          comment: {
-            ...(popupState.issueData.fields.comment || {}),
-            comments: nextComments,
-          }
-        }
-      }
-    };
-  }
-
   async function handleCommentSave() {
     const commentIssueKey = activeCommentContext?.issueKey || '';
     if (!commentIssueKey) {
@@ -2061,44 +2031,59 @@ async function mainAsyncLocal() {
       return;
     }
 
-    elements.root.attr('data-saving', 'true');
-    setCommentComposerError('');
+    await commentLifecycle.dispatch({
+      type: 'composeChanged',
+      value: commentDraftText,
+      selection: {
+        start: typeof elements.input.get(0)?.selectionStart === 'number' ? elements.input.get(0).selectionStart : commentDraftText.length,
+        end: typeof elements.input.get(0)?.selectionEnd === 'number' ? elements.input.get(0).selectionEnd : commentDraftText.length,
+      },
+      mentionMappings: commentComposerMentionMappings,
+    });
+    const pendingSave = commentLifecycle.dispatch({
+      type: 'saveNewComment',
+      requirements: {history: !!popupState?.historyOpen},
+    });
+    elements.root.attr('data-saving', commentLifecycle.view().compose?.saving ? 'true' : 'false');
+    setCommentComposerError(commentLifecycle.view().compose?.errorMessage || '');
     syncCommentComposerState();
 
-    try {
-      const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
-      const requestBody = restoreEditableCommentMentions(commentText, commentComposerMentionMappings);
-      const savedComment = await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${commentIssueKey}/comment`, {
-        body: requestBody
-      });
-      const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey;
-      if (isSameIssueStillVisible) {
-        addSavedCommentToPopupState(savedComment, requestBody, currentUser);
-        elements.input.val('');
-        elements.root.attr('data-saving', 'false');
-        commentComposerDraftValue = '';
-        commentComposerMentionMappings = [];
-        commentComposerHadFocus = false;
-        commentComposerSelectionStart = 0;
-        commentComposerSelectionEnd = 0;
-        await clearCommentUploads({deleteUploaded: false});
-        setCommentComposerError('');
-        await renderIssuePopup(popupState);
+    const outcome = await pendingSave;
+    const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey &&
+      outcome.sessionId === activeCommentSessionId;
+    elements.root.attr('data-saving', 'false');
+    if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
+      if (outcome.refreshedSnapshot?.core) {
+        const historySection = outcome.refreshedSnapshot.sections?.history;
+        popupState = {
+          ...popupState,
+          issueSnapshot: outcome.refreshedSnapshot,
+          issueData: outcome.refreshedSnapshot.core,
+          changelogData: popupState.historyOpen && ['ready', 'empty', 'staleRetained'].includes(historySection?.status)
+            ? historySection.data
+            : popupState.changelogData,
+          changelogLoading: false,
+          lastActionSuccess: outcome.notice,
+        };
       }
-      if (isSameIssueStillVisible && popupState?.historyOpen) {
-        await refreshPopupIssueState('Comment added', {
-          mutation: {kind: 'commentChanged'},
-          preserveHistory: true,
-        });
+      elements.input.val('');
+      commentComposerDraftValue = '';
+      commentComposerMentionMappings = [];
+      commentComposerHadFocus = false;
+      commentComposerSelectionStart = 0;
+      commentComposerSelectionEnd = 0;
+      await clearCommentUploads({deleteUploaded: false});
+      setCommentComposerError('');
+      await renderIssuePopup(popupState);
+      if (outcome.failure) {
+        snackBar(outcome.notice);
       } else {
-        await quickViewIssueData.refreshAfterMutation({
-          issueKey: commentIssueKey,
-          mutation: {kind: 'commentChanged'},
-        });
+        scheduleActionNoticeClear(outcome.notice);
       }
-    } catch (error) {
-      elements.root.attr('data-saving', 'false');
-      setCommentComposerError(error?.message || error?.inner || 'Could not save comment');
+      return;
+    }
+    if (outcome.kind === 'failed' && isSameIssueStillVisible) {
+      setCommentComposerError(outcome.failure?.message || 'Could not save comment');
       syncCommentComposerState();
     }
   }
@@ -2109,6 +2094,7 @@ async function mainAsyncLocal() {
       return;
     }
     await discardCommentComposerDraft();
+    await commentLifecycle.dispatch({type: 'discardCompose'});
   }
 
 
@@ -2132,38 +2118,63 @@ async function mainAsyncLocal() {
     };
   }
 
+  function syncCommentSessionFromLifecycle() {
+    const rowAction = commentLifecycle.view().rowAction;
+    setCommentSession(rowAction ? {
+      commentId: rowAction.commentId,
+      draft: rowAction.draft,
+      error: rowAction.errorMessage,
+      mode: rowAction.mode,
+      selectionEnd: rowAction.selection?.end || 0,
+      selectionStart: rowAction.selection?.start || 0,
+      saving: rowAction.saving,
+    } : null);
+  }
+
+  async function applyCommentRowActionOutcome(outcome) {
+    const isCurrent = popupState?.key === outcome.issueKey && outcome.sessionId === activeCommentSessionId;
+    if (!isCurrent) return;
+    syncCommentSessionFromLifecycle();
+    if (outcome.kind === 'mutationCommitted' && outcome.refreshedSnapshot?.core) {
+      const historySection = outcome.refreshedSnapshot.sections?.history;
+      popupState = {
+        ...popupState,
+        issueSnapshot: outcome.refreshedSnapshot,
+        issueData: outcome.refreshedSnapshot.core,
+        changelogData: popupState.historyOpen && ['ready', 'empty', 'staleRetained'].includes(historySection?.status)
+          ? historySection.data
+          : popupState.changelogData,
+        changelogLoading: false,
+        lastActionSuccess: outcome.notice,
+      };
+    }
+    await renderIssuePopup(popupState);
+    if (outcome.kind === 'failed') snackBar(outcome.failure?.message || 'Comment operation failed');
+    else if (outcome.failure) snackBar(outcome.notice);
+    else if (outcome.kind === 'mutationCommitted') scheduleActionNoticeClear(outcome.notice);
+  }
+
   function cancelCommentSession() {
     if (!popupState?.commentSession) {
       return;
     }
     resetCommentEditMentionState();
-    setCommentSession(null);
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'cancelRowAction'}).then(() => {
+      syncCommentSessionFromLifecycle();
+      return renderIssuePopup(popupState);
+    }).catch(() => {});
   }
 
-  function getIssueCommentById(commentId) {
-    const normalizedCommentId = String(commentId || '');
-    return (popupState?.issueData?.fields?.comment?.comments || []).find(comment => String(comment?.id || '') === normalizedCommentId) || null;
-  }
-
-  function startCommentEdit(commentId, commentBody) {
+  function startCommentEdit(commentId) {
     if (!popupState?.issueData || !commentId) {
       return;
     }
     pinContainer({showNotice: false});
     resetCommentEditMentionState();
-    const {draft, mentionMappings} = buildEditableCommentDraft(commentBody);
-    setCommentSession({
-      commentId: String(commentId),
-      draft,
-      error: '',
-      mentionMappings,
-      mode: 'edit',
-      selectionEnd: draft.length,
-      selectionStart: draft.length,
-      saving: false
-    });
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'startEdit', commentId}).then(() => {
+      syncCommentSessionFromLifecycle();
+      return renderIssuePopup(popupState);
+    }).catch(() => {});
   }
 
   async function loadCommentEditMentionSuggestions(commentId, mention) {
@@ -2301,19 +2312,24 @@ async function mainAsyncLocal() {
     }
     const displayText = `@${candidate.displayName || candidate.name || candidate.username || 'mention'}`;
     const nextDraft = String(activeSession.draft || '').slice(0, mentionRange.start) + `${displayText} ` + String(activeSession.draft || '').slice(mentionRange.end);
-    setCommentSession({
-      ...activeSession,
-      draft: nextDraft,
-      error: '',
-      mentionMappings: [
-        ...(Array.isArray(activeSession.mentionMappings) ? activeSession.mentionMappings : []),
-        buildDraftMentionMapping(nextDraft, mentionRange.start, displayText, candidate.mentionMarkup),
-      ],
-      selectionStart: mentionRange.start + displayText.length + 1,
-      selectionEnd: mentionRange.start + displayText.length + 1,
-    });
     resetCommentEditMentionState();
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({
+      type: 'editChanged',
+      commentId: activeSession.commentId,
+      value: nextDraft,
+      selection: {
+        start: mentionRange.start + displayText.length + 1,
+        end: mentionRange.start + displayText.length + 1,
+      },
+      insertedMention: {
+        start: mentionRange.start,
+        displayText,
+        markup: candidate.mentionMarkup,
+      },
+    }).then(() => {
+      syncCommentSessionFromLifecycle();
+      return renderIssuePopup(popupState);
+    }).catch(() => {});
   }
 
   function startCommentDeleteConfirm(commentId) {
@@ -2321,14 +2337,10 @@ async function mainAsyncLocal() {
       return;
     }
     resetCommentEditMentionState();
-    setCommentSession({
-      commentId: String(commentId),
-      draft: '',
-      error: '',
-      mode: 'delete',
-      saving: false
-    });
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'startDelete', commentId}).then(() => {
+      syncCommentSessionFromLifecycle();
+      return renderIssuePopup(popupState);
+    }).catch(() => {});
   }
 
   function updateCommentEditDraft(commentId, draft, selectionStart, selectionEnd) {
@@ -2336,14 +2348,15 @@ async function mainAsyncLocal() {
     if (!activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit') {
       return;
     }
-    setCommentSession({
-      ...activeSession,
-      draft: String(draft || ''),
-      error: '',
-      selectionEnd,
-      selectionStart
-    });
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({
+      type: 'editChanged',
+      commentId,
+      value: draft,
+      selection: {start: selectionStart, end: selectionEnd},
+    }).then(() => {
+      syncCommentSessionFromLifecycle();
+      return renderIssuePopup(popupState);
+    }).catch(() => {});
   }
 
   async function saveCommentEdit(commentId) {
@@ -2352,35 +2365,14 @@ async function mainAsyncLocal() {
       return;
     }
     resetCommentEditMentionState();
-    const nextDraft = String(activeSession.draft || '');
-    if (!nextDraft.trim()) {
-      setCommentSession({...activeSession, error: 'Comment cannot be empty.'});
-      await renderIssuePopup(popupState);
-      return;
-    }
-
-    setCommentSession({...activeSession, draft: nextDraft, error: '', saving: true});
+    const pending = commentLifecycle.dispatch({
+      type: 'saveEdit',
+      commentId,
+      requirements: {history: !!popupState?.historyOpen},
+    });
+    syncCommentSessionFromLifecycle();
     await renderIssuePopup(popupState);
-
-    try {
-      const requestBody = restoreEditableCommentMentions(nextDraft, activeSession.mentionMappings);
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`, {
-        body: requestBody
-      });
-      await refreshPopupIssueState('Comment updated', {
-        mutation: {kind: 'commentChanged'},
-        preserveHistory: !!popupState?.historyOpen,
-      });
-    } catch (error) {
-      const errorMessage = error?.message || error?.inner || 'Could not update comment';
-      const latestSession = getActiveCommentSession();
-      if (!latestSession || latestSession.commentId !== String(commentId) || latestSession.mode !== 'edit') {
-        return;
-      }
-      setCommentSession({...latestSession, error: errorMessage, saving: false});
-      await renderIssuePopup(popupState);
-      snackBar(errorMessage);
-    }
+    await applyCommentRowActionOutcome(await pending);
   }
 
   async function confirmCommentDelete(commentId) {
@@ -2389,25 +2381,14 @@ async function mainAsyncLocal() {
       return;
     }
 
-    setCommentSession({...activeSession, error: '', saving: true});
+    const pending = commentLifecycle.dispatch({
+      type: 'confirmDelete',
+      commentId,
+      requirements: {history: !!popupState?.historyOpen},
+    });
+    syncCommentSessionFromLifecycle();
     await renderIssuePopup(popupState);
-
-    try {
-      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`);
-      await refreshPopupIssueState('Comment deleted', {
-        mutation: {kind: 'commentChanged'},
-        preserveHistory: !!popupState?.historyOpen,
-      });
-    } catch (error) {
-      const errorMessage = error?.message || error?.inner || 'Could not delete comment';
-      const latestSession = getActiveCommentSession();
-      if (!latestSession || latestSession.commentId !== String(commentId) || latestSession.mode !== 'delete') {
-        return;
-      }
-      setCommentSession({...latestSession, error: errorMessage, saving: false});
-      await renderIssuePopup(popupState);
-      snackBar(errorMessage);
-    }
+    await applyCommentRowActionOutcome(await pending);
   }
 
   // ── Pull Requests & Dev Status ─────────────────────────────
@@ -5341,12 +5322,19 @@ async function mainAsyncLocal() {
     commentComposerDraftValue = this.value || '';
     commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : commentComposerDraftValue.length;
     commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : commentComposerDraftValue.length;
+    commentLifecycle.dispatch({
+      type: 'composeChanged',
+      value: commentComposerDraftValue,
+      selection: {start: commentComposerSelectionStart, end: commentComposerSelectionEnd},
+      mentionMappings: commentComposerMentionMappings,
+    }).catch(() => {});
     syncCommentComposerState();
     syncCommentMentionSuggestions(this);
   });
 
   $(document.body).on('focusin', '._JX_comment_input', function () {
     commentComposerHadFocus = true;
+    commentLifecycle.dispatch({type: 'composeFocusChanged', focused: true}).catch(() => {});
     pinContainer({showNotice: false});
   });
 
@@ -5494,7 +5482,7 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
-    startCommentEdit(commentId, getIssueCommentById(commentId)?.body || '');
+    startCommentEdit(commentId);
   });
 
   $(document.body).on('click', '._JX_comment_delete_button', function (e) {
@@ -5575,11 +5563,15 @@ async function mainAsyncLocal() {
     if (!activeSession || activeSession.commentId !== commentId || activeSession.mode !== 'edit') {
       return;
     }
-    setCommentSession({
-      ...activeSession,
-      selectionStart: typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length,
-      selectionEnd: typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length,
-    });
+    commentLifecycle.dispatch({
+      type: 'editChanged',
+      commentId,
+      value: this.value || '',
+      selection: {
+        start: typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length,
+        end: typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length,
+      },
+    }).then(syncCommentSessionFromLifecycle).catch(() => {});
   });
 
   $(document.body).on('scroll', '._JX_comment_edit_input', function () {
@@ -5735,6 +5727,8 @@ async function mainAsyncLocal() {
     const descriptionStateSnapshot = popupState?.descriptionEditState;
     jiraFieldEditing.detach({sessionId: activeFieldSessionId});
     activeFieldSessionId = '';
+    commentLifecycle.detach({sessionId: activeCommentSessionId, reason: 'close'});
+    activeCommentSessionId = '';
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
@@ -6099,6 +6093,7 @@ async function mainAsyncLocal() {
         return;
       }
       activeFieldSessionId = nextFieldSessionId;
+      activeCommentSessionId = nextFieldSessionId;
       jiraFieldEditing.attach({
         sessionId: nextFieldSessionId,
         issueSnapshot: legacySnapshot.issueSnapshot,
@@ -6107,6 +6102,10 @@ async function mainAsyncLocal() {
           pullRequests: showPullRequests,
           reactions: true,
         },
+      });
+      commentLifecycle.attach({
+        sessionId: nextFieldSessionId,
+        issueSnapshot: legacySnapshot.issueSnapshot,
       });
       let quickActions = [];
       try {

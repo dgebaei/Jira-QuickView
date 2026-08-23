@@ -1332,13 +1332,13 @@ async function createMockJiraServer() {
       const body = await parseJsonBody(req);
       const newComment = {
         id: `comment-${Date.now()}`,
-        author: {displayName: state.currentUser.displayName},
+        author: {...state.currentUser},
         created: new Date().toISOString(),
         body: body?.body || '',
         renderedBody: buildRenderedCommentBody(body?.body || ''),
       };
       state.issue.comments.push(newComment);
-      json(res, 201, {id: newComment.id});
+      json(res, 201, newComment);
       return;
     }
 
@@ -1357,6 +1357,22 @@ async function createMockJiraServer() {
       comment.body = String(body?.body || '');
       comment.renderedBody = buildRenderedCommentBody(comment.body);
       json(res, 200, {id: comment.id});
+      return;
+    }
+
+    if (pathname.startsWith(`/rest/api/2/issue/${state.issue.key}/comment/`) && req.method === 'DELETE') {
+      if (state.scenario === 'anonymous-readonly' || state.scenario === 'logged-out') {
+        json(res, 401, {errorMessages: ['Login required']});
+        return;
+      }
+      const commentId = pathname.split('/').pop();
+      const commentIndex = state.issue.comments.findIndex(entry => String(entry.id || '') === String(commentId || ''));
+      if (commentIndex === -1) {
+        json(res, 404, {errorMessages: ['Comment not found']});
+        return;
+      }
+      state.issue.comments.splice(commentIndex, 1);
+      noContent(res);
       return;
     }
 

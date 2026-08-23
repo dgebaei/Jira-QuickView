@@ -1557,6 +1557,30 @@ test('supports user tagging while editing comments in mocked mode @mock-only', a
   await page.close();
 });
 
+test('deletes an owned comment through confirmation in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Comment deletion coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const uniqueText = `Delete lifecycle ${Date.now()}`;
+  await page.locator('._JX_comment_input').fill(uniqueText);
+  await page.locator('._JX_comment_save').click();
+
+  const ownedComment = page.locator('._JX_comment', {hasText: uniqueText});
+  await expect(ownedComment).toBeVisible();
+  const commentId = await ownedComment.getAttribute('data-comment-id');
+  const comment = page.locator(`._JX_comment[data-comment-id="${commentId}"]`);
+  await ownedComment.locator('._JX_comment_delete_button').click();
+  await expect(comment.locator('._JX_comment_delete_confirm')).toBeVisible();
+  await comment.locator('._JX_comment_delete_confirm').click();
+  await expect(comment).toHaveCount(0);
+
+  await page.close();
+});
+
 test('silently pins the popup when editing a comment so pointer exit does not dismiss it @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Comment edit pinning is deterministic in mocked mode only.');
