@@ -33,8 +33,9 @@ test('a reversed older issue load cannot attach features or replace the newer po
     };
     const quickActions = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
     const watchers = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
+    const linkedIssues = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
     const surface = createFixturePopupSurface();
-    const popup = createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, surface});
+    const popup = createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, linkedIssues, surface});
     const oldActivation = popup.activate({issueKey: 'OLD-1', anchor: {x: 10, y: 20}, activation: 'hover'});
     while (requests.length < 1) await Promise.resolve();
     const newActivation = popup.activate({issueKey: 'NEW-2', anchor: {x: 30, y: 40}, activation: 'modifier'});
@@ -105,6 +106,7 @@ test('a slow surface projection cannot commit after a newer popup session starts
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const oldActivation = popup.activate({issueKey: 'OLD-1'});
@@ -144,6 +146,7 @@ test('close while loading aborts acquisition and prevents a late popup commit', 
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const activation = popup.activate({issueKey: 'ABC-1'});
@@ -186,6 +189,7 @@ test('a core failure is observable and the same issue can retry in a fresh sessi
       comments: {async attach() {}, async detach() {}, view() { return {comments: []}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const failed = await popup.activate({issueKey: 'ABC-1'});
@@ -229,6 +233,7 @@ test('feature rerenders advance the session revision and publish current feature
       comments: {async attach() {}, async detach() {}, view() { return {value: commentValue}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -275,6 +280,7 @@ test('synchronous feature rerenders coalesce into one current surface commit', a
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -317,6 +323,7 @@ test('popup session owns sorting transitions and publishes their observable pres
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({
@@ -436,6 +443,7 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -487,6 +495,7 @@ test('popup session owns quick-action menu visibility', async ({page}) => {
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -544,6 +553,7 @@ test('popup session owns watcher panel loading and feature render scheduling', a
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers,
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -587,6 +597,7 @@ test('popup session owns history acquisition, loading, and snapshot projection',
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -643,6 +654,16 @@ test('browser popup events translate presentation DOM interactions into semantic
       <div class="_JX_linked_issues_group">
         <button class="_JX_linked_issues_trigger">Linked issues</button>
         <button class="_JX_linked_issues_close">Close linked issues</button>
+        <div class="_JX_linked_issues_panel">
+          <select class="_JX_linked_issues_type_select"><option value="100:outward">blocks</option></select>
+          <input class="_JX_linked_issues_search_input">
+          <button class="_JX_linked_issues_search_result" data-issue-key="ABC-2">Select issue</button>
+          <button class="_JX_linked_issues_token_remove" data-issue-key="ABC-3">Remove token</button>
+          <button class="_JX_linked_issues_add">Link</button>
+          <button class="_JX_linked_issues_remove" data-link-id="10">Remove link</button>
+          <button class="_JX_linked_issues_remove_cancel">Cancel removal</button>
+          <button class="_JX_linked_issues_remove_confirm" data-link-id="10">Confirm removal</button>
+        </div>
       </div>
       <button class="_JX_history_toggle">History</button>
       <div class="_JX_history_flyout"><button class="_JX_history_close">Close history</button></div>
@@ -672,6 +693,14 @@ test('browser popup events translate presentation DOM interactions into semantic
     $('._JX_watchers_remove').trigger('click');
     $('._JX_linked_issues_trigger').trigger('click');
     $('._JX_linked_issues_close').trigger('click');
+    $('._JX_linked_issues_type_select').trigger('change');
+    $('._JX_linked_issues_search_input').val('ABC').trigger('input').trigger($.Event('keydown', {key: 'Enter'}));
+    $('._JX_linked_issues_search_result').trigger('click');
+    $('._JX_linked_issues_token_remove').trigger('click');
+    $('._JX_linked_issues_add').trigger('click');
+    $('._JX_linked_issues_remove').trigger('click');
+    $('._JX_linked_issues_remove_cancel').trigger('click');
+    $('._JX_linked_issues_remove_confirm').trigger('click');
     $('._JX_history_toggle').trigger('click');
     $('._JX_history_close').trigger('click');
     $('._JX_previewable').trigger('click');
@@ -705,6 +734,15 @@ test('browser popup events translate presentation DOM interactions into semantic
       {type: 'remove-watcher', watcherId: 'user-alex'},
       {type: 'toggle-linkedIssues'},
       {type: 'close-linkedIssues'},
+      {type: 'linked-relationship-changed', relationshipId: '100:outward'},
+      {type: 'linked-input-changed', value: 'ABC', selectionStart: 3, selectionEnd: 3},
+      {type: 'linked-enter', value: 'ABC'},
+      {type: 'linked-select', issueKey: 'ABC-2'},
+      {type: 'linked-remove-token', issueKey: 'ABC-3'},
+      {type: 'linked-add'},
+      {type: 'linked-confirm-remove', linkId: '10'},
+      {type: 'linked-cancel-remove'},
+      {type: 'linked-remove-confirmed', linkId: '10'},
       {type: 'toggle-history'},
       {type: 'close-history'},
       {type: 'open-preview', source: 'image.png'},

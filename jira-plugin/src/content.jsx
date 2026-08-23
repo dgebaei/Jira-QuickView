@@ -7,14 +7,6 @@ import {sendMessage, storageGet, storageSet, storageLocalGet, storageLocalSet} f
 import {snackBar} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
 import {createContentHistoryHelpers} from 'src/content-history-helpers';
-import {
-  buildIssueLinkCreatePayload,
-  buildRelationshipOptions,
-  createContentLinkedIssuesHelpers,
-  createEmptyLinkedIssuesState,
-  getLinkedIssueKeys,
-  parseLinkedIssueKeys,
-} from 'src/content-linked-issues-helpers';
 import {createPopupProjectView} from 'src/popup-session/project-view';
 import {createContentPeopleHelpers} from 'src/content-people-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
@@ -30,6 +22,7 @@ import {createBrowserAttachmentMediaAdapter} from 'src/browser-attachment-media-
 import {createBrowserPopupSurface} from 'src/browser-popup-surface';
 import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
+import {createLinkedIssueLifecycle} from 'src/linked-issue-lifecycle';
 import {createPopupSession} from 'src/popup-session';
 import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
 import {createBrowserCommentPresentation} from 'src/popup-session/browser-comment-presentation';
@@ -353,7 +346,6 @@ async function mainAsyncLocal() {
     uploadSequence: 0,
     uploads: [],
   });
-  const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
   let commentPresentation = null;
   let popupShell = null;
   const attachmentPresentation = createContentAttachmentHelpers({
@@ -429,14 +421,6 @@ async function mainAsyncLocal() {
     normalizeRichHtml,
     textToLinkedHtml,
   });
-  const {
-    getIssueLinkTypes,
-    getLinkedIssueDetails,
-    searchIssueLinkCandidates,
-  } = createContentLinkedIssuesHelpers({
-    issueData: quickViewIssueData,
-  });
-  let linkedIssuesSearchTimeoutId = null;
   let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
   let popupState = null;
@@ -448,17 +432,10 @@ async function mainAsyncLocal() {
   }
   function applyPopupPresentation(currentState, presentation = {}) {
     const activePanel = presentation.activePanel || '';
-    const linkedIssuesState = {
-      ...emptyLinkedIssuesState(),
-      ...currentState.linkedIssuesState,
-      open: activePanel === 'linkedIssues',
-      focusSearch: activePanel === 'linkedIssues' && !!currentState.linkedIssuesState?.focusSearch,
-    };
     return {
       ...currentState,
       ...presentation,
       historyOpen: activePanel === 'history',
-      linkedIssuesState,
     };
   }
 
@@ -491,7 +468,7 @@ async function mainAsyncLocal() {
       mutation: refreshOptions.mutation || {kind: 'issueChanged'},
       requirements: {
         history: shouldKeepHistoryOpen,
-        linkedIssues: !!popupState.linkedIssuesState?.open,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
         pullRequests: showPullRequests,
       },
     });
@@ -581,6 +558,11 @@ async function mainAsyncLocal() {
     loadViewer: getCurrentUserInfo,
     normalizeUsers: normalizeWatcherUsers,
   });
+  const linkedIssueLifecycle = createLinkedIssueLifecycle({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+  });
 
   const popupSurface = createBrowserPopupSurface({
     async commitCurrent(frame, context) {
@@ -602,6 +584,7 @@ async function mainAsyncLocal() {
         quickActionView: frame.quickActions,
         watcherView: frame.watchers,
         historyView: frame.history,
+        linkedIssueView: frame.linkedIssues,
       }, frame.presentation);
       await popupRenderer.render(popupState, context);
     },
@@ -625,7 +608,7 @@ async function mainAsyncLocal() {
         descriptionEditState: createDescriptionEditState(issueData),
         watcherView: frame.watchers || {},
         historyView: frame.history || {},
-        linkedIssuesState: emptyLinkedIssuesState(),
+        linkedIssueView: frame.linkedIssues || {},
         timeTrackingEditState: createTimeTrackingEditState(issueData),
       }, frame.presentation);
       if (!context.isCurrent()) return;
@@ -646,6 +629,7 @@ async function mainAsyncLocal() {
     comments: commentLifecycle,
     quickActions: popupQuickActions,
     watchers: watcherLifecycle,
+    linkedIssues: linkedIssueLifecycle,
     surface: popupSurface,
   });
 
@@ -2710,361 +2694,6 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
   });
-  function buildNextLinkedIssuesState(currentState = emptyLinkedIssuesState(), changes = {}) {
-    return {
-      ...emptyLinkedIssuesState(),
-      ...currentState,
-      ...changes,
-    };
-  }
-
-  async function openLinkedIssuesPanel() {
-    if (!popupState?.issueData?.key) {
-      return;
-    }
-    const issueKey = popupState.issueData.key;
-    popupState = {
-      ...popupState,
-      linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
-        loading: true,
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    };
-    const opened = await popupSession.dispatch({type: 'open-panel', panel: 'linkedIssues'});
-    if (opened.presentation?.activePanel !== 'linkedIssues' || popupState?.issueData?.key !== issueKey) return;
-
-    const [linkTypesResult, detailsResult] = await Promise.allSettled([
-      getIssueLinkTypes(issueKey),
-      getLinkedIssueDetails(popupState.issueData),
-    ]);
-    if (!popupState?.linkedIssuesState?.open || popupState.issueData?.key !== issueKey) {
-      return;
-    }
-    const linkTypes = linkTypesResult.status === 'fulfilled' ? linkTypesResult.value : [];
-    const relationshipOptions = buildRelationshipOptions(linkTypes);
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        loading: false,
-        linkTypes,
-        relationshipId: currentState.linkedIssuesState?.relationshipId || relationshipOptions[0]?.id || '',
-        issueDetailsByKey: detailsResult.status === 'fulfilled' ? detailsResult.value : {},
-        errorMessage: linkTypesResult.status === 'rejected' ? buildEditFieldError(linkTypesResult.reason) : '',
-        focusSearch: true,
-      }),
-    }));
-  }
-
-  function closeLinkedIssuesPanel() {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    if (linkedIssuesSearchTimeoutId) {
-      clearTimeout(linkedIssuesSearchTimeoutId);
-      linkedIssuesSearchTimeoutId = null;
-    }
-    popupState = {
-      ...popupState,
-      linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
-        loading: false,
-        errorMessage: '',
-        feedbackMessage: '',
-        searchValue: '',
-        searchLoading: false,
-        searchRequestId: (popupState.linkedIssuesState?.searchRequestId || 0) + 1,
-        searchResults: [],
-        selectedIssues: [],
-        pendingAddKeys: [],
-        pendingRemoveIds: [],
-        confirmingRemoveId: '',
-        focusSearch: false,
-      }),
-    };
-    popupSession.dispatch({type: 'close-panel', panel: 'linkedIssues'}).catch(() => {});
-  }
-
-  async function runLinkedIssuesSearch(query, requestId) {
-    try {
-      const excludedKeys = [
-        ...getLinkedIssueKeys(popupState?.issueData),
-        ...(popupState?.linkedIssuesState?.selectedIssues || []).map(issue => issue.key),
-      ];
-      const results = await searchIssueLinkCandidates(query, popupState.issueData, excludedKeys);
-      if (!popupState?.linkedIssuesState?.open || popupState.linkedIssuesState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-          searchLoading: false,
-          searchResults: results,
-          errorMessage: '',
-          focusSearch: true,
-        }),
-      }));
-    } catch (error) {
-      if (!popupState?.linkedIssuesState?.open || popupState.linkedIssuesState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-          searchLoading: false,
-          searchResults: [],
-          errorMessage: buildEditFieldError(error),
-          focusSearch: true,
-        }),
-      }));
-    }
-  }
-
-  function updateLinkedIssuesSearch(nextValue, selectionStart, selectionEnd) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    if (linkedIssuesSearchTimeoutId) {
-      clearTimeout(linkedIssuesSearchTimeoutId);
-      linkedIssuesSearchTimeoutId = null;
-    }
-    const searchValue = String(nextValue || '');
-    const shouldSearch = searchValue.trim().length >= 2;
-    const searchRequestId = popupState.linkedIssuesState.searchRequestId + 1;
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        searchValue,
-        searchSelectionStart: Number.isInteger(selectionStart) ? selectionStart : searchValue.length,
-        searchSelectionEnd: Number.isInteger(selectionEnd) ? selectionEnd : searchValue.length,
-        searchLoading: shouldSearch,
-        searchRequestId,
-        searchResults: [],
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    })).then(() => {
-      if (!shouldSearch) {
-        return;
-      }
-      linkedIssuesSearchTimeoutId = setTimeout(() => {
-        linkedIssuesSearchTimeoutId = null;
-        runLinkedIssuesSearch(searchValue, searchRequestId).catch(() => {});
-      }, 180);
-    }).catch(() => {});
-  }
-
-  function selectLinkedIssueCandidate(issueKey) {
-    const linkedState = popupState?.linkedIssuesState;
-    if (!linkedState?.open) {
-      return;
-    }
-    const issue = (linkedState.searchResults || []).find(candidate => candidate.key === issueKey);
-    if (!issue || (linkedState.selectedIssues || []).some(candidate => candidate.key === issue.key)) {
-      return;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        selectedIssues: [...(currentState.linkedIssuesState?.selectedIssues || []), issue],
-        searchValue: '',
-        searchLoading: false,
-        searchResults: [],
-        errorMessage: '',
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-  }
-
-  function selectLinkedIssueKeys(issueKeys) {
-    const linkedState = popupState?.linkedIssuesState;
-    if (!linkedState?.open) {
-      return false;
-    }
-    const excludedKeys = new Set([
-      String(popupState.issueData?.key || '').toUpperCase(),
-      ...getLinkedIssueKeys(popupState.issueData),
-      ...(linkedState.selectedIssues || []).map(issue => issue.key),
-    ]);
-    const nextIssues = (issueKeys || [])
-      .filter(issueKey => !excludedKeys.has(issueKey))
-      .map(issueKey => ({key: issueKey, summary: issueKey}));
-    if (!nextIssues.length) {
-      return false;
-    }
-    if (linkedIssuesSearchTimeoutId) {
-      clearTimeout(linkedIssuesSearchTimeoutId);
-      linkedIssuesSearchTimeoutId = null;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        selectedIssues: [...(currentState.linkedIssuesState?.selectedIssues || []), ...nextIssues],
-        searchValue: '',
-        searchLoading: false,
-        searchRequestId: (currentState.linkedIssuesState?.searchRequestId || 0) + 1,
-        searchResults: [],
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-    return true;
-  }
-
-  function commitLinkedIssueInput(value, force = false) {
-    const issueKeys = parseLinkedIssueKeys(value);
-    const hasKeyDelimiter = /[,;\n]/.test(String(value || ''));
-    if (!issueKeys.length || (!force && issueKeys.length < 2 && !hasKeyDelimiter)) {
-      return false;
-    }
-    return selectLinkedIssueKeys(issueKeys);
-  }
-
-  function removeLinkedIssueToken(issueKey) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        selectedIssues: (currentState.linkedIssuesState?.selectedIssues || []).filter(issue => issue.key !== issueKey),
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-  }
-
-  async function refreshLinkedIssuesAfterMutation(stateChanges = {}) {
-    const issueKey = popupState?.issueData?.key;
-    if (!issueKey) {
-      return;
-    }
-    await refreshPopupIssueState('', {mutation: {kind: 'linksChanged'}});
-    if (!popupState?.issueData || popupState.issueData.key !== issueKey) {
-      return;
-    }
-    const linkedSection = popupState.issueSnapshot?.sections?.linkedIssues;
-    const issueDetailsByKey = linkedSection?.detailsByKey || {};
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        loading: false,
-        issueDetailsByKey,
-        pendingAddKeys: [],
-        pendingRemoveIds: [],
-        confirmingRemoveId: '',
-        focusSearch: false,
-        ...stateChanges,
-      }),
-    }));
-  }
-
-  async function addSelectedLinkedIssues() {
-    const linkedState = popupState?.linkedIssuesState;
-    const issueKey = popupState?.issueData?.key;
-    if (!issueKey || !linkedState?.open || !(linkedState.selectedIssues || []).length || linkedState.pendingAddKeys?.length) {
-      return;
-    }
-    const relationship = buildRelationshipOptions(linkedState.linkTypes)
-      .find(option => option.id === linkedState.relationshipId);
-    if (!relationship) {
-      return;
-    }
-    const selectedIssues = linkedState.selectedIssues.slice();
-    const pendingAddKeys = selectedIssues.map(issue => issue.key);
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        pendingAddKeys,
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: false,
-      }),
-    }));
-
-    const settled = await Promise.allSettled(selectedIssues.map(issue => {
-      const payload = buildIssueLinkCreatePayload(issueKey, relationship, issue.key);
-      return requestJson('POST', `${INSTANCE_URL}rest/api/2/issueLink`, payload);
-    }));
-    const succeeded = selectedIssues.filter((issue, index) => settled[index].status === 'fulfilled');
-    const failed = selectedIssues.filter((issue, index) => settled[index].status === 'rejected');
-    const firstFailure = settled.find(result => result.status === 'rejected');
-    const feedbackMessage = succeeded.length
-      ? `${succeeded.length} linked issue${succeeded.length === 1 ? '' : 's'} added.`
-      : '';
-    const errorMessage = failed.length
-      ? `Could not link ${failed.map(issue => issue.key).join(', ')}. ${buildEditFieldError(firstFailure.reason)}`
-      : '';
-    if (succeeded.length) {
-      await refreshLinkedIssuesAfterMutation({
-        selectedIssues: failed,
-        errorMessage,
-        feedbackMessage,
-      });
-      return;
-    }
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        pendingAddKeys: [],
-        errorMessage,
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    }));
-  }
-
-  function setLinkedIssueRemoveConfirmation(linkId) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        confirmingRemoveId: linkId,
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: false,
-      }),
-    })).catch(() => {});
-  }
-
-  async function confirmLinkedIssueRemoval(linkId) {
-    const linkedState = popupState?.linkedIssuesState;
-    if (!linkedState?.open || linkedState.pendingRemoveIds?.includes(linkId)) {
-      return;
-    }
-    const link = (popupState.issueData?.fields?.issuelinks || []).find(candidate => String(candidate?.id || '') === linkId);
-    const linkedIssueKey = String((link?.outwardIssue || link?.inwardIssue)?.key || 'linked issue');
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        pendingRemoveIds: [...new Set([...(currentState.linkedIssuesState?.pendingRemoveIds || []), linkId])],
-        confirmingRemoveId: '',
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: false,
-      }),
-    }));
-    try {
-      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issueLink/${encodeURIComponent(linkId)}`);
-      await refreshLinkedIssuesAfterMutation({
-        feedbackMessage: `Link to ${linkedIssueKey} removed.`,
-        errorMessage: '',
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-          pendingRemoveIds: (currentState.linkedIssuesState?.pendingRemoveIds || []).filter(id => id !== linkId),
-          errorMessage: buildEditFieldError(error),
-          feedbackMessage: '',
-          focusSearch: false,
-        }),
-      }));
-    }
-  }
   // ── Field Editing ─────────────────────────────────────────
   async function handleQuickAction(actionKey) {
     if (!popupState?.issueData || popupQuickActions.view().loadingKey) return;
@@ -3073,7 +2702,7 @@ async function mainAsyncLocal() {
       actionKey,
       requirements: {
         history: !!popupState.historyOpen,
-        linkedIssues: !!popupState.linkedIssuesState?.open,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
         pullRequests: showPullRequests,
         watchers: !!watcherLifecycle.view().open,
       },
@@ -3099,7 +2728,7 @@ async function mainAsyncLocal() {
       requirements: {
         children: showChildren,
         history: !!popupState.historyOpen,
-        linkedIssues: !!popupState.linkedIssuesState?.open,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
         pullRequests: showPullRequests,
         reactions: true,
         watchers: !!watcherLifecycle.view().open,
@@ -3346,17 +2975,26 @@ async function mainAsyncLocal() {
         ...intent,
         requirements: {
           history: !!popupState?.historyOpen,
-          linkedIssues: !!popupState?.linkedIssuesState?.open,
+          linkedIssues: !!linkedIssueLifecycle.view().open,
           pullRequests: showPullRequests,
           watchers: true,
         },
       });
     }
-    if (intent.type === 'toggle-linkedIssues') {
-      if (popupState?.linkedIssuesState?.open) return closeLinkedIssuesPanel();
-      return openLinkedIssuesPanel();
+    if (['toggle-linkedIssues', 'close-linkedIssues', 'dismiss-linkedIssues'].includes(intent.type)) {
+      return popupSession.dispatch(intent);
     }
-    if (intent.type === 'close-linkedIssues' || intent.type === 'dismiss-linkedIssues') return closeLinkedIssuesPanel();
+    if (intent.type.startsWith('linked-')) {
+      return popupSession.dispatch({
+        ...intent,
+        requirements: {
+          history: !!popupState?.historyOpen,
+          linkedIssues: true,
+          pullRequests: showPullRequests,
+          watchers: !!watcherLifecycle.view().open,
+        },
+      });
+    }
     if (['toggle-history', 'close-history', 'dismiss-history'].includes(intent.type)) {
       return popupSession.dispatch(intent);
     }
@@ -3376,6 +3014,7 @@ async function mainAsyncLocal() {
     if (intent.type === 'escape') {
       if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
       if (popupState?.historyOpen) return popupSession.dispatch({type: 'close-history'});
+      if (linkedIssueLifecycle.view().open) return popupSession.dispatch({type: 'close-linkedIssues'});
       if (popupState?.descriptionEditState?.open) return cancelDescriptionEdit();
       const outcome = await hideContainer();
       passiveCancel(200);
@@ -3389,87 +3028,6 @@ async function mainAsyncLocal() {
     emit: handlePopupPresentationIntent,
   });
   popupEvents.install();
-
-  $(document.body).on('change', '._JX_linked_issues_type_select', function (e) {
-    e.stopPropagation();
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        relationshipId: e.currentTarget.value,
-        feedbackMessage: '',
-        errorMessage: '',
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-  });
-
-  $(document.body).on('input', '._JX_linked_issues_search_input', function (e) {
-    e.stopImmediatePropagation();
-    if (commitLinkedIssueInput(e.currentTarget.value)) {
-      return;
-    }
-    updateLinkedIssuesSearch(
-      e.currentTarget.value,
-      e.currentTarget.selectionStart,
-      e.currentTarget.selectionEnd
-    );
-  });
-
-  $(document.body).on('keydown', '._JX_linked_issues_search_input', function (e) {
-    e.stopImmediatePropagation();
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      closeLinkedIssuesPanel();
-      return;
-    }
-    if (e.key === 'Enter' && popupState?.linkedIssuesState?.searchResults?.length) {
-      e.preventDefault();
-      if (commitLinkedIssueInput(e.currentTarget.value, true)) {
-        return;
-      }
-      selectLinkedIssueCandidate(popupState.linkedIssuesState.searchResults[0].key);
-      return;
-    }
-    if (e.key === 'Enter' && commitLinkedIssueInput(e.currentTarget.value, true)) {
-      e.preventDefault();
-    }
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_search_result', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    selectLinkedIssueCandidate(e.currentTarget.getAttribute('data-issue-key') || '');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_token_remove', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    removeLinkedIssueToken(e.currentTarget.getAttribute('data-issue-key') || '');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_add', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    addSelectedLinkedIssues().catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_remove', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    setLinkedIssueRemoveConfirmation(e.currentTarget.getAttribute('data-link-id') || '');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_remove_cancel', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setLinkedIssueRemoveConfirmation('');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_remove_confirm', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    confirmLinkedIssueRemoval(e.currentTarget.getAttribute('data-link-id') || '').catch(() => {});
-  });
 
   $(document.body).on('click', '._JX_action_item', function (e) {
     e.preventDefault();

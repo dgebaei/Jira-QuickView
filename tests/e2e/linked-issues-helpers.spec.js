@@ -8,7 +8,7 @@ const {
 
 test('groups both directions of a symmetric relationship together', () => {
   const panel = buildLinkedIssuesPanelView({
-    linkedIssuesState: {
+    linkedIssueView: {
       issueDetailsByKey: {},
       pendingRemoveIds: [],
       selectedIssues: [],

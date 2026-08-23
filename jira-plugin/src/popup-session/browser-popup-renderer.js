@@ -88,10 +88,10 @@ export function createBrowserPopupRenderer({
         start: state.descriptionEditState.selectionStart,
         end: state.descriptionEditState.selectionEnd,
       });
-    } else if (state.linkedIssuesState?.open && state.linkedIssuesState.focusSearch) {
+    } else if (state.linkedIssueView?.open && state.linkedIssueView.focusSearch) {
       restoreSelection(container.find('._JX_linked_issues_search_input')[0], {
-        start: state.linkedIssuesState.searchSelectionStart,
-        end: state.linkedIssuesState.searchSelectionEnd,
+        start: state.linkedIssueView.searchSelectionStart,
+        end: state.linkedIssueView.searchSelectionEnd,
       });
     } else if (state.watcherView?.open && state.watcherView.focusSearch) {
       const input = container.find('._JX_watchers_search_input')[0];

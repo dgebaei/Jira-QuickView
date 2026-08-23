@@ -27,6 +27,29 @@ const PRESENTATION_EVENTS = [
   },
   {selector: '._JX_linked_issues_trigger', intent: () => ({type: 'toggle-linkedIssues'})},
   {selector: '._JX_linked_issues_close', intent: () => ({type: 'close-linkedIssues'})},
+  {
+    event: 'change',
+    selector: '._JX_linked_issues_type_select',
+    intent: element => ({type: 'linked-relationship-changed', relationshipId: element.value || ''}),
+  },
+  {
+    selector: '._JX_linked_issues_search_result',
+    intent: element => ({type: 'linked-select', issueKey: element.getAttribute('data-issue-key') || ''}),
+  },
+  {
+    selector: '._JX_linked_issues_token_remove',
+    intent: element => ({type: 'linked-remove-token', issueKey: element.getAttribute('data-issue-key') || ''}),
+  },
+  {selector: '._JX_linked_issues_add', intent: () => ({type: 'linked-add'})},
+  {
+    selector: '._JX_linked_issues_remove',
+    intent: element => ({type: 'linked-confirm-remove', linkId: element.getAttribute('data-link-id') || ''}),
+  },
+  {selector: '._JX_linked_issues_remove_cancel', intent: () => ({type: 'linked-cancel-remove'})},
+  {
+    selector: '._JX_linked_issues_remove_confirm',
+    intent: element => ({type: 'linked-remove-confirmed', linkId: element.getAttribute('data-link-id') || ''}),
+  },
   {selector: '._JX_history_toggle', intent: () => ({type: 'toggle-history'})},
   {selector: '._JX_history_close', intent: () => ({type: 'close-history'})},
   {
@@ -100,6 +123,25 @@ export function createBrowserPopupEvents({root, emit}) {
       if (!closest('._JX_actions')) publish({type: 'dismiss-actions'});
       if (!closest('._JX_history_flyout, ._JX_history_toggle')) publish({type: 'dismiss-history'});
       if (!closest('._JX_container') && !closest(PRESENTATION_CLICK_SELECTOR)) publish({type: 'dismiss-popup'});
+    });
+    root.on(`input${EVENT_NAMESPACE}`, '._JX_linked_issues_search_input', function (event) {
+      event.stopImmediatePropagation();
+      publish({
+        type: 'linked-input-changed',
+        value: event.currentTarget.value,
+        selectionStart: event.currentTarget.selectionStart,
+        selectionEnd: event.currentTarget.selectionEnd,
+      });
+    });
+    root.on(`keydown${EVENT_NAMESPACE}`, '._JX_linked_issues_search_input', function (event) {
+      event.stopImmediatePropagation();
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        publish({type: 'close-linkedIssues'});
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        publish({type: 'linked-enter', value: event.currentTarget.value});
+      }
     });
     root.on(`keydown${EVENT_NAMESPACE}`, function (event) {
       if (event.key === 'Escape' || event.keyCode === 27) publish({type: 'escape'});

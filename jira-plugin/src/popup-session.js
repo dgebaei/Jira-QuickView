@@ -34,7 +34,7 @@ function mergeIssueSnapshots(previous, next) {
   };
 }
 
-export function createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, surface}) {
+export function createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, linkedIssues, surface}) {
   requireOperation(issueData, 'openIssue');
   requireOperation(fieldEditing, 'attach');
   requireOperation(fieldEditing, 'detach');
@@ -50,6 +50,10 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   requireOperation(watchers, 'detach');
   requireOperation(watchers, 'dispatch');
   requireOperation(watchers, 'view');
+  requireOperation(linkedIssues, 'attach');
+  requireOperation(linkedIssues, 'detach');
+  requireOperation(linkedIssues, 'dispatch');
+  requireOperation(linkedIssues, 'view');
   requireOperation(surface, 'render');
   requireOperation(surface, 'hide');
 
@@ -63,6 +67,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   let sessionSequence = 0;
   let stateRevision = 0;
   let watcherFeedbackTimer = null;
+  let linkedSearchTimer = null;
   let state = {
     activation: '',
     anchor: null,
@@ -107,6 +112,27 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     watcherFeedbackTimer = null;
   }
 
+  function clearLinkedSearchTimer() {
+    if (!linkedSearchTimer) return;
+    clearTimeout(linkedSearchTimer);
+    linkedSearchTimer = null;
+  }
+
+  async function closeCompetingPanels(activePanel) {
+    if (activePanel !== 'watchers' && watchers.view().open) {
+      clearWatcherFeedbackTimer();
+      await watchers.dispatch({type: 'close'});
+    }
+    if (activePanel !== 'linkedIssues' && linkedIssues.view().open) {
+      clearLinkedSearchTimer();
+      await linkedIssues.dispatch({type: 'close'});
+    }
+    if (activePanel !== 'history') {
+      historyRequest += 1;
+      historyLoading = false;
+    }
+  }
+
   async function publish(kind, details = {}) {
     const sessionId = state.sessionId;
     const expectedStateRevision = stateRevision;
@@ -126,6 +152,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       quickActions: quickActions.view(),
       watchers: watchers.view(),
       history: projectHistory(),
+      linkedIssues: linkedIssues.view(),
       ...details,
     };
     const context = {
@@ -144,10 +171,12 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     if (!previous.sessionId) return;
     previous.controller?.abort();
     clearWatcherFeedbackTimer();
+    clearLinkedSearchTimer();
     await fieldEditing.detach({sessionId: previous.sessionId, reason});
     await comments.detach({sessionId: previous.sessionId, reason});
     await quickActions.detach({sessionId: previous.sessionId, reason});
     await watchers.detach({sessionId: previous.sessionId, reason});
+    await linkedIssues.detach({sessionId: previous.sessionId, reason});
   }
 
   async function activate({
@@ -213,6 +242,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     await comments.attach({sessionId, issueSnapshot});
     await quickActions.attach({sessionId, issueSnapshot});
     await watchers.attach({sessionId, issueSnapshot});
+    await linkedIssues.attach({sessionId, issueSnapshot});
     if (!isCurrent(sessionId) || requestId !== activationRequest) {
       return outcome('ignored', {reason: 'superseded'});
     }
@@ -282,6 +312,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       });
       if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
       state = {...state, presentation: transition.presentation};
+      await closeCompetingPanels(opening ? 'history' : '');
       const requestId = ++historyRequest;
       if (!opening) {
         historyLoading = false;
@@ -324,6 +355,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       });
       if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
       state = {...state, presentation: transition.presentation};
+      await closeCompetingPanels(opening ? 'watchers' : '');
       if (!opening) {
         clearWatcherFeedbackTimer();
         await watchers.dispatch({type: 'close'});
@@ -367,6 +399,73 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       }
       return {...rendered, watcherOutcome};
     }
+    if (['toggle-linkedIssues', 'close-linkedIssues', 'dismiss-linkedIssues'].includes(intent.type)) {
+      const opening = intent.type === 'toggle-linkedIssues' && state.presentation.activePanel !== 'linkedIssues';
+      const transition = transitionPopupPresentation(state.presentation, {
+        type: opening ? 'open-panel' : 'close-panel',
+        panel: 'linkedIssues',
+      });
+      if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
+      state = {...state, presentation: transition.presentation};
+      await closeCompetingPanels(opening ? 'linkedIssues' : '');
+      clearLinkedSearchTimer();
+      if (!opening) {
+        await linkedIssues.dispatch({type: 'close'});
+        return scheduleRender(transition.reason);
+      }
+      const sessionId = state.sessionId;
+      const pending = linkedIssues.dispatch({type: 'open'});
+      await scheduleRender('linked-issues-loading');
+      const linkedOutcome = await pending;
+      if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      if (linkedOutcome.issueSnapshot?.core) {
+        state = {...state, snapshot: mergeIssueSnapshots(state.snapshot, linkedOutcome.issueSnapshot)};
+      }
+      const rendered = await scheduleRender(`linked-issues-${linkedOutcome.kind}`);
+      return {...rendered, presentation: state.presentation, linkedOutcome};
+    }
+    const linkedIntentTypes = {
+      'linked-relationship-changed': 'relationshipChanged',
+      'linked-input-changed': 'inputChanged',
+      'linked-enter': 'enterPressed',
+      'linked-select': 'selectCandidate',
+      'linked-remove-token': 'removeToken',
+      'linked-add': 'addSelected',
+      'linked-confirm-remove': 'confirmRemoval',
+      'linked-cancel-remove': 'cancelRemoval',
+      'linked-remove-confirmed': 'removeConfirmed',
+    };
+    if (linkedIntentTypes[intent.type]) {
+      const sessionId = state.sessionId;
+      clearLinkedSearchTimer();
+      const lifecycleIntent = {
+        ...intent,
+        type: linkedIntentTypes[intent.type],
+        requirements: intent.requirements || {},
+      };
+      const pending = linkedIssues.dispatch(lifecycleIntent);
+      if (['linked-add', 'linked-remove-confirmed'].includes(intent.type)) {
+        await scheduleRender(`${intent.type}-pending`);
+      }
+      const linkedOutcome = await pending;
+      if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      if (linkedOutcome.issueSnapshot?.core) {
+        state = {...state, snapshot: mergeIssueSnapshots(state.snapshot, linkedOutcome.issueSnapshot)};
+      }
+      const rendered = await scheduleRender(`${intent.type}-${linkedOutcome.kind}`);
+      if (linkedOutcome.searchAfterMs) {
+        const requestId = linkedOutcome.requestId;
+        linkedSearchTimer = setTimeout(() => {
+          linkedSearchTimer = null;
+          if (!isCurrent(sessionId)) return;
+          linkedIssues.dispatch({type: 'runSearch', requestId}).then(() => {
+            if (isCurrent(sessionId)) return scheduleRender('linked-search-complete');
+            return null;
+          }).catch(() => {});
+        }, linkedOutcome.searchAfterMs);
+      }
+      return {...rendered, linkedOutcome};
+    }
     if (intent.type === 'render') {
       const sessionId = state.sessionId;
       const nextSnapshot = intent.issueSnapshot;
@@ -393,10 +492,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       historyRequest += 1;
       historyLoading = false;
     }
-    if (transition.presentation.activePanel !== 'watchers' && watchers.view().open) {
-      clearWatcherFeedbackTimer();
-      await watchers.dispatch({type: 'close'});
-    }
+    await closeCompetingPanels(transition.presentation.activePanel);
     const rendered = await scheduleRender(transition.reason);
     return {...rendered, presentation: transition.presentation};
   }

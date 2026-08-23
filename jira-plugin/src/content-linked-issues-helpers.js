@@ -1,30 +1,3 @@
-function uniqueBy(values, getKey) {
-  const seen = new Set();
-  return (values || []).filter(value => {
-    const key = getKey(value);
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function stripMarkup(value) {
-  return String(value || '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function issueProjectKey(issue) {
-  return String(issue?.fields?.project?.key || issue?.key || '').split('-')[0].toUpperCase();
-}
-
 function issueKeyOf(value) {
   return String(value?.key || value?.id || '').trim().toUpperCase();
 }
@@ -32,60 +5,6 @@ function issueKeyOf(value) {
 export function parseLinkedIssueKeys(value) {
   const matches = String(value || '').toUpperCase().match(/\b[A-Z][A-Z0-9_]*-\d+\b/g) || [];
   return [...new Set(matches)];
-}
-
-function normalizePickerIssue(issue) {
-  const key = issueKeyOf(issue);
-  const label = stripMarkup(issue?.label || '');
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const labelWithoutKey = label.replace(new RegExp(`^${escapedKey}\\s*[-:–—]?\\s*`, 'i'), '');
-  const summary = stripMarkup(issue?.summaryText || issue?.summary || issue?.fields?.summary || labelWithoutKey || key);
-  return {
-    id: String(issue?.id || key),
-    key,
-    fields: {
-      summary,
-      project: {key: key.split('-')[0]},
-      issuetype: issue?.fields?.issuetype || {},
-      status: issue?.fields?.status || {},
-      assignee: issue?.fields?.assignee || null,
-    },
-  };
-}
-
-function normalizeIssueCandidate(issue) {
-  const key = issueKeyOf(issue);
-  const fields = issue?.fields || {};
-  return {
-    id: String(issue?.id || key),
-    key,
-    summary: String(fields.summary || issue?.summary || key).trim(),
-    projectKey: issueProjectKey(issue),
-    issueTypeIconUrl: fields.issuetype?.iconUrl || '',
-    issueTypeName: fields.issuetype?.name || '',
-    statusText: fields.status?.name || '',
-    assignee: fields.assignee || null,
-  };
-}
-
-function rankCandidate(candidate, normalizedQuery, currentProjectKey) {
-  if (candidate.projectKey === currentProjectKey && candidate.key === normalizedQuery) {
-    return 0;
-  }
-  if (candidate.projectKey === currentProjectKey) {
-    return 1;
-  }
-  if (candidate.key === normalizedQuery) {
-    return 2;
-  }
-  if (candidate.key.startsWith(normalizedQuery)) {
-    return 3;
-  }
-  return 4;
-}
-
-function buildSearchText(candidate) {
-  return `${candidate.key} ${candidate.summary}`.toLowerCase();
 }
 
 export function createEmptyLinkedIssuesState() {
@@ -160,7 +79,7 @@ export function getLinkedIssueKeys(issueData) {
 }
 
 export function buildLinkedIssuesPanelView(state, issueData, options = {}) {
-  const linkedState = state?.linkedIssuesState || createEmptyLinkedIssuesState();
+  const linkedState = state?.linkedIssueView || createEmptyLinkedIssuesState();
   const buildUserView = options?.buildUserView || (user => ({
     avatarUrl: user?.avatarUrls?.['48x48'] || '',
     displayName: user?.displayName || '',
@@ -251,64 +170,5 @@ export function buildLinkedIssuesPanelView(state, issueData, options = {}) {
     hasSelectedIssues: selectedIssues.length > 0,
     addDisabledAttr: !selectedIssues.length || pendingAddKeys.size ? 'disabled' : '',
     addButtonText: pendingAddKeys.size ? 'Linking...' : 'Link',
-  };
-}
-
-export function createContentLinkedIssuesHelpers(options) {
-  const issueDataModule = options?.issueData;
-
-  async function loadLinkedSection(issueKey) {
-    const outcome = await issueDataModule.openIssue({issueKey, requirements: {linkedIssues: true}});
-    const section = outcome.snapshot?.sections?.linkedIssues;
-    if (!section || section.status === 'failed') {
-      throw new Error(section?.failure?.message || outcome.failures?.core?.message || 'Could not load linked issues');
-    }
-    return section;
-  }
-
-  async function getIssueLinkTypes(issueKey) {
-    return (await loadLinkedSection(issueKey)).linkTypes || [];
-  }
-
-  async function searchIssueLinkCandidates(query, issueData, excludedKeys = []) {
-    const normalizedQuery = String(query || '').trim();
-    if (normalizedQuery.length < 2) {
-      return [];
-    }
-    const currentKey = issueKeyOf(issueData);
-    const currentProjectKey = currentKey.split('-')[0];
-    const outcome = await issueDataModule.search({
-      purpose: 'linkedIssue',
-      issueKey: currentKey,
-      query: normalizedQuery,
-      selectedValues: excludedKeys,
-    });
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Issue search failed');
-    }
-    const issues = outcome.items;
-    const excluded = new Set([currentKey, ...(excludedKeys || []).map(value => String(value || '').toUpperCase())]);
-    const loweredQuery = normalizedQuery.toLowerCase();
-    return uniqueBy(issues, issueKeyOf)
-      .map(normalizeIssueCandidate)
-      .filter(candidate => candidate.key && !excluded.has(candidate.key) && buildSearchText(candidate).includes(loweredQuery))
-      .sort((left, right) => {
-        const rankDelta = rankCandidate(left, normalizedQuery.toUpperCase(), currentProjectKey) - rankCandidate(right, normalizedQuery.toUpperCase(), currentProjectKey);
-        if (rankDelta !== 0) {
-          return rankDelta;
-        }
-        return left.key.localeCompare(right.key, undefined, {numeric: true, sensitivity: 'base'});
-      })
-      .slice(0, 20);
-  }
-
-  async function getLinkedIssueDetails(issueData) {
-    return (await loadLinkedSection(issueKeyOf(issueData))).detailsByKey || {};
-  }
-
-  return {
-    getIssueLinkTypes,
-    getLinkedIssueDetails,
-    searchIssueLinkCandidates,
   };
 }

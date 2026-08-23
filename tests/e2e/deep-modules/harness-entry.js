@@ -1,6 +1,7 @@
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
 import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
+import {createLinkedIssueLifecycle} from 'src/linked-issue-lifecycle';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {createWatcherLifecycle} from 'src/watcher-lifecycle';
 import {createPopupSession} from 'src/popup-session';
@@ -23,6 +24,7 @@ window.JiraQuickViewDeepModules = {
   createDeferred,
   createFixturePopupSurface,
   createJiraFieldEditing,
+  createLinkedIssueLifecycle,
   createMockJiraAdapter,
   createPopupSession,
   createPopupQuickActions,
