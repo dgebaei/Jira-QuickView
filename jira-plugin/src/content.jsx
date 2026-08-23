@@ -567,6 +567,19 @@ async function mainAsyncLocal() {
   let descriptionStatusTimeoutId = null;
   let popupState = null;
   let popupRenderSequence = 0;
+  function buildPopupInteractionReset(overrides = {}) {
+    return {
+      actionLoadingKey: '',
+      actionError: '',
+      lastActionSuccess: '',
+      actionsOpen: false,
+      historyOpen: false,
+      changelogData: null,
+      changelogLoading: false,
+      editState: null,
+      ...overrides,
+    };
+  }
   const {
     buildQuickActionError,
     buildQuickActionViewData,
@@ -597,13 +610,69 @@ async function mainAsyncLocal() {
     requestJson,
   });
 
+  const popupSurface = createBrowserPopupSurface({
+    async commitCurrent(frame, context) {
+      if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
+      await commitPopupStateToDom(popupState, context);
+    },
+    async commitVisible(frame, context) {
+      if (!context.isCurrent()) return;
+      const legacySnapshot = snapshotToLegacyPopupState(frame.issueSnapshot);
+      const issueData = legacySnapshot.issueData;
+      let quickActions = [];
+      try {
+        quickActions = await resolveQuickActions(issueData);
+      } catch (error) {
+        quickActions = [];
+      }
+      if (!context.isCurrent()) return;
+      const initialPopupState = {
+        key: frame.issueKey,
+        issueSnapshot: legacySnapshot.issueSnapshot,
+        issueData,
+        children: legacySnapshot.children,
+        childrenJql: legacySnapshot.childrenJql,
+        childrenError: legacySnapshot.childrenError,
+        childrenSort: DEFAULT_CHILDREN_SORT,
+        commentSortOrder: commentSortOrderPreference,
+        pullRequestsSort: DEFAULT_PULL_REQUESTS_SORT,
+        pullRequests: legacySnapshot.pullRequests,
+        pointerX: Number(frame.anchor?.x) || 0,
+        pointerY: Number(frame.anchor?.y) || 0,
+        quickActions,
+        commentReactionState: legacySnapshot.commentReactionState,
+        ...buildPopupInteractionReset(),
+        descriptionEditState: createDescriptionEditState(issueData),
+        watchersState: emptyWatchersState(),
+        linkedIssuesState: emptyLinkedIssuesState(),
+        timeTrackingEditState: createTimeTrackingEditState(issueData),
+      };
+      if (!context.isCurrent()) return;
+      popupState = initialPopupState;
+      await commitPopupStateToDom(initialPopupState, context);
+    },
+    async hidePopup() {
+      await clearPopupSurface();
+    },
+    reportFailure(failure) {
+      notifyJiraConnectionFailure(INSTANCE_URL, issueDataError(failure, 'Could not load issue'));
+      lastHoveredKey = '';
+    },
+  });
+  const popupSession = createPopupSession({
+    issueData: quickViewIssueData,
+    fieldEditing: jiraFieldEditing,
+    comments: commentLifecycle,
+    surface: popupSurface,
+  });
+
   const {
     buildNextWatchersState,
-    buildPopupInteractionReset,
     handleDraftAttachmentUploaded,
     refreshPopupIssueState,
     renderUpdatedPopupState,
   } = createContentPopupStateHelpers({
+    buildPopupInteractionReset,
     clearActionNoticeTimer,
     createTimeTrackingEditState,
     emptyWatchersState,
@@ -657,65 +726,16 @@ async function mainAsyncLocal() {
     keepContainerVisible,
   });
 
-  const popupSurface = createBrowserPopupSurface({
-    async commitCurrent(frame, context) {
-      if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
-      await renderIssuePopup(popupState, context);
-    },
-    async commitVisible(frame, context) {
-      if (!context.isCurrent()) return;
-      const legacySnapshot = snapshotToLegacyPopupState(frame.issueSnapshot);
-      const issueData = legacySnapshot.issueData;
-      let quickActions = [];
-      try {
-        quickActions = await resolveQuickActions(issueData);
-      } catch (error) {
-        quickActions = [];
-      }
-      if (!context.isCurrent()) return;
-      await renderUpdatedPopupState({
-        key: frame.issueKey,
-        issueSnapshot: legacySnapshot.issueSnapshot,
-        issueData,
-        children: legacySnapshot.children,
-        childrenJql: legacySnapshot.childrenJql,
-        childrenError: legacySnapshot.childrenError,
-        childrenSort: DEFAULT_CHILDREN_SORT,
-        commentSortOrder: commentSortOrderPreference,
-        pullRequestsSort: DEFAULT_PULL_REQUESTS_SORT,
-        pullRequests: legacySnapshot.pullRequests,
-        pointerX: Number(frame.anchor?.x) || 0,
-        pointerY: Number(frame.anchor?.y) || 0,
-        quickActions,
-        commentReactionState: legacySnapshot.commentReactionState,
-        ...buildPopupInteractionReset(),
-        descriptionEditState: createDescriptionEditState(issueData),
-        watchersState: emptyWatchersState(),
-        linkedIssuesState: emptyLinkedIssuesState(),
-        timeTrackingEditState: createTimeTrackingEditState(issueData),
-      }, context);
-    },
-    async hidePopup() {
-      await clearPopupSurface();
-    },
-    reportFailure(failure) {
-      notifyJiraConnectionFailure(INSTANCE_URL, issueDataError(failure, 'Could not load issue'));
-      lastHoveredKey = '';
-    },
-  });
-  const popupSession = createPopupSession({
-    issueData: quickViewIssueData,
-    fieldEditing: jiraFieldEditing,
-    comments: commentLifecycle,
-    surface: popupSurface,
-  });
-
   function currentPopupSessionId() {
     return popupSession.view().sessionId;
   }
 
   function renderCurrentPopup(reason = 'feature-changed') {
     return popupSession.dispatch({type: 'render', reason, issueSnapshot: popupState?.issueSnapshot});
+  }
+
+  function renderIssuePopup() {
+    return renderCurrentPopup('popup-state-changed');
   }
 
 
@@ -2991,7 +3011,7 @@ async function mainAsyncLocal() {
     clearHideTimeout: () => clearTimeout(hideTimeOut),
     pinContainer,
   });
-  async function renderIssuePopup(state, renderOptions = {}) {
+  async function commitPopupStateToDom(state, renderOptions = {}) {
     if (!state?.issueData) {
       return;
     }

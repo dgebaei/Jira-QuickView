@@ -1,5 +1,6 @@
 export function createContentPopupStateHelpers(options) {
   const clearActionNoticeTimer = options?.clearActionNoticeTimer;
+  const buildPopupInteractionReset = options?.buildPopupInteractionReset;
   const createTimeTrackingEditState = options?.createTimeTrackingEditState;
   const emptyWatchersState = options?.emptyWatchersState;
   const getPopupState = options?.getPopupState;
@@ -12,20 +13,6 @@ export function createContentPopupStateHelpers(options) {
   const setPopupState = options?.setPopupState;
   const showPullRequests = options?.showPullRequests;
   const snackBar = options?.snackBar;
-
-  function buildPopupInteractionReset(overrides = {}) {
-    return {
-      actionLoadingKey: '',
-      actionError: '',
-      lastActionSuccess: '',
-      actionsOpen: false,
-      historyOpen: false,
-      changelogData: null,
-      changelogLoading: false,
-      editState: null,
-      ...overrides,
-    };
-  }
 
   function buildNextWatchersState(currentState = emptyWatchersState(), changes = {}) {
     return {
@@ -206,7 +193,6 @@ export function createContentPopupStateHelpers(options) {
 
   return {
     buildNextWatchersState,
-    buildPopupInteractionReset,
     handleDraftAttachmentUploaded,
     refreshPopupIssueState,
     renderUpdatedPopupState,
