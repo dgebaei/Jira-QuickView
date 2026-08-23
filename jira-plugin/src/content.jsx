@@ -412,17 +412,6 @@ async function mainAsyncLocal() {
     return error;
   }
 
-  async function getIssueChangelog(issueKey) {
-    const outcome = await quickViewIssueData.openIssue({
-      issueKey,
-      requirements: {history: true},
-    });
-    const history = outcome.snapshot?.sections?.history;
-    if (!history || history.status === 'failed') {
-      throw issueDataError(history?.failure || outcome.failures?.core, 'Could not load issue history');
-    }
-    return history.data || {histories: []};
-  }
   const historyPresentation = createContentHistoryHelpers({
     areSameJiraUser,
     buildAttachmentImagesByName,
@@ -454,8 +443,6 @@ async function mainAsyncLocal() {
   function buildPopupInteractionReset(overrides = {}) {
     return {
       lastActionSuccess: '',
-      changelogData: null,
-      changelogLoading: false,
       ...overrides,
     };
   }
@@ -515,10 +502,6 @@ async function mainAsyncLocal() {
       throw error;
     }
     const refreshedIssueData = issueOutcome.snapshot.core;
-    const historySection = issueOutcome.snapshot.sections?.history;
-    const refreshedChangelog = shouldKeepHistoryOpen && ['ready', 'empty'].includes(historySection?.status)
-      ? historySection.data
-      : {histories: []};
     const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
     const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
     if (!popupState || popupState.key !== popupKey) return;
@@ -530,8 +513,6 @@ async function mainAsyncLocal() {
       pullRequests: refreshedPullRequests,
       ...buildPopupInteractionReset({
         lastActionSuccess: showSnackBar ? '' : successMessage,
-        changelogData: shouldKeepHistoryOpen ? (refreshedChangelog || {histories: []}) : null,
-        changelogLoading: false,
       }),
       timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
     }));
@@ -551,10 +532,6 @@ async function mainAsyncLocal() {
       mutation: {kind: 'attachmentChanged'},
       requirements: {history: !!attachmentPopupState.historyOpen},
     });
-    const historySection = issueOutcome.snapshot?.sections?.history;
-    const refreshedChangelog = attachmentPopupState.historyOpen && ['ready', 'empty'].includes(historySection?.status)
-      ? historySection.data
-      : attachmentPopupState.changelogData;
     if (!popupState || popupState.key !== popupKey) return;
     await renderUpdatedPopupState(currentState => {
       const existingAttachments = Array.isArray(currentState?.issueData?.fields?.attachment)
@@ -576,8 +553,6 @@ async function mainAsyncLocal() {
           ...currentState.issueData,
           fields: {...currentState.issueData.fields, attachment: nextAttachments},
         },
-        changelogData: refreshedChangelog || currentState.changelogData,
-        changelogLoading: false,
       };
     });
   }
@@ -626,6 +601,7 @@ async function mainAsyncLocal() {
         } : {}),
         quickActionView: frame.quickActions,
         watcherView: frame.watchers,
+        historyView: frame.history,
       }, frame.presentation);
       await popupRenderer.render(popupState, context);
     },
@@ -648,6 +624,7 @@ async function mainAsyncLocal() {
         ...buildPopupInteractionReset(),
         descriptionEditState: createDescriptionEditState(issueData),
         watcherView: frame.watchers || {},
+        historyView: frame.history || {},
         linkedIssuesState: emptyLinkedIssuesState(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
       }, frame.presentation);
@@ -1690,15 +1667,10 @@ async function mainAsyncLocal() {
       outcome.sessionId === currentPopupSessionId();
     if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
       if (outcome.refreshedSnapshot?.core) {
-        const historySection = outcome.refreshedSnapshot.sections?.history;
         popupState = {
           ...popupState,
           issueSnapshot: outcome.refreshedSnapshot,
           issueData: outcome.refreshedSnapshot.core,
-          changelogData: popupState.historyOpen && ['ready', 'empty', 'staleRetained'].includes(historySection?.status)
-            ? historySection.data
-            : popupState.changelogData,
-          changelogLoading: false,
           lastActionSuccess: outcome.notice,
         };
       }
@@ -1737,15 +1709,10 @@ async function mainAsyncLocal() {
     const isCurrent = popupState?.key === outcome.issueKey && outcome.sessionId === currentPopupSessionId();
     if (!isCurrent) return;
     if (outcome.kind === 'mutationCommitted' && outcome.refreshedSnapshot?.core) {
-      const historySection = outcome.refreshedSnapshot.sections?.history;
       popupState = {
         ...popupState,
         issueSnapshot: outcome.refreshedSnapshot,
         issueData: outcome.refreshedSnapshot.core,
-        changelogData: popupState.historyOpen && ['ready', 'empty', 'staleRetained'].includes(historySection?.status)
-          ? historySection.data
-          : popupState.changelogData,
-        changelogLoading: false,
         lastActionSuccess: outcome.notice,
       };
     }
@@ -2743,32 +2710,6 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
   });
-  function closeHistoryFlyout() {
-    if (!popupState?.historyOpen) {
-      return;
-    }
-    popupSession.dispatch({type: 'close-panel', panel: 'history'}).catch(() => {});
-  }
-
-  async function toggleHistoryFlyout() {
-    if (!popupState?.issueData?.key) return;
-    const issueKey = popupState.issueData.key;
-    const opening = !popupState.historyOpen;
-    const shouldLoad = opening && !popupState.changelogData && !popupState.changelogLoading;
-    if (shouldLoad) popupState = {...popupState, changelogLoading: true};
-    const outcome = await popupSession.dispatch({type: 'toggle-panel', panel: 'history'});
-    if (outcome.presentation?.activePanel !== 'history' || !shouldLoad) return;
-    try {
-      const changelog = await getIssueChangelog(issueKey);
-      if (!popupState || popupState.key !== issueKey) return;
-      popupState = {...popupState, changelogData: changelog, changelogLoading: false};
-    } catch (error) {
-      if (!popupState || popupState.key !== issueKey) return;
-      popupState = {...popupState, changelogData: {histories: []}, changelogLoading: false};
-    }
-    if (popupState.historyOpen) await renderCurrentPopup('history-loaded');
-  }
-
   function buildNextLinkedIssuesState(currentState = emptyLinkedIssuesState(), changes = {}) {
     return {
       ...emptyLinkedIssuesState(),
@@ -3416,8 +3357,9 @@ async function mainAsyncLocal() {
       return openLinkedIssuesPanel();
     }
     if (intent.type === 'close-linkedIssues' || intent.type === 'dismiss-linkedIssues') return closeLinkedIssuesPanel();
-    if (intent.type === 'toggle-history') return toggleHistoryFlyout();
-    if (intent.type === 'close-history' || intent.type === 'dismiss-history') return closeHistoryFlyout();
+    if (['toggle-history', 'close-history', 'dismiss-history'].includes(intent.type)) {
+      return popupSession.dispatch(intent);
+    }
     if (intent.type === 'dismiss-actions') return popupSession.dispatch({type: 'close-actions'});
     if (intent.type === 'pin') return popupShell.dispatch({type: 'pin', announce: true});
     if (intent.type === 'pin-after-drag') return popupShell.dispatch({type: 'pin', announce: true});
@@ -3433,7 +3375,7 @@ async function mainAsyncLocal() {
     }
     if (intent.type === 'escape') {
       if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
-      if (popupState?.historyOpen) return closeHistoryFlyout();
+      if (popupState?.historyOpen) return popupSession.dispatch({type: 'close-history'});
       if (popupState?.descriptionEditState?.open) return cancelDescriptionEdit();
       const outcome = await hideContainer();
       passiveCancel(200);

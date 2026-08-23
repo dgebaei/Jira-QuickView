@@ -55,6 +55,9 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
 
   let activationRequest = 0;
   let disposed = false;
+  let historyLoading = false;
+  let historyFailure = null;
+  let historyRequest = 0;
   let renderRevision = 0;
   let scheduledRender = null;
   let sessionSequence = 0;
@@ -88,6 +91,16 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     };
   }
 
+  function projectHistory() {
+    const section = state.snapshot?.sections?.history;
+    return {
+      data: ['ready', 'empty', 'staleRetained'].includes(section?.status) ? section.data : {histories: []},
+      failure: section?.failure || historyFailure,
+      loading: historyLoading,
+      status: section?.status || 'unavailable',
+    };
+  }
+
   function clearWatcherFeedbackTimer() {
     if (!watcherFeedbackTimer) return;
     clearTimeout(watcherFeedbackTimer);
@@ -112,6 +125,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       comments: comments.view(),
       quickActions: quickActions.view(),
       watchers: watchers.view(),
+      history: projectHistory(),
       ...details,
     };
     const context = {
@@ -148,6 +162,9 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     if (!issueKey) return outcome('ignored', {reason: 'missing-issue-key'});
 
     const requestId = ++activationRequest;
+    historyRequest += 1;
+    historyLoading = false;
+    historyFailure = null;
     const previous = state;
     previous.controller?.abort();
     await detachFeatures(previous, 'issue-switch');
@@ -210,6 +227,9 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
 
   async function close({reason = 'explicit'} = {}) {
     activationRequest += 1;
+    historyRequest += 1;
+    historyLoading = false;
+    historyFailure = null;
     const previous = state;
     if (!previous.sessionId) return outcome('hidden');
     previous.controller?.abort();
@@ -254,6 +274,48 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
 
   async function dispatch(intent = {}) {
     if (disposed || !state.sessionId) return outcome('ignored', {reason: 'inactive'});
+    if (['toggle-history', 'close-history', 'dismiss-history'].includes(intent.type)) {
+      const opening = intent.type === 'toggle-history' && state.presentation.activePanel !== 'history';
+      const transition = transitionPopupPresentation(state.presentation, {
+        type: opening ? 'open-panel' : 'close-panel',
+        panel: 'history',
+      });
+      if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
+      state = {...state, presentation: transition.presentation};
+      const requestId = ++historyRequest;
+      if (!opening) {
+        historyLoading = false;
+        return scheduleRender(transition.reason);
+      }
+      const section = state.snapshot?.sections?.history;
+      if (['ready', 'empty', 'staleRetained'].includes(section?.status)) {
+        return scheduleRender(transition.reason);
+      }
+      const sessionId = state.sessionId;
+      historyLoading = true;
+      historyFailure = null;
+      await scheduleRender('history-loading');
+      let acquired;
+      try {
+        acquired = await issueData.openIssue({
+          issueKey: state.issueKey,
+          requirements: {history: true},
+          signal: state.controller?.signal,
+        });
+      } catch (error) {
+        acquired = {snapshot: null, failures: {history: normalizeFailure(error, 'Could not load issue history')}};
+      }
+      if (!isCurrent(sessionId) || requestId !== historyRequest || state.presentation.activePanel !== 'history') {
+        return outcome('ignored', {reason: 'superseded'});
+      }
+      historyLoading = false;
+      historyFailure = acquired.snapshot?.sections?.history?.failure || acquired.failures?.history || acquired.failures?.core || null;
+      if (acquired.snapshot?.core) state = {...state, snapshot: mergeIssueSnapshots(state.snapshot, acquired.snapshot)};
+      const rendered = await scheduleRender(historyFailure
+        ? 'history-failed'
+        : 'history-loaded');
+      return {...rendered, presentation: state.presentation};
+    }
     if (['toggle-watchers', 'close-watchers', 'dismiss-watchers'].includes(intent.type)) {
       const opening = intent.type === 'toggle-watchers' && state.presentation.activePanel !== 'watchers';
       const transition = transitionPopupPresentation(state.presentation, {
@@ -315,6 +377,10 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       if (nextSnapshot?.core) {
         const mergedSnapshot = mergeIssueSnapshots(state.snapshot, nextSnapshot);
         state = {...state, snapshot: mergedSnapshot};
+        if (['ready', 'empty', 'staleRetained'].includes(mergedSnapshot.sections?.history?.status)) {
+          historyFailure = null;
+          historyLoading = false;
+        }
         await quickActions.dispatch({type: 'snapshotChanged', issueSnapshot: mergedSnapshot});
         if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
       }
@@ -323,6 +389,10 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     const transition = transitionPopupPresentation(state.presentation, intent);
     if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
     state = {...state, presentation: transition.presentation};
+    if (transition.presentation.activePanel !== 'history' && state.presentation.activePanel !== 'history') {
+      historyRequest += 1;
+      historyLoading = false;
+    }
     if (transition.presentation.activePanel !== 'watchers' && watchers.view().open) {
       clearWatcherFeedbackTimer();
       await watchers.dispatch({type: 'close'});

@@ -390,8 +390,7 @@ export function createPopupProjectView(options) {
       actionsOpen,
       quickActionView = {},
       historyOpen,
-      changelogData,
-      changelogLoading,
+      historyView = {},
     } = state;
     const descriptionAttachmentLookup = attachmentPresentation.buildHistoryAttachmentLookup(issueData.fields.attachment || []);
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
@@ -833,10 +832,10 @@ export function createPopupProjectView(options) {
     displayData.hasRow1Meta = !!displayData.watchersTrigger || !!displayData.linkedIssuesTrigger || displayData.activityIndicators.length > 0;
     displayData.hasPrimaryStatusRow = row1Chips.length > 0 || displayData.hasRow1Meta;
     displayData.historyOpen = !!historyOpen;
-    displayData.changelogLoading = !!changelogLoading;
-    displayData.changelogEntries = historyOpen ? await history.formatChangelogForDisplay(changelogData, issueData) : [];
+    displayData.changelogLoading = !!historyView.loading;
+    displayData.changelogEntries = historyOpen ? await history.formatChangelogForDisplay(historyView.data, issueData) : [];
     displayData.hasChangelogEntries = historyOpen && displayData.changelogEntries.length > 0;
-    displayData.showChangelogEmpty = historyOpen && !changelogLoading && displayData.changelogEntries.length === 0;
+    displayData.showChangelogEmpty = historyOpen && !historyView.loading && displayData.changelogEntries.length === 0;
     return displayData;
   }
 

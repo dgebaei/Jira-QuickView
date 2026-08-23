@@ -567,6 +567,61 @@ test('popup session owns watcher panel loading and feature render scheduling', a
   });
 });
 
+test('popup session owns history acquisition, loading, and snapshot projection', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const history = createDeferred();
+    let reads = 0;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {openIssue(request) {
+        reads += 1;
+        if (reads > 1) return history.promise;
+        return Promise.resolve({snapshot: {
+          issueKey: request.issueKey,
+          core: {key: request.issueKey, fields: {}},
+          sections: {history: {status: 'unavailable', data: null}},
+        }});
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const pending = popup.dispatch({type: 'toggle-history'});
+    for (let attempt = 0; attempt < 20 && surface.getFrames().length < 2; attempt += 1) await Promise.resolve();
+    const loadingFrame = surface.getFrames().at(-1);
+    history.resolve({snapshot: {
+      issueKey: 'ABC-1',
+      core: {key: 'ABC-1', fields: {}},
+      sections: {history: {status: 'ready', data: {histories: [{id: 'h1'}]}}},
+    }});
+    const outcome = await pending;
+    const readyFrame = surface.getFrames().at(-1);
+    return {
+      loading: {activePanel: loadingFrame.presentation.activePanel, history: loadingFrame.history},
+      ready: {activePanel: readyFrame.presentation.activePanel, history: readyFrame.history},
+      outcome: outcome.kind,
+      reads,
+    };
+  });
+
+  expect(result).toEqual({
+    loading: {
+      activePanel: 'history',
+      history: {data: {histories: []}, failure: null, loading: true, status: 'unavailable'},
+    },
+    ready: {
+      activePanel: 'history',
+      history: {data: {histories: [{id: 'h1'}]}, failure: null, loading: false, status: 'ready'},
+    },
+    outcome: 'rendered',
+    reads: 2,
+  });
+});
+
 test('browser popup events translate presentation DOM interactions into semantic intents', async ({page}) => {
   const result = await page.evaluate(() => {
     const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
