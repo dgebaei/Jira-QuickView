@@ -501,8 +501,10 @@ test('browser popup events translate presentation DOM interactions into semantic
   const result = await page.evaluate(() => {
     const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
     document.body.innerHTML = `
+      <div class="_JX_container">
       <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button></div>
       <button class="_JX_pin_button">Pin</button>
+      <button class="_JX_close_button">Close popup</button>
       <button class="_JX_children_sort" data-sort-column="status">Children</button>
       <button class="_JX_pr_sort" data-sort-column="author">Pull requests</button>
       <button class="_JX_comment_sort_toggle">Comments</button>
@@ -516,6 +518,11 @@ test('browser popup events translate presentation DOM interactions into semantic
       </div>
       <button class="_JX_history_toggle">History</button>
       <div class="_JX_history_flyout"><button class="_JX_history_close">Close history</button></div>
+      <img class="_JX_previewable" data-jx-preview-src="image.png">
+      <button class="_JX_thumb" data-preview-src="thumb.png"><span>Thumb</span></button>
+      <button class="_JX_history_attachment_preview" data-jx-preview-src="history.png">History image</button>
+      </div>
+      <div class="_JX_preview_overlay"><img></div>
       <button id="outside">Outside</button>
     `;
     const intents = [];
@@ -526,6 +533,7 @@ test('browser popup events translate presentation DOM interactions into semantic
     events.install();
     $('._JX_actions_toggle').trigger('click');
     $('._JX_pin_button').trigger('click');
+    $('._JX_close_button').trigger('click');
     $('._JX_children_sort').trigger('click');
     $('._JX_pr_sort').trigger('click');
     $('._JX_comment_sort_toggle').trigger('click');
@@ -535,19 +543,27 @@ test('browser popup events translate presentation DOM interactions into semantic
     $('._JX_linked_issues_close').trigger('click');
     $('._JX_history_toggle').trigger('click');
     $('._JX_history_close').trigger('click');
-    const direct = intents.slice();
+    $('._JX_previewable').trigger('click');
+    $('._JX_thumb span').trigger('click');
+    $('._JX_history_attachment_preview').trigger('click');
+    $('._JX_preview_overlay').trigger('click');
+    $('._JX_container').trigger('dragstop');
+    $(document.body).trigger($.Event('keydown', {key: 'Escape', keyCode: 27}));
+    const direct = intents.filter(intent => !intent.type.startsWith('dismiss-'));
+    const directPopupDismissals = intents.filter(intent => intent.type === 'dismiss-popup');
     intents.length = 0;
     $('#outside').trigger('mousedown').trigger('click');
     const dismissals = intents.slice();
     events.dispose();
     $('#outside').trigger('mousedown').trigger('click');
-    return {direct, dismissals, afterDispose: intents};
+    return {direct, directPopupDismissals, dismissals, afterDispose: intents};
   });
 
   expect(result).toEqual({
     direct: [
       {type: 'toggle-actions'},
       {type: 'pin'},
+      {type: 'close-popup'},
       {type: 'sort-children', column: 'status'},
       {type: 'sort-pull-requests', column: 'author'},
       {type: 'toggle-comment-sort'},
@@ -557,18 +573,27 @@ test('browser popup events translate presentation DOM interactions into semantic
       {type: 'close-linkedIssues'},
       {type: 'toggle-history'},
       {type: 'close-history'},
+      {type: 'open-preview', source: 'image.png'},
+      {type: 'open-preview', source: 'thumb.png'},
+      {type: 'open-preview', source: 'history.png'},
+      {type: 'close-preview'},
+      {type: 'pin-after-drag'},
+      {type: 'escape'},
     ],
+    directPopupDismissals: [],
     dismissals: [
       {type: 'dismiss-watchers'},
       {type: 'dismiss-linkedIssues'},
       {type: 'dismiss-actions'},
       {type: 'dismiss-history'},
+      {type: 'dismiss-popup'},
     ],
     afterDispose: [
       {type: 'dismiss-watchers'},
       {type: 'dismiss-linkedIssues'},
       {type: 'dismiss-actions'},
       {type: 'dismiss-history'},
+      {type: 'dismiss-popup'},
     ],
   });
 });

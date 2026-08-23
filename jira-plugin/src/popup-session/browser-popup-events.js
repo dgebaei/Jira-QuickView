@@ -3,6 +3,7 @@ const EVENT_NAMESPACE = '.jiraQuickViewPopupPresentation';
 const PRESENTATION_EVENTS = [
   {selector: '._JX_actions_toggle', intent: () => ({type: 'toggle-actions'})},
   {selector: '._JX_pin_button', intent: () => ({type: 'pin'})},
+  {selector: '._JX_close_button', intent: () => ({type: 'close-popup'})},
   {
     selector: '._JX_children_sort',
     intent: element => ({type: 'sort-children', column: element.getAttribute('data-sort-column') || ''}),
@@ -18,7 +19,33 @@ const PRESENTATION_EVENTS = [
   {selector: '._JX_linked_issues_close', intent: () => ({type: 'close-linkedIssues'})},
   {selector: '._JX_history_toggle', intent: () => ({type: 'toggle-history'})},
   {selector: '._JX_history_close', intent: () => ({type: 'close-history'})},
+  {
+    selector: '._JX_previewable',
+    intent: element => ({
+      type: 'open-preview',
+      source: element.getAttribute('data-jx-preview-src') || element.getAttribute('src') || '',
+    }),
+  },
+  {
+    selector: '._JX_thumb',
+    intent: (element, event) => typeof event.target?.closest === 'function' && event.target.closest('img._JX_previewable')
+      ? null
+      : {type: 'open-preview', source: element.getAttribute('data-preview-src') || element.getAttribute('data-url') || ''},
+  },
+  {
+    selector: '._JX_history_attachment_preview',
+    intent: element => ({type: 'open-preview', source: element.getAttribute('data-jx-preview-src') || ''}),
+  },
+  {
+    selector: '._JX_preview_overlay',
+    intent: (element, event) => event.target === element ? {type: 'close-preview'} : null,
+  },
+  {event: 'dragstop', selector: '._JX_container', intent: () => ({type: 'pin-after-drag'})},
 ];
+const PRESENTATION_CLICK_SELECTOR = PRESENTATION_EVENTS
+  .filter(definition => !definition.event || definition.event === 'click')
+  .map(definition => definition.selector)
+  .join(', ');
 
 export function createBrowserPopupEvents({root, emit}) {
   if (typeof root?.on !== 'function' || typeof root?.off !== 'function') {
@@ -30,6 +57,7 @@ export function createBrowserPopupEvents({root, emit}) {
   let installed = false;
 
   function publish(intent) {
+    if (!intent) return;
     try {
       Promise.resolve(emit(intent)).catch(() => {});
     } catch (error) {
@@ -40,10 +68,10 @@ export function createBrowserPopupEvents({root, emit}) {
   function install() {
     if (installed) return {kind: 'unchanged'};
     PRESENTATION_EVENTS.forEach(definition => {
-      root.on(`click${EVENT_NAMESPACE}`, definition.selector, function (event) {
+      root.on(`${definition.event || 'click'}${EVENT_NAMESPACE}`, definition.selector, function (event) {
         event.preventDefault();
         event.stopPropagation();
-        publish(definition.intent(event.currentTarget));
+        publish(definition.intent(event.currentTarget, event));
       });
     });
     root.on(`mousedown${EVENT_NAMESPACE}`, function (event) {
@@ -61,6 +89,10 @@ export function createBrowserPopupEvents({root, emit}) {
       const closest = selector => typeof target?.closest === 'function' && target.closest(selector);
       if (!closest('._JX_actions')) publish({type: 'dismiss-actions'});
       if (!closest('._JX_history_flyout, ._JX_history_toggle')) publish({type: 'dismiss-history'});
+      if (!closest('._JX_container') && !closest(PRESENTATION_CLICK_SELECTOR)) publish({type: 'dismiss-popup'});
+    });
+    root.on(`keydown${EVENT_NAMESPACE}`, function (event) {
+      if (event.key === 'Escape' || event.keyCode === 27) publish({type: 'escape'});
     });
     installed = true;
     return {kind: 'installed'};

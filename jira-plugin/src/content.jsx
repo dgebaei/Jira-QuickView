@@ -4109,13 +4109,6 @@ async function mainAsyncLocal() {
     }).catch(() => snackBar('There was an error!'));
   });
 
-  $(document.body).on('click', '._JX_close_button', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    hideContainer();
-    passiveCancel(200);
-  });
-
   async function handlePopupPresentationIntent(intent) {
     if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
       return popupSession.dispatch(intent);
@@ -4142,6 +4135,25 @@ async function mainAsyncLocal() {
     if (intent.type === 'close-history' || intent.type === 'dismiss-history') return closeHistoryFlyout();
     if (intent.type === 'dismiss-actions') return popupSession.dispatch({type: 'close-actions'});
     if (intent.type === 'pin') return popupShell.dispatch({type: 'pin', announce: true});
+    if (intent.type === 'pin-after-drag') return popupShell.dispatch({type: 'pin', announce: true});
+    if (intent.type === 'open-preview' || intent.type === 'close-preview') return popupShell.dispatch(intent);
+    if (intent.type === 'close-popup') {
+      const outcome = await hideContainer();
+      passiveCancel(200);
+      return outcome;
+    }
+    if (intent.type === 'dismiss-popup') {
+      if (!container.html() || popupShell.view().pinned) return {kind: 'ignored', reason: 'popup-not-dismissible'};
+      return hideContainer();
+    }
+    if (intent.type === 'escape') {
+      if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
+      if (popupState?.historyOpen) return closeHistoryFlyout();
+      if (popupState?.descriptionEditState?.open) return cancelDescriptionEdit();
+      const outcome = await hideContainer();
+      passiveCancel(200);
+      return outcome;
+    }
     return {kind: 'ignored', reason: 'unsupported-presentation-intent'};
   }
 
@@ -4257,16 +4269,6 @@ async function mainAsyncLocal() {
     e.stopPropagation();
     const actionKey = e.currentTarget.getAttribute('data-action-key');
     handleQuickAction(actionKey).catch(() => {});
-  });
-
-  $(document.body).on('click', function (e) {
-    if (!container.html() || popupShell.view().pinned) {
-      return;
-    }
-    if ($(e.target).closest('._JX_container').length) {
-      return;
-    }
-    hideContainer();
   });
 
   $(document.body).on('click', '._JX_field_chip_edit', function (e) {
@@ -4822,47 +4824,6 @@ async function mainAsyncLocal() {
     saveTimeTrackingEdit().catch(() => {});
   });
 
-  // ── Image Preview ─────────────────────────────────────────
-  function closePreviewOverlay() {
-    popupShell?.dispatch({type: 'close-preview'}).catch(() => {});
-  }
-
-  async function openPreviewOverlay(imageUrl) {
-    await popupShell?.dispatch({type: 'open-preview', source: imageUrl});
-  }
-
-  previewOverlay.on('click', function (e) {
-    e.stopPropagation();
-    if (e.target === previewOverlay[0]) {
-      e.preventDefault();
-      closePreviewOverlay();
-    }
-  });
-
-  $(document.body).on('click', '._JX_previewable', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const source = e.currentTarget.getAttribute('data-jx-preview-src') || e.currentTarget.getAttribute('src');
-    openPreviewOverlay(source).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_thumb', function (e) {
-    if ($(e.target).closest('img._JX_previewable').length) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    const source = e.currentTarget.getAttribute('data-preview-src') || e.currentTarget.getAttribute('data-url');
-    openPreviewOverlay(source).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_history_attachment_preview', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const source = e.currentTarget.getAttribute('data-jx-preview-src');
-    openPreviewOverlay(source).catch(() => {});
-  });
-
   // ── Container Lifecycle ────────────────────────────────────
   async function clearPopupSurface() {
     lastHoveredKey = '';
@@ -4881,35 +4842,11 @@ async function mainAsyncLocal() {
     return popupSession.close({reason}).catch(() => clearPopupSurface());
   }
 
-  $(document.body).on('keydown', function (e) {
-    // TODO: escape not captured in google docs
-    const ESCAPE_KEY_CODE = 27;
-    if (e.keyCode === ESCAPE_KEY_CODE) {
-      if (popupShell.view().previewOpen) {
-        closePreviewOverlay();
-        return;
-      }
-      if (popupState?.historyOpen) {
-        closeHistoryFlyout();
-        return;
-      }
-      if (popupState?.descriptionEditState?.open) {
-        cancelDescriptionEdit().catch(() => {});
-        return;
-      }
-      hideContainer();
-      passiveCancel(200);
-    }
-  });
-
   // ── Hover Detection & Script Bootstrap ─────────────────────
   function passiveCancel(cooldown) {
     popupShell.dispatch({type: 'begin-cooldown', delay: cooldown}).catch(() => {});
   }
 
-  container.on('dragstop', () => {
-    popupShell.dispatch({type: 'pin', announce: true}).catch(() => {});
-  });
   function extractKeysFromNode(node) {
     let keys = getJiraKeysFromTexts(getNodeSearchTexts(node));
     if (!size(keys) && node.children.length < 10) {
