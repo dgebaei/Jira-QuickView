@@ -67,78 +67,8 @@ const getConfig = async () => {
   };
 };
 
-const DEFAULT_CHILDREN_SORT = Object.freeze({
-  column: 'key',
-  direction: 'asc'
-});
-
-const DEFAULT_PULL_REQUESTS_SORT = Object.freeze({
-  column: 'title',
-  direction: 'asc'
-});
-
 const DEFAULT_COMMENT_SORT_ORDER = 'oldest';
 const COMMENT_SORT_ORDER_STORAGE_KEY = 'jqv.commentSortOrder';
-
-function normalizeChildrenSort(sort) {
-  const column = ['type', 'key', 'status', 'assignee'].includes(sort?.column)
-    ? sort.column
-    : DEFAULT_CHILDREN_SORT.column;
-  const direction = sort?.direction === 'desc'
-    ? 'desc'
-    : DEFAULT_CHILDREN_SORT.direction;
-  return {column, direction};
-}
-
-function toggleChildrenSort(sort, column) {
-  const currentSort = normalizeChildrenSort(sort);
-  if (currentSort.column === column) {
-    return {
-      column,
-      direction: currentSort.direction === 'asc' ? 'desc' : 'asc'
-    };
-  }
-  return {
-    column,
-    direction: 'asc'
-  };
-}
-
-function normalizePullRequestsSort(sort) {
-  const column = ['title', 'author', 'branch', 'status'].includes(sort?.column)
-    ? sort.column
-    : DEFAULT_PULL_REQUESTS_SORT.column;
-  const direction = sort?.direction === 'desc'
-    ? 'desc'
-    : DEFAULT_PULL_REQUESTS_SORT.direction;
-  return {column, direction};
-}
-
-function togglePullRequestsSort(sort, column) {
-  const currentSort = normalizePullRequestsSort(sort);
-  if (currentSort.column === column) {
-    return {
-      column,
-      direction: currentSort.direction === 'asc' ? 'desc' : 'asc'
-    };
-  }
-  return {
-    column,
-    direction: 'asc'
-  };
-}
-
-function normalizeCommentSortOrder(sortOrder) {
-  return sortOrder === 'newest'
-    ? 'newest'
-    : DEFAULT_COMMENT_SORT_ORDER;
-}
-
-function toggleCommentSortOrder(sortOrder) {
-  return normalizeCommentSortOrder(sortOrder) === 'newest'
-    ? 'oldest'
-    : 'newest';
-}
 
 // ── Jira Key Matching ───────────────────────────────────────────
 
@@ -313,9 +243,9 @@ async function mainAsyncLocal() {
   }).catch(() => ({
     [COMMENT_SORT_ORDER_STORAGE_KEY]: DEFAULT_COMMENT_SORT_ORDER
   }));
-  let commentSortOrderPreference = normalizeCommentSortOrder(
-    storedCommentSortState[COMMENT_SORT_ORDER_STORAGE_KEY]
-  );
+  let commentSortOrderPreference = storedCommentSortState[COMMENT_SORT_ORDER_STORAGE_KEY] === 'newest'
+    ? 'newest'
+    : DEFAULT_COMMENT_SORT_ORDER;
   if (window.top === window && !window.__JX_pageDiagnosticsLogged) {
     window.__JX_pageDiagnosticsLogged = true;
     const extensionVersion = chrome.runtime?.getManifest?.()?.version || '';
@@ -612,6 +542,7 @@ async function mainAsyncLocal() {
   const popupSurface = createBrowserPopupSurface({
     async commitCurrent(frame, context) {
       if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
+      popupState = {...popupState, ...frame.presentation};
       await popupRenderer.render(popupState, context);
     },
     async commitVisible(frame, context) {
@@ -632,9 +563,7 @@ async function mainAsyncLocal() {
         children: legacySnapshot.children,
         childrenJql: legacySnapshot.childrenJql,
         childrenError: legacySnapshot.childrenError,
-        childrenSort: DEFAULT_CHILDREN_SORT,
-        commentSortOrder: commentSortOrderPreference,
-        pullRequestsSort: DEFAULT_PULL_REQUESTS_SORT,
+        ...frame.presentation,
         pullRequests: legacySnapshot.pullRequests,
         pointerX: Number(frame.anchor?.x) || 0,
         pointerY: Number(frame.anchor?.y) || 0,
@@ -4218,11 +4147,7 @@ async function mainAsyncLocal() {
       return;
     }
     const column = e.currentTarget.getAttribute('data-sort-column') || '';
-    popupState = {
-      ...popupState,
-      childrenSort: toggleChildrenSort(popupState.childrenSort, column)
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    popupSession.dispatch({type: 'sort-children', column}).catch(() => {});
   });
 
   $(document.body).on('click', '._JX_pr_sort', function (e) {
@@ -4232,27 +4157,19 @@ async function mainAsyncLocal() {
       return;
     }
     const column = e.currentTarget.getAttribute('data-sort-column') || '';
-    popupState = {
-      ...popupState,
-      pullRequestsSort: togglePullRequestsSort(popupState.pullRequestsSort, column)
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    popupSession.dispatch({type: 'sort-pull-requests', column}).catch(() => {});
   });
 
   $(document.body).on('click', '._JX_comment_sort_toggle', function (e) {
     e.preventDefault();
     e.stopPropagation();
-    const nextCommentSortOrder = toggleCommentSortOrder(popupState?.commentSortOrder);
-    commentSortOrderPreference = nextCommentSortOrder;
-    if (popupState) {
-      popupState = {
-        ...popupState,
-        commentSortOrder: nextCommentSortOrder
-      };
-      renderIssuePopup(popupState).catch(() => {});
-    }
-    storageLocalSet({
-      [COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder
+    popupSession.dispatch({type: 'toggle-comment-sort'}).then(outcome => {
+      const nextCommentSortOrder = outcome.presentation?.commentSortOrder;
+      if (!nextCommentSortOrder) return;
+      commentSortOrderPreference = nextCommentSortOrder;
+      storageLocalSet({
+        [COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder
+      }).catch(() => {});
     }).catch(() => {});
   });
 
@@ -5484,6 +5401,7 @@ async function mainAsyncLocal() {
       issueKey: key,
       anchor: {x: pointerX, y: pointerY},
       activation: hoverModifierKey === 'none' ? 'hover' : 'modifier',
+      preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
         children: showChildren,
         pullRequests: showPullRequests,

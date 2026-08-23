@@ -289,6 +289,118 @@ test('synchronous feature rerenders coalesce into one current surface commit', a
   });
 });
 
+test('popup session owns sorting transitions and publishes their observable presentation', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({
+      issueKey: 'ABC-1',
+      preferences: {commentSortOrder: 'oldest'},
+    });
+    const children = await popup.dispatch({type: 'sort-children', column: 'status'});
+    const childrenReversed = await popup.dispatch({type: 'sort-children', column: 'status'});
+    const pullRequests = await popup.dispatch({type: 'sort-pull-requests', column: 'status'});
+    const comments = await popup.dispatch({type: 'toggle-comment-sort'});
+    return {
+      outcomes: {
+        children: children.presentation,
+        childrenReversed: childrenReversed.presentation,
+        pullRequests: pullRequests.presentation,
+        comments: comments.presentation,
+      },
+      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        presentation: frame.presentation,
+      })),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: {
+      children: {
+        childrenSort: {column: 'status', direction: 'asc'},
+        pullRequestsSort: {column: 'title', direction: 'asc'},
+        commentSortOrder: 'oldest',
+      },
+      childrenReversed: {
+        childrenSort: {column: 'status', direction: 'desc'},
+        pullRequestsSort: {column: 'title', direction: 'asc'},
+        commentSortOrder: 'oldest',
+      },
+      pullRequests: {
+        childrenSort: {column: 'status', direction: 'desc'},
+        pullRequestsSort: {column: 'status', direction: 'asc'},
+        commentSortOrder: 'oldest',
+      },
+      comments: {
+        childrenSort: {column: 'status', direction: 'desc'},
+        pullRequestsSort: {column: 'status', direction: 'asc'},
+        commentSortOrder: 'newest',
+      },
+    },
+    frames: [
+      {
+        kind: 'visible',
+        reason: '',
+        presentation: {
+          childrenSort: {column: 'key', direction: 'asc'},
+          pullRequestsSort: {column: 'title', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'children-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'asc'},
+          pullRequestsSort: {column: 'title', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'children-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'desc'},
+          pullRequestsSort: {column: 'title', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'pull-request-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'desc'},
+          pullRequestsSort: {column: 'status', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'comment-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'desc'},
+          pullRequestsSort: {column: 'status', direction: 'asc'},
+          commentSortOrder: 'newest',
+        },
+      },
+    ],
+  });
+});
+
 test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;

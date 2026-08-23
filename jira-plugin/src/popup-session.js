@@ -1,3 +1,8 @@
+import {
+  createPopupPresentationState,
+  transitionPopupPresentation,
+} from 'src/popup-session/presentation-state';
+
 function requireOperation(owner, operation) {
   if (typeof owner?.[operation] !== 'function') {
     throw new TypeError(`Popup session requires ${operation}()`);
@@ -36,6 +41,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
     anchor: null,
     controller: null,
     issueKey: '',
+    presentation: createPopupPresentationState(),
     sessionId: '',
     snapshot: null,
     status: 'hidden',
@@ -71,6 +77,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
       activation: state.activation,
       anchor: state.anchor,
       issueSnapshot: state.snapshot,
+      presentation: state.presentation,
       fieldEditing: fieldEditing.view(),
       comments: comments.view(),
       ...details,
@@ -94,7 +101,13 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
     await comments.detach({sessionId: previous.sessionId, reason});
   }
 
-  async function activate({issueKey: issueKeyInput, anchor = null, activation = 'programmatic', requirements = {}} = {}) {
+  async function activate({
+    issueKey: issueKeyInput,
+    anchor = null,
+    activation = 'programmatic',
+    preferences = {},
+    requirements = {},
+  } = {}) {
     const issueKey = normalizeIssueKey(issueKeyInput);
     if (disposed) return outcome('ignored', {reason: 'disposed'});
     if (!issueKey) return outcome('ignored', {reason: 'missing-issue-key'});
@@ -111,6 +124,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
       anchor,
       controller,
       issueKey,
+      presentation: createPopupPresentationState(preferences),
       sessionId: `popup-${++sessionSequence}`,
       snapshot: null,
       status: 'loading',
@@ -170,6 +184,7 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
       anchor: null,
       controller: null,
       issueKey: '',
+      presentation: createPopupPresentationState(),
       sessionId: '',
       snapshot: null,
       status: 'hidden',
@@ -211,7 +226,11 @@ export function createPopupSession({issueData, fieldEditing, comments, surface})
       if (nextSnapshot?.core) state = {...state, snapshot: nextSnapshot};
       return scheduleRender(String(intent.reason || 'feature-changed'));
     }
-    return outcome('ignored', {reason: 'unsupported-intent'});
+    const transition = transitionPopupPresentation(state.presentation, intent);
+    if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
+    state = {...state, presentation: transition.presentation};
+    const rendered = await scheduleRender(transition.reason);
+    return {...rendered, presentation: transition.presentation};
   }
 
   async function dispose() {
