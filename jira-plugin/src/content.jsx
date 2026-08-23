@@ -22,7 +22,6 @@ import {createContentPeopleHelpers} from 'src/content-people-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
-import {buildEditOption, createPopupEditing} from 'src/popup-editing';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
 import {createPopupCommentComposer} from 'src/popup-comment-composer';
 import config, {buildTooltipLayoutFromDisplayFields} from 'options/config.js';
@@ -475,7 +474,6 @@ async function mainAsyncLocal() {
     getTransitionOptions,
     pickSprintFieldId,
   } = createContentFieldCapabilityHelpers({
-    buildEditOption,
     issueData: quickViewIssueData,
   });
   const {resolveIssueLinkage} = createContentIssueLinkageHelpers({
@@ -490,7 +488,6 @@ async function mainAsyncLocal() {
   } = createContentLinkedIssuesHelpers({
     issueData: quickViewIssueData,
   });
-  let editSearchRequestCounter = 0;
   let watchersFeedbackTimeoutId = null;
   let linkedIssuesSearchTimeoutId = null;
   let actionNoticeTimeoutId = null;
@@ -503,7 +500,6 @@ async function mainAsyncLocal() {
       lastActionSuccess: '',
       changelogData: null,
       changelogLoading: false,
-      editState: null,
       ...overrides,
     };
   }
@@ -760,26 +756,6 @@ async function mainAsyncLocal() {
     fieldEditing: jiraFieldEditing,
     comments: commentLifecycle,
     surface: popupSurface,
-  });
-
-  const {
-    buildNextMultiSelectState,
-    buildNextTextEditState,
-    filterEditOptions,
-    getEditableFieldDefinition,
-    mergeEditOptions,
-    normalizeMultiSelectOptionIds,
-    resolveSelectedEditOptions,
-    submitFieldEdit,
-    toggleMultiSelectOptionFromInput,
-  } = createPopupEditing({
-    buildEditFieldError,
-    getPopupState: () => popupState,
-    refreshPopupIssueState,
-    renderIssuePopup,
-    setPopupState: nextState => {
-      popupState = nextState;
-    },
   });
 
   const {
@@ -2723,8 +2699,8 @@ async function mainAsyncLocal() {
 
   // ── Edit UI Presentation ───────────────────────────────────
 
-  function getActiveFieldEditState(state = popupState) {
-    return jiraFieldEditing.view().edit || state?.editState || null;
+  function getActiveFieldEditState() {
+    return jiraFieldEditing.view().edit || null;
   }
 
   function buildActiveEditPresentation(fieldKey, state, options = {}) {
@@ -2736,11 +2712,11 @@ async function mainAsyncLocal() {
     const isMultiSelect = editState.selectionMode === 'multi';
     const isTextEditor = editState.selectionMode === 'text';
     const selectedOptionIds = new Set(isMultiSelect
-      ? normalizeMultiSelectOptionIds(editState.selectedOptionIds)
+      ? editState.selectedOptionIds || []
       : (editState.selectedOptionId === null || typeof editState.selectedOptionId === 'undefined'
           ? []
           : [String(editState.selectedOptionId)]));
-    const visibleOptions = isTextEditor ? [] : filterEditOptions(editState.options, editState.inputValue);
+    const visibleOptions = isTextEditor ? [] : (editState.visibleOptions || []);
     const selectableOptions = visibleOptions.filter(option => !option.isGroupLabel);
     const highlightedOption = selectableOptions.find(option => option.id === editState.highlightedOptionId) || selectableOptions[0];
     const filteredOptions = visibleOptions.map((option, optionIndex) => ({
@@ -2878,7 +2854,6 @@ async function mainAsyncLocal() {
 
   const people = createContentPeopleHelpers({
     areSameJiraUser,
-    buildEditOption,
   });
   const {
     buildUserView,
@@ -3638,12 +3613,6 @@ async function mainAsyncLocal() {
     return true;
   }
 
-  function isDeepFieldEdit(fieldKey) {
-    return String(fieldKey || '').startsWith('customfield_') ||
-      customFields.some(field => field.fieldId === fieldKey) ||
-      ['assignee', 'environment', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(fieldKey);
-  }
-
   async function dispatchJiraFieldEditing(intent) {
     const popupKey = popupState?.key || '';
     const pendingOutcome = jiraFieldEditing.dispatch(intent);
@@ -3669,7 +3638,6 @@ async function mainAsyncLocal() {
         pullRequests: legacySnapshot.pullRequests,
         commentReactionState: legacySnapshot.commentReactionState,
         quickActions,
-        editState: null,
         actionError: '',
         lastActionSuccess: fieldOutcome.notice || '',
       };
@@ -3681,379 +3649,24 @@ async function mainAsyncLocal() {
     return fieldOutcome;
   }
 
-  async function runSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
-    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
-      return;
-    }
-    try {
-      const definition = await getEditableFieldDefinition(fieldKey, popupState.issueData);
-      if (!definition?.searchOptions) {
-        return;
-      }
-      const options = await definition.searchOptions(queryText);
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.searchRequestId !== requestId) {
-        return;
-      }
-      const mergedOptions = popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search'
-        ? mergeEditOptions(options, popupState.editState.options)
-        : options;
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          options: mergedOptions,
-          highlightedOptionId: null,
-          loadingOptions: false,
-          errorMessage: ''
-        }
-      };
-      await renderIssuePopup(popupState);
-    } catch (error) {
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.searchRequestId !== requestId) {
-        return;
-      }
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          loadingOptions: false,
-          errorMessage: buildEditFieldError(error)
-        }
-      };
-      await renderIssuePopup(popupState);
-    }
-  }
-
-  const triggerSearchOptionsForActiveEdit = debounce((fieldKey, queryText, requestId) => {
-    runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
-  }, 220);
-
   async function startFieldEdit(fieldKey) {
-    if (!popupState?.issueData) {
-      return;
-    }
-    if (isDeepFieldEdit(fieldKey)) {
-      if (popupState.editState) {
-        popupState = {...popupState, editState: null};
-      }
-      if (!attachJiraFieldEditingToPopup()) return;
-      await dispatchJiraFieldEditing({
-        type: 'begin',
-        fieldId: fieldKey,
-        configured: customFields.some(field => field.fieldId === fieldKey),
-      });
-      return;
-    }
-    if (jiraFieldEditing.view().edit) await dispatchJiraFieldEditing({type: 'cancel'});
-    if (popupState.editState?.fieldKey === fieldKey) {
-      return;
-    }
-    const definition = await getEditableFieldDefinition(fieldKey, popupState.issueData);
-    if (!definition) {
-      return;
-    }
-    const isMultiSelect = definition.selectionMode === 'multi';
-    const initialValue = isMultiSelect
-      ? (definition.initialInputValue ?? definition.currentText ?? '')
-      : (definition.initialInputValue ?? '');
-    const currentSelections = Array.isArray(definition.currentSelections) ? definition.currentSelections : [];
-    popupState = {
-      ...popupState,
-      editState: {
-        fieldKey,
-        label: definition.label,
-        editorType: definition.editorType || (isMultiSelect ? 'multi-select' : 'single-select'),
-        selectionMode: definition.selectionMode || 'single',
-        inputValue: initialValue,
-        originalInputValue: initialValue,
-        inputPlaceholder: definition.inputPlaceholder || `Type to filter ${definition.label.toLowerCase()} values`,
-        options: [],
-        selectedOptionId: isMultiSelect ? null : definition.currentOptionId,
-        selectedOptionIds: isMultiSelect ? normalizeMultiSelectOptionIds(currentSelections.map(option => option.id)) : [],
-        selectedOptions: isMultiSelect ? currentSelections : [],
-        originalOptionIds: isMultiSelect ? normalizeMultiSelectOptionIds(currentSelections.map(option => option.id)) : [],
-        hasChanges: false,
-        loadingOptions: true,
-        saving: false,
-        errorMessage: '',
-        showActionButtons: !!definition.showActionButtons,
-        searchRequestId: 0,
-        highlightedOptionId: null,
-        selectionStart: initialValue.length,
-        selectionEnd: initialValue.length
-      }
-    };
-    await renderIssuePopup(popupState);
-
-    try {
-      const options = await definition.loadOptions();
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
-        return;
-      }
-      if (popupState.editState.selectionMode === 'multi') {
-        popupState = {
-          ...popupState,
-          editState: buildNextMultiSelectState(popupState.editState, {
-            options,
-            loadingOptions: false
-          })
-        };
-      } else if (popupState.editState.selectionMode === 'text') {
-        popupState = {
-          ...popupState,
-          editState: buildNextTextEditState(popupState.editState, {
-            options,
-            loadingOptions: false,
-            selectionStart: popupState.editState.inputValue.length,
-            selectionEnd: popupState.editState.inputValue.length
-          })
-        };
-      } else {
-        const nextInputValue = popupState.editState.inputValue || '';
-        popupState = {
-          ...popupState,
-          editState: {
-            ...popupState.editState,
-            inputValue: nextInputValue,
-            options,
-            loadingOptions: false,
-            selectionStart: nextInputValue.length,
-            selectionEnd: nextInputValue.length
-          }
-        };
-      }
-      await renderIssuePopup(popupState);
-
-      const shouldTriggerInitialSearch = popupState?.editState?.fieldKey === fieldKey &&
-        (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search') &&
-        !(definition.skipInitialEmptySearch && !String(popupState.editState.inputValue || '').trim());
-      if (shouldTriggerInitialSearch) {
-        const searchRequestId = ++editSearchRequestCounter;
-        popupState = {
-          ...popupState,
-          editState: {
-            ...popupState.editState,
-            loadingOptions: true,
-            searchRequestId
-          }
-        };
-        await renderIssuePopup(popupState);
-        triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
-      }
-    } catch (error) {
-      const errorMessage = buildEditFieldError(error);
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
-        return;
-      }
-      popupState = {
-        ...popupState,
-        editState: popupState.editState.selectionMode === 'multi'
-          ? buildNextMultiSelectState(popupState.editState, {
-              loadingOptions: false,
-              errorMessage
-            })
-          : popupState.editState.selectionMode === 'text'
-            ? buildNextTextEditState(popupState.editState, {
-                loadingOptions: false,
-                errorMessage
-              })
-          : {
-              ...popupState.editState,
-              loadingOptions: false,
-              errorMessage
-            }
-      };
-      await renderIssuePopup(popupState);
-      snackBar(errorMessage);
-    }
+    if (!popupState?.issueData || !attachJiraFieldEditingToPopup()) return;
+    await dispatchJiraFieldEditing({
+      type: 'begin',
+      fieldId: fieldKey,
+      configured: customFields.some(field => field.fieldId === fieldKey),
+    });
   }
 
   function cancelFieldEdit() {
-    if (jiraFieldEditing.view().edit) {
-      dispatchJiraFieldEditing({type: 'cancel'}).catch(() => {});
-      return;
-    }
-    if (!popupState?.editState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      editState: null
-    };
-    renderIssuePopup(popupState).catch(() => {});
-  }
-
-  function updateFieldEditInput(nextValue, selectionStart, selectionEnd) {
-    if (!popupState?.editState) {
-      return;
-    }
-    const normalizedValue = String(nextValue || '');
-    if (popupState.editState.selectionMode === 'multi') {
-      popupState = {
-        ...popupState,
-        editState: buildNextMultiSelectState(popupState.editState, {
-          inputValue: normalizedValue,
-          highlightedOptionId: null,
-          errorMessage: '',
-          selectionStart,
-          selectionEnd
-        })
-      };
-      renderIssuePopup(popupState).catch(() => {});
-
-      return;
-    }
-    if (popupState.editState.selectionMode === 'text') {
-      popupState = {
-        ...popupState,
-        editState: buildNextTextEditState(popupState.editState, {
-          inputValue: normalizedValue,
-          errorMessage: '',
-          selectionStart,
-          selectionEnd
-        })
-      };
-      renderIssuePopup(popupState).catch(() => {});
-      return;
-    }
-    const exactOption = (popupState.editState.options || []).find(option => {
-      return option.label.toLowerCase() === normalizedValue.trim().toLowerCase();
-    });
-    let nextInputValue = normalizedValue;
-    let nextSelectionStart = selectionStart;
-    let nextSelectionEnd = selectionEnd;
-    let nextSelectedOptionId = exactOption ? exactOption.id : null;
-
-    const canAutoComplete = popupState.editState.editorType !== 'user-search' &&
-      popupState.editState.editorType !== 'issue-search' &&
-      popupState.editState.editorType !== 'tempo-account-search' &&
-      popupState.editState.editorType !== 'multi-select' &&
-      typeof selectionStart === 'number' &&
-      typeof selectionEnd === 'number' &&
-      selectionStart === selectionEnd &&
-      selectionEnd === normalizedValue.length &&
-      normalizedValue.length > 0;
-
-    if (canAutoComplete && !exactOption) {
-      const prefixOption = (popupState.editState.options || []).find(option => {
-        return option.label.toLowerCase().startsWith(normalizedValue.toLowerCase());
-      });
-      if (prefixOption) {
-        nextInputValue = prefixOption.label;
-        nextSelectedOptionId = prefixOption.id;
-        nextSelectionStart = normalizedValue.length;
-        nextSelectionEnd = prefixOption.label.length;
-      }
-    }
-
-    popupState = {
-      ...popupState,
-      editState: {
-        ...popupState.editState,
-        inputValue: nextInputValue,
-        selectedOptionId: nextSelectedOptionId,
-        highlightedOptionId: null,
-        errorMessage: '',
-        selectionStart: nextSelectionStart,
-        selectionEnd: nextSelectionEnd
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
-
-    if (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search') {
-      const searchRequestId = ++editSearchRequestCounter;
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          loadingOptions: true,
-          searchRequestId
-        }
-      };
-      renderIssuePopup(popupState).catch(() => {});
-      triggerSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-    }
-  }
-
-  function getHighlightedFieldEditOption(editState) {
-    if (!editState || editState.selectionMode === 'text') {
-      return null;
-    }
-    const selectableOptions = filterEditOptions(editState.options, editState.inputValue)
-      .filter(option => !option?.isGroupLabel);
-    return selectableOptions.find(option => option.id === editState.highlightedOptionId) || selectableOptions[0] || null;
-  }
-
-  function moveFieldEditHighlight(fieldKey, direction) {
-    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.selectionMode === 'text') {
-      return false;
-    }
-    const selectableOptions = filterEditOptions(popupState.editState.options, popupState.editState.inputValue)
-      .filter(option => !option?.isGroupLabel);
-    if (!selectableOptions.length) {
-      return false;
-    }
-    const currentOption = getHighlightedFieldEditOption(popupState.editState);
-    const currentIndex = selectableOptions.findIndex(option => option.id === currentOption?.id);
-    const nextIndex = currentIndex === -1
-      ? (direction > 0 ? 0 : selectableOptions.length - 1)
-      : Math.max(0, Math.min(selectableOptions.length - 1, currentIndex + direction));
-    popupState = {
-      ...popupState,
-      editState: {
-        ...popupState.editState,
-        highlightedOptionId: selectableOptions[nextIndex].id,
-        errorMessage: ''
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
-    return true;
+    if (jiraFieldEditing.view().edit) dispatchJiraFieldEditing({type: 'cancel'}).catch(() => {});
   }
 
   function selectFieldEditOption(optionId) {
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView && fieldView.options?.some(option => option.id === String(optionId || ''))) {
       dispatchJiraFieldEditing({type: 'selectOption', editId: fieldView.editId, optionId}).catch(() => {});
-      return;
     }
-    if (!popupState?.editState) {
-      return;
-    }
-    const option = (popupState.editState.options || []).find(candidate => candidate.id === optionId);
-    if (!option) {
-      return;
-    }
-    if (popupState.editState.selectionMode === 'multi') {
-      const selectedOptionIds = normalizeMultiSelectOptionIds(popupState.editState.selectedOptionIds);
-      const nextSelectedOptionIds = selectedOptionIds.includes(option.id)
-        ? selectedOptionIds.filter(candidateId => candidateId !== option.id)
-        : [...selectedOptionIds, option.id];
-      popupState = {
-        ...popupState,
-        editState: buildNextMultiSelectState(popupState.editState, {
-          selectedOptionIds: nextSelectedOptionIds,
-          highlightedOptionId: option.id,
-          errorMessage: ''
-        })
-      };
-      renderIssuePopup(popupState).catch(() => {});
-      return;
-    }
-    popupState = {
-      ...popupState,
-      editState: {
-        ...popupState.editState,
-        inputValue: option.label,
-        selectedOptionId: option.id,
-        highlightedOptionId: option.id,
-        loadingOptions: false,
-        searchRequestId: ++editSearchRequestCounter,
-        errorMessage: '',
-        selectionStart: option.label.length,
-        selectionEnd: option.label.length
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
   }
 
 
@@ -4425,9 +4038,7 @@ async function mainAsyncLocal() {
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView?.fieldKey === fieldKey) {
       dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
-      return;
     }
-    submitFieldEdit(fieldKey).catch(() => {});
   });
 
   $(document.body).on('click', '._JX_edit_option', function (e) {
@@ -4445,9 +4056,6 @@ async function mainAsyncLocal() {
     }
     e.preventDefault();
     e.stopPropagation();
-    if (popupState?.editState?.saving) {
-      return;
-    }
     selectFieldEditOption(e.currentTarget.getAttribute('data-option-id'));
   });
 
@@ -4465,9 +4073,7 @@ async function mainAsyncLocal() {
         value: e.currentTarget.value,
         selection: {start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd},
       }).catch(() => {});
-      return;
     }
-    updateFieldEditInput(e.currentTarget.value, e.currentTarget.selectionStart, e.currentTarget.selectionEnd);
   });
 
   $(document.body).on('keydown', '._JX_edit_input', function (e) {
@@ -4477,54 +4083,16 @@ async function mainAsyncLocal() {
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
     const fieldView = jiraFieldEditing.view().edit;
-    if (fieldView?.fieldKey === fieldKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
-      if (e.key === 'Enter' && fieldView.selectionMode === 'text' && fieldView.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) {
-        return;
-      }
-      e.preventDefault();
-      dispatchJiraFieldEditing({
-        type: 'key',
-        editId: fieldView.editId,
-        key: e.key,
-        ctrlKey: e.ctrlKey,
-        metaKey: e.metaKey,
-      }).catch(() => {});
-      return;
-    }
-    const editState = popupState?.editState;
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editState?.fieldKey === fieldKey && editState.selectionMode !== 'text') {
-      e.preventDefault();
-      moveFieldEditHighlight(fieldKey, e.key === 'ArrowDown' ? 1 : -1);
-      return;
-    }
-    if (e.key === 'Enter') {
-      if (editState?.fieldKey === fieldKey && editState.selectionMode === 'text' && editState.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) {
-        return;
-      }
-      e.preventDefault();
-      if (editState?.fieldKey === fieldKey && editState.selectionMode === 'multi') {
-        if (e.ctrlKey || e.metaKey) {
-          submitFieldEdit(fieldKey).catch(() => {});
-        } else {
-          toggleMultiSelectOptionFromInput(fieldKey, getHighlightedFieldEditOption(editState)?.id);
-        }
-      } else if (editState?.fieldKey === fieldKey && editState.selectionMode !== 'text') {
-        const highlightedOption = getHighlightedFieldEditOption(editState);
-        if (!highlightedOption) {
-          submitFieldEdit(fieldKey).catch(() => {});
-          return;
-        }
-        selectFieldEditOption(highlightedOption.id);
-        submitFieldEdit(fieldKey).catch(() => {});
-      } else {
-        submitFieldEdit(fieldKey).catch(() => {});
-      }
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelFieldEdit();
-    }
+    if (fieldView?.fieldKey !== fieldKey || !['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) return;
+    if (e.key === 'Enter' && fieldView.selectionMode === 'text' && fieldView.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    dispatchJiraFieldEditing({
+      type: 'key',
+      editId: fieldView.editId,
+      key: e.key,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+    }).catch(() => {});
   });
 
   $(document.body).on('mousedown', function (e) {

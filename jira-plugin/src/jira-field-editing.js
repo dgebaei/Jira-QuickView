@@ -532,10 +532,12 @@ export function createJiraFieldEditing(options = {}) {
   let resolvePendingLabelSearch = null;
 
   function view() {
+    const editView = copyValue(edit);
+    if (editView) editView.visibleOptions = copyValue(visibleOptions());
     return {
       sessionId: session?.sessionId || '',
       issueKey: session?.issueKey || '',
-      edit: copyValue(edit),
+      edit: editView,
     };
   }
 

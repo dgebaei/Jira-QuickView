@@ -373,6 +373,12 @@ test('issue type editing filters allowed values and saves the selected type', as
       issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', issuetype: {id: '1', name: 'Bug', subtask: false}}}, sections: {}},
     });
     const begun = await fields.dispatch({type: 'begin', fieldId: 'issuetype'});
+    const filtered = await fields.dispatch({
+      type: 'inputChanged',
+      editId: begun.editId,
+      value: 'Ta',
+      selection: {start: 2, end: 2},
+    });
     const selected = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '2'});
     const writesBeforeEnter = jira.getRequests().filter(request => request.operation === 'write').length;
     const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
@@ -383,6 +389,7 @@ test('issue type editing filters allowed values and saves the selected type', as
         labels: begun.view.edit?.options.map(option => option.label),
         selectedOptionId: begun.view.edit?.selectedOptionId,
       },
+      filteredVisibleOptionIds: filtered.view.edit?.visibleOptions?.map(option => option.id),
       selected: {kind: selected.kind, selectedOptionId: selected.view.edit?.selectedOptionId},
       writesBeforeEnter,
       saved: {kind: saved.kind, notice: saved.notice, type: saved.refreshedSnapshot?.core?.fields?.issuetype?.name},
@@ -392,6 +399,7 @@ test('issue type editing filters allowed values and saves the selected type', as
 
   expect(result).toEqual({
     begun: {kind: 'changed', labels: ['Bug', 'Task'], selectedOptionId: '1'},
+    filteredVisibleOptionIds: ['2'],
     selected: {kind: 'changed', selectedOptionId: '2'},
     writesBeforeEnter: 0,
     saved: {kind: 'saved', notice: 'Issue type set to Task', type: 'Task'},

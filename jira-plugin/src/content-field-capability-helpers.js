@@ -1,5 +1,18 @@
+function buildEditOption(id, label, extra = {}) {
+  const normalizedLabel = String(label || '');
+  return {
+    id: id === '' ? '' : String(id || ''),
+    label: normalizedLabel,
+    ...extra,
+    searchText: [normalizedLabel, extra.searchText, extra.metaText]
+      .map(value => String(value || ''))
+      .join(' ')
+      .trim()
+      .toLowerCase(),
+  };
+}
+
 export function createContentFieldCapabilityHelpers(options) {
-  const buildEditOption = options?.buildEditOption;
   const issueDataModule = options?.issueData;
 
   function looksLikeSprintField(fieldId, fieldMeta, names = {}) {
@@ -83,9 +96,6 @@ export function createContentFieldCapabilityHelpers(options) {
   async function getTransitionOptions(issueKey) {
     if (!issueKey) {
       return [];
-    }
-    if (typeof buildEditOption !== 'function') {
-      throw new Error('Missing buildEditOption helper');
     }
     const outcome = await issueDataModule.loadFieldContext({issueKey, fieldId: 'status', includeTransitions: true});
     if (!outcome.context) {

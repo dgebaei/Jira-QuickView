@@ -1,6 +1,19 @@
+function buildEditOption(id, label, extra = {}) {
+  const normalizedLabel = String(label || '');
+  return {
+    id: id === '' ? '' : String(id || ''),
+    label: normalizedLabel,
+    ...extra,
+    searchText: [normalizedLabel, extra.searchText, extra.metaText]
+      .map(value => String(value || ''))
+      .join(' ')
+      .trim()
+      .toLowerCase(),
+  };
+}
+
 export function createContentPeopleHelpers(options) {
   const areSameJiraUser = options?.areSameJiraUser;
-  const buildEditOption = options?.buildEditOption;
 
   function getUserInitials(displayName, fallbackInitials = '--') {
     const tokens = String(displayName || '')
