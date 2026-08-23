@@ -579,13 +579,7 @@ async function mainAsyncLocal() {
       ...overrides,
     };
   }
-  const {
-    buildQuickActionError,
-    buildQuickActionViewData,
-    executeQuickAction,
-    getCurrentUserInfo,
-    resolveQuickActions,
-  } = createPopupQuickActions({
+  const popupQuickActions = createPopupQuickActions({
     INSTANCE_URL,
     formatSprintActionLabel,
     getProjectSprintOptions,
@@ -608,6 +602,12 @@ async function mainAsyncLocal() {
     readSprintsFromIssue,
     requestJson,
   });
+  const {
+    buildQuickActionError,
+    executeQuickAction,
+    getCurrentUserInfo,
+    resolveQuickActions,
+  } = popupQuickActions;
 
   const popupSurface = createBrowserPopupSurface({
     async commitCurrent(frame, context) {
@@ -2803,14 +2803,15 @@ async function mainAsyncLocal() {
 
   // ── Quick Actions ──────────────────────────────────────────
 
+  const people = createContentPeopleHelpers({
+    areSameJiraUser,
+    buildEditOption,
+  });
   const {
     buildUserView,
     normalizeAssignableUsers,
     normalizeWatcherUsers,
-  } = createContentPeopleHelpers({
-    areSameJiraUser,
-    buildEditOption,
-  });
+  } = people;
 
   const {buildPopupDisplayData} = createPopupProjectView({
     buildActiveEditPresentation,
@@ -2825,9 +2826,7 @@ async function mainAsyncLocal() {
       buildUserView,
       instanceUrl: INSTANCE_URL,
     }),
-    buildQuickActionViewData,
     buildTimeTrackingSectionPresentation,
-    buildUserView,
     comments: commentLifecycle,
     customFields,
     displayFields,
@@ -2842,6 +2841,8 @@ async function mainAsyncLocal() {
     loaderGifUrl,
     normalizeCommentSortOrder,
     normalizeRichHtml,
+    people,
+    quickActions: popupQuickActions,
     readSprintsFromIssue,
     resolveIssueLinkage,
     scopeJqlToProject,

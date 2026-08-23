@@ -6,9 +6,9 @@ export function createPopupProjectView(options) {
   const buildLabelsChip = options?.buildLabelsChip;
   const buildLinkHoverTitle = options?.buildLinkHoverTitle;
   const buildLinkedIssuesPanelView = options?.buildLinkedIssuesPanelView;
-  const buildQuickActionViewData = options?.buildQuickActionViewData;
   const buildTimeTrackingSectionPresentation = options?.buildTimeTrackingSectionPresentation;
-  const buildUserView = options?.buildUserView;
+  const people = options?.people;
+  const quickActionModule = options?.quickActions;
   const buildActiveEditPresentation = options?.buildActiveEditPresentation;
   const displayFields = options?.displayFields || {};
   const encodeJqlValue = options?.encodeJqlValue;
@@ -194,7 +194,7 @@ export function createPopupProjectView(options) {
   }
 
   function buildUserAvatarView(user, titlePrefix, fallbackInitials = '--') {
-    const view = buildUserView(user);
+    const view = people.buildUserView(user);
     return {
       avatarUrl: view.avatarUrl,
       initials: view.displayName ? view.initials : fallbackInitials,
@@ -634,7 +634,7 @@ export function createPopupProjectView(options) {
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'branch', 'Branch'),
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'status', 'Status')
     ];
-    const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
+    const quickActionData = quickActionModule.buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
     const reporterView = displayFields.reporter && issueData.fields.reporter
       ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
       : null;
