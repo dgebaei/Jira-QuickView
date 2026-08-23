@@ -604,6 +604,10 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
     const scheduledDelay = scheduled?.delay;
     scheduled.callback();
     await Promise.resolve();
+    await shell.dispatch({type: 'begin-cooldown', delay: 200});
+    const cooldown = {delay: scheduled?.delay, activeBefore: shell.view().cooldownActive};
+    scheduled.callback();
+    cooldown.activeAfter = shell.view().cooldownActive;
     const pinned = await shell.dispatch({type: 'pin', announce: true});
     const pinnedState = {
       outcome: pinned.kind,
@@ -630,6 +634,7 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
       pinned: pinnedState,
       preview,
       scheduledDelay,
+      cooldown,
       closeCalls,
       cleared: {
         outcome: cleared.kind,
@@ -641,7 +646,7 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
   });
 
   expect(result).toEqual({
-    initial: {pinned: false, previewOpen: false, previewSource: ''},
+    initial: {cooldownActive: false, pinned: false, previewOpen: false, previewSource: ''},
     nearEdge: {left: 8, top: 8},
     farEdgeInsideViewport: true,
     pinned: {
@@ -654,15 +659,16 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
       oldOutcome: 'ignored',
       className: 'is-open',
       src: 'display:new.png',
-      view: {pinned: true, previewOpen: true, previewSource: 'new.png'},
+      view: {cooldownActive: false, pinned: true, previewOpen: true, previewSource: 'new.png'},
     },
     scheduledDelay: 250,
+    cooldown: {delay: 200, activeBefore: true, activeAfter: false},
     closeCalls: [{reason: 'pointer-exit'}],
     cleared: {
       outcome: 'cleared',
       html: '',
       previewClassName: '',
-      view: {pinned: false, previewOpen: false, previewSource: ''},
+      view: {cooldownActive: false, pinned: false, previewOpen: false, previewSource: ''},
     },
   });
 });

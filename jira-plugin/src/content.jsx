@@ -4903,15 +4903,8 @@ async function mainAsyncLocal() {
   });
 
   // ── Hover Detection & Script Bootstrap ─────────────────────
-  let hoverCooldownActive = false;
-  let hoverCooldownTimeoutId = null;
-
   function passiveCancel(cooldown) {
-    hoverCooldownActive = true;
-    clearTimeout(hoverCooldownTimeoutId);
-    hoverCooldownTimeoutId = setTimeout(function () {
-      hoverCooldownActive = false;
-    }, cooldown);
+    popupShell.dispatch({type: 'begin-cooldown', delay: cooldown}).catch(() => {});
   }
 
   container.on('dragstop', () => {
@@ -5251,7 +5244,7 @@ async function mainAsyncLocal() {
   }
 
   $(document.body).on('mousemove', debounce(function (e) {
-    if (e.buttons || hoverCooldownActive) {
+    if (e.buttons || popupShell.view().cooldownActive) {
       return;
     }
     currentPointer = {

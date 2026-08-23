@@ -20,6 +20,8 @@ export function createBrowserPopupShell({
   requireOperation(scheduler, 'set');
   requireOperation(scheduler, 'clear');
 
+  let cooldownActive = false;
+  let cooldownTimer = null;
   let hideTimer = null;
   let pinned = false;
   let previewOpen = false;
@@ -31,7 +33,13 @@ export function createBrowserPopupShell({
   }
 
   function view() {
-    return {pinned, previewOpen, previewSource};
+    return {cooldownActive, pinned, previewOpen, previewSource};
+  }
+
+  function cancelCooldown() {
+    if (cooldownTimer !== null) scheduler.clear(cooldownTimer);
+    cooldownTimer = null;
+    cooldownActive = false;
   }
 
   function cancelHide() {
@@ -134,7 +142,18 @@ export function createBrowserPopupShell({
       cancelHide();
       return outcome('hide-cancelled');
     }
+    if (intent.type === 'begin-cooldown') {
+      cancelCooldown();
+      const delay = Math.max(0, Number(intent.delay) || 0);
+      cooldownActive = true;
+      cooldownTimer = scheduler.set(() => {
+        cooldownTimer = null;
+        cooldownActive = false;
+      }, delay);
+      return outcome('cooldown-started', {delay});
+    }
     if (intent.type === 'clear') {
+      cancelCooldown();
       cancelHide();
       closePreview();
       pinned = false;
