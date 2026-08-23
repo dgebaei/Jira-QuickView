@@ -515,6 +515,7 @@ test('browser popup events translate presentation DOM interactions into semantic
       </div>
       <button class="_JX_history_toggle">History</button>
       <div class="_JX_history_flyout"><button class="_JX_history_close">Close history</button></div>
+      <button id="outside">Outside</button>
     `;
     const intents = [];
     const events = createBrowserPopupEvents({
@@ -532,13 +533,17 @@ test('browser popup events translate presentation DOM interactions into semantic
     $('._JX_linked_issues_close').trigger('click');
     $('._JX_history_toggle').trigger('click');
     $('._JX_history_close').trigger('click');
+    const direct = intents.slice();
+    intents.length = 0;
+    $('#outside').trigger('mousedown').trigger('click');
+    const dismissals = intents.slice();
     events.dispose();
-    $('._JX_actions_toggle').trigger('click');
-    return {intents};
+    $('#outside').trigger('mousedown').trigger('click');
+    return {direct, dismissals, afterDispose: intents};
   });
 
   expect(result).toEqual({
-    intents: [
+    direct: [
       {type: 'toggle-actions'},
       {type: 'sort-children', column: 'status'},
       {type: 'sort-pull-requests', column: 'author'},
@@ -549,6 +554,18 @@ test('browser popup events translate presentation DOM interactions into semantic
       {type: 'close-linkedIssues'},
       {type: 'toggle-history'},
       {type: 'close-history'},
+    ],
+    dismissals: [
+      {type: 'dismiss-watchers'},
+      {type: 'dismiss-linkedIssues'},
+      {type: 'dismiss-actions'},
+      {type: 'dismiss-history'},
+    ],
+    afterDispose: [
+      {type: 'dismiss-watchers'},
+      {type: 'dismiss-linkedIssues'},
+      {type: 'dismiss-actions'},
+      {type: 'dismiss-history'},
     ],
   });
 });

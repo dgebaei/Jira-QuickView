@@ -4182,14 +4182,15 @@ async function mainAsyncLocal() {
       if (popupState?.watchersState?.open) return closeWatchersPanel();
       return openWatchersPanel();
     }
-    if (intent.type === 'close-watchers') return closeWatchersPanel();
+    if (intent.type === 'close-watchers' || intent.type === 'dismiss-watchers') return closeWatchersPanel();
     if (intent.type === 'toggle-linkedIssues') {
       if (popupState?.linkedIssuesState?.open) return closeLinkedIssuesPanel();
       return openLinkedIssuesPanel();
     }
-    if (intent.type === 'close-linkedIssues') return closeLinkedIssuesPanel();
+    if (intent.type === 'close-linkedIssues' || intent.type === 'dismiss-linkedIssues') return closeLinkedIssuesPanel();
     if (intent.type === 'toggle-history') return toggleHistoryFlyout();
-    if (intent.type === 'close-history') return closeHistoryFlyout();
+    if (intent.type === 'close-history' || intent.type === 'dismiss-history') return closeHistoryFlyout();
+    if (intent.type === 'dismiss-actions') return popupSession.dispatch({type: 'close-actions'});
     return {kind: 'ignored', reason: 'unsupported-presentation-intent'};
   }
 
@@ -4305,46 +4306,6 @@ async function mainAsyncLocal() {
     e.stopPropagation();
     const actionKey = e.currentTarget.getAttribute('data-action-key');
     handleQuickAction(actionKey).catch(() => {});
-  });
-
-  $(document.body).on('click', function (e) {
-    if (!popupState?.actionsOpen) {
-      return;
-    }
-    if ($(e.target).closest('._JX_actions').length) {
-      return;
-    }
-    popupSession.dispatch({type: 'close-actions'}).catch(() => {});
-  });
-
-    $(document.body).on('mousedown', function (e) {
-      if (!popupState?.watchersState?.open) {
-        return;
-      }
-      if ($(e.target).closest('._JX_watchers_group, ._JX_history_toggle, ._JX_linked_issues_group').length) {
-        return;
-      }
-      closeWatchersPanel();
-  });
-
-  $(document.body).on('mousedown', function (e) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    if ($(e.target).closest('._JX_linked_issues_group, ._JX_history_toggle, ._JX_watchers_group').length) {
-      return;
-    }
-    closeLinkedIssuesPanel();
-  });
-
-  $(document.body).on('click', function (e) {
-    if (!popupState?.historyOpen) {
-      return;
-    }
-    if ($(e.target).closest('._JX_history_flyout').length || $(e.target).closest('._JX_history_toggle').length) {
-      return;
-    }
-    closeHistoryFlyout();
   });
 
   $(document.body).on('click', function (e) {

@@ -45,6 +45,22 @@ export function createBrowserPopupEvents({root, emit}) {
         publish(definition.intent(event.currentTarget));
       });
     });
+    root.on(`mousedown${EVENT_NAMESPACE}`, function (event) {
+      const target = event.target;
+      const closest = selector => typeof target?.closest === 'function' && target.closest(selector);
+      if (!closest('._JX_watchers_group, ._JX_history_toggle, ._JX_linked_issues_group')) {
+        publish({type: 'dismiss-watchers'});
+      }
+      if (!closest('._JX_linked_issues_group, ._JX_history_toggle, ._JX_watchers_group')) {
+        publish({type: 'dismiss-linkedIssues'});
+      }
+    });
+    root.on(`click${EVENT_NAMESPACE}`, function (event) {
+      const target = event.target;
+      const closest = selector => typeof target?.closest === 'function' && target.closest(selector);
+      if (!closest('._JX_actions')) publish({type: 'dismiss-actions'});
+      if (!closest('._JX_history_flyout, ._JX_history_toggle')) publish({type: 'dismiss-history'});
+    });
     installed = true;
     return {kind: 'installed'};
   }
