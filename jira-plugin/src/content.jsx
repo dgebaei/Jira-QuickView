@@ -36,6 +36,7 @@ import {createBrowserCommentPresentation} from 'src/popup-session/browser-commen
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
+import {createWatcherLifecycle} from 'src/watcher-lifecycle';
 import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
 const {
   buildDescriptionEditorState,
@@ -352,21 +353,6 @@ async function mainAsyncLocal() {
     uploadSequence: 0,
     uploads: [],
   });
-  const emptyWatchersState = () => ({
-    open: false,
-    loading: false,
-    errorMessage: '',
-    searchValue: '',
-    searchLoading: false,
-    searchRequestId: 0,
-    watchers: [],
-    searchResults: [],
-    pendingAddIds: [],
-    pendingRemoveIds: [],
-    addFeedback: null,
-    removeFeedback: null,
-    focusSearch: false,
-  });
   const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
   let commentPresentation = null;
   let popupShell = null;
@@ -461,7 +447,6 @@ async function mainAsyncLocal() {
   } = createContentLinkedIssuesHelpers({
     issueData: quickViewIssueData,
   });
-  let watchersFeedbackTimeoutId = null;
   let linkedIssuesSearchTimeoutId = null;
   let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
@@ -476,12 +461,6 @@ async function mainAsyncLocal() {
   }
   function applyPopupPresentation(currentState, presentation = {}) {
     const activePanel = presentation.activePanel || '';
-    const watchersState = {
-      ...emptyWatchersState(),
-      ...currentState.watchersState,
-      open: activePanel === 'watchers',
-      focusSearch: activePanel === 'watchers' && !!currentState.watchersState?.focusSearch,
-    };
     const linkedIssuesState = {
       ...emptyLinkedIssuesState(),
       ...currentState.linkedIssuesState,
@@ -492,16 +471,7 @@ async function mainAsyncLocal() {
       ...currentState,
       ...presentation,
       historyOpen: activePanel === 'history',
-      watchersState,
       linkedIssuesState,
-    };
-  }
-
-  function buildNextWatchersState(currentState = emptyWatchersState(), changes = {}) {
-    return {
-      ...emptyWatchersState(),
-      ...currentState,
-      ...changes,
     };
   }
 
@@ -523,15 +493,10 @@ async function mainAsyncLocal() {
     const {
       showSnackBar = false,
       nextTimeTrackingEditState,
-      refreshWatchersPanel = false,
-      nextWatchersStateChanges = {},
-      scheduleWatchersFeedbackReset = false,
       preserveHistory = false,
-      scheduleWatchersFeedbackClear = null,
     } = refreshOptions;
     const popupKey = popupState.key;
     const priorSnapshot = popupState.issueSnapshot;
-    const shouldRefreshWatchersPanel = !!(refreshWatchersPanel || popupState.watchersState?.open);
     const shouldKeepHistoryOpen = !!(preserveHistory && popupState.historyOpen);
     const issueOutcome = await quickViewIssueData.refreshAfterMutation({
       issueKey: popupKey,
@@ -541,7 +506,6 @@ async function mainAsyncLocal() {
         history: shouldKeepHistoryOpen,
         linkedIssues: !!popupState.linkedIssuesState?.open,
         pullRequests: showPullRequests,
-        watchers: shouldRefreshWatchersPanel,
       },
     });
     if (!issueOutcome.snapshot?.core) {
@@ -557,10 +521,6 @@ async function mainAsyncLocal() {
       : {histories: []};
     const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
     const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
-    const watcherSection = issueOutcome.snapshot.sections?.watchers;
-    const refreshedWatcherData = ['ready', 'empty', 'staleRetained'].includes(watcherSection?.status)
-      ? watcherSection.data
-      : null;
     if (!popupState || popupState.key !== popupKey) return;
     clearActionNoticeTimer();
     await renderUpdatedPopupState(currentState => ({
@@ -574,24 +534,7 @@ async function mainAsyncLocal() {
         changelogLoading: false,
       }),
       timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
-      watchersState: refreshedWatcherData
-        ? buildNextWatchersState(currentState.watchersState, {
-            loading: false,
-            errorMessage: '',
-            watchers: refreshedWatcherData.watchers,
-            pendingAddIds: [],
-            pendingRemoveIds: [],
-            searchResults: (currentState.watchersState?.searchResults || []).filter(result => {
-              return !refreshedWatcherData.watchers.some(watcher => watcher.id === result.id);
-            }),
-            focusSearch: !!currentState.watchersState?.open,
-            ...nextWatchersStateChanges,
-          })
-        : currentState.watchersState,
     }));
-    if (scheduleWatchersFeedbackReset && typeof scheduleWatchersFeedbackClear === 'function') {
-      scheduleWatchersFeedbackClear();
-    }
     if (!showSnackBar && successMessage) scheduleActionNoticeClear(successMessage);
     if (showSnackBar && successMessage) snackBar(successMessage);
   }
@@ -638,6 +581,14 @@ async function mainAsyncLocal() {
       };
     });
   }
+  const people = createContentPeopleHelpers({
+    areSameJiraUser,
+  });
+  const {
+    buildUserView,
+    normalizeAssignableUsers,
+    normalizeWatcherUsers,
+  } = people;
   const popupQuickActions = createPopupQuickActions({
     INSTANCE_URL,
     formatSprintActionLabel,
@@ -647,6 +598,13 @@ async function mainAsyncLocal() {
     loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
     loadViewer: getCurrentUserInfo,
     readSprintsFromIssue,
+  });
+  const watcherLifecycle = createWatcherLifecycle({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+    loadViewer: getCurrentUserInfo,
+    normalizeUsers: normalizeWatcherUsers,
   });
 
   const popupSurface = createBrowserPopupSurface({
@@ -667,6 +625,7 @@ async function mainAsyncLocal() {
           commentReactionState: legacySnapshot.commentReactionState,
         } : {}),
         quickActionView: frame.quickActions,
+        watcherView: frame.watchers,
       }, frame.presentation);
       await popupRenderer.render(popupState, context);
     },
@@ -688,7 +647,7 @@ async function mainAsyncLocal() {
         commentReactionState: legacySnapshot.commentReactionState,
         ...buildPopupInteractionReset(),
         descriptionEditState: createDescriptionEditState(issueData),
-        watchersState: emptyWatchersState(),
+        watcherView: frame.watchers || {},
         linkedIssuesState: emptyLinkedIssuesState(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
       }, frame.presentation);
@@ -709,6 +668,7 @@ async function mainAsyncLocal() {
     fieldEditing: jiraFieldEditing,
     comments: commentLifecycle,
     quickActions: popupQuickActions,
+    watchers: watcherLifecycle,
     surface: popupSurface,
   });
 
@@ -874,8 +834,8 @@ async function mainAsyncLocal() {
       fields.reporter,
       fields.assignee,
       ...(fields.comment?.comments || []).map(comment => comment?.author),
-      ...(popupState?.watchersState?.watchers || []),
-      ...(popupState?.watchersState?.searchResults || []),
+      ...(watcherLifecycle.view().watchers || []),
+      ...(watcherLifecycle.view().searchResults || []),
       ...(commentLifecycle.view().compose?.mention?.suggestions || []),
       ...(commentLifecycle.view().rowAction?.mention?.suggestions || []),
     ];
@@ -2057,99 +2017,6 @@ async function mainAsyncLocal() {
     return outcome.snapshot.viewer.user;
   }
 
-  async function getIssueWatchers(issueKey) {
-    if (!issueKey) {
-      return {
-        isWatching: false,
-        watchCount: 0,
-        watchers: []
-      };
-    }
-    const outcome = await quickViewIssueData.openIssue({issueKey, requirements: {watchers: true}});
-    const section = outcome.snapshot?.sections?.watchers;
-    if (!section || section.status === 'failed') {
-      throw new Error(section?.failure?.message || outcome.failures?.core?.message || 'Could not load watchers');
-    }
-    return section.data || {isWatching: false, watchCount: 0, watchers: []};
-  }
-
-  async function searchWatcherCandidates(query) {
-    const [outcome, currentUser] = await Promise.all([
-      quickViewIssueData.search({purpose: 'watcher', query}),
-      getCurrentUserInfo().catch(() => null),
-    ]);
-    if (outcome.kind !== 'loaded') {
-      throw new Error(outcome.failure?.message || 'Could not search Jira users');
-    }
-    return normalizeWatcherUsers(outcome.items, currentUser);
-  }
-
-  function getWatcherIdentifierCandidates(user) {
-    const candidates = [
-      {type: 'accountId', value: user?.accountId || user?.rawValue?.accountId || ''},
-      {type: 'name', value: user?.name || user?.rawValue?.name || ''},
-      {type: 'key', value: user?.key || user?.rawValue?.key || ''}
-    ];
-    return candidates.filter((candidate, index, array) => {
-      return candidate.value && array.findIndex(other => other.type === candidate.type && other.value === candidate.value) === index;
-    });
-  }
-
-  async function addWatcher(issueKey, user) {
-    const candidates = getWatcherIdentifierCandidates(user);
-    let lastError;
-    for (const candidate of candidates) {
-      try {
-        await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers`, candidate.value);
-        return candidate;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not add watcher');
-  }
-
-  async function removeWatcher(issueKey, user) {
-    const candidates = getWatcherIdentifierCandidates(user);
-    let lastError;
-    for (const candidate of candidates) {
-      const queryKey = candidate.type === 'accountId'
-        ? 'accountId'
-        : (candidate.type === 'key' ? 'key' : 'username');
-      try {
-        await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers?${queryKey}=${encodeURIComponent(candidate.value)}`);
-        return candidate;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not remove watcher');
-  }
-
-  function clearWatchersFeedbackTimer() {
-    if (watchersFeedbackTimeoutId) {
-      clearTimeout(watchersFeedbackTimeoutId);
-      watchersFeedbackTimeoutId = null;
-    }
-  }
-
-  function scheduleWatchersFeedbackClear() {
-    clearWatchersFeedbackTimer();
-    watchersFeedbackTimeoutId = setTimeout(() => {
-      watchersFeedbackTimeoutId = null;
-      if (!popupState?.watchersState) {
-        return;
-      }
-      renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          addFeedback: null,
-          removeFeedback: null,
-        })
-      })).catch(() => {});
-    }, 5000);
-  }
-
   function clearActionNoticeTimer() {
     if (actionNoticeTimeoutId) {
       clearTimeout(actionNoticeTimeoutId);
@@ -2799,15 +2666,6 @@ async function mainAsyncLocal() {
 
   // ── Quick Actions ──────────────────────────────────────────
 
-  const people = createContentPeopleHelpers({
-    areSameJiraUser,
-  });
-  const {
-    buildUserView,
-    normalizeAssignableUsers,
-    normalizeWatcherUsers,
-  } = people;
-
   const {buildPopupDisplayData} = createPopupProjectView({
     attachments: attachmentPresentation,
     buildActiveEditPresentation,
@@ -2885,105 +2743,6 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
   });
-  async function runWatcherSearch(queryText, requestId) {
-    const normalizedQuery = String(queryText || '').trim();
-    try {
-      const results = normalizedQuery ? await searchWatcherCandidates(normalizedQuery) : [];
-      if (!popupState?.watchersState?.open || popupState.watchersState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          searchLoading: false,
-          searchResults: results,
-        })
-      }));
-    } catch (error) {
-      if (!popupState?.watchersState?.open || popupState.watchersState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          searchLoading: false,
-          errorMessage: buildEditFieldError(error),
-        })
-      }));
-    }
-  }
-
-  async function openWatchersPanel() {
-    if (!popupState?.issueData?.key) {
-      return;
-    }
-    const issueKey = popupState.issueData.key;
-    popupState = {
-      ...popupState,
-      watchersState: buildNextWatchersState(popupState.watchersState, {
-        loading: true,
-        errorMessage: '',
-        addFeedback: null,
-        removeFeedback: null,
-        focusSearch: true,
-      }),
-    };
-    const opened = await popupSession.dispatch({type: 'open-panel', panel: 'watchers'});
-    if (opened.presentation?.activePanel !== 'watchers' || popupState?.issueData?.key !== issueKey) return;
-
-    try {
-      const watcherData = await getIssueWatchers(issueKey);
-      if (!popupState?.watchersState?.open || popupState.issueData?.key !== issueKey) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          loading: false,
-          errorMessage: '',
-          watchers: watcherData.watchers,
-        })
-      }));
-    } catch (error) {
-      if (!popupState?.watchersState?.open || popupState.issueData?.key !== issueKey) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          loading: false,
-          errorMessage: buildEditFieldError(error),
-        })
-      }));
-    }
-  }
-
-  function resetWatchersPanelState() {
-    clearWatchersFeedbackTimer();
-    popupState = {
-      ...popupState,
-      watchersState: buildNextWatchersState(popupState?.watchersState, {
-        loading: false,
-        errorMessage: '',
-        searchValue: '',
-        searchLoading: false,
-        searchRequestId: 0,
-        searchResults: [],
-        pendingAddIds: [],
-        pendingRemoveIds: [],
-        addFeedback: null,
-        removeFeedback: null,
-        focusSearch: false,
-      }),
-    };
-  }
-
-  function closeWatchersPanel() {
-    if (!popupState?.watchersState?.open) return;
-    resetWatchersPanelState();
-    popupSession.dispatch({type: 'close-panel', panel: 'watchers'}).catch(() => {});
-  }
-
   function closeHistoryFlyout() {
     if (!popupState?.historyOpen) {
       return;
@@ -2996,7 +2755,6 @@ async function mainAsyncLocal() {
     const issueKey = popupState.issueData.key;
     const opening = !popupState.historyOpen;
     const shouldLoad = opening && !popupState.changelogData && !popupState.changelogLoading;
-    if (opening && popupState.watchersState?.open) resetWatchersPanelState();
     if (shouldLoad) popupState = {...popupState, changelogLoading: true};
     const outcome = await popupSession.dispatch({type: 'toggle-panel', panel: 'history'});
     if (outcome.presentation?.activePanel !== 'history' || !shouldLoad) return;
@@ -3009,143 +2767,6 @@ async function mainAsyncLocal() {
       popupState = {...popupState, changelogData: {histories: []}, changelogLoading: false};
     }
     if (popupState.historyOpen) await renderCurrentPopup('history-loaded');
-  }
-
-  function updateWatchersSearch(nextValue) {
-    if (!popupState?.watchersState?.open) {
-      return;
-    }
-    const searchValue = String(nextValue || '');
-    if (!searchValue.trim()) {
-      renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          searchValue,
-          searchLoading: false,
-          searchRequestId: 0,
-          searchResults: [],
-          errorMessage: '',
-          focusSearch: true,
-        })
-      })).catch(() => {});
-      return;
-    }
-    const searchRequestId = popupState.watchersState.searchRequestId + 1;
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        searchValue,
-        searchLoading: true,
-        searchRequestId,
-        errorMessage: '',
-        focusSearch: true,
-      })
-    })).then(() => {
-      runWatcherSearch(searchValue, searchRequestId).catch(() => {});
-    }).catch(() => {});
-  }
-
-  async function addWatcherFromPanel(watcherId) {
-    const watcherState = popupState?.watchersState;
-    if (!popupState?.issueData?.key || !watcherState) {
-      return;
-    }
-    const user = (watcherState.searchResults || []).find(candidate => candidate.id === watcherId);
-    if (!user || watcherState.pendingAddIds.includes(watcherId)) {
-      return;
-    }
-
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        pendingAddIds: [...new Set([...(currentState.watchersState?.pendingAddIds || []), watcherId])],
-        errorMessage: '',
-        addFeedback: null,
-      })
-    }));
-
-    try {
-      await addWatcher(popupState.issueData.key, user);
-      await refreshPopupIssueState('', {
-        mutation: {kind: 'watchersChanged'},
-        refreshWatchersPanel: true,
-        scheduleWatchersFeedbackReset: true,
-        scheduleWatchersFeedbackClear,
-        nextWatchersStateChanges: {
-          addFeedback: {
-            id: watcherId,
-            message: `${user.displayName} added to watchers`,
-            toneClass: '_JX_watchers_feedback_row_success'
-          },
-        }
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          pendingAddIds: (currentState.watchersState?.pendingAddIds || []).filter(id => id !== watcherId),
-          errorMessage: '',
-          addFeedback: {
-            id: watcherId,
-            message: buildEditFieldError(error),
-            toneClass: '_JX_watchers_feedback_row_error'
-          },
-          focusSearch: true,
-        })
-      }));
-      scheduleWatchersFeedbackClear();
-    }
-  }
-
-  async function removeWatcherFromPanel(watcherId) {
-    const watcherState = popupState?.watchersState;
-    if (!popupState?.issueData?.key || !watcherState) {
-      return;
-    }
-    const user = (watcherState.watchers || []).find(candidate => candidate.id === watcherId);
-    if (!user || watcherState.pendingRemoveIds.includes(watcherId)) {
-      return;
-    }
-
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        pendingRemoveIds: [...new Set([...(currentState.watchersState?.pendingRemoveIds || []), watcherId])],
-        errorMessage: '',
-        removeFeedback: null,
-      })
-    }));
-
-    try {
-      await removeWatcher(popupState.issueData.key, user);
-      await refreshPopupIssueState('', {
-        mutation: {kind: 'watchersChanged'},
-        refreshWatchersPanel: true,
-        scheduleWatchersFeedbackReset: true,
-        scheduleWatchersFeedbackClear,
-        nextWatchersStateChanges: {
-          removeFeedback: {
-            id: watcherId,
-            message: `${user.displayName} removed from watchers`,
-            toneClass: '_JX_watchers_feedback_row_neutral'
-          },
-        }
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          pendingRemoveIds: (currentState.watchersState?.pendingRemoveIds || []).filter(id => id !== watcherId),
-          errorMessage: '',
-          removeFeedback: {
-            id: watcherId,
-            message: buildEditFieldError(error),
-            toneClass: '_JX_watchers_feedback_row_error'
-          },
-        })
-      }));
-      scheduleWatchersFeedbackClear();
-    }
   }
 
   function buildNextLinkedIssuesState(currentState = emptyLinkedIssuesState(), changes = {}) {
@@ -3513,7 +3134,7 @@ async function mainAsyncLocal() {
         history: !!popupState.historyOpen,
         linkedIssues: !!popupState.linkedIssuesState?.open,
         pullRequests: showPullRequests,
-        watchers: !!popupState.watchersState?.open,
+        watchers: !!watcherLifecycle.view().open,
       },
     });
     const closed = await popupSession.dispatch({type: 'close-actions'});
@@ -3540,7 +3161,7 @@ async function mainAsyncLocal() {
         linkedIssues: !!popupState.linkedIssuesState?.open,
         pullRequests: showPullRequests,
         reactions: true,
-        watchers: !!popupState.watchersState?.open,
+        watchers: !!watcherLifecycle.view().open,
       },
     });
     return true;
@@ -3776,11 +3397,20 @@ async function mainAsyncLocal() {
       storageLocalSet({[COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder}).catch(() => {});
       return outcome;
     }
-    if (intent.type === 'toggle-watchers') {
-      if (popupState?.watchersState?.open) return closeWatchersPanel();
-      return openWatchersPanel();
+    if (['toggle-watchers', 'close-watchers', 'dismiss-watchers', 'search-watchers'].includes(intent.type)) {
+      return popupSession.dispatch(intent);
     }
-    if (intent.type === 'close-watchers' || intent.type === 'dismiss-watchers') return closeWatchersPanel();
+    if (intent.type === 'add-watcher' || intent.type === 'remove-watcher') {
+      return popupSession.dispatch({
+        ...intent,
+        requirements: {
+          history: !!popupState?.historyOpen,
+          linkedIssues: !!popupState?.linkedIssuesState?.open,
+          pullRequests: showPullRequests,
+          watchers: true,
+        },
+      });
+    }
     if (intent.type === 'toggle-linkedIssues') {
       if (popupState?.linkedIssuesState?.open) return closeLinkedIssuesPanel();
       return openLinkedIssuesPanel();
@@ -3817,26 +3447,6 @@ async function mainAsyncLocal() {
     emit: handlePopupPresentationIntent,
   });
   popupEvents.install();
-
-  $(document.body).on('click', '._JX_watchers_search_result', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    addWatcherFromPanel(e.currentTarget.getAttribute('data-watcher-id') || '').catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_watchers_remove', function (e) {
-    if ($(e.currentTarget).closest('._JX_linked_issues_panel').length) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    removeWatcherFromPanel(e.currentTarget.getAttribute('data-watcher-id') || '').catch(() => {});
-  });
-
-  $(document.body).on('input', '._JX_watchers_search_input', function (e) {
-    e.stopPropagation();
-    updateWatchersSearch(e.currentTarget.value);
-  });
 
   $(document.body).on('change', '._JX_linked_issues_type_select', function (e) {
     e.stopPropagation();
@@ -4417,7 +4027,6 @@ async function mainAsyncLocal() {
   // ── Container Lifecycle ────────────────────────────────────
   async function clearPopupSurface() {
     lastHoveredKey = '';
-    clearWatchersFeedbackTimer();
     clearDescriptionStatusTimer();
     const descriptionStateSnapshot = popupState?.descriptionEditState;
     popupState = null;

@@ -93,7 +93,7 @@ export function createBrowserPopupRenderer({
         start: state.linkedIssuesState.searchSelectionStart,
         end: state.linkedIssuesState.searchSelectionEnd,
       });
-    } else if (state.watchersState?.open && state.watchersState.focusSearch) {
+    } else if (state.watcherView?.open && state.watcherView.focusSearch) {
       const input = container.find('._JX_watchers_search_input')[0];
       const end = String(input?.value || '').length;
       restoreSelection(input, {start: end, end});

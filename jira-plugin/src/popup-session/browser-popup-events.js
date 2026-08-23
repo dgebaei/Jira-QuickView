@@ -15,6 +15,16 @@ const PRESENTATION_EVENTS = [
   {selector: '._JX_comment_sort_toggle', intent: () => ({type: 'toggle-comment-sort'})},
   {selector: '._JX_watchers_trigger', intent: () => ({type: 'toggle-watchers'})},
   {selector: '._JX_watchers_close', intent: () => ({type: 'close-watchers'})},
+  {
+    selector: '._JX_watchers_search_result',
+    intent: element => ({type: 'add-watcher', watcherId: element.getAttribute('data-watcher-id') || ''}),
+  },
+  {
+    selector: '._JX_watchers_remove',
+    intent: element => element.closest('._JX_linked_issues_panel')
+      ? null
+      : {type: 'remove-watcher', watcherId: element.getAttribute('data-watcher-id') || ''},
+  },
   {selector: '._JX_linked_issues_trigger', intent: () => ({type: 'toggle-linkedIssues'})},
   {selector: '._JX_linked_issues_close', intent: () => ({type: 'close-linkedIssues'})},
   {selector: '._JX_history_toggle', intent: () => ({type: 'toggle-history'})},
@@ -93,6 +103,10 @@ export function createBrowserPopupEvents({root, emit}) {
     });
     root.on(`keydown${EVENT_NAMESPACE}`, function (event) {
       if (event.key === 'Escape' || event.keyCode === 27) publish({type: 'escape'});
+    });
+    root.on(`input${EVENT_NAMESPACE}`, '._JX_watchers_search_input', function (event) {
+      event.stopPropagation();
+      publish({type: 'search-watchers', query: event.currentTarget.value});
     });
     installed = true;
     return {kind: 'installed'};

@@ -19,7 +19,22 @@ function normalizeFailure(error, fallback = 'Unable to load issue') {
   };
 }
 
-export function createPopupSession({issueData, fieldEditing, comments, quickActions, surface}) {
+function mergeIssueSnapshots(previous, next) {
+  if (!previous || !next || previous.issueKey !== next.issueKey) return next;
+  const sections = {...next.sections};
+  Object.entries(sections).forEach(([name, section]) => {
+    if (section?.status === 'unavailable' && previous.sections?.[name]) {
+      sections[name] = previous.sections[name];
+    }
+  });
+  return {
+    ...next,
+    sections,
+    viewer: next.viewer?.status === 'unavailable' && previous.viewer ? previous.viewer : next.viewer,
+  };
+}
+
+export function createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, surface}) {
   requireOperation(issueData, 'openIssue');
   requireOperation(fieldEditing, 'attach');
   requireOperation(fieldEditing, 'detach');
@@ -31,6 +46,10 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   requireOperation(quickActions, 'detach');
   requireOperation(quickActions, 'dispatch');
   requireOperation(quickActions, 'view');
+  requireOperation(watchers, 'attach');
+  requireOperation(watchers, 'detach');
+  requireOperation(watchers, 'dispatch');
+  requireOperation(watchers, 'view');
   requireOperation(surface, 'render');
   requireOperation(surface, 'hide');
 
@@ -40,6 +59,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   let scheduledRender = null;
   let sessionSequence = 0;
   let stateRevision = 0;
+  let watcherFeedbackTimer = null;
   let state = {
     activation: '',
     anchor: null,
@@ -68,6 +88,12 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     };
   }
 
+  function clearWatcherFeedbackTimer() {
+    if (!watcherFeedbackTimer) return;
+    clearTimeout(watcherFeedbackTimer);
+    watcherFeedbackTimer = null;
+  }
+
   async function publish(kind, details = {}) {
     const sessionId = state.sessionId;
     const expectedStateRevision = stateRevision;
@@ -85,6 +111,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       fieldEditing: fieldEditing.view(),
       comments: comments.view(),
       quickActions: quickActions.view(),
+      watchers: watchers.view(),
       ...details,
     };
     const context = {
@@ -102,9 +129,11 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   async function detachFeatures(previous, reason) {
     if (!previous.sessionId) return;
     previous.controller?.abort();
+    clearWatcherFeedbackTimer();
     await fieldEditing.detach({sessionId: previous.sessionId, reason});
     await comments.detach({sessionId: previous.sessionId, reason});
     await quickActions.detach({sessionId: previous.sessionId, reason});
+    await watchers.detach({sessionId: previous.sessionId, reason});
   }
 
   async function activate({
@@ -166,6 +195,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     await fieldEditing.attach({sessionId, issueSnapshot, requirements});
     await comments.attach({sessionId, issueSnapshot});
     await quickActions.attach({sessionId, issueSnapshot});
+    await watchers.attach({sessionId, issueSnapshot});
     if (!isCurrent(sessionId) || requestId !== activationRequest) {
       return outcome('ignored', {reason: 'superseded'});
     }
@@ -224,6 +254,57 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
 
   async function dispatch(intent = {}) {
     if (disposed || !state.sessionId) return outcome('ignored', {reason: 'inactive'});
+    if (['toggle-watchers', 'close-watchers', 'dismiss-watchers'].includes(intent.type)) {
+      const opening = intent.type === 'toggle-watchers' && state.presentation.activePanel !== 'watchers';
+      const transition = transitionPopupPresentation(state.presentation, {
+        type: opening ? 'open-panel' : 'close-panel',
+        panel: 'watchers',
+      });
+      if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
+      state = {...state, presentation: transition.presentation};
+      if (!opening) {
+        clearWatcherFeedbackTimer();
+        await watchers.dispatch({type: 'close'});
+        return scheduleRender(transition.reason);
+      }
+      const sessionId = state.sessionId;
+      const pending = watchers.dispatch({type: 'open'});
+      await scheduleRender('watchers-loading');
+      const watcherOutcome = await pending;
+      if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      if (watcherOutcome.issueSnapshot?.core) {
+        state = {...state, snapshot: mergeIssueSnapshots(state.snapshot, watcherOutcome.issueSnapshot)};
+      }
+      const rendered = await scheduleRender(`watchers-${watcherOutcome.kind}`);
+      return {...rendered, presentation: state.presentation, watcherOutcome};
+    }
+    if (['search-watchers', 'add-watcher', 'remove-watcher'].includes(intent.type)) {
+      const watcherIntent = intent.type === 'search-watchers'
+        ? {type: 'search', query: intent.query}
+        : {
+            type: intent.type === 'add-watcher' ? 'add' : 'remove',
+            watcherId: intent.watcherId,
+            requirements: intent.requirements || {},
+          };
+      const sessionId = state.sessionId;
+      const pending = watchers.dispatch(watcherIntent);
+      await scheduleRender(`${intent.type}-pending`);
+      const watcherOutcome = await pending;
+      if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      if (watcherOutcome.issueSnapshot?.core) {
+        state = {...state, snapshot: mergeIssueSnapshots(state.snapshot, watcherOutcome.issueSnapshot)};
+      }
+      const rendered = await scheduleRender(`${intent.type}-${watcherOutcome.kind}`);
+      if (watcherOutcome.feedbackExpiresIn) {
+        if (watcherFeedbackTimer) clearTimeout(watcherFeedbackTimer);
+        watcherFeedbackTimer = setTimeout(() => {
+          watcherFeedbackTimer = null;
+          if (!isCurrent(sessionId)) return;
+          watchers.dispatch({type: 'clearFeedback'}).then(() => scheduleRender('watcher-feedback-cleared')).catch(() => {});
+        }, watcherOutcome.feedbackExpiresIn);
+      }
+      return {...rendered, watcherOutcome};
+    }
     if (intent.type === 'render') {
       const sessionId = state.sessionId;
       const nextSnapshot = intent.issueSnapshot;
@@ -232,8 +313,9 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
         return outcome('ignored', {reason: 'stale-issue-snapshot'});
       }
       if (nextSnapshot?.core) {
-        state = {...state, snapshot: nextSnapshot};
-        await quickActions.dispatch({type: 'snapshotChanged', issueSnapshot: nextSnapshot});
+        const mergedSnapshot = mergeIssueSnapshots(state.snapshot, nextSnapshot);
+        state = {...state, snapshot: mergedSnapshot};
+        await quickActions.dispatch({type: 'snapshotChanged', issueSnapshot: mergedSnapshot});
         if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
       }
       return scheduleRender(String(intent.reason || 'feature-changed'));
@@ -241,6 +323,10 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     const transition = transitionPopupPresentation(state.presentation, intent);
     if (transition.kind === 'ignored') return outcome('ignored', {reason: transition.reason});
     state = {...state, presentation: transition.presentation};
+    if (transition.presentation.activePanel !== 'watchers' && watchers.view().open) {
+      clearWatcherFeedbackTimer();
+      await watchers.dispatch({type: 'close'});
+    }
     const rendered = await scheduleRender(transition.reason);
     return {...rendered, presentation: transition.presentation};
   }

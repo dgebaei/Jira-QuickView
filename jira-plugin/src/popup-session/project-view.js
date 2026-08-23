@@ -167,7 +167,7 @@ export function createPopupProjectView(options) {
   }
 
   function buildWatchersPanelView(state) {
-    const watcherState = state?.watchersState || emptyWatchersState();
+    const watcherState = state?.watcherView || emptyWatchersState();
     const watchers = Array.isArray(watcherState.watchers) ? watcherState.watchers : [];
     const pendingAddIds = new Set(watcherState.pendingAddIds || []);
     const pendingRemoveIds = new Set(watcherState.pendingRemoveIds || []);

@@ -32,8 +32,9 @@ test('a reversed older issue load cannot attach features or replace the newer po
       view() { return {comments: [], protectFromAutoHide: false}; },
     };
     const quickActions = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
+    const watchers = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
     const surface = createFixturePopupSurface();
-    const popup = createPopupSession({issueData, fieldEditing, comments, quickActions, surface});
+    const popup = createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, surface});
     const oldActivation = popup.activate({issueKey: 'OLD-1', anchor: {x: 10, y: 20}, activation: 'hover'});
     while (requests.length < 1) await Promise.resolve();
     const newActivation = popup.activate({issueKey: 'NEW-2', anchor: {x: 30, y: 40}, activation: 'modifier'});
@@ -103,6 +104,7 @@ test('a slow surface projection cannot commit after a newer popup session starts
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const oldActivation = popup.activate({issueKey: 'OLD-1'});
@@ -141,6 +143,7 @@ test('close while loading aborts acquisition and prevents a late popup commit', 
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const activation = popup.activate({issueKey: 'ABC-1'});
@@ -182,6 +185,7 @@ test('a core failure is observable and the same issue can retry in a fresh sessi
       fieldEditing: {attach() {}, detach() {}, view() { return {edit: null}; }},
       comments: {async attach() {}, async detach() {}, view() { return {comments: []}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     const failed = await popup.activate({issueKey: 'ABC-1'});
@@ -224,6 +228,7 @@ test('feature rerenders advance the session revision and publish current feature
       fieldEditing: {attach() {}, detach() {}, view() { return {value: fieldValue}; }},
       comments: {async attach() {}, async detach() {}, view() { return {value: commentValue}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -269,6 +274,7 @@ test('synchronous feature rerenders coalesce into one current surface commit', a
       fieldEditing: {attach() {}, detach() {}, view() { return {revision: featureRevision}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -310,6 +316,7 @@ test('popup session owns sorting transitions and publishes their observable pres
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({
@@ -428,6 +435,7 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -478,6 +486,7 @@ test('popup session owns quick-action menu visibility', async ({page}) => {
       fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
       comments: {async attach() {}, async detach() {}, view() { return {}; }},
       quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
       surface,
     });
     await popup.activate({issueKey: 'ABC-1'});
@@ -506,6 +515,58 @@ test('popup session owns quick-action menu visibility', async ({page}) => {
   });
 });
 
+test('popup session owns watcher panel loading and feature render scheduling', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const loaded = createDeferred();
+    let watcherView = {open: false, loading: false, watchers: []};
+    const watchers = {
+      attach() {},
+      detach() {},
+      async dispatch(intent) {
+        if (intent.type === 'open') {
+          watcherView = {...watcherView, open: true, loading: true};
+          await loaded.promise;
+          watcherView = {...watcherView, loading: false, watchers: [{id: 'alex'}]};
+          return {kind: 'opened'};
+        }
+        if (intent.type === 'close') watcherView = {open: false, loading: false, watchers: []};
+        return {kind: 'changed'};
+      },
+      view() { return watcherView; },
+    };
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}}};
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers,
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const pending = popup.dispatch({type: 'toggle-watchers'});
+    for (let attempt = 0; attempt < 20 && surface.getFrames().length < 2; attempt += 1) await Promise.resolve();
+    const loadingFrame = surface.getFrames().at(-1);
+    loaded.resolve();
+    const outcome = await pending;
+    const readyFrame = surface.getFrames().at(-1);
+    return {
+      loading: {activePanel: loadingFrame.presentation.activePanel, view: loadingFrame.watchers},
+      ready: {activePanel: readyFrame.presentation.activePanel, view: readyFrame.watchers},
+      outcome: {kind: outcome.kind, watcherKind: outcome.watcherOutcome.kind},
+    };
+  });
+
+  expect(result).toEqual({
+    loading: {activePanel: 'watchers', view: {open: true, loading: true, watchers: []}},
+    ready: {activePanel: 'watchers', view: {open: true, loading: false, watchers: [{id: 'alex'}]}},
+    outcome: {kind: 'rendered', watcherKind: 'opened'},
+  });
+});
+
 test('browser popup events translate presentation DOM interactions into semantic intents', async ({page}) => {
   const result = await page.evaluate(() => {
     const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
@@ -520,6 +581,9 @@ test('browser popup events translate presentation DOM interactions into semantic
       <div class="_JX_watchers_group">
         <button class="_JX_watchers_trigger">Watchers</button>
         <button class="_JX_watchers_close">Close watchers</button>
+        <input class="_JX_watchers_search_input">
+        <button class="_JX_watchers_search_result" data-watcher-id="user-me">Add watcher</button>
+        <button class="_JX_watchers_remove" data-watcher-id="user-alex">Remove watcher</button>
       </div>
       <div class="_JX_linked_issues_group">
         <button class="_JX_linked_issues_trigger">Linked issues</button>
@@ -548,6 +612,9 @@ test('browser popup events translate presentation DOM interactions into semantic
     $('._JX_comment_sort_toggle').trigger('click');
     $('._JX_watchers_trigger').trigger('click');
     $('._JX_watchers_close').trigger('click');
+    $('._JX_watchers_search_input').val('mor').trigger('input');
+    $('._JX_watchers_search_result').trigger('click');
+    $('._JX_watchers_remove').trigger('click');
     $('._JX_linked_issues_trigger').trigger('click');
     $('._JX_linked_issues_close').trigger('click');
     $('._JX_history_toggle').trigger('click');
@@ -578,6 +645,9 @@ test('browser popup events translate presentation DOM interactions into semantic
       {type: 'toggle-comment-sort'},
       {type: 'toggle-watchers'},
       {type: 'close-watchers'},
+      {type: 'search-watchers', query: 'mor'},
+      {type: 'add-watcher', watcherId: 'user-me'},
+      {type: 'remove-watcher', watcherId: 'user-alex'},
       {type: 'toggle-linkedIssues'},
       {type: 'close-linkedIssues'},
       {type: 'toggle-history'},
