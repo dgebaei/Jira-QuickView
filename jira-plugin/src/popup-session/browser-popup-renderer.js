@@ -24,6 +24,7 @@ function reorderContentBlocks(container, order) {
 
 export function createBrowserPopupRenderer({
   comments,
+  commentPresentation,
   container,
   contentBlockOrder,
   continuity,
@@ -61,10 +62,7 @@ export function createBrowserPopupRenderer({
       nextContentBlocks.scrollTop(savedScrollTop);
     }
 
-    continuity.restoreComposer();
-    continuity.renderUploads();
-    continuity.renderComposeMentions();
-    continuity.syncComposer();
+    commentPresentation.render({applyValue: true, restoreFocus: true});
     if (!shell.view().pinned) {
       container.css(shell.position({x: state.pointerX, y: state.pointerY}));
     }

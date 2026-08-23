@@ -698,6 +698,70 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
   });
 });
 
+test('browser comment presentation renders lifecycle state through one DOM interface', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const {createBrowserCommentPresentation, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = `
+      <div id="popup">
+        <div class="_JX_comment_compose">
+          <div class="_JX_comment_input_wrap"><textarea class="_JX_comment_input"></textarea></div>
+          <div class="_JX_comment_mentions"></div>
+          <div class="_JX_comment_uploads"></div>
+          <div class="_JX_comment_error"></div>
+          <button class="_JX_comment_save"></button>
+          <button class="_JX_comment_discard"></button>
+        </div>
+      </div>`;
+    const view = {
+      value: 'Draft text',
+      selection: {start: 2, end: 5},
+      focused: true,
+      saving: false,
+      canSave: true,
+      errorMessage: '',
+      mention: {
+        visible: true,
+        loading: false,
+        errorMessage: '',
+        selectedIndex: 0,
+        range: {start: 0, end: 2},
+        suggestions: [{displayName: 'Ada Lovelace', secondaryText: 'ada@example.test'}],
+      },
+      uploads: [{localId: 'upload-1', fileName: 'diagram.png', previewUrl: 'blob:diagram', status: 'uploaded', canRetry: false}],
+    };
+    const shellIntents = [];
+    const presentation = createBrowserCommentPresentation({
+      comments: {view() { return {compose: view}; }},
+      container: $('#popup'),
+      shell: {dispatch(intent) { shellIntents.push(intent); return Promise.resolve({kind: 'positioned'}); }},
+    });
+    presentation.render({applyValue: true, restoreFocus: true});
+    const capture = presentation.capture();
+    presentation.showError('Visible failure');
+    return {
+      capture,
+      input: $('._JX_comment_input').val(),
+      selection: {start: $('._JX_comment_input').get(0).selectionStart, end: $('._JX_comment_input').get(0).selectionEnd},
+      mention: $('._JX_comment_mentions').text().replace(/\s+/g, ' ').trim(),
+      upload: $('._JX_comment_uploads').text().replace(/\s+/g, ' ').trim(),
+      error: $('._JX_comment_error').text(),
+      saveDisabled: $('._JX_comment_save').prop('disabled'),
+      shellIntents,
+    };
+  });
+
+  expect(result).toEqual({
+    capture: {present: true, saving: false, selection: {start: 2, end: 5}, value: 'Draft text'},
+    input: 'Draft text',
+    selection: {start: 2, end: 5},
+    mention: 'Ada Lovelace ada@example.test',
+    upload: 'diagram.png Attached to issue',
+    error: 'Visible failure',
+    saveDisabled: false,
+    shellIntents: [{type: 'keep-visible'}, {type: 'keep-visible'}],
+  });
+});
+
 test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
@@ -707,15 +771,12 @@ test('browser renderer commits one deterministic DOM path and restores continuit
     let fieldView = null;
     const renderer = createBrowserPopupRenderer({
       comments: {dispatch() { return Promise.resolve(); }, view() { return {issueKey: 'ABC-1', rowAction: null}; }},
+      commentPresentation: {render() { continuityCalls.push('comments'); }},
       container,
       contentBlockOrder: ['first', 'second'],
       continuity: {
         constrainPopovers() { continuityCalls.push('constrain'); },
-        renderComposeMentions() { continuityCalls.push('composeMentions'); },
         renderEditMentions() { continuityCalls.push('editMentions'); },
-        renderUploads() { continuityCalls.push('uploads'); },
-        restoreComposer() { continuityCalls.push('restore'); },
-        syncComposer() { continuityCalls.push('sync'); },
       },
       fieldEditing: {view() { return fieldView; }},
       shell: {position() { return {left: 15, top: 25}; }, view() { return {pinned: false}; }},
@@ -748,7 +809,7 @@ test('browser renderer commits one deterministic DOM path and restores continuit
     scroll: {left: 12, top: 18},
     selection: {start: 2, end: 5, active: true},
     position: {left: '15px', top: '25px'},
-    continuityCalls: ['restore', 'uploads', 'composeMentions', 'sync', 'editMentions', 'constrain'],
+    continuityCalls: ['comments', 'editMentions', 'constrain'],
   });
 });
 
@@ -760,10 +821,11 @@ test('browser renderer rejects a stale asynchronous projection before DOM commit
     let current = true;
     const renderer = createBrowserPopupRenderer({
       comments: {dispatch() { return Promise.resolve(); }, view() { return {}; }},
+      commentPresentation: {render() {}},
       container: $('#popup'),
       contentBlockOrder: [],
       continuity: {
-        constrainPopovers() {}, renderComposeMentions() {}, renderEditMentions() {}, renderUploads() {}, restoreComposer() {}, syncComposer() {},
+        constrainPopovers() {}, renderEditMentions() {},
       },
       fieldEditing: {view() { return null; }},
       shell: {position() { return {}; }, view() { return {pinned: true}; }},

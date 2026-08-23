@@ -21,7 +21,6 @@ import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
-import {createPopupCommentComposer} from 'src/popup-comment-composer';
 import config, {buildTooltipLayoutFromDisplayFields} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
@@ -33,6 +32,7 @@ import {createCommentLifecycle} from 'src/comment-lifecycle';
 import {createJiraFieldEditing} from 'src/jira-field-editing';
 import {createPopupSession} from 'src/popup-session';
 import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
+import {createBrowserCommentPresentation} from 'src/popup-session/browser-comment-presentation';
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
@@ -368,6 +368,7 @@ async function mainAsyncLocal() {
     focusSearch: false,
   });
   const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
+  let commentPresentation = null;
   let popupShell = null;
   const attachmentPresentation = createContentAttachmentHelpers({
     buildLinkHoverTitle,
@@ -727,22 +728,6 @@ async function mainAsyncLocal() {
     fieldEditing: jiraFieldEditing,
     comments: commentLifecycle,
     surface: popupSurface,
-  });
-
-  const {
-    discardCommentComposerDraft,
-    getClipboardImageFiles,
-    getCommentComposerElements,
-    renderCommentMentionSuggestions,
-    renderCommentUploads,
-    restoreCommentComposerState,
-    setCommentComposerError,
-    syncCommentComposerState,
-  } = createPopupCommentComposer({
-    escapeHtml,
-    getCommentLifecycleView: () => commentLifecycle.view(),
-    getContainer: () => container,
-    keepContainerVisible,
   });
 
   function currentPopupSessionId() {
@@ -1735,39 +1720,32 @@ async function mainAsyncLocal() {
       return;
     }
 
-    const elements = getCommentComposerElements();
-    const commentDraftText = String(elements.input.val() || '');
+    const capturedCompose = commentPresentation.capture();
+    const commentDraftText = capturedCompose.value;
     const commentText = commentDraftText.trim();
     if (!commentText) {
-      syncCommentComposerState();
+      commentPresentation.render();
       return;
     }
     if (commentLifecycle.view().compose?.uploads?.some(item => item.status === 'uploading')) {
-      setCommentComposerError('Wait for image uploads to finish.');
-      syncCommentComposerState();
+      commentPresentation.showError('Wait for image uploads to finish.');
       return;
     }
 
     commentLifecycle.dispatch({
       type: 'composeChanged',
       value: commentDraftText,
-      selection: {
-        start: typeof elements.input.get(0)?.selectionStart === 'number' ? elements.input.get(0).selectionStart : commentDraftText.length,
-        end: typeof elements.input.get(0)?.selectionEnd === 'number' ? elements.input.get(0).selectionEnd : commentDraftText.length,
-      },
+      selection: capturedCompose.selection,
     }).catch(() => {});
     const pendingSave = commentLifecycle.dispatch({
       type: 'saveNewComment',
       requirements: {history: !!popupState?.historyOpen},
     });
-    elements.root.attr('data-saving', commentLifecycle.view().compose?.saving ? 'true' : 'false');
-    setCommentComposerError(commentLifecycle.view().compose?.errorMessage || '');
-    syncCommentComposerState();
+    commentPresentation.render();
 
     const outcome = await pendingSave;
     const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey &&
       outcome.sessionId === currentPopupSessionId();
-    elements.root.attr('data-saving', 'false');
     if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
       if (outcome.refreshedSnapshot?.core) {
         const historySection = outcome.refreshedSnapshot.sections?.history;
@@ -1782,8 +1760,6 @@ async function mainAsyncLocal() {
           lastActionSuccess: outcome.notice,
         };
       }
-      elements.input.val('');
-      setCommentComposerError('');
       await renderCurrentPopup('comment-save-complete');
       if (outcome.failure) {
         snackBar(outcome.notice);
@@ -1793,18 +1769,17 @@ async function mainAsyncLocal() {
       return;
     }
     if (outcome.kind === 'failed' && isSameIssueStillVisible) {
-      setCommentComposerError(outcome.failure?.message || 'Could not save comment');
-      syncCommentComposerState();
+      commentPresentation.render({applyValue: true, restoreFocus: true});
     }
   }
 
   async function handleCommentDiscard() {
-    const elements = getCommentComposerElements();
-    if (!elements.root.length || elements.root.attr('data-saving') === 'true') {
+    const capturedCompose = commentPresentation.capture();
+    if (!capturedCompose.present || capturedCompose.saving) {
       return;
     }
     await commentLifecycle.dispatch({type: 'discardCompose', deleteUploaded: true});
-    await discardCommentComposerDraft();
+    commentPresentation.render({applyValue: true});
   }
 
 
@@ -2873,10 +2848,6 @@ async function mainAsyncLocal() {
     return href;
   }
 
-  function keepContainerVisible() {
-    popupShell?.dispatch({type: 'keep-visible'}).catch(() => {});
-  }
-
   // ── Popup Rendering & State ────────────────────────────────
   let hoverDelayTimeout;
   let lastHoveredKey = '';
@@ -2895,17 +2866,19 @@ async function mainAsyncLocal() {
     media: {displayUrl: getDisplayImageUrl},
     previewOverlay,
   });
+  commentPresentation = createBrowserCommentPresentation({
+    comments: commentLifecycle,
+    container,
+    shell: popupShell,
+  });
   const popupRenderer = createBrowserPopupRenderer({
     comments: commentLifecycle,
+    commentPresentation,
     container,
     contentBlockOrder: layoutContentBlocks,
     continuity: {
       constrainPopovers: constrainEditPopoversToViewport,
-      renderComposeMentions: renderCommentMentionSuggestions,
       renderEditMentions: renderCommentEditMentionSuggestions,
-      renderUploads: renderCommentUploads,
-      restoreComposer: restoreCommentComposerState,
-      syncComposer: syncCommentComposerState,
     },
     fieldEditing: {view: getActiveFieldEditState},
     shell: popupShell,
@@ -4082,23 +4055,7 @@ async function mainAsyncLocal() {
   });
 
   function renderCommentComposeLifecycleView({applyValue = false} = {}) {
-    const composeView = commentLifecycle.view().compose;
-    const elements = getCommentComposerElements();
-    const inputElement = elements.input.get(0);
-    if (!composeView || !inputElement) {
-      renderCommentMentionSuggestions();
-      return;
-    }
-    if (applyValue && inputElement.value !== composeView.value) {
-      elements.input.val(composeView.value);
-    }
-    setCommentComposerError(composeView.errorMessage || '');
-    if (applyValue) {
-      inputElement.focus();
-      inputElement.setSelectionRange(composeView.selection.start, composeView.selection.end);
-    }
-    renderCommentMentionSuggestions();
-    syncCommentComposerState();
+    commentPresentation.render({applyValue, restoreFocus: applyValue});
   }
 
   function syncCommentComposeLifecycle(inputElement) {
@@ -4140,7 +4097,7 @@ async function mainAsyncLocal() {
 
   $(document.body).on('scroll', '._JX_comment_input', function () {
     if (commentLifecycle.view().compose?.mention?.visible) {
-      renderCommentMentionSuggestions();
+      commentPresentation.render();
     }
   });
 
@@ -4156,7 +4113,7 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('paste', '._JX_comment_input', function (e) {
-    const imageFiles = getClipboardImageFiles(e);
+    const imageFiles = commentPresentation.clipboardImages(e);
     if (!imageFiles.length || !commentLifecycle.view().issueKey) {
       return;
     }
@@ -4165,7 +4122,6 @@ async function mainAsyncLocal() {
       const sessionId = currentPopupSessionId();
       const pending = commentLifecycle.dispatch({type: 'imagePasted', file});
       renderCommentComposeLifecycleView({applyValue: true});
-      renderCommentUploads();
       pending.then(async outcome => {
         if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
           return;
@@ -4174,7 +4130,6 @@ async function mainAsyncLocal() {
           await handleDraftAttachmentUploaded(outcome.uploadedAttachment);
         }
         renderCommentComposeLifecycleView({applyValue: true});
-        renderCommentUploads();
       }).catch(() => {});
     });
   });
@@ -4186,7 +4141,6 @@ async function mainAsyncLocal() {
     const sessionId = currentPopupSessionId();
     const pending = commentLifecycle.dispatch({type: 'retryUpload', localId});
     renderCommentComposeLifecycleView({applyValue: true});
-    renderCommentUploads();
     pending.then(async outcome => {
       if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
         return;
@@ -4195,7 +4149,6 @@ async function mainAsyncLocal() {
         await handleDraftAttachmentUploaded(outcome.uploadedAttachment);
       }
       renderCommentComposeLifecycleView({applyValue: true});
-      renderCommentUploads();
     }).catch(() => {});
   });
 
@@ -4449,7 +4402,7 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('paste', '._JX_description_input', function (e) {
-    const imageFiles = getClipboardImageFiles(e);
+    const imageFiles = commentPresentation.clipboardImages(e);
     if (!imageFiles.length || !popupState?.issueData?.key || !popupState?.descriptionEditState?.open) {
       return;
     }
@@ -4493,7 +4446,6 @@ async function mainAsyncLocal() {
     clearDescriptionStatusTimer();
     const descriptionStateSnapshot = popupState?.descriptionEditState;
     popupState = null;
-    discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
     await popupShell.dispatch({type: 'clear'});
 
