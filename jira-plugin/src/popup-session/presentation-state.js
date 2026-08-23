@@ -20,6 +20,7 @@ function toggleSort(current, requestedColumn, allowedColumns) {
 export function createPopupPresentationState(preferences = {}) {
   return {
     activePanel: '',
+    actionsOpen: false,
     childrenSort: {...DEFAULT_CHILDREN_SORT},
     pullRequestsSort: {...DEFAULT_PULL_REQUESTS_SORT},
     commentSortOrder: normalizeCommentSortOrder(preferences.commentSortOrder),
@@ -27,6 +28,15 @@ export function createPopupPresentationState(preferences = {}) {
 }
 
 export function transitionPopupPresentation(current, intent = {}) {
+  if (intent.type === 'toggle-actions' || intent.type === 'close-actions') {
+    const actionsOpen = intent.type === 'toggle-actions' ? !current.actionsOpen : false;
+    if (actionsOpen === current.actionsOpen) return {kind: 'ignored', reason: 'actions-unchanged'};
+    return {
+      kind: 'changed',
+      reason: actionsOpen ? 'actions-opened' : 'actions-closed',
+      presentation: {...current, actionsOpen},
+    };
+  }
   if (['open-panel', 'close-panel', 'toggle-panel'].includes(intent.type)) {
     const panel = String(intent.panel || '');
     if (!PANELS.has(panel)) return {kind: 'ignored', reason: 'invalid-panel'};

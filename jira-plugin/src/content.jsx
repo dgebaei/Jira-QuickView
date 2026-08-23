@@ -501,7 +501,6 @@ async function mainAsyncLocal() {
       actionLoadingKey: '',
       actionError: '',
       lastActionSuccess: '',
-      actionsOpen: false,
       changelogData: null,
       changelogLoading: false,
       editState: null,
@@ -3495,13 +3494,14 @@ async function mainAsyncLocal() {
       return;
     }
 
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      actionsOpen: false,
+    popupState = {
+      ...popupState,
       actionLoadingKey: action.key,
       actionError: '',
       lastActionSuccess: '',
-    }));
+    };
+    const closed = await popupSession.dispatch({type: 'close-actions'});
+    if (closed.kind === 'ignored') await renderCurrentPopup('quick-action-started');
 
     try {
       const successMessage = await executeQuickAction(action, popupState.issueData);
@@ -4171,11 +4171,7 @@ async function mainAsyncLocal() {
     if (!popupState) {
       return;
     }
-    popupState = {
-      ...popupState,
-      actionsOpen: !popupState.actionsOpen
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    popupSession.dispatch({type: 'toggle-actions'}).catch(() => {});
   });
 
   $(document.body).on('click', '._JX_children_sort', function (e) {
@@ -4358,11 +4354,7 @@ async function mainAsyncLocal() {
     if ($(e.target).closest('._JX_actions').length) {
       return;
     }
-    popupState = {
-      ...popupState,
-      actionsOpen: false
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    popupSession.dispatch({type: 'close-actions'}).catch(() => {});
   });
 
     $(document.body).on('mousedown', function (e) {

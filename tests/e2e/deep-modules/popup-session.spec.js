@@ -455,6 +455,48 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
   });
 });
 
+test('popup session owns quick-action menu visibility', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const opened = await popup.dispatch({type: 'toggle-actions'});
+    const closed = await popup.dispatch({type: 'close-actions'});
+    const unchanged = await popup.dispatch({type: 'close-actions'});
+    return {
+      outcomes: [opened.presentation.actionsOpen, closed.presentation.actionsOpen],
+      unchanged: {kind: unchanged.kind, reason: unchanged.reason},
+      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        actionsOpen: frame.presentation.actionsOpen,
+      })),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: [true, false],
+    unchanged: {kind: 'ignored', reason: 'actions-unchanged'},
+    frames: [
+      {kind: 'visible', reason: '', actionsOpen: false},
+      {kind: 'update', reason: 'actions-opened', actionsOpen: true},
+      {kind: 'update', reason: 'actions-closed', actionsOpen: false},
+    ],
+  });
+});
+
 test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
