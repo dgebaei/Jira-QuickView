@@ -1,3 +1,5 @@
+import {createCommentFormatting} from 'src/comment-lifecycle/comment-formatting';
+
 function copyValue(value) {
   if (Array.isArray(value)) return value.map(copyValue);
   if (value && typeof value === 'object') {
@@ -47,118 +49,6 @@ function normalizeSelection(selection, value) {
     start: Math.max(0, Math.min(maxIndex, start)),
     end: Math.max(0, Math.min(maxIndex, end)),
   };
-}
-
-function countSharedPrefixLength(left, right) {
-  const leftText = String(left || '');
-  const rightText = String(right || '');
-  const maxLength = Math.min(leftText.length, rightText.length);
-  let index = 0;
-  while (index < maxLength && leftText[index] === rightText[index]) index += 1;
-  return index;
-}
-
-function countSharedSuffixLength(left, right) {
-  const leftText = String(left || '');
-  const rightText = String(right || '');
-  const maxLength = Math.min(leftText.length, rightText.length);
-  let index = 0;
-  while (index < maxLength && leftText[leftText.length - 1 - index] === rightText[rightText.length - 1 - index]) index += 1;
-  return index;
-}
-
-function restoreMentionMarkup(draftText, mentionMappings = []) {
-  const sourceText = String(draftText || '');
-  const replacements = [];
-  let searchFloor = 0;
-  (Array.isArray(mentionMappings) ? mentionMappings : []).filter(mapping => mapping?.displayText && mapping?.markup).forEach(mapping => {
-    const displayText = String(mapping.displayText);
-    let bestMatch = null;
-    let nextIndex = Math.max(0, searchFloor);
-    while (nextIndex <= sourceText.length) {
-      const matchIndex = sourceText.indexOf(displayText, nextIndex);
-      if (matchIndex === -1) break;
-      const beforeContext = String(mapping.beforeContext || '');
-      const afterContext = String(mapping.afterContext || '');
-      const beforeSample = sourceText.slice(Math.max(0, matchIndex - beforeContext.length), matchIndex);
-      const afterStart = matchIndex + displayText.length;
-      const afterSample = sourceText.slice(afterStart, afterStart + afterContext.length);
-      const contextScore = countSharedSuffixLength(beforeSample, beforeContext) + countSharedPrefixLength(afterSample, afterContext);
-      const preferredStart = Number.isFinite(Number(mapping.start)) ? Number(mapping.start) : matchIndex;
-      const candidate = {
-        start: matchIndex,
-        end: afterStart,
-        markup: String(mapping.markup),
-        contextScore,
-        distanceScore: Math.abs(matchIndex - preferredStart),
-      };
-      if (!bestMatch || candidate.contextScore > bestMatch.contextScore ||
-        (candidate.contextScore === bestMatch.contextScore && candidate.distanceScore < bestMatch.distanceScore)) {
-        bestMatch = candidate;
-      }
-      nextIndex = matchIndex + displayText.length;
-    }
-    if (!bestMatch || (!bestMatch.contextScore && (mapping.beforeContext || mapping.afterContext))) return;
-    replacements.push(bestMatch);
-    searchFloor = bestMatch.end;
-  });
-  if (!replacements.length) return sourceText;
-  let restored = '';
-  let cursor = 0;
-  replacements.forEach(replacement => {
-    restored += sourceText.slice(cursor, replacement.start);
-    restored += replacement.markup;
-    cursor = replacement.end;
-  });
-  return restored + sourceText.slice(cursor);
-}
-
-function knownJiraUsers(issueSnapshot) {
-  const users = [];
-  const seenObjects = new Set();
-  function visit(value) {
-    if (!value || typeof value !== 'object' || seenObjects.has(value)) return;
-    seenObjects.add(value);
-    if (value.displayName && (value.accountId || value.name || value.username || value.key)) users.push(value);
-    if (Array.isArray(value)) value.forEach(visit);
-    else Object.values(value).forEach(visit);
-  }
-  visit(issueSnapshot?.core?.fields || {});
-  return users;
-}
-
-function mentionDisplayText(rawValue, issueSnapshot) {
-  const normalized = String(rawValue || '').trim();
-  const identity = normalized.replace(/^accountid:/i, '');
-  const user = knownJiraUsers(issueSnapshot).find(candidate => [candidate.accountId, candidate.name, candidate.username, candidate.key]
-    .some(value => String(value || '').trim() === identity || String(value || '').trim() === normalized));
-  const displayName = String(user?.displayName || user?.name || user?.username || user?.key || identity).trim();
-  return displayName ? `@${displayName}` : '@mention';
-}
-
-function buildEditableDraft(rawText, issueSnapshot) {
-  const sourceText = String(rawText || '');
-  const mentionMappings = [];
-  const mentionPattern = /\[~([^[\]\r\n]+?)\]/g;
-  let draft = '';
-  let lastIndex = 0;
-  let match = mentionPattern.exec(sourceText);
-  while (match) {
-    draft += sourceText.slice(lastIndex, match.index);
-    const displayText = mentionDisplayText(match[1], issueSnapshot);
-    const start = draft.length;
-    draft += displayText;
-    mentionMappings.push({displayText, markup: match[0], start});
-    lastIndex = match.index + match[0].length;
-    match = mentionPattern.exec(sourceText);
-  }
-  draft += sourceText.slice(lastIndex);
-  mentionMappings.forEach(mapping => {
-    const end = mapping.start + mapping.displayText.length;
-    mapping.beforeContext = draft.slice(Math.max(0, mapping.start - 24), mapping.start);
-    mapping.afterContext = draft.slice(end, end + 24);
-  });
-  return {draft, mentionMappings};
 }
 
 function emptyComposeState() {
@@ -348,6 +238,11 @@ export function createCommentLifecycle(options = {}) {
     ? options.scheduler
     : {wait: milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))};
   const clock = typeof options.clock === 'function' ? options.clock : () => new Date();
+  const commentFormatting = createCommentFormatting({
+    clock,
+    formatting: options.formatting,
+    instanceUrl,
+  });
   const attachmentMedia = options.attachmentMedia || {createPreview: () => '', revokePreview() {}};
   let generation = 0;
   let uploadSequence = 0;
@@ -376,7 +271,14 @@ export function createCommentLifecycle(options = {}) {
     };
   }
 
-  function attach({sessionId, issueSnapshot} = {}) {
+  async function refreshCommentViews(identity = identityOf()) {
+    const commentViews = await commentFormatting.projectComments(state?.issueSnapshot);
+    if (!isCurrent(identity)) return false;
+    state.commentViews = commentViews;
+    return true;
+  }
+
+  async function attach({sessionId, issueSnapshot} = {}) {
     const previousUploads = state?.compose?.uploads || [];
     Object.values(activeOperations).forEach(controller => controller?.abort());
     reactionOperations.forEach(controller => controller.abort());
@@ -393,10 +295,13 @@ export function createCommentLifecycle(options = {}) {
       issueKey,
       generation,
       issueSnapshot: copyValue(issueSnapshot || null),
+      commentViews: [],
       compose: emptyComposeState(),
       reactions: reactionStateFromSnapshot(issueSnapshot),
       rowAction: null,
     };
+    const identity = identityOf();
+    if (!await refreshCommentViews(identity)) return outcome('ignored', {}, identity);
     return outcome('attached');
   }
 
@@ -429,8 +334,41 @@ export function createCommentLifecycle(options = {}) {
     };
   }
 
+  function projectCommentView(comment) {
+    const commentId = String(comment.id || '');
+    const rowAction = state.rowAction?.commentId === commentId ? state.rowAction : null;
+    const isEditing = rowAction?.mode === 'edit';
+    const isDeleteConfirming = rowAction?.mode === 'delete';
+    const editDraft = rowAction ? String(rowAction.draft ?? comment.bodyRaw ?? '') : String(comment.bodyRaw || '');
+    const busy = !!rowAction?.saving;
+    const reactionUi = projectReactionComment(state.reactions, commentId);
+    return {
+      ...comment,
+      commentActionBusy: busy,
+      commentActionError: rowAction?.errorMessage || '',
+      commentDeleteCancelDisabled: busy,
+      commentDeleteCancelText: 'No',
+      commentDeleteConfirmDisabled: busy,
+      commentDeleteConfirmText: busy ? 'Deleting...' : 'Yes',
+      commentEditCancelDisabled: busy,
+      commentEditDraft: editDraft,
+      commentEditSaveDisabled: !editDraft.trim() || busy,
+      commentEditSaveText: busy ? 'Saving...' : 'Save',
+      hasReactionOptions: reactionUi.menuOptions.length > 0,
+      hasReactionPills: reactionUi.pills.length > 0,
+      isDeleteConfirming,
+      isEditing,
+      menuReactionOptions: reactionUi.menuOptions,
+      reactionError: reactionUi.errorMessage,
+      reactionPills: reactionUi.pills,
+      showCommentDefaultActions: comment.isOwnedByCurrentUser && !isEditing && !isDeleteConfirming,
+      showCommentDeleteHeaderActions: comment.isOwnedByCurrentUser && isDeleteConfirming,
+      showCommentEditHeaderActions: comment.isOwnedByCurrentUser && isEditing,
+    };
+  }
+
   function view() {
-    if (!state) return {sessionId: '', issueKey: '', generation, compose: null, reactions: {supported: false, byCommentId: {}}, rowAction: null, protectFromAutoHide: false};
+    if (!state) return {sessionId: '', issueKey: '', generation, comments: [], compose: null, reactions: {supported: false, byCommentId: {}}, rowAction: null, protectFromAutoHide: false};
     const compose = state.compose;
     const commentIds = new Set([
       ...(state.issueSnapshot?.core?.fields?.comment?.comments || []).map(comment => String(comment?.id || '')).filter(Boolean),
@@ -444,6 +382,7 @@ export function createCommentLifecycle(options = {}) {
       sessionId: state.sessionId,
       issueKey: state.issueKey,
       generation: state.generation,
+      comments: state.commentViews.map(projectCommentView),
       compose: {
         value: compose.value,
         selection: copyValue(compose.selection),
@@ -858,7 +797,7 @@ export function createCommentLifecycle(options = {}) {
     const identity = identityOf();
     const priorSnapshot = copyValue(state.issueSnapshot);
     const value = state.compose.value.trim();
-    const body = restoreMentionMarkup(value, state.compose.mentionMappings);
+    const body = commentFormatting.restoreMentionMarkup(value, state.compose.mentionMappings);
     const controller = new AbortController();
     activeOperations.compose?.abort();
     activeOperations.compose = controller;
@@ -876,11 +815,12 @@ export function createCommentLifecycle(options = {}) {
         issueKey: identity.issueKey,
         priorSnapshot,
         mutation,
-        requirements: copyValue(intent.requirements || {}),
+        requirements: {...copyValue(intent.requirements || {}), reactions: true, viewer: true},
         signal: controller.signal,
       });
       if (!isCurrent(identity)) return outcome('ignored', {}, identity);
       state.issueSnapshot = copyValue(refreshed.snapshot || state.issueSnapshot);
+      if (refreshed.snapshot?.core && !await refreshCommentViews(identity)) return outcome('ignored', {}, identity);
       const completedUploads = state.compose.uploads;
       state.compose = emptyComposeState();
       await releaseUploads(completedUploads, {deleteUploaded: false});
@@ -938,11 +878,12 @@ export function createCommentLifecycle(options = {}) {
         issueKey: identity.issueKey,
         priorSnapshot,
         mutation,
-        requirements: copyValue(intent.requirements || {}),
+        requirements: {...copyValue(intent.requirements || {}), reactions: true, viewer: true},
         signal: controller.signal,
       });
       if (!isCurrent(identity)) return outcome('ignored', {}, identity);
       state.issueSnapshot = copyValue(refreshed.snapshot || state.issueSnapshot);
+      if (refreshed.snapshot?.core && !await refreshCommentViews(identity)) return outcome('ignored', {}, identity);
       state.rowAction = null;
       activeOperations.rowAction = null;
       const refreshFailure = !refreshed.snapshot?.core
@@ -993,7 +934,7 @@ export function createCommentLifecycle(options = {}) {
     if (intent.type === 'startEdit') {
       const comment = issueComment(intent.commentId);
       if (!comment) return outcome('ignored');
-      const editable = buildEditableDraft(comment.body, state.issueSnapshot);
+      const editable = commentFormatting.buildEditableDraft(comment.body, state.issueSnapshot);
       state.rowAction = {
         commentId: String(comment.id),
         mode: 'edit',
@@ -1023,7 +964,7 @@ export function createCommentLifecycle(options = {}) {
     if (intent.type === 'saveEdit') {
       const rowAction = state.rowAction;
       const body = rowAction?.mode === 'edit'
-        ? {body: restoreMentionMarkup(rowAction.draft, rowAction.mentionMappings)}
+        ? {body: commentFormatting.restoreMentionMarkup(rowAction.draft, rowAction.mentionMappings)}
         : undefined;
       return commitRowAction(intent, {method: 'PUT', body, notice: 'Comment updated'});
     }

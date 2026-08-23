@@ -1,7 +1,6 @@
 export function createContentDisplayHelpers(options) {
   const buildActivityIndicatorsDefault = options?.buildActivityIndicatorsDefault;
   const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
-  const buildCommentsForDisplay = options?.buildCommentsForDisplay;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
   const buildFilterChip = options?.buildFilterChip;
@@ -20,6 +19,7 @@ export function createContentDisplayHelpers(options) {
   const formatPullRequestTitle = options?.formatPullRequestTitle;
   const formatSprintText = options?.formatSprintText;
   const getEditableFieldCapability = options?.getEditableFieldCapability;
+  const getCommentLifecycleView = options?.getCommentLifecycleView;
   const getTransitionOptions = options?.getTransitionOptions;
   const getVisibleSprintsForDisplay = options?.getVisibleSprintsForDisplay;
   const hasLabelSuggestionSupport = options?.hasLabelSuggestionSupport;
@@ -327,11 +327,10 @@ export function createContentDisplayHelpers(options) {
       imageMaxHeight: 180
     });
     const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
-    const commentsForDisplay = await buildCommentsForDisplay(
-      issueData,
-      state.commentSession,
-      normalizedCommentSortOrder
-    );
+    const commentsForDisplay = [...(getCommentLifecycleView()?.comments || [])].sort((left, right) => {
+      const comparison = Number(left?.createdTimestamp || 0) - Number(right?.createdTimestamp || 0);
+      return normalizedCommentSortOrder === 'newest' ? comparison * -1 : comparison;
+    });
     const fixVersions = issueData.fields.fixVersions || [];
     const affectsVersions = issueData.fields.versions || [];
     const sprints = readSprintsFromIssue(issueData);

@@ -454,7 +454,6 @@ async function mainAsyncLocal() {
   const {
     buildAttachmentImagesByName,
     buildHistoryPreviewText,
-    formatRelativeDate,
     getMentionDisplayText,
     normalizeCommentImageReference,
     replaceMentionMarkupWithDisplayText,
@@ -477,6 +476,14 @@ async function mainAsyncLocal() {
   });
   const commentLifecycle = createCommentLifecycle({
     attachmentMedia: createBrowserAttachmentMediaAdapter(),
+    formatting: {
+      normalizeHtml(html, options = {}) {
+        return normalizeRichHtml(html, {
+          attachmentLookup: buildHistoryAttachmentLookup(options.attachments || []),
+          imageMaxHeight: options.imageMaxHeight,
+        });
+      },
+    },
     instanceUrl: INSTANCE_URL,
     issueData: quickViewIssueData,
     jira,
@@ -1621,95 +1628,6 @@ async function mainAsyncLocal() {
 
   // ── Comments ──────────────────────────────────────────────
 
-  async function buildCommentsForDisplay(
-    issueData,
-    commentSession = null,
-    commentSortOrder = popupState?.commentSortOrder
-  ) {
-    const issueKey = issueData?.key || '';
-    const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
-    const comments = [...(issueData.fields.comment?.comments || [])].sort((a, b) => {
-      const leftTimestamp = new Date(a.created).getTime();
-      const rightTimestamp = new Date(b.created).getTime();
-      return normalizedCommentSortOrder === 'newest'
-        ? rightTimestamp - leftTimestamp
-        : leftTimestamp - rightTimestamp;
-    });
-    const renderedById = {};
-    const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
-    const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 100);
-    const currentUser = await getCurrentUserInfo().catch(() => null);
-    ((issueData.renderedFields?.comment?.comments) || []).forEach(comment => {
-      if (comment && comment.id) {
-        renderedById[comment.id] = comment.body;
-      }
-    });
-
-    return Promise.all(comments.map(async comment => {
-      const rendered = renderedById[comment.id];
-      const baseHtml = rendered || textToLinkedHtml(comment.body || '', {attachmentImagesByName});
-      const bodyHtml = await normalizeRichHtml(baseHtml, {imageMaxHeight: 100, attachmentLookup});
-      const commentId = String(comment.id || '');
-      const isOwnedByCurrentUser = areSameJiraUser(comment.author, currentUser);
-      const isEditing = commentSession?.commentId === commentId && commentSession.mode === 'edit';
-      const isDeleteConfirming = commentSession?.commentId === commentId && commentSession.mode === 'delete';
-      const sessionError = commentSession?.commentId === commentId ? (commentSession.error || '') : '';
-      const editDraft = commentSession?.commentId === commentId
-        ? String(commentSession.draft ?? comment.body ?? '')
-        : String(comment.body || '');
-      const hasEditDraft = !!editDraft.trim();
-      const commentPermalink = buildCommentPermalink(issueKey, commentId);
-      const commentLinkTitleText = `[${issueKey}] ${issueData?.fields?.summary || ''}`.trim();
-      const reactionUi = commentLifecycle.view().reactions?.byCommentId?.[commentId] || {
-        errorMessage: '',
-        menuOptions: [],
-        pills: [],
-      };
-      const authorView = buildUserView(comment.author);
-      return {
-        id: commentId,
-        author: authorView.displayName || 'Unknown',
-        authorAvatarUrl: authorView.avatarUrl,
-        authorInitials: authorView.initials,
-        authorIdentity: {
-          accountId: comment.author?.accountId || '',
-          key: comment.author?.key || '',
-          name: comment.author?.name || comment.author?.username || '',
-          username: comment.author?.username || comment.author?.name || ''
-        },
-        created: formatRelativeDate(comment.created),
-        commentPermalink,
-        commentLinkTitle: buildLinkHoverTitle('Open comment in Jira', commentLinkTitleText, commentPermalink),
-        commentCopyTitle: buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink),
-        commentCopyLabel: commentLinkTitleText,
-        bodyHtml,
-        bodyRaw: String(comment.body || ''),
-        isOwnedByCurrentUser,
-        showCommentActions: isOwnedByCurrentUser,
-        isEditing,
-        isDeleteConfirming,
-        commentActionBusy: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentActionError: sessionError,
-        showCommentDefaultActions: isOwnedByCurrentUser && !isEditing && !isDeleteConfirming,
-        showCommentEditHeaderActions: isOwnedByCurrentUser && isEditing,
-        showCommentDeleteHeaderActions: isOwnedByCurrentUser && isDeleteConfirming,
-        commentEditDraft: editDraft,
-        commentEditSaveDisabled: !hasEditDraft || (!!commentSession?.saving && commentSession?.commentId === commentId),
-        commentEditCancelDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentDeleteCancelDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentDeleteConfirmDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentEditSaveText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Saving...' : 'Save',
-        commentDeleteConfirmText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Deleting...' : 'Yes',
-        commentDeleteCancelText: 'No',
-        reactionError: reactionUi.errorMessage,
-        hasReactionOptions: reactionUi.menuOptions.length > 0,
-        reactionPills: reactionUi.pills,
-        hasReactionPills: reactionUi.pills.length > 0,
-        menuReactionOptions: reactionUi.menuOptions,
-      };
-    }));
-  }
-
   async function handleCommentReactionClick(commentId, emojiId) {
     if (!popupState?.issueData || !commentId || !emojiId) {
       return;
@@ -2498,13 +2416,6 @@ async function mainAsyncLocal() {
       .join('\n');
   }
 
-  function buildCommentPermalink(issueKey, commentId) {
-    if (!issueKey || !commentId) {
-      return '';
-    }
-    return `${INSTANCE_URL}browse/${issueKey}?focusedCommentId=${commentId}&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-${commentId}`;
-  }
-
   function appendTooltipText(baseText, extraText) {
     const parts = [ensureTooltipSentence(baseText), ensureTooltipSentence(extraText)].filter(Boolean);
     return parts.join('\n\n');
@@ -2980,7 +2891,6 @@ async function mainAsyncLocal() {
     buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
     buildActiveEditPresentation,
     buildHistoryAttachmentLookup,
-    buildCommentsForDisplay,
     buildCustomFieldChips,
     buildEditableFieldChip,
     buildFilterChip,
@@ -3006,6 +2916,7 @@ async function mainAsyncLocal() {
     formatPullRequestTitle,
     formatSprintText,
     getEditableFieldCapability,
+    getCommentLifecycleView: () => commentLifecycle.view(),
     getTransitionOptions,
     getVisibleSprintsForDisplay,
     hasLabelSuggestionSupport,
@@ -5775,6 +5686,7 @@ async function mainAsyncLocal() {
           children: showChildren,
           pullRequests: showPullRequests,
           reactions: true,
+          viewer: true,
         },
       });
       if (!issueOutcome.snapshot?.core) {
@@ -5799,7 +5711,7 @@ async function mainAsyncLocal() {
           reactions: true,
         },
       });
-      commentLifecycle.attach({
+      await commentLifecycle.attach({
         sessionId: nextFieldSessionId,
         issueSnapshot: legacySnapshot.issueSnapshot,
       });

@@ -8,6 +8,151 @@ test.beforeEach(async ({page}) => {
   await page.addScriptTag({path: harnessPath});
 });
 
+test('comment view owns formatting, attachment fallback, ownership, row actions, and reactions', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createMockJiraAdapter, createCommentLifecycle} = window.JiraQuickViewDeepModules;
+    const normalized = [];
+    const lifecycle = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      clock: () => new Date('2026-08-23T12:00:00.000Z'),
+      formatting: {
+        async normalizeHtml(html, options) {
+          normalized.push({html, attachmentCount: options.attachments.length, imageMaxHeight: options.imageMaxHeight});
+          return `normalized:${html}`;
+        },
+      },
+    });
+    await lifecycle.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        viewer: {status: 'ready', user: {accountId: 'viewer-1', displayName: 'Ada Lovelace'}},
+        core: {
+          key: 'ABC-1',
+          fields: {
+            summary: 'Own comment display',
+            attachment: [{
+              filename: 'diagram.png',
+              inlineDataUrl: 'data:image/png;base64,inline',
+              previewDataUrl: 'data:image/png;base64,preview',
+            }],
+            comment: {comments: [
+              {id: '11', author: {accountId: 'viewer-1', displayName: 'Ada Lovelace'}, body: 'raw rendered', created: '2026-08-23T11:30:00.000Z'},
+              {id: '12', author: {accountId: 'other-1', displayName: 'Grace Hopper'}, body: 'Hi [~accountid:viewer-1]\n!diagram.png!', created: '2026-08-20T10:00:00.000Z'},
+            ]},
+          },
+          renderedFields: {comment: {comments: [{id: '11', body: '<p>Rendered body</p>'}]}},
+        },
+        sections: {reactions: {status: 'ready', supported: true, byCommentId: {'11': {'1f44d': {count: 1, reacted: true}}}}},
+      },
+    });
+    const initial = lifecycle.view().comments;
+    await lifecycle.dispatch({type: 'startEdit', commentId: '11'});
+    const editing = lifecycle.view().comments;
+    return {initial, editing, normalized};
+  });
+
+  expect(result.normalized).toEqual([
+    {html: '<p>Rendered body</p>', attachmentCount: 1, imageMaxHeight: 100},
+    {
+      html: 'Hi <span class="_JX_mention">@Ada Lovelace</span><br/><img class="_JX_previewable" src="data:image/png;base64,inline" data-jx-preview-src="data:image/png;base64,preview" alt="diagram.png" style="max-height: 100px;" />',
+      attachmentCount: 1,
+      imageMaxHeight: 100,
+    },
+  ]);
+  expect(result.initial[0]).toMatchObject({
+    id: '11',
+    bodyHtml: 'normalized:<p>Rendered body</p>',
+    author: 'Ada Lovelace',
+    authorInitials: 'AL',
+    created: '30m ago',
+    isOwnedByCurrentUser: true,
+    showCommentActions: true,
+    commentPermalink: 'https://jira.example/browse/ABC-1?focusedCommentId=11&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-11',
+    hasReactionPills: true,
+  });
+  expect(result.initial[1]).toMatchObject({
+    id: '12',
+    author: 'Grace Hopper',
+    created: 'Aug 20, 2026, 12:00 PM',
+    isOwnedByCurrentUser: false,
+    showCommentActions: false,
+  });
+  expect(result.editing[0]).toMatchObject({
+    isEditing: true,
+    showCommentDefaultActions: false,
+    showCommentEditHeaderActions: true,
+    commentEditDraft: 'raw rendered',
+  });
+});
+
+test('a late formatted view cannot replace comments from a newer attached issue', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createMockJiraAdapter, createCommentLifecycle} = window.JiraQuickViewDeepModules;
+    const oldFormatting = createDeferred();
+    const newFormatting = createDeferred();
+    const calls = [];
+    const lifecycle = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      formatting: {
+        normalizeHtml(html) {
+          calls.push(html);
+          return html === 'old body' ? oldFormatting.promise : newFormatting.promise;
+        },
+      },
+    });
+    const snapshot = (issueKey, commentId, body) => ({
+      issueKey,
+      core: {key: issueKey, fields: {comment: {comments: [{id: commentId, body}]}}},
+      sections: {},
+    });
+    const oldAttach = lifecycle.attach({sessionId: 'popup-1', issueSnapshot: snapshot('OLD-1', '11', 'old body')});
+    while (calls.length < 1) await Promise.resolve();
+    const newAttach = lifecycle.attach({sessionId: 'popup-2', issueSnapshot: snapshot('NEW-2', '22', 'new body')});
+    while (calls.length < 2) await Promise.resolve();
+    newFormatting.resolve('formatted new body');
+    const newOutcome = await newAttach;
+    oldFormatting.resolve('formatted old body');
+    const oldOutcome = await oldAttach;
+    return {newOutcome: newOutcome.kind, oldOutcome: oldOutcome.kind, view: lifecycle.view()};
+  });
+
+  expect(result).toMatchObject({
+    newOutcome: 'attached',
+    oldOutcome: 'ignored',
+    view: {issueKey: 'NEW-2', sessionId: 'popup-2', comments: [{id: '22', bodyHtml: 'formatted new body'}]},
+  });
+});
+
+test('a local formatting failure falls back to safe lifecycle HTML', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createMockJiraAdapter, createCommentLifecycle} = window.JiraQuickViewDeepModules;
+    const lifecycle = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      formatting: {async normalizeHtml() { throw new Error('Local formatter unavailable'); }},
+    });
+    const outcome = await lifecycle.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11', body: '<unsafe> & text'}]}}},
+        sections: {},
+      },
+    });
+    return {outcome: outcome.kind, comment: lifecycle.view().comments[0]};
+  });
+
+  expect(result).toMatchObject({
+    outcome: 'attached',
+    comment: {id: '11', bodyHtml: '&lt;unsafe&gt; &amp; text'},
+  });
+});
+
 test('new-comment lifecycle owns draft, write, refresh, and observable outcome', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
@@ -91,7 +236,7 @@ test('new-comment lifecycle owns draft, write, refresh, and observable outcome',
     issueKey: 'ABC-1',
     mutation: {kind: 'commentChanged'},
     priorSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {}}, sections: {}},
-    requirements: {history: true},
+    requirements: {history: true, reactions: true, viewer: true},
     signal: {},
   }]);
 });
