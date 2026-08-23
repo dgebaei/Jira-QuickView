@@ -104,7 +104,6 @@ export function createContentPopupStateHelpers(options) {
       quickActions,
       ...buildPopupInteractionReset({
         lastActionSuccess: showSnackBar ? '' : successMessage,
-        historyOpen: shouldKeepHistoryOpen,
         changelogData: shouldKeepHistoryOpen ? (refreshedChangelog || {histories: []}) : null,
         changelogLoading: false,
       }),

@@ -502,11 +502,32 @@ async function mainAsyncLocal() {
       actionError: '',
       lastActionSuccess: '',
       actionsOpen: false,
-      historyOpen: false,
       changelogData: null,
       changelogLoading: false,
       editState: null,
       ...overrides,
+    };
+  }
+  function applyPopupPresentation(currentState, presentation = {}) {
+    const activePanel = presentation.activePanel || '';
+    const watchersState = {
+      ...emptyWatchersState(),
+      ...currentState.watchersState,
+      open: activePanel === 'watchers',
+      focusSearch: activePanel === 'watchers' && !!currentState.watchersState?.focusSearch,
+    };
+    const linkedIssuesState = {
+      ...emptyLinkedIssuesState(),
+      ...currentState.linkedIssuesState,
+      open: activePanel === 'linkedIssues',
+      focusSearch: activePanel === 'linkedIssues' && !!currentState.linkedIssuesState?.focusSearch,
+    };
+    return {
+      ...currentState,
+      ...presentation,
+      historyOpen: activePanel === 'history',
+      watchersState,
+      linkedIssuesState,
     };
   }
   const popupQuickActions = createPopupQuickActions({
@@ -542,7 +563,7 @@ async function mainAsyncLocal() {
   const popupSurface = createBrowserPopupSurface({
     async commitCurrent(frame, context) {
       if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
-      popupState = {...popupState, ...frame.presentation};
+      popupState = applyPopupPresentation(popupState, frame.presentation);
       await popupRenderer.render(popupState, context);
     },
     async commitVisible(frame, context) {
@@ -556,14 +577,13 @@ async function mainAsyncLocal() {
         quickActions = [];
       }
       if (!context.isCurrent()) return;
-      const initialPopupState = {
+      const initialPopupState = applyPopupPresentation({
         key: frame.issueKey,
         issueSnapshot: legacySnapshot.issueSnapshot,
         issueData,
         children: legacySnapshot.children,
         childrenJql: legacySnapshot.childrenJql,
         childrenError: legacySnapshot.childrenError,
-        ...frame.presentation,
         pullRequests: legacySnapshot.pullRequests,
         pointerX: Number(frame.anchor?.x) || 0,
         pointerY: Number(frame.anchor?.y) || 0,
@@ -574,7 +594,7 @@ async function mainAsyncLocal() {
         watchersState: emptyWatchersState(),
         linkedIssuesState: emptyLinkedIssuesState(),
         timeTrackingEditState: createTimeTrackingEditState(issueData),
-      };
+      }, frame.presentation);
       if (!context.isCurrent()) return;
       popupState = initialPopupState;
       await popupRenderer.render(initialPopupState, context);
@@ -2879,21 +2899,23 @@ async function mainAsyncLocal() {
     if (!popupState?.issueData?.key) {
       return;
     }
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        open: true,
+    const issueKey = popupState.issueData.key;
+    popupState = {
+      ...popupState,
+      watchersState: buildNextWatchersState(popupState.watchersState, {
         loading: true,
         errorMessage: '',
         addFeedback: null,
         removeFeedback: null,
         focusSearch: true,
-      })
-    }));
+      }),
+    };
+    const opened = await popupSession.dispatch({type: 'open-panel', panel: 'watchers'});
+    if (opened.presentation?.activePanel !== 'watchers' || popupState?.issueData?.key !== issueKey) return;
 
     try {
-      const watcherData = await getIssueWatchers(popupState.issueData.key);
-      if (!popupState?.watchersState?.open) {
+      const watcherData = await getIssueWatchers(issueKey);
+      if (!popupState?.watchersState?.open || popupState.issueData?.key !== issueKey) {
         return;
       }
       await renderUpdatedPopupState(currentState => ({
@@ -2905,7 +2927,7 @@ async function mainAsyncLocal() {
         })
       }));
     } catch (error) {
-      if (!popupState?.watchersState?.open) {
+      if (!popupState?.watchersState?.open || popupState.issueData?.key !== issueKey) {
         return;
       }
       await renderUpdatedPopupState(currentState => ({
@@ -2918,15 +2940,11 @@ async function mainAsyncLocal() {
     }
   }
 
-  function closeWatchersPanel() {
-    if (!popupState?.watchersState?.open) {
-      return;
-    }
+  function resetWatchersPanelState() {
     clearWatchersFeedbackTimer();
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        open: false,
+    popupState = {
+      ...popupState,
+      watchersState: buildNextWatchersState(popupState?.watchersState, {
         loading: false,
         errorMessage: '',
         searchValue: '',
@@ -2938,19 +2956,41 @@ async function mainAsyncLocal() {
         addFeedback: null,
         removeFeedback: null,
         focusSearch: false,
-      })
-    })).catch(() => {});
+      }),
+    };
+  }
+
+  function closeWatchersPanel() {
+    if (!popupState?.watchersState?.open) return;
+    resetWatchersPanelState();
+    popupSession.dispatch({type: 'close-panel', panel: 'watchers'}).catch(() => {});
   }
 
   function closeHistoryFlyout() {
     if (!popupState?.historyOpen) {
       return;
     }
-    popupState = {
-      ...popupState,
-      historyOpen: false
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    popupSession.dispatch({type: 'close-panel', panel: 'history'}).catch(() => {});
+  }
+
+  async function toggleHistoryFlyout() {
+    if (!popupState?.issueData?.key) return;
+    const issueKey = popupState.issueData.key;
+    const opening = !popupState.historyOpen;
+    const shouldLoad = opening && !popupState.changelogData && !popupState.changelogLoading;
+    if (opening && popupState.watchersState?.open) resetWatchersPanelState();
+    if (shouldLoad) popupState = {...popupState, changelogLoading: true};
+    const outcome = await popupSession.dispatch({type: 'toggle-panel', panel: 'history'});
+    if (outcome.presentation?.activePanel !== 'history' || !shouldLoad) return;
+    try {
+      const changelog = await getIssueChangelog(issueKey);
+      if (!popupState || popupState.key !== issueKey) return;
+      popupState = {...popupState, changelogData: changelog, changelogLoading: false};
+    } catch (error) {
+      if (!popupState || popupState.key !== issueKey) return;
+      popupState = {...popupState, changelogData: {histories: []}, changelogLoading: false};
+    }
+    if (popupState.historyOpen) await renderCurrentPopup('history-loaded');
   }
 
   function updateWatchersSearch(nextValue) {
@@ -3103,18 +3143,17 @@ async function mainAsyncLocal() {
       return;
     }
     const issueKey = popupState.issueData.key;
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      historyOpen: false,
-      watchersState: buildNextWatchersState(currentState.watchersState, {open: false, focusSearch: false}),
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        open: true,
+    popupState = {
+      ...popupState,
+      linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
         loading: true,
         errorMessage: '',
         feedbackMessage: '',
         focusSearch: true,
       }),
-    }));
+    };
+    const opened = await popupSession.dispatch({type: 'open-panel', panel: 'linkedIssues'});
+    if (opened.presentation?.activePanel !== 'linkedIssues' || popupState?.issueData?.key !== issueKey) return;
 
     const [linkTypesResult, detailsResult] = await Promise.allSettled([
       getIssueLinkTypes(issueKey),
@@ -3146,16 +3185,15 @@ async function mainAsyncLocal() {
       clearTimeout(linkedIssuesSearchTimeoutId);
       linkedIssuesSearchTimeoutId = null;
     }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        open: false,
+    popupState = {
+      ...popupState,
+      linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
         loading: false,
         errorMessage: '',
         feedbackMessage: '',
         searchValue: '',
         searchLoading: false,
-        searchRequestId: (currentState.linkedIssuesState?.searchRequestId || 0) + 1,
+        searchRequestId: (popupState.linkedIssuesState?.searchRequestId || 0) + 1,
         searchResults: [],
         selectedIssues: [],
         pendingAddKeys: [],
@@ -3163,7 +3201,8 @@ async function mainAsyncLocal() {
         confirmingRemoveId: '',
         focusSearch: false,
       }),
-    })).catch(() => {});
+    };
+    popupSession.dispatch({type: 'close-panel', panel: 'linkedIssues'}).catch(() => {});
   }
 
   async function runLinkedIssuesSearch(query, requestId) {
@@ -3330,7 +3369,6 @@ async function mainAsyncLocal() {
     await renderUpdatedPopupState(currentState => ({
       ...currentState,
       linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        open: true,
         loading: false,
         issueDetailsByKey,
         pendingAddKeys: [],
@@ -4176,21 +4214,6 @@ async function mainAsyncLocal() {
   $(document.body).on('click', '._JX_watchers_trigger', function (e) {
     e.preventDefault();
     e.stopPropagation();
-    if (popupState?.historyOpen) {
-      popupState = {
-        ...popupState,
-        historyOpen: false
-      };
-    }
-    if (popupState?.linkedIssuesState?.open) {
-      popupState = {
-        ...popupState,
-        linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
-          open: false,
-          focusSearch: false,
-        }),
-      };
-    }
     if (popupState?.watchersState?.open) {
       closeWatchersPanel();
       return;
@@ -4368,53 +4391,7 @@ async function mainAsyncLocal() {
     if (!popupState) {
       return;
     }
-    if (popupState.watchersState?.open) {
-      closeWatchersPanel();
-    }
-    if (popupState.linkedIssuesState?.open) {
-      popupState = {
-        ...popupState,
-        linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
-          open: false,
-          focusSearch: false,
-        }),
-      };
-    }
-    const nextOpen = !popupState.historyOpen;
-    popupState = {
-      ...popupState,
-      historyOpen: nextOpen
-    };
-    if (nextOpen && !popupState.changelogData && !popupState.changelogLoading) {
-      popupState.changelogLoading = true;
-      renderIssuePopup(popupState).catch(() => {});
-      const issueKey = popupState.key;
-      getIssueChangelog(issueKey).then(changelog => {
-        if (!popupState || popupState.key !== issueKey) {
-          return;
-        }
-        popupState = {
-          ...popupState,
-          changelogData: changelog,
-          changelogLoading: false
-        };
-        if (popupState.historyOpen) {
-          renderIssuePopup(popupState).catch(() => {});
-        }
-      }).catch(() => {
-        if (!popupState || popupState.key !== issueKey) {
-          return;
-        }
-        popupState = {
-          ...popupState,
-          changelogData: {histories: []},
-          changelogLoading: false
-        };
-        renderIssuePopup(popupState).catch(() => {});
-      });
-    } else {
-      renderIssuePopup(popupState).catch(() => {});
-    }
+    toggleHistoryFlyout().catch(() => {});
   });
 
   $(document.body).on('click', '._JX_history_close', function (e) {
@@ -5078,11 +5055,7 @@ async function mainAsyncLocal() {
         return;
       }
       if (popupState?.historyOpen) {
-        popupState = {
-          ...popupState,
-          historyOpen: false
-        };
-        renderIssuePopup(popupState).catch(() => {});
+        closeHistoryFlyout();
         return;
       }
       if (popupState?.descriptionEditState?.open) {

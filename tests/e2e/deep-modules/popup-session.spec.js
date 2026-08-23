@@ -313,17 +313,22 @@ test('popup session owns sorting transitions and publishes their observable pres
     const childrenReversed = await popup.dispatch({type: 'sort-children', column: 'status'});
     const pullRequests = await popup.dispatch({type: 'sort-pull-requests', column: 'status'});
     const comments = await popup.dispatch({type: 'toggle-comment-sort'});
+    const sorting = presentation => ({
+      childrenSort: presentation.childrenSort,
+      pullRequestsSort: presentation.pullRequestsSort,
+      commentSortOrder: presentation.commentSortOrder,
+    });
     return {
       outcomes: {
-        children: children.presentation,
-        childrenReversed: childrenReversed.presentation,
-        pullRequests: pullRequests.presentation,
-        comments: comments.presentation,
+        children: sorting(children.presentation),
+        childrenReversed: sorting(childrenReversed.presentation),
+        pullRequests: sorting(pullRequests.presentation),
+        comments: sorting(comments.presentation),
       },
       frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
         kind: frame.kind,
         reason: frame.reason || '',
-        presentation: frame.presentation,
+        presentation: sorting(frame.presentation),
       })),
     };
   });
@@ -397,6 +402,55 @@ test('popup session owns sorting transitions and publishes their observable pres
           commentSortOrder: 'newest',
         },
       },
+    ],
+  });
+});
+
+test('popup session owns mutually exclusive panel transitions', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const history = await popup.dispatch({type: 'open-panel', panel: 'history'});
+    const watchers = await popup.dispatch({type: 'open-panel', panel: 'watchers'});
+    const watchersClosed = await popup.dispatch({type: 'toggle-panel', panel: 'watchers'});
+    const linkedIssues = await popup.dispatch({type: 'open-panel', panel: 'linkedIssues'});
+    const linkedIssuesClosed = await popup.dispatch({type: 'close-panel', panel: 'linkedIssues'});
+    const invalid = await popup.dispatch({type: 'open-panel', panel: 'unknown'});
+    return {
+      outcomes: [history, watchers, watchersClosed, linkedIssues, linkedIssuesClosed]
+        .map(item => item.presentation.activePanel),
+      invalid: {kind: invalid.kind, reason: invalid.reason},
+      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        activePanel: frame.presentation.activePanel,
+      })),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: ['history', 'watchers', '', 'linkedIssues', ''],
+    invalid: {kind: 'ignored', reason: 'invalid-panel'},
+    frames: [
+      {kind: 'visible', reason: '', activePanel: ''},
+      {kind: 'update', reason: 'panel-opened', activePanel: 'history'},
+      {kind: 'update', reason: 'panel-opened', activePanel: 'watchers'},
+      {kind: 'update', reason: 'panel-closed', activePanel: ''},
+      {kind: 'update', reason: 'panel-opened', activePanel: 'linkedIssues'},
+      {kind: 'update', reason: 'panel-closed', activePanel: ''},
     ],
   });
 });
