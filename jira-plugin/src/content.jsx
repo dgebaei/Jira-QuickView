@@ -19,7 +19,6 @@ import {
 } from 'src/content-linked-issues-helpers';
 import {createPopupProjectView} from 'src/popup-session/project-view';
 import {createContentPeopleHelpers} from 'src/content-people-helpers';
-import {createContentPopupStateHelpers} from 'src/content-popup-state-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
@@ -530,6 +529,155 @@ async function mainAsyncLocal() {
       linkedIssuesState,
     };
   }
+
+  function buildNextWatchersState(currentState = emptyWatchersState(), changes = {}) {
+    return {
+      ...emptyWatchersState(),
+      ...currentState,
+      ...changes,
+    };
+  }
+
+  async function renderUpdatedPopupState(nextStateOrUpdater, renderOptions = {}) {
+    const currentState = popupState;
+    const nextState = typeof nextStateOrUpdater === 'function'
+      ? nextStateOrUpdater(currentState)
+      : nextStateOrUpdater;
+    if (typeof renderOptions.isCurrent === 'function' && !renderOptions.isCurrent()) {
+      return currentState;
+    }
+    popupState = nextState;
+    await renderIssuePopup(nextState, renderOptions);
+    return nextState;
+  }
+
+  async function refreshPopupIssueState(successMessage = '', refreshOptions = {}) {
+    if (!popupState?.key) return;
+    const {
+      showSnackBar = false,
+      nextTimeTrackingEditState,
+      refreshWatchersPanel = false,
+      nextWatchersStateChanges = {},
+      scheduleWatchersFeedbackReset = false,
+      preserveHistory = false,
+      scheduleWatchersFeedbackClear = null,
+    } = refreshOptions;
+    const popupKey = popupState.key;
+    const priorSnapshot = popupState.issueSnapshot;
+    const shouldRefreshWatchersPanel = !!(refreshWatchersPanel || popupState.watchersState?.open);
+    const shouldKeepHistoryOpen = !!(preserveHistory && popupState.historyOpen);
+    const issueOutcome = await quickViewIssueData.refreshAfterMutation({
+      issueKey: popupKey,
+      priorSnapshot,
+      mutation: refreshOptions.mutation || {kind: 'issueChanged'},
+      requirements: {
+        history: shouldKeepHistoryOpen,
+        linkedIssues: !!popupState.linkedIssuesState?.open,
+        pullRequests: showPullRequests,
+        watchers: shouldRefreshWatchersPanel,
+      },
+    });
+    if (!issueOutcome.snapshot?.core) {
+      const message = issueOutcome.failures?.core?.message || 'Could not refresh issue';
+      const error = new Error(message);
+      error.inner = message;
+      throw error;
+    }
+    const refreshedIssueData = issueOutcome.snapshot.core;
+    const historySection = issueOutcome.snapshot.sections?.history;
+    const refreshedChangelog = shouldKeepHistoryOpen && ['ready', 'empty'].includes(historySection?.status)
+      ? historySection.data
+      : {histories: []};
+    const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
+    const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
+    const watcherSection = issueOutcome.snapshot.sections?.watchers;
+    const refreshedWatcherData = ['ready', 'empty', 'staleRetained'].includes(watcherSection?.status)
+      ? watcherSection.data
+      : null;
+    let quickActions = [];
+    try {
+      quickActions = await resolveQuickActions(refreshedIssueData);
+    } catch (error) {
+      quickActions = [];
+    }
+    if (!popupState || popupState.key !== popupKey) return;
+    clearActionNoticeTimer();
+    await renderUpdatedPopupState(currentState => ({
+      ...currentState,
+      issueSnapshot: issueOutcome.snapshot,
+      issueData: refreshedIssueData,
+      pullRequests: refreshedPullRequests,
+      quickActions,
+      ...buildPopupInteractionReset({
+        lastActionSuccess: showSnackBar ? '' : successMessage,
+        changelogData: shouldKeepHistoryOpen ? (refreshedChangelog || {histories: []}) : null,
+        changelogLoading: false,
+      }),
+      timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
+      watchersState: refreshedWatcherData
+        ? buildNextWatchersState(currentState.watchersState, {
+            loading: false,
+            errorMessage: '',
+            watchers: refreshedWatcherData.watchers,
+            pendingAddIds: [],
+            pendingRemoveIds: [],
+            searchResults: (currentState.watchersState?.searchResults || []).filter(result => {
+              return !refreshedWatcherData.watchers.some(watcher => watcher.id === result.id);
+            }),
+            focusSearch: !!currentState.watchersState?.open,
+            ...nextWatchersStateChanges,
+          })
+        : currentState.watchersState,
+    }));
+    if (scheduleWatchersFeedbackReset && typeof scheduleWatchersFeedbackClear === 'function') {
+      scheduleWatchersFeedbackClear();
+    }
+    if (!showSnackBar && successMessage) scheduleActionNoticeClear(successMessage);
+    if (showSnackBar && successMessage) snackBar(successMessage);
+  }
+
+  async function handleDraftAttachmentUploaded(uploadedAttachment) {
+    const attachmentPopupState = popupState;
+    const popupKey = attachmentPopupState?.key;
+    const currentIssueData = attachmentPopupState?.issueData;
+    if (!popupKey || !currentIssueData?.fields || !uploadedAttachment) return;
+    const normalizedAttachment = await normalizeIssueAttachmentImage({...uploadedAttachment});
+    const issueOutcome = await quickViewIssueData.refreshAfterMutation({
+      issueKey: popupKey,
+      priorSnapshot: attachmentPopupState.issueSnapshot,
+      mutation: {kind: 'attachmentChanged'},
+      requirements: {history: !!attachmentPopupState.historyOpen},
+    });
+    const historySection = issueOutcome.snapshot?.sections?.history;
+    const refreshedChangelog = attachmentPopupState.historyOpen && ['ready', 'empty'].includes(historySection?.status)
+      ? historySection.data
+      : attachmentPopupState.changelogData;
+    if (!popupState || popupState.key !== popupKey) return;
+    await renderUpdatedPopupState(currentState => {
+      const existingAttachments = Array.isArray(currentState?.issueData?.fields?.attachment)
+        ? currentState.issueData.fields.attachment
+        : [];
+      const normalizedFileName = normalizeHistoryAttachmentName(normalizedAttachment.filename);
+      const nextAttachments = [
+        ...existingAttachments.filter(attachment => {
+          const sameId = normalizedAttachment.id && attachment?.id && String(attachment.id) === String(normalizedAttachment.id);
+          const sameName = normalizedFileName && normalizeHistoryAttachmentName(attachment?.filename) === normalizedFileName;
+          return !(sameId || sameName);
+        }),
+        normalizedAttachment,
+      ];
+      return {
+        ...currentState,
+        issueSnapshot: issueOutcome.snapshot || currentState.issueSnapshot,
+        issueData: {
+          ...currentState.issueData,
+          fields: {...currentState.issueData.fields, attachment: nextAttachments},
+        },
+        changelogData: refreshedChangelog || currentState.changelogData,
+        changelogLoading: false,
+      };
+    });
+  }
   const popupQuickActions = createPopupQuickActions({
     INSTANCE_URL,
     formatSprintActionLabel,
@@ -612,30 +760,6 @@ async function mainAsyncLocal() {
     fieldEditing: jiraFieldEditing,
     comments: commentLifecycle,
     surface: popupSurface,
-  });
-
-  const {
-    buildNextWatchersState,
-    handleDraftAttachmentUploaded,
-    refreshPopupIssueState,
-    renderUpdatedPopupState,
-  } = createContentPopupStateHelpers({
-    buildPopupInteractionReset,
-    clearActionNoticeTimer,
-    createTimeTrackingEditState,
-    emptyWatchersState,
-    getPopupState: () => popupState,
-    issueData: quickViewIssueData,
-    normalizeHistoryAttachmentName,
-    normalizeIssueAttachmentImage,
-    renderIssuePopup,
-    resolveQuickActions,
-    scheduleActionNoticeClear,
-    setPopupState: nextState => {
-      popupState = nextState;
-    },
-    showPullRequests,
-    snackBar,
   });
 
   const {
