@@ -23,7 +23,6 @@ export function createContentPopupStateHelpers(options) {
       changelogData: null,
       changelogLoading: false,
       editState: null,
-      commentSession: null,
       ...overrides,
     };
   }

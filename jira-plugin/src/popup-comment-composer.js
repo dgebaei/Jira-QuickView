@@ -3,19 +3,9 @@ import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 export function createPopupCommentComposer(deps) {
   const {
     escapeHtml,
-    getCommentComposerErrorMessage,
-    getCommentComposerHadFocus,
-    getCommentComposerSelectionEnd,
-    getCommentComposerSelectionStart,
-    getCommentComposerDraftValue,
     getCommentLifecycleView,
     getContainer,
     keepContainerVisible,
-    setCommentComposerErrorMessage,
-    setCommentComposerHadFocus,
-    setCommentComposerSelectionEnd,
-    setCommentComposerSelectionStart,
-    setCommentComposerDraftValue,
   } = deps;
 
   function getCommentComposerElements() {
@@ -31,53 +21,12 @@ export function createPopupCommentComposer(deps) {
     };
   }
 
-  function captureCommentComposerDraft() {
-    const {root, input, error} = getCommentComposerElements();
-    const inputElement = input.get(0);
-    if (!root.length || !inputElement) {
-      return null;
-    }
-    return {
-      errorText: error.text() || '',
-      hadFocus: document.activeElement === inputElement,
-      saving: root.attr('data-saving') === 'true',
-      selectionEnd: typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : (input.val() || '').length,
-      selectionStart: typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : (input.val() || '').length,
-      value: input.val() || '',
-    };
-  }
-
   function setCommentComposerError(message) {
-    setCommentComposerErrorMessage(message || '');
     const {error} = getCommentComposerElements();
     if (!error.length) {
       return;
     }
     error.text(message || '');
-  }
-
-  function restoreCommentComposerDraft(draft) {
-    if (!draft) {
-      return;
-    }
-    const {root, input} = getCommentComposerElements();
-    const inputElement = input.get(0);
-    if (!root.length || !inputElement) {
-      return;
-    }
-    input.val(draft.value || '');
-    root.attr('data-saving', draft.saving ? 'true' : 'false');
-    setCommentComposerError(draft.errorText || '');
-    const nextValue = String(draft.value || '');
-    const maxIndex = nextValue.length;
-    const selectionStart = Math.min(maxIndex, Number.isInteger(draft.selectionStart) ? draft.selectionStart : maxIndex);
-    const selectionEnd = Math.min(maxIndex, Number.isInteger(draft.selectionEnd) ? draft.selectionEnd : maxIndex);
-    if (!draft.saving) {
-      if (draft.hadFocus) {
-        inputElement.focus();
-      }
-      inputElement.setSelectionRange(selectionStart, selectionEnd);
-    }
   }
 
   function renderCommentUploads() {
@@ -119,16 +68,7 @@ export function createPopupCommentComposer(deps) {
   }
 
   async function discardCommentComposerDraft() {
-    setCommentComposerDraftValue('');
-    setCommentComposerHadFocus(false);
-    setCommentComposerSelectionStart(0);
-    setCommentComposerSelectionEnd(0);
-    const {input} = getCommentComposerElements();
-    if (input.length) {
-      input.val('');
-    }
-    setCommentComposerError('');
-    syncCommentComposerState();
+    restoreCommentComposerState();
   }
 
   function getClipboardImageFiles(event) {
@@ -211,14 +151,16 @@ export function createPopupCommentComposer(deps) {
     if (!elements.root.length) {
       return;
     }
-    const isSaving = elements.root.attr('data-saving') === 'true';
-    const uploadsView = getCommentLifecycleView().compose?.uploads || [];
+    const composeView = getCommentLifecycleView().compose;
+    if (!composeView) return;
+    const isSaving = !!composeView.saving;
+    const uploadsView = composeView.uploads || [];
     const hasUploadsInFlight = uploadsView.some(item => item.status === 'uploading');
-    const hasText = !!elements.input.val().trim();
     const hasDraftUploads = uploadsView.length > 0;
+    elements.root.attr('data-saving', isSaving ? 'true' : 'false');
     elements.input.prop('disabled', isSaving);
-    elements.save.prop('disabled', !hasText || isSaving || hasUploadsInFlight).text(isSaving ? 'Saving...' : (hasUploadsInFlight ? 'Uploading...' : 'Save'));
-    elements.discard.prop('disabled', (!hasText && !hasDraftUploads) || isSaving);
+    elements.save.prop('disabled', !composeView.canSave).text(isSaving ? 'Saving...' : (hasUploadsInFlight ? 'Uploading...' : 'Save'));
+    elements.discard.prop('disabled', (!composeView.value.trim() && !hasDraftUploads) || isSaving);
   }
 
   function restoreCommentComposerState() {
@@ -226,29 +168,28 @@ export function createPopupCommentComposer(deps) {
     if (!elements.root.length) {
       return;
     }
-    if (elements.input.val() !== getCommentComposerDraftValue()) {
-      elements.input.val(getCommentComposerDraftValue());
-    }
-    setCommentComposerError(getCommentComposerErrorMessage());
+    const composeView = getCommentLifecycleView().compose;
+    if (!composeView) return;
+    if (elements.input.val() !== composeView.value) elements.input.val(composeView.value);
+    setCommentComposerError(composeView.errorMessage);
+    syncCommentComposerState();
     const inputElement = elements.input.get(0);
-    if (inputElement && getCommentComposerHadFocus()) {
+    if (inputElement && composeView.focused && !composeView.saving) {
       inputElement.focus();
       const maxIndex = inputElement.value.length;
       inputElement.setSelectionRange(
-        Math.min(maxIndex, Number.isInteger(getCommentComposerSelectionStart()) ? getCommentComposerSelectionStart() : maxIndex),
-        Math.min(maxIndex, Number.isInteger(getCommentComposerSelectionEnd()) ? getCommentComposerSelectionEnd() : maxIndex)
+        Math.min(maxIndex, Number.isInteger(composeView.selection?.start) ? composeView.selection.start : maxIndex),
+        Math.min(maxIndex, Number.isInteger(composeView.selection?.end) ? composeView.selection.end : maxIndex)
       );
     }
   }
 
   return {
     getCommentComposerElements,
-    captureCommentComposerDraft,
     discardCommentComposerDraft,
     getClipboardImageFiles,
     renderCommentMentionSuggestions,
     renderCommentUploads,
-    restoreCommentComposerDraft,
     restoreCommentComposerState,
     setCommentComposerError,
     syncCommentComposerState,

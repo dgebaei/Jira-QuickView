@@ -564,15 +564,10 @@ async function mainAsyncLocal() {
   let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
   let popupState = null;
+  let popupRenderSequence = 0;
   let fieldSessionSequence = 0;
   let activeFieldSessionId = '';
   let activeCommentSessionId = '';
-  let activeCommentContext = null;
-  let commentComposerDraftValue = '';
-  let commentComposerErrorMessage = '';
-  let commentComposerHadFocus = false;
-  let commentComposerSelectionStart = 0;
-  let commentComposerSelectionEnd = 0;
   const {
     buildQuickActionError,
     buildQuickActionViewData,
@@ -648,32 +643,19 @@ async function mainAsyncLocal() {
   });
 
   const {
-    captureCommentComposerDraft,
     discardCommentComposerDraft,
     getClipboardImageFiles,
     getCommentComposerElements,
     renderCommentMentionSuggestions,
     renderCommentUploads,
-    restoreCommentComposerDraft,
     restoreCommentComposerState,
     setCommentComposerError,
     syncCommentComposerState,
   } = createPopupCommentComposer({
     escapeHtml,
-    getCommentComposerErrorMessage: () => commentComposerErrorMessage,
-    getCommentComposerHadFocus: () => commentComposerHadFocus,
-    getCommentComposerSelectionEnd: () => commentComposerSelectionEnd,
-    getCommentComposerSelectionStart: () => commentComposerSelectionStart,
-    getCommentComposerDraftValue: () => commentComposerDraftValue,
     getCommentLifecycleView: () => commentLifecycle.view(),
     getContainer: () => container,
     keepContainerVisible,
-    setActiveCommentContext: nextValue => { activeCommentContext = nextValue; },
-    setCommentComposerErrorMessage: nextValue => { commentComposerErrorMessage = nextValue; },
-    setCommentComposerHadFocus: nextValue => { commentComposerHadFocus = nextValue; },
-    setCommentComposerSelectionEnd: nextValue => { commentComposerSelectionEnd = nextValue; },
-    setCommentComposerSelectionStart: nextValue => { commentComposerSelectionStart = nextValue; },
-    setCommentComposerDraftValue: nextValue => { commentComposerDraftValue = nextValue; },
   });
 
 
@@ -1649,7 +1631,7 @@ async function mainAsyncLocal() {
   }
 
   async function handleCommentSave() {
-    const commentIssueKey = activeCommentContext?.issueKey || '';
+    const commentIssueKey = commentLifecycle.view().issueKey;
     if (!commentIssueKey) {
       return;
     }
@@ -1657,7 +1639,6 @@ async function mainAsyncLocal() {
     const elements = getCommentComposerElements();
     const commentDraftText = String(elements.input.val() || '');
     const commentText = commentDraftText.trim();
-    commentComposerDraftValue = commentText;
     if (!commentText) {
       syncCommentComposerState();
       return;
@@ -1703,10 +1684,6 @@ async function mainAsyncLocal() {
         };
       }
       elements.input.val('');
-      commentComposerDraftValue = '';
-      commentComposerHadFocus = false;
-      commentComposerSelectionStart = 0;
-      commentComposerSelectionEnd = 0;
       setCommentComposerError('');
       await renderIssuePopup(popupState);
       if (outcome.failure) {
@@ -1733,40 +1710,16 @@ async function mainAsyncLocal() {
 
 
   function getActiveCommentSession() {
-    return popupState?.commentSession || null;
+    return commentLifecycle.view().rowAction || null;
   }
 
   function resetCommentEditMentionState() {
     commentLifecycle.dispatch({type: 'dismissMention', lane: 'edit'}).catch(() => {});
   }
 
-  function setCommentSession(nextSession) {
-    if (!popupState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      commentSession: nextSession
-    };
-  }
-
-  function syncCommentSessionFromLifecycle() {
-    const rowAction = commentLifecycle.view().rowAction;
-    setCommentSession(rowAction ? {
-      commentId: rowAction.commentId,
-      draft: rowAction.draft,
-      error: rowAction.errorMessage,
-      mode: rowAction.mode,
-      selectionEnd: rowAction.selection?.end || 0,
-      selectionStart: rowAction.selection?.start || 0,
-      saving: rowAction.saving,
-    } : null);
-  }
-
   async function applyCommentRowActionOutcome(outcome) {
     const isCurrent = popupState?.key === outcome.issueKey && outcome.sessionId === activeCommentSessionId;
     if (!isCurrent) return;
-    syncCommentSessionFromLifecycle();
     if (outcome.kind === 'mutationCommitted' && outcome.refreshedSnapshot?.core) {
       const historySection = outcome.refreshedSnapshot.sections?.history;
       popupState = {
@@ -1787,12 +1740,11 @@ async function mainAsyncLocal() {
   }
 
   function cancelCommentSession() {
-    if (!popupState?.commentSession) {
+    if (!commentLifecycle.view().rowAction) {
       return;
     }
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'cancelRowAction'}).then(() => {
-      syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
   }
@@ -1804,14 +1756,12 @@ async function mainAsyncLocal() {
     pinContainer({showNotice: false});
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'startEdit', commentId}).then(() => {
-      syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
   }
 
   function moveCommentEditMentionSelection(delta) {
     commentLifecycle.dispatch({type: 'moveMention', lane: 'edit', delta}).then(() => {
-      syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
   }
@@ -1880,7 +1830,6 @@ async function mainAsyncLocal() {
       lane: 'edit',
       index,
     }).then(() => {
-      syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
   }
@@ -1891,7 +1840,6 @@ async function mainAsyncLocal() {
     }
     resetCommentEditMentionState();
     commentLifecycle.dispatch({type: 'startDelete', commentId}).then(() => {
-      syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
   }
@@ -1907,10 +1855,8 @@ async function mainAsyncLocal() {
       value: draft,
       selection: {start: selectionStart, end: selectionEnd},
     });
-    syncCommentSessionFromLifecycle();
     renderIssuePopup(popupState).catch(() => {});
     pending.then(() => {
-      syncCommentSessionFromLifecycle();
       return renderIssuePopup(popupState);
     }).catch(() => {});
   }
@@ -1926,7 +1872,6 @@ async function mainAsyncLocal() {
       commentId,
       requirements: {history: !!popupState?.historyOpen},
     });
-    syncCommentSessionFromLifecycle();
     await renderIssuePopup(popupState);
     await applyCommentRowActionOutcome(await pending);
   }
@@ -1942,7 +1887,6 @@ async function mainAsyncLocal() {
       commentId,
       requirements: {history: !!popupState?.historyOpen},
     });
-    syncCommentSessionFromLifecycle();
     await renderIssuePopup(popupState);
     await applyCommentRowActionOutcome(await pending);
   }
@@ -2991,25 +2935,17 @@ async function mainAsyncLocal() {
     if (!state?.issueData) {
       return;
     }
-    const commentComposerDraft = state.key === activeCommentContext?.issueKey
-      ? captureCommentComposerDraft()
-      : null;
+    const renderSequence = ++popupRenderSequence;
+    const existingCommentInput = container.find('._JX_comment_input').get(0);
+    if (existingCommentInput && state.key === commentLifecycle.view().issueKey) {
+      commentLifecycle.dispatch({
+        type: 'composeFocusChanged',
+        focused: document.activeElement === existingCommentInput,
+      }).catch(() => {});
+    }
     const displayData = await buildPopupDisplayData(state);
-    if (state !== popupState) {
+    if (state !== popupState || renderSequence !== popupRenderSequence) {
       return;
-    }
-    if (activeCommentContext?.issueKey && activeCommentContext.issueKey !== state.key) {
-      discardCommentComposerDraft().catch(() => {});
-    }
-    const existingCommentInput = container.find('._JX_comment_input');
-    if (existingCommentInput.length) {
-      commentComposerDraftValue = existingCommentInput.val() || '';
-      const existingCommentInputElement = existingCommentInput.get(0);
-      if (existingCommentInputElement) {
-        commentComposerHadFocus = document.activeElement === existingCommentInputElement;
-        commentComposerSelectionStart = typeof existingCommentInputElement.selectionStart === 'number' ? existingCommentInputElement.selectionStart : commentComposerDraftValue.length;
-        commentComposerSelectionEnd = typeof existingCommentInputElement.selectionEnd === 'number' ? existingCommentInputElement.selectionEnd : commentComposerDraftValue.length;
-      }
     }
     const existingContentBlocks = container.find('._JX_content_blocks');
     const savedScrollLeft = existingContentBlocks.length ? existingContentBlocks.scrollLeft() : 0;
@@ -3026,13 +2962,11 @@ async function mainAsyncLocal() {
       });
       contentBlocksContainer.prepend(blocks);
     }
-    activeCommentContext = displayFields.comments ? {issueKey: state.key, issueId: state.issueData.id} : null;
     const nextContentBlocks = container.find('._JX_content_blocks');
     if (nextContentBlocks.length) {
       nextContentBlocks.scrollLeft(savedScrollLeft);
       nextContentBlocks.scrollTop(savedScrollTop);
     }
-    restoreCommentComposerDraft(commentComposerDraft);
     restoreCommentComposerState();
     renderCommentUploads();
     renderCommentMentionSuggestions();
@@ -3099,13 +3033,14 @@ async function mainAsyncLocal() {
           input.setSelectionRange(maxIndex, maxIndex);
         }
       }
-    if (state.commentSession?.mode === 'edit' && state.commentSession.commentId) {
-      const commentInput = container.find(`._JX_comment_edit_input[data-comment-id="${state.commentSession.commentId}"]`)[0];
+    const commentRowAction = commentLifecycle.view().rowAction;
+    if (commentRowAction?.mode === 'edit' && commentRowAction.commentId) {
+      const commentInput = container.find(`._JX_comment_edit_input[data-comment-id="${commentRowAction.commentId}"]`)[0];
       if (commentInput) {
         commentInput.focus();
         const maxIndex = commentInput.value.length;
-        const selectionStart = Math.min(maxIndex, Number.isInteger(state.commentSession.selectionStart) ? state.commentSession.selectionStart : maxIndex);
-        const selectionEnd = Math.min(maxIndex, Number.isInteger(state.commentSession.selectionEnd) ? state.commentSession.selectionEnd : maxIndex);
+        const selectionStart = Math.min(maxIndex, Number.isInteger(commentRowAction.selection?.start) ? commentRowAction.selection.start : maxIndex);
+        const selectionEnd = Math.min(maxIndex, Number.isInteger(commentRowAction.selection?.end) ? commentRowAction.selection.end : maxIndex);
         commentInput.setSelectionRange(selectionStart, selectionEnd);
       }
     }
@@ -4878,9 +4813,6 @@ async function mainAsyncLocal() {
     if (applyValue && inputElement.value !== composeView.value) {
       elements.input.val(composeView.value);
     }
-    commentComposerDraftValue = composeView.value;
-    commentComposerSelectionStart = composeView.selection.start;
-    commentComposerSelectionEnd = composeView.selection.end;
     setCommentComposerError(composeView.errorMessage || '');
     if (applyValue) {
       inputElement.focus();
@@ -4894,9 +4826,6 @@ async function mainAsyncLocal() {
     const value = inputElement?.value || '';
     const selectionStart = typeof inputElement?.selectionStart === 'number' ? inputElement.selectionStart : value.length;
     const selectionEnd = typeof inputElement?.selectionEnd === 'number' ? inputElement.selectionEnd : value.length;
-    commentComposerDraftValue = value;
-    commentComposerSelectionStart = selectionStart;
-    commentComposerSelectionEnd = selectionEnd;
     const sessionId = activeCommentSessionId;
     const pending = commentLifecycle.dispatch({
       type: 'composeChanged',
@@ -4916,7 +4845,6 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('focusin', '._JX_comment_input', function () {
-    commentComposerHadFocus = true;
     commentLifecycle.dispatch({type: 'composeFocusChanged', focused: true}).catch(() => {});
     pinContainer({showNotice: false});
   });
@@ -4950,7 +4878,7 @@ async function mainAsyncLocal() {
 
   $(document.body).on('paste', '._JX_comment_input', function (e) {
     const imageFiles = getClipboardImageFiles(e);
-    if (!imageFiles.length || !activeCommentContext?.issueKey) {
+    if (!imageFiles.length || !commentLifecycle.view().issueKey) {
       return;
     }
     e.preventDefault();
@@ -5179,7 +5107,7 @@ async function mainAsyncLocal() {
         start: typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length,
         end: typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length,
       },
-    }).then(syncCommentSessionFromLifecycle).catch(() => {});
+    }).then(renderCommentEditMentionSuggestions).catch(() => {});
   });
 
   $(document.body).on('scroll', '._JX_comment_edit_input', function () {
@@ -5328,6 +5256,7 @@ async function mainAsyncLocal() {
 
   // ── Container Lifecycle ────────────────────────────────────
   function hideContainer() {
+    popupRenderSequence += 1;
     lastHoveredKey = '';
     clearWatchersFeedbackTimer();
     clearDescriptionStatusTimer();
@@ -5340,7 +5269,6 @@ async function mainAsyncLocal() {
     popupState = null;
     discardCommentComposerDraft().catch(() => {});
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
-    activeCommentContext = null;
     containerPinned = false;
     container.html('').css({
       left: -5000,
