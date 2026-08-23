@@ -566,7 +566,6 @@ async function mainAsyncLocal() {
   let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
   let popupState = null;
-  let popupRenderSequence = 0;
   function buildPopupInteractionReset(overrides = {}) {
     return {
       actionLoadingKey: '',
@@ -3015,7 +3014,6 @@ async function mainAsyncLocal() {
     if (!state?.issueData) {
       return;
     }
-    const renderSequence = ++popupRenderSequence;
     const existingCommentInput = container.find('._JX_comment_input').get(0);
     if (existingCommentInput && state.key === commentLifecycle.view().issueKey) {
       commentLifecycle.dispatch({
@@ -3024,7 +3022,7 @@ async function mainAsyncLocal() {
       }).catch(() => {});
     }
     const displayData = await buildPopupDisplayData(state);
-    if (state !== popupState || renderSequence !== popupRenderSequence ||
+    if (state !== popupState ||
         (typeof renderOptions.isCurrent === 'function' && !renderOptions.isCurrent())) {
       return;
     }
@@ -5338,7 +5336,6 @@ async function mainAsyncLocal() {
 
   // ── Container Lifecycle ────────────────────────────────────
   function clearPopupSurface() {
-    popupRenderSequence += 1;
     lastHoveredKey = '';
     clearWatchersFeedbackTimer();
     clearDescriptionStatusTimer();
