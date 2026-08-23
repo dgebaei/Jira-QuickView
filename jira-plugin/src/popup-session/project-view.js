@@ -12,12 +12,9 @@ export function createPopupProjectView(options) {
   const buildActiveEditPresentation = options?.buildActiveEditPresentation;
   const displayFields = options?.displayFields || {};
   const encodeJqlValue = options?.encodeJqlValue;
-  const formatFixVersionText = options?.formatFixVersionText;
-  const formatSprintText = options?.formatSprintText;
   const getEditableFieldCapability = options?.getEditableFieldCapability;
   const comments = options?.comments;
   const getTransitionOptions = options?.getTransitionOptions;
-  const getVisibleSprintsForDisplay = options?.getVisibleSprintsForDisplay;
   const issueDataModule = options?.issueData;
   const instanceUrl = options?.instanceUrl || '';
   const layoutContentBlocks = options?.layoutContentBlocks || [];
@@ -120,6 +117,32 @@ export function createPopupProjectView(options) {
     const target = pullRequest?.destination?.branch || pullRequest?.targetBranch || pullRequest?.toRef?.displayId || pullRequest?.toRef?.id || pullRequest?.destination?.displayId || '';
     if (source && target) return `${source} --> ${target}`;
     return source || target || '--';
+  }
+
+  function formatFixVersionText(versions) {
+    return (versions || []).map(version => version.name).filter(Boolean).join(', ');
+  }
+
+  function formatEnvironmentDisplayText(environment) {
+    const text = String(environment || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return '--';
+    return text.length > 120 ? `${text.slice(0, 117).trimEnd()}...` : text;
+  }
+
+  function getVisibleSprintsForDisplay(sprints) {
+    const sprintList = Array.isArray(sprints) ? sprints : [];
+    const activeSprints = sprintList.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
+    if (activeSprints.length) return activeSprints;
+    return sprintList.every(sprint => String(sprint?.state || '').toLowerCase() === 'closed')
+      ? sprintList.slice(-1)
+      : sprintList;
+  }
+
+  function formatSprintText(sprints) {
+    return getVisibleSprintsForDisplay(sprints)
+      .map(sprint => sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name)
+      .filter(Boolean)
+      .join(', ');
   }
 
   function buildWatchersPanelView(state) {
@@ -516,7 +539,7 @@ export function createPopupProjectView(options) {
       }
     };
 
-    const environmentText = options?.formatEnvironmentDisplayText(issueData.fields.environment);
+    const environmentText = formatEnvironmentDisplayText(issueData.fields.environment);
     const environmentTooltip = String(issueData.fields.environment || '')
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')

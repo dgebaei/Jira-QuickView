@@ -2345,44 +2345,6 @@ async function mainAsyncLocal() {
     return sprints;
   }
 
-  function formatFixVersionText(fixVersions) {
-    return (fixVersions || [])
-      .map(version => version.name)
-      .filter(Boolean)
-      .join(', ');
-  }
-
-  function formatEnvironmentDisplayText(environment) {
-    const normalizedText = String(environment || '')
-      .replace(/[\r\n]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!normalizedText) {
-      return '--';
-    }
-    return normalizedText.length > 120
-      ? `${normalizedText.slice(0, 117).trimEnd()}...`
-      : normalizedText;
-  }
-
-  function getVisibleSprintsForDisplay(sprints) {
-    const sprintList = Array.isArray(sprints) ? sprints : [];
-    const activeSprints = sprintList.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
-    return activeSprints.length
-      ? activeSprints
-      : (sprintList.every(sprint => String(sprint?.state || '').toLowerCase() === 'closed')
-          ? sprintList.slice(-1)
-          : sprintList);
-  }
-
-  function formatSprintText(sprints) {
-    const visibleSprints = getVisibleSprintsForDisplay(sprints);
-    return visibleSprints
-      .map(sprint => sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name)
-      .filter(Boolean)
-      .join(', ');
-  }
-
   // ── JQL & Display Utilities ────────────────────────────────
 
   function encodeJqlValue(value) {
@@ -2872,12 +2834,8 @@ async function mainAsyncLocal() {
     emptyWatchersState,
     encodeJqlValue,
     formatChangelogForDisplay,
-    formatEnvironmentDisplayText,
-    formatFixVersionText,
-    formatSprintText,
     getEditableFieldCapability,
     getTransitionOptions,
-    getVisibleSprintsForDisplay,
     issueData: quickViewIssueData,
     instanceUrl: INSTANCE_URL,
     layoutContentBlocks,
