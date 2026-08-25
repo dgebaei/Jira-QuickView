@@ -638,7 +638,7 @@ test('browser popup events translate presentation DOM interactions into semantic
     const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
     document.body.innerHTML = `
       <div class="_JX_container">
-      <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button></div>
+      <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button><button class="_JX_action_item" data-action-key="assign-to-me">Assign</button></div>
       <button class="_JX_pin_button">Pin</button>
       <button class="_JX_close_button">Close popup</button>
       <button class="_JX_children_sort" data-sort-column="status">Children</button>
@@ -681,6 +681,7 @@ test('browser popup events translate presentation DOM interactions into semantic
     });
     events.install();
     $('._JX_actions_toggle').trigger('click');
+    $('._JX_action_item').trigger('click');
     $('._JX_pin_button').trigger('click');
     $('._JX_close_button').trigger('click');
     $('._JX_children_sort').trigger('click');
@@ -722,6 +723,7 @@ test('browser popup events translate presentation DOM interactions into semantic
   expect(result).toEqual({
     direct: [
       {type: 'toggle-actions'},
+      {type: 'execute-quick-action', actionKey: 'assign-to-me'},
       {type: 'pin'},
       {type: 'close-popup'},
       {type: 'sort-children', column: 'status'},
@@ -1012,4 +1014,90 @@ test('browser renderer rejects a stale asynchronous projection before DOM commit
   });
 
   expect(result).toEqual({receipt: {kind: 'stale'}, html: 'current'});
+});
+
+test('browser popup model owns projection state across session renders and rejects stale frames', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupModel} = window.JiraQuickViewDeepModules;
+    const projections = [];
+    const model = createBrowserPopupModel({
+      createDescriptionState(issue) { return {open: false, value: issue.fields.description}; },
+      createTimeTrackingState(issue) { return {saving: false, value: issue.fields.timetracking}; },
+      async renderProjection(state) { projections.push(structuredClone(state)); },
+    });
+    const initialSnapshot = {
+      issueKey: 'ABC-1',
+      core: {key: 'ABC-1', fields: {description: 'first', timetracking: '1h'}},
+      sections: {
+        children: {status: 'ready', items: [{key: 'ABC-2'}], jql: 'parent=ABC-1'},
+        pullRequests: {status: 'ready', items: [{id: 'pr-1'}]},
+      },
+    };
+    const opened = await model.commit({
+      issueKey: 'ABC-1',
+      issueSnapshot: initialSnapshot,
+      anchor: {x: 11, y: 22},
+      presentation: {activePanel: 'history'},
+      history: {status: 'ready'},
+      watchers: {open: false},
+      linkedIssues: {open: false},
+      quickActions: {open: false},
+      notice: '',
+    }, {isCurrent() { return true; }}, {opening: true});
+    model.dispatch({type: 'descriptionChanged', state: {open: true, value: 'draft'}});
+    model.dispatch({type: 'timeTrackingChanged', state: {saving: true, value: '2h'}});
+    const refreshedSnapshot = {
+      ...initialSnapshot,
+      core: {key: 'ABC-1', fields: {description: 'server', timetracking: '3h'}},
+    };
+    const updated = await model.commit({
+      issueKey: 'ABC-1',
+      issueSnapshot: refreshedSnapshot,
+      presentation: {activePanel: ''},
+      history: {status: 'ready'},
+      watchers: {open: true},
+      linkedIssues: {open: false},
+      quickActions: {open: true},
+      notice: 'Updated',
+    }, {isCurrent() { return true; }});
+    const beforeStale = structuredClone(model.view());
+    const stale = await model.commit({
+      issueKey: 'OLD-9',
+      issueSnapshot: {issueKey: 'OLD-9', core: {key: 'OLD-9', fields: {}}, sections: {}},
+    }, {isCurrent() { return false; }});
+    const afterStale = structuredClone(model.view());
+    const closed = model.close();
+    return {
+      opened: opened.kind,
+      updated: updated.kind,
+      stale: stale.kind,
+      projectionCount: projections.length,
+      view: beforeStale,
+      unchangedByStale: JSON.stringify(beforeStale) === JSON.stringify(afterStale),
+      closed: closed.kind,
+      finalView: model.view(),
+    };
+  });
+
+  expect(result).toMatchObject({
+    opened: 'committed',
+    updated: 'committed',
+    stale: 'stale',
+    projectionCount: 2,
+    unchangedByStale: true,
+    closed: 'closed',
+    finalView: null,
+    view: {
+      key: 'ABC-1',
+      issueData: {fields: {description: 'server', timetracking: '3h'}},
+      children: [{key: 'ABC-2'}],
+      pullRequests: [{id: 'pr-1'}],
+      descriptionEditState: {open: true, value: 'draft'},
+      timeTrackingEditState: {saving: true, value: '2h'},
+      historyOpen: false,
+      watcherView: {open: true},
+      quickActionView: {open: true},
+      lastActionSuccess: 'Updated',
+    },
+  });
 });

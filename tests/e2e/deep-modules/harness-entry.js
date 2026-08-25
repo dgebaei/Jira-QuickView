@@ -8,6 +8,7 @@ import {createPopupSession} from 'src/popup-session';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
+import {createBrowserPopupModel} from 'src/popup-session/browser-popup-model';
 import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
 import {createBrowserCommentPresentation} from 'src/popup-session/browser-comment-presentation';
 import {createDeferred, createMockJiraAdapter} from './mock-jira-adapter';
@@ -18,6 +19,7 @@ window.JiraQuickViewDeepModules = {
   createBrowserMessageJiraAdapter,
   createBrowserCommentPresentation,
   createBrowserPopupEvents,
+  createBrowserPopupModel,
   createBrowserPopupShell,
   createBrowserPopupRenderer,
   createCommentLifecycle,

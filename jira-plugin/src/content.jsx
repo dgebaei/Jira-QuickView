@@ -28,9 +28,9 @@ import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
 import {createBrowserCommentPresentation} from 'src/popup-session/browser-comment-presentation';
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
+import {createBrowserPopupModel} from 'src/popup-session/browser-popup-model';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
 import {createWatcherLifecycle} from 'src/watcher-lifecycle';
-import {snapshotToLegacyPopupState} from 'src/quickview-snapshot-legacy';
 const {
   buildDescriptionEditorState,
   buildMediaSingleNodeFromAttachment,
@@ -421,47 +421,20 @@ async function mainAsyncLocal() {
     normalizeRichHtml,
     textToLinkedHtml,
   });
-  let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
-  let popupState = null;
-  function buildPopupInteractionReset(overrides = {}) {
-    return {
-      lastActionSuccess: '',
-      ...overrides,
-    };
-  }
-  function applyPopupPresentation(currentState, presentation = {}) {
-    const activePanel = presentation.activePanel || '';
-    return {
-      ...currentState,
-      ...presentation,
-      historyOpen: activePanel === 'history',
-    };
-  }
-
-  async function renderUpdatedPopupState(nextStateOrUpdater, renderOptions = {}) {
-    const currentState = popupState;
-    const nextState = typeof nextStateOrUpdater === 'function'
-      ? nextStateOrUpdater(currentState)
-      : nextStateOrUpdater;
-    if (typeof renderOptions.isCurrent === 'function' && !renderOptions.isCurrent()) {
-      return currentState;
-    }
-    popupState = nextState;
-    await renderIssuePopup(nextState, renderOptions);
-    return nextState;
-  }
+  const currentPopupState = () => popupModel.view();
 
   async function refreshPopupIssueState(successMessage = '', refreshOptions = {}) {
-    if (!popupState?.key) return;
+    const currentPopup = currentPopupState();
+    if (!currentPopup?.key) return;
     const {
       showSnackBar = false,
       nextTimeTrackingEditState,
       preserveHistory = false,
     } = refreshOptions;
-    const popupKey = popupState.key;
-    const priorSnapshot = popupState.issueSnapshot;
-    const shouldKeepHistoryOpen = !!(preserveHistory && popupState.historyOpen);
+    const popupKey = currentPopup.key;
+    const priorSnapshot = currentPopup.issueSnapshot;
+    const shouldKeepHistoryOpen = !!(preserveHistory && currentPopup.historyOpen);
     const issueOutcome = await quickViewIssueData.refreshAfterMutation({
       issueKey: popupKey,
       priorSnapshot,
@@ -478,27 +451,22 @@ async function mainAsyncLocal() {
       error.inner = message;
       throw error;
     }
-    const refreshedIssueData = issueOutcome.snapshot.core;
-    const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
-    const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
-    if (!popupState || popupState.key !== popupKey) return;
-    clearActionNoticeTimer();
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
+    if (currentPopupState()?.key !== popupKey) return;
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: nextTimeTrackingEditState || createTimeTrackingEditState(issueOutcome.snapshot.core),
+    });
+    await popupSession.dispatch({
+      type: 'render',
+      reason: 'issue-refreshed',
       issueSnapshot: issueOutcome.snapshot,
-      issueData: refreshedIssueData,
-      pullRequests: refreshedPullRequests,
-      ...buildPopupInteractionReset({
-        lastActionSuccess: showSnackBar ? '' : successMessage,
-      }),
-      timeTrackingEditState: nextTimeTrackingEditState || createTimeTrackingEditState(refreshedIssueData),
-    }));
-    if (!showSnackBar && successMessage) scheduleActionNoticeClear(successMessage);
+      notice: showSnackBar ? '' : successMessage,
+    });
     if (showSnackBar && successMessage) snackBar(successMessage);
   }
 
   async function handleDraftAttachmentUploaded(uploadedAttachment) {
-    const attachmentPopupState = popupState;
+    const attachmentPopupState = currentPopupState();
     const popupKey = attachmentPopupState?.key;
     const currentIssueData = attachmentPopupState?.issueData;
     if (!popupKey || !currentIssueData?.fields || !uploadedAttachment) return;
@@ -509,29 +477,12 @@ async function mainAsyncLocal() {
       mutation: {kind: 'attachmentChanged'},
       requirements: {history: !!attachmentPopupState.historyOpen},
     });
-    if (!popupState || popupState.key !== popupKey) return;
-    await renderUpdatedPopupState(currentState => {
-      const existingAttachments = Array.isArray(currentState?.issueData?.fields?.attachment)
-        ? currentState.issueData.fields.attachment
-        : [];
-      const normalizedFileName = normalizeHistoryAttachmentName(normalizedAttachment.filename);
-      const nextAttachments = [
-        ...existingAttachments.filter(attachment => {
-          const sameId = normalizedAttachment.id && attachment?.id && String(attachment.id) === String(normalizedAttachment.id);
-          const sameName = normalizedFileName && normalizeHistoryAttachmentName(attachment?.filename) === normalizedFileName;
-          return !(sameId || sameName);
-        }),
-        normalizedAttachment,
-      ];
-      return {
-        ...currentState,
-        issueSnapshot: issueOutcome.snapshot || currentState.issueSnapshot,
-        issueData: {
-          ...currentState.issueData,
-          fields: {...currentState.issueData.fields, attachment: nextAttachments},
-        },
-      };
-    });
+    if (currentPopupState()?.key !== popupKey) return;
+    if (issueOutcome.snapshot?.core) {
+      await popupSession.dispatch({type: 'render', reason: 'attachment-refreshed', issueSnapshot: issueOutcome.snapshot});
+    }
+    popupModel.dispatch({type: 'attachmentUploaded', attachment: normalizedAttachment});
+    await renderCurrentPopup('attachment-normalized');
   }
   const people = createContentPeopleHelpers({
     areSameJiraUser,
@@ -563,57 +514,20 @@ async function mainAsyncLocal() {
     issueData: quickViewIssueData,
     jira,
   });
+  const popupModel = createBrowserPopupModel({
+    createDescriptionState: createDescriptionEditState,
+    createTimeTrackingState: createTimeTrackingEditState,
+    renderProjection(state, context) {
+      return popupRenderer.render(state, context);
+    },
+  });
 
   const popupSurface = createBrowserPopupSurface({
-    async commitCurrent(frame, context) {
-      if (!context.isCurrent() || !popupState || popupState.key !== frame.issueKey) return;
-      const legacySnapshot = frame.issueSnapshot?.core && frame.issueSnapshot !== popupState.issueSnapshot
-        ? snapshotToLegacyPopupState(frame.issueSnapshot)
-        : null;
-      popupState = applyPopupPresentation({
-        ...popupState,
-        ...(legacySnapshot ? {
-          issueSnapshot: legacySnapshot.issueSnapshot,
-          issueData: legacySnapshot.issueData,
-          children: legacySnapshot.children,
-          childrenJql: legacySnapshot.childrenJql,
-          childrenError: legacySnapshot.childrenError,
-          pullRequests: legacySnapshot.pullRequests,
-          commentReactionState: legacySnapshot.commentReactionState,
-        } : {}),
-        quickActionView: frame.quickActions,
-        watcherView: frame.watchers,
-        historyView: frame.history,
-        linkedIssueView: frame.linkedIssues,
-      }, frame.presentation);
-      await popupRenderer.render(popupState, context);
+    commitCurrent(frame, context) {
+      return popupModel.commit(frame, context);
     },
-    async commitVisible(frame, context) {
-      if (!context.isCurrent()) return;
-      const legacySnapshot = snapshotToLegacyPopupState(frame.issueSnapshot);
-      const issueData = legacySnapshot.issueData;
-      const initialPopupState = applyPopupPresentation({
-        key: frame.issueKey,
-        issueSnapshot: legacySnapshot.issueSnapshot,
-        issueData,
-        children: legacySnapshot.children,
-        childrenJql: legacySnapshot.childrenJql,
-        childrenError: legacySnapshot.childrenError,
-        pullRequests: legacySnapshot.pullRequests,
-        pointerX: Number(frame.anchor?.x) || 0,
-        pointerY: Number(frame.anchor?.y) || 0,
-        quickActionView: frame.quickActions,
-        commentReactionState: legacySnapshot.commentReactionState,
-        ...buildPopupInteractionReset(),
-        descriptionEditState: createDescriptionEditState(issueData),
-        watcherView: frame.watchers || {},
-        historyView: frame.history || {},
-        linkedIssueView: frame.linkedIssues || {},
-        timeTrackingEditState: createTimeTrackingEditState(issueData),
-      }, frame.presentation);
-      if (!context.isCurrent()) return;
-      popupState = initialPopupState;
-      await popupRenderer.render(initialPopupState, context);
+    commitVisible(frame, context) {
+      return popupModel.commit(frame, context, {opening: true});
     },
     async hidePopup() {
       await clearPopupSurface();
@@ -637,12 +551,16 @@ async function mainAsyncLocal() {
     return popupSession.view().sessionId;
   }
 
-  function renderCurrentPopup(reason = 'feature-changed') {
-    return popupSession.dispatch({type: 'render', reason, issueSnapshot: popupState?.issueSnapshot});
+  function renderCurrentPopup(reason = 'feature-changed', details = {}) {
+    return popupSession.dispatch({type: 'render', reason, issueSnapshot: currentPopupState()?.issueSnapshot, ...details});
   }
 
-  function renderIssuePopup() {
-    return renderCurrentPopup('popup-state-changed');
+  function renderIssuePopup(_state, renderOptions = {}) {
+    const details = {...renderOptions};
+    const reason = details.reason || 'popup-state-changed';
+    delete details.isCurrent;
+    delete details.reason;
+    return renderCurrentPopup(reason, details);
   }
 
 
@@ -790,7 +708,7 @@ async function mainAsyncLocal() {
   function resolveKnownJiraUserDisplayName(identity) {
     const normalizedIdentity = String(identity || '').replace(/^accountid:/i, '').trim();
     if (!normalizedIdentity) return '';
-    const fields = popupState?.issueData?.fields || {};
+    const fields = currentPopupState()?.issueData?.fields || {};
     const users = [
       fields.reporter,
       fields.assignee,
@@ -1040,17 +958,14 @@ async function mainAsyncLocal() {
   }
 
   function getDescriptionEditState() {
-    return popupState?.descriptionEditState || createDescriptionEditState(popupState?.issueData);
+    return currentPopupState()?.descriptionEditState || createDescriptionEditState(currentPopupState()?.issueData);
   }
 
   function setDescriptionEditState(nextState) {
-    if (!popupState) {
+    if (!currentPopupState()) {
       return;
     }
-    popupState = {
-      ...popupState,
-      descriptionEditState: nextState
-    };
+    popupModel.dispatch({type: 'descriptionChanged', state: nextState});
   }
 
   function clearDescriptionStatusTimer() {
@@ -1067,7 +982,7 @@ async function mainAsyncLocal() {
     }
     descriptionStatusTimeoutId = setTimeout(() => {
       descriptionStatusTimeoutId = null;
-      const currentState = popupState?.descriptionEditState;
+      const currentState = currentPopupState()?.descriptionEditState;
       if (!currentState || currentState.open || currentState.statusMessage !== statusMessage) {
         return;
       }
@@ -1076,7 +991,7 @@ async function mainAsyncLocal() {
         statusKind: '',
         statusMessage: ''
       });
-      renderIssuePopup(popupState).catch(() => {});
+      renderIssuePopup(currentPopupState()).catch(() => {});
     }, 5000);
   }
 
@@ -1180,7 +1095,7 @@ async function mainAsyncLocal() {
   }
 
   function updateDescriptionDraft(nextValue, selectionStart, selectionEnd) {
-    if (!popupState?.descriptionEditState?.open) {
+    if (!currentPopupState()?.descriptionEditState?.open) {
       return;
     }
     setDescriptionEditState({
@@ -1191,7 +1106,7 @@ async function mainAsyncLocal() {
       selectionStart: typeof selectionStart === 'number' ? selectionStart : String(nextValue || '').length,
       selectionEnd: typeof selectionEnd === 'number' ? selectionEnd : String(nextValue || '').length,
     });
-    renderIssuePopup(popupState).catch(() => {});
+    renderIssuePopup(currentPopupState()).catch(() => {});
   }
 
   function replaceDescriptionSelection(replacer) {
@@ -1219,7 +1134,7 @@ async function mainAsyncLocal() {
       selectionStart: Number.isInteger(nextSelection.selectionStart) ? nextSelection.selectionStart : selectionStart,
       selectionEnd: Number.isInteger(nextSelection.selectionEnd) ? nextSelection.selectionEnd : selectionEnd,
     });
-    renderIssuePopup(popupState).catch(() => {});
+    renderIssuePopup(currentPopupState()).catch(() => {});
   }
 
   function wrapDescriptionSelectionLineByLine(text, prefix, suffix) {
@@ -1340,17 +1255,19 @@ async function mainAsyncLocal() {
   }
 
   function startDescriptionEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
     popupShell?.dispatch({type: 'pin', announce: false}).catch(() => {});
     clearDescriptionStatusTimer();
-    setDescriptionEditState(createDescriptionEditState(popupState.issueData, {open: true}));
-    renderIssuePopup(popupState).catch(() => {});
+    setDescriptionEditState(createDescriptionEditState(popupView.issueData, {open: true}));
+    renderIssuePopup(popupView).catch(() => {});
   }
 
   async function cancelDescriptionEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
     const currentState = getDescriptionEditState();
@@ -1367,25 +1284,27 @@ async function mainAsyncLocal() {
     if (hadDraftUploads) {
       await refreshPopupIssueState('', {
         mutation: {kind: 'attachmentChanged'},
-        preserveHistory: !!popupState?.historyOpen,
+        preserveHistory: !!currentPopupState()?.historyOpen,
       });
     }
-    if (!popupState?.issueData) {
+    const refreshedPopupView = currentPopupState();
+    if (!refreshedPopupView?.issueData) {
       return;
     }
-    setDescriptionEditState(createDescriptionEditState(popupState.issueData));
-    renderIssuePopup(popupState).catch(() => {});
+    setDescriptionEditState(createDescriptionEditState(refreshedPopupView.issueData));
+    renderIssuePopup(refreshedPopupView).catch(() => {});
   }
 
   async function uploadDescriptionImage(file) {
-    if (!popupState?.issueData?.key) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData?.key) {
       return;
     }
     const currentState = getDescriptionEditState();
     if (!currentState.open) {
       return;
     }
-    const issueKey = popupState.issueData.key;
+    const issueKey = popupView.issueData.key;
     const {fileName, uploadSequence} = buildDescriptionUploadFileName(file, currentState);
     const localId = `description-upload-${Date.now()}-${uploadSequence}`;
     const markup = buildDescriptionImageMarkup(fileName);
@@ -1429,7 +1348,7 @@ async function mainAsyncLocal() {
       uploadSequence,
       uploads: nextUploads,
     });
-    await renderIssuePopup(popupState);
+    await renderIssuePopup(currentPopupState());
 
     try {
       const uploadResult = await uploadAttachment(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/attachments`, new File([file], fileName, {type: file.type || 'image/png'}));
@@ -1438,7 +1357,7 @@ async function mainAsyncLocal() {
         throw new Error('Attachment upload failed');
       }
       const latestState = getDescriptionEditState();
-      if (!popupState?.issueData || popupState.issueData.key !== issueKey || !latestState.open) {
+      if (currentPopupState()?.issueData?.key !== issueKey || !latestState.open) {
         await deleteDescriptionDraftAttachment(uploadedAttachment.id);
         return;
       }
@@ -1475,7 +1394,7 @@ async function mainAsyncLocal() {
         displayContent: displayUrl,
         thumbnail: displayUrl || toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
       });
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(currentPopupState());
     } catch (error) {
       const latestState = getDescriptionEditState();
       if (!latestState.open) {
@@ -1496,12 +1415,13 @@ async function mainAsyncLocal() {
           };
         }),
       });
-      renderIssuePopup(popupState).catch(() => {});
+      renderIssuePopup(currentPopupState()).catch(() => {});
     }
   }
 
   async function saveDescriptionEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
     const currentState = getDescriptionEditState();
@@ -1513,7 +1433,7 @@ async function mainAsyncLocal() {
       return;
     }
     const attachmentByMarkup = {};
-    const issueAttachments = Array.isArray(popupState?.issueData?.fields?.attachment) ? popupState.issueData.fields.attachment : [];
+    const issueAttachments = Array.isArray(popupView.issueData?.fields?.attachment) ? popupView.issueData.fields.attachment : [];
     issueAttachments.forEach(attachment => {
       const fileName = String(attachment?.filename || '').trim();
       if (!fileName) {
@@ -1546,7 +1466,7 @@ async function mainAsyncLocal() {
         statusKind: 'error',
         statusMessage: saveValueResult.error,
       });
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(currentPopupState());
       return;
     }
 
@@ -1558,27 +1478,28 @@ async function mainAsyncLocal() {
       statusKind: 'info',
       statusMessage: 'Saving description...',
     });
-    await renderIssuePopup(popupState);
+    await renderIssuePopup(currentPopupState());
 
     try {
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}`, {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupView.key}`, {
         fields: {
           description: saveValueResult.value,
         }
       });
       await refreshPopupIssueState('', {
         mutation: {kind: 'descriptionChanged'},
-        preserveHistory: !!popupState?.historyOpen,
+        preserveHistory: !!currentPopupState()?.historyOpen,
       });
-      if (!popupState?.issueData) {
+      const refreshedPopupView = currentPopupState();
+      if (!refreshedPopupView?.issueData) {
         return;
       }
       const successMessage = nextDescription.trim() ? 'Description updated' : 'Description cleared';
-      setDescriptionEditState(createDescriptionEditState(popupState.issueData, {
+      setDescriptionEditState(createDescriptionEditState(refreshedPopupView.issueData, {
         statusKind: 'success',
         statusMessage: successMessage,
       }));
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(refreshedPopupView);
       scheduleDescriptionStatusClear(successMessage);
     } catch (error) {
       const latestState = getDescriptionEditState();
@@ -1591,14 +1512,14 @@ async function mainAsyncLocal() {
         statusKind: 'error',
         statusMessage: displayError,
       });
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(currentPopupState());
     }
   }
 
   // ── Comments ──────────────────────────────────────────────
 
   async function handleCommentReactionClick(commentId, emojiId) {
-    if (!popupState?.issueData || !commentId || !emojiId) {
+    if (!currentPopupState()?.issueData || !commentId || !emojiId) {
       return;
     }
     const sessionId = currentPopupSessionId();
@@ -1608,10 +1529,11 @@ async function mainAsyncLocal() {
     if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
       return;
     }
-    if (outcome.refreshedSnapshot) {
-      popupState = {...popupState, issueSnapshot: outcome.refreshedSnapshot};
-    }
-    await renderCurrentPopup('comment-reaction-complete');
+    await popupSession.dispatch({
+      type: 'render',
+      reason: 'comment-reaction-complete',
+      issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
+    });
     if (outcome.kind === 'unsupported') {
       snackBar(outcome.notice);
     }
@@ -1642,27 +1564,22 @@ async function mainAsyncLocal() {
     }).catch(() => {});
     const pendingSave = commentLifecycle.dispatch({
       type: 'saveNewComment',
-      requirements: {history: !!popupState?.historyOpen},
+      requirements: {history: !!currentPopupState()?.historyOpen},
     });
     commentPresentation.render();
 
     const outcome = await pendingSave;
-    const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey &&
+    const isSameIssueStillVisible = currentPopupState()?.issueData?.key === commentIssueKey &&
       outcome.sessionId === currentPopupSessionId();
     if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
-      if (outcome.refreshedSnapshot?.core) {
-        popupState = {
-          ...popupState,
-          issueSnapshot: outcome.refreshedSnapshot,
-          issueData: outcome.refreshedSnapshot.core,
-          lastActionSuccess: outcome.notice,
-        };
-      }
-      await renderCurrentPopup('comment-save-complete');
+      await popupSession.dispatch({
+        type: 'render',
+        reason: 'comment-save-complete',
+        issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
+        notice: outcome.notice,
+      });
       if (outcome.failure) {
         snackBar(outcome.notice);
-      } else {
-        scheduleActionNoticeClear(outcome.notice);
       }
       return;
     }
@@ -1690,20 +1607,16 @@ async function mainAsyncLocal() {
   }
 
   async function applyCommentRowActionOutcome(outcome) {
-    const isCurrent = popupState?.key === outcome.issueKey && outcome.sessionId === currentPopupSessionId();
+    const isCurrent = currentPopupState()?.key === outcome.issueKey && outcome.sessionId === currentPopupSessionId();
     if (!isCurrent) return;
-    if (outcome.kind === 'mutationCommitted' && outcome.refreshedSnapshot?.core) {
-      popupState = {
-        ...popupState,
-        issueSnapshot: outcome.refreshedSnapshot,
-        issueData: outcome.refreshedSnapshot.core,
-        lastActionSuccess: outcome.notice,
-      };
-    }
-    await renderCurrentPopup('comment-row-action-complete');
+    await popupSession.dispatch({
+      type: 'render',
+      reason: 'comment-row-action-complete',
+      issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
+      ...(outcome.kind === 'mutationCommitted' ? {notice: outcome.notice} : {}),
+    });
     if (outcome.kind === 'failed') snackBar(outcome.failure?.message || 'Comment operation failed');
     else if (outcome.failure) snackBar(outcome.notice);
-    else if (outcome.kind === 'mutationCommitted') scheduleActionNoticeClear(outcome.notice);
   }
 
   function cancelCommentSession() {
@@ -1717,7 +1630,7 @@ async function mainAsyncLocal() {
   }
 
   function startCommentEdit(commentId) {
-    if (!popupState?.issueData || !commentId) {
+    if (!currentPopupState()?.issueData || !commentId) {
       return;
     }
     popupShell?.dispatch({type: 'pin', announce: false}).catch(() => {});
@@ -1802,7 +1715,7 @@ async function mainAsyncLocal() {
   }
 
   function startCommentDeleteConfirm(commentId) {
-    if (!popupState?.issueData || !commentId) {
+    if (!currentPopupState()?.issueData || !commentId) {
       return;
     }
     resetCommentEditMentionState();
@@ -1830,14 +1743,14 @@ async function mainAsyncLocal() {
 
   async function saveCommentEdit(commentId) {
     const activeSession = getActiveCommentSession();
-    if (!popupState?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit' || activeSession.saving) {
+    if (!currentPopupState()?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit' || activeSession.saving) {
       return;
     }
     resetCommentEditMentionState();
     const pending = commentLifecycle.dispatch({
       type: 'saveEdit',
       commentId,
-      requirements: {history: !!popupState?.historyOpen},
+      requirements: {history: !!currentPopupState()?.historyOpen},
     });
     await renderCurrentPopup('comment-edit-saving');
     await applyCommentRowActionOutcome(await pending);
@@ -1845,14 +1758,14 @@ async function mainAsyncLocal() {
 
   async function confirmCommentDelete(commentId) {
     const activeSession = getActiveCommentSession();
-    if (!popupState?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'delete' || activeSession.saving) {
+    if (!currentPopupState()?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'delete' || activeSession.saving) {
       return;
     }
 
     const pending = commentLifecycle.dispatch({
       type: 'confirmDelete',
       commentId,
-      requirements: {history: !!popupState?.historyOpen},
+      requirements: {history: !!currentPopupState()?.historyOpen},
     });
     await renderCurrentPopup('comment-delete-saving');
     await applyCommentRowActionOutcome(await pending);
@@ -1956,7 +1869,7 @@ async function mainAsyncLocal() {
   // ── Issue Data & Metadata ──────────────────────────────────
 
   async function getCurrentUserInfo(issueKey = '') {
-    const activeIssueKey = issueKey || popupState?.issueData?.key || '';
+    const activeIssueKey = issueKey || currentPopupState()?.issueData?.key || '';
     if (!activeIssueKey) throw new Error('Issue key is required to load the Jira viewer');
     const outcome = await quickViewIssueData.openIssue({
       issueKey: activeIssueKey,
@@ -1966,36 +1879,6 @@ async function mainAsyncLocal() {
       throw new Error(outcome.snapshot?.viewer?.failure?.message || 'Could not load the Jira viewer');
     }
     return outcome.snapshot.viewer.user;
-  }
-
-  function clearActionNoticeTimer() {
-    if (actionNoticeTimeoutId) {
-      clearTimeout(actionNoticeTimeoutId);
-      actionNoticeTimeoutId = null;
-    }
-  }
-
-  function scheduleActionNoticeClear(noticeText) {
-    clearActionNoticeTimer();
-    if (!noticeText) {
-      return;
-    }
-    actionNoticeTimeoutId = setTimeout(() => {
-      actionNoticeTimeoutId = null;
-      if (popupQuickActions.view().notice === noticeText) {
-        popupQuickActions.dispatch({type: 'clearNotice', notice: noticeText}).then(() => {
-          return renderCurrentPopup('quick-action-notice-cleared');
-        }).catch(() => {});
-        return;
-      }
-      if (!popupState?.lastActionSuccess || popupState.lastActionSuccess !== noticeText) {
-        return;
-      }
-      renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        lastActionSuccess: ''
-      })).catch(() => {});
-    }, 5000);
   }
 
   // ── Labels ────────────────────────────────────────────────
@@ -2695,39 +2578,17 @@ async function mainAsyncLocal() {
     template: annotationTemplate,
   });
   // ── Field Editing ─────────────────────────────────────────
-  async function handleQuickAction(actionKey) {
-    if (!popupState?.issueData || popupQuickActions.view().loadingKey) return;
-    const pending = popupQuickActions.dispatch({
-      type: 'execute',
-      actionKey,
-      requirements: {
-        history: !!popupState.historyOpen,
-        linkedIssues: !!linkedIssueLifecycle.view().open,
-        pullRequests: showPullRequests,
-        watchers: !!watcherLifecycle.view().open,
-      },
-    });
-    const closed = await popupSession.dispatch({type: 'close-actions'});
-    if (closed.kind === 'ignored') await renderCurrentPopup('quick-action-started');
-    const outcome = await pending;
-    if (outcome.sessionId !== currentPopupSessionId()) return;
-    await popupSession.dispatch({
-      type: 'render',
-      reason: `quick-action-${outcome.kind}`,
-      issueSnapshot: outcome.refreshedSnapshot || popupState.issueSnapshot,
-    });
-    if (outcome.kind === 'executed') scheduleActionNoticeClear(outcome.notice);
-  }
   function attachJiraFieldEditingToPopup() {
-    if (!popupState?.issueSnapshot?.core) return false;
+    const popupView = currentPopupState();
+    if (!popupView?.issueSnapshot?.core) return false;
     const sessionId = currentPopupSessionId();
     if (!sessionId) return false;
     jiraFieldEditing.attach({
       sessionId,
-      issueSnapshot: popupState.issueSnapshot,
+      issueSnapshot: popupView.issueSnapshot,
       requirements: {
         children: showChildren,
-        history: !!popupState.historyOpen,
+        history: !!popupView.historyOpen,
         linkedIssues: !!linkedIssueLifecycle.view().open,
         pullRequests: showPullRequests,
         reactions: true,
@@ -2738,27 +2599,18 @@ async function mainAsyncLocal() {
   }
 
   async function dispatchJiraFieldEditing(intent) {
-    const popupKey = popupState?.key || '';
+    const popupKey = currentPopupState()?.key || '';
     const pendingOutcome = jiraFieldEditing.dispatch(intent);
-    if (popupState?.key === popupKey) await renderCurrentPopup('field-edit-pending');
+    if (currentPopupState()?.key === popupKey) await renderCurrentPopup('field-edit-pending');
     const fieldOutcome = await pendingOutcome;
-    if (!popupState || popupState.key !== popupKey || fieldOutcome.sessionId !== currentPopupSessionId()) return fieldOutcome;
+    if (currentPopupState()?.key !== popupKey || fieldOutcome.sessionId !== currentPopupSessionId()) return fieldOutcome;
     if (fieldOutcome.refreshedSnapshot?.core) {
-      const legacySnapshot = snapshotToLegacyPopupState(fieldOutcome.refreshedSnapshot);
-      if (!popupState || popupState.key !== popupKey) return fieldOutcome;
-      popupState = {
-        ...popupState,
-        issueSnapshot: legacySnapshot.issueSnapshot,
-        issueData: legacySnapshot.issueData,
-        children: legacySnapshot.children,
-        childrenJql: legacySnapshot.childrenJql,
-        childrenError: legacySnapshot.childrenError,
-        pullRequests: legacySnapshot.pullRequests,
-        commentReactionState: legacySnapshot.commentReactionState,
-        lastActionSuccess: fieldOutcome.notice || '',
-      };
-      await renderCurrentPopup('field-edit-complete');
-      if (fieldOutcome.notice) scheduleActionNoticeClear(fieldOutcome.notice);
+      await popupSession.dispatch({
+        type: 'render',
+        reason: 'field-edit-complete',
+        issueSnapshot: fieldOutcome.refreshedSnapshot,
+        notice: fieldOutcome.notice || '',
+      });
       return fieldOutcome;
     }
     await renderCurrentPopup('field-edit-updated');
@@ -2766,7 +2618,7 @@ async function mainAsyncLocal() {
   }
 
   async function startFieldEdit(fieldKey) {
-    if (!popupState?.issueData || !attachJiraFieldEditingToPopup()) return;
+    if (!currentPopupState()?.issueData || !attachJiraFieldEditingToPopup()) return;
     await dispatchJiraFieldEditing({
       type: 'begin',
       fieldId: fieldKey,
@@ -2787,29 +2639,28 @@ async function mainAsyncLocal() {
 
 
   function updateTimeTrackingEditState(changes = {}) {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
-    const currentState = popupState.timeTrackingEditState || createTimeTrackingEditState(popupState.issueData);
-    popupState = {
-      ...popupState,
-      timeTrackingEditState: {
-        ...currentState,
-        ...changes
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    const currentState = popupView.timeTrackingEditState || createTimeTrackingEditState(popupView.issueData);
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: {...currentState, ...changes},
+    });
+    renderIssuePopup(currentPopupState()).catch(() => {});
   }
 
   async function saveTimeTrackingEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
-    const issueData = popupState.issueData;
+    const issueData = popupView.issueData;
     const issueKey = issueData.key;
     const timeTrackingOutcome = await jiraFieldEditing.dispatch({type: 'describeField', fieldId: 'timetracking'});
     const timeTrackingCapability = timeTrackingOutcome.field || {editable: false};
-    const currentState = popupState.timeTrackingEditState || createTimeTrackingEditState(issueData);
+    const currentState = popupView.timeTrackingEditState || createTimeTrackingEditState(issueData);
     const savePlan = buildTimeTrackingSavePlan(currentState, {
       canEditEstimates: !!timeTrackingCapability?.editable
     });
@@ -2817,15 +2668,11 @@ async function mainAsyncLocal() {
       return;
     }
 
-    popupState = {
-      ...popupState,
-      timeTrackingEditState: {
-        ...currentState,
-        saving: true,
-        errorMessage: ''
-      }
-    };
-    await renderIssuePopup(popupState);
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: {...currentState, saving: true, errorMessage: ''},
+    });
+    await renderIssuePopup(currentPopupState());
 
     const requestPlans = [];
     if (savePlan.hasEstimateChanges) {
@@ -2863,7 +2710,7 @@ async function mainAsyncLocal() {
       try {
         const issueOutcome = await quickViewIssueData.refreshAfterMutation({
           issueKey,
-          priorSnapshot: popupState.issueSnapshot,
+          priorSnapshot: currentPopupState()?.issueSnapshot,
           mutation: {kind: 'timeChanged'},
           requirements: {pullRequests: showPullRequests},
         });
@@ -2871,10 +2718,7 @@ async function mainAsyncLocal() {
           throw issueDataError(issueOutcome.failures?.core, 'Could not refresh issue');
         }
         const refreshedIssueData = issueOutcome.snapshot.core;
-        const pullRequestSection = issueOutcome.snapshot.sections?.pullRequests;
-        const refreshedPullRequests = Array.isArray(pullRequestSection?.items) ? pullRequestSection.items : [];
-
-        if (!popupState || popupState.key !== issueKey) {
+        if (currentPopupState()?.key !== issueKey) {
           return;
         }
 
@@ -2889,43 +2733,41 @@ async function mainAsyncLocal() {
           errorMessage
         });
 
-        await renderUpdatedPopupState(currentPopupState => ({
-          ...currentPopupState,
+        popupModel.dispatch({type: 'timeTrackingChanged', state: refreshedTimeTrackingState});
+        await popupSession.dispatch({
+          type: 'render',
+          reason: 'time-tracking-save-complete',
           issueSnapshot: issueOutcome.snapshot,
-          issueData: refreshedIssueData,
-          pullRequests: refreshedPullRequests,
-          ...buildPopupInteractionReset(),
-          timeTrackingEditState: refreshedTimeTrackingState,
-        }));
+        });
 
         if (successMessage) {
           snackBar(errorMessage ? `${successMessage}. ${errorMessage}` : successMessage);
         }
         return;
       } catch (refreshError) {
-        popupState = {
-          ...popupState,
-          timeTrackingEditState: {
+        popupModel.dispatch({
+          type: 'timeTrackingChanged',
+          state: {
             ...currentState,
             saving: false,
             errorMessage: errorMessage || 'Saved changes but failed to refresh the popup'
-          }
-        };
-        await renderIssuePopup(popupState);
+          },
+        });
+        await renderIssuePopup(currentPopupState());
         snackBar(successMessage ? `${successMessage}. Refresh failed.` : 'Saved changes but failed to refresh the popup');
         return;
       }
     }
 
-    popupState = {
-      ...popupState,
-      timeTrackingEditState: {
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: {
         ...currentState,
         saving: false,
         errorMessage: errorMessage || 'Time tracking update failed'
-      }
-    };
-    await renderIssuePopup(popupState);
+      },
+    });
+    await renderIssuePopup(currentPopupState());
     snackBar(errorMessage || 'Time tracking update failed');
   }
   new draggable({
@@ -2959,6 +2801,17 @@ async function mainAsyncLocal() {
     if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
       return popupSession.dispatch(intent);
     }
+    if (intent.type === 'execute-quick-action') {
+      return popupSession.dispatch({
+        ...intent,
+        requirements: {
+          history: !!currentPopupState()?.historyOpen,
+          linkedIssues: !!linkedIssueLifecycle.view().open,
+          pullRequests: showPullRequests,
+          watchers: !!watcherLifecycle.view().open,
+        },
+      });
+    }
     if (intent.type === 'toggle-comment-sort') {
       const outcome = await popupSession.dispatch(intent);
       const nextCommentSortOrder = outcome.presentation?.commentSortOrder;
@@ -2974,7 +2827,7 @@ async function mainAsyncLocal() {
       return popupSession.dispatch({
         ...intent,
         requirements: {
-          history: !!popupState?.historyOpen,
+          history: !!currentPopupState()?.historyOpen,
           linkedIssues: !!linkedIssueLifecycle.view().open,
           pullRequests: showPullRequests,
           watchers: true,
@@ -2988,7 +2841,7 @@ async function mainAsyncLocal() {
       return popupSession.dispatch({
         ...intent,
         requirements: {
-          history: !!popupState?.historyOpen,
+          history: !!currentPopupState()?.historyOpen,
           linkedIssues: true,
           pullRequests: showPullRequests,
           watchers: !!watcherLifecycle.view().open,
@@ -3013,9 +2866,9 @@ async function mainAsyncLocal() {
     }
     if (intent.type === 'escape') {
       if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
-      if (popupState?.historyOpen) return popupSession.dispatch({type: 'close-history'});
+      if (currentPopupState()?.historyOpen) return popupSession.dispatch({type: 'close-history'});
       if (linkedIssueLifecycle.view().open) return popupSession.dispatch({type: 'close-linkedIssues'});
-      if (popupState?.descriptionEditState?.open) return cancelDescriptionEdit();
+      if (currentPopupState()?.descriptionEditState?.open) return cancelDescriptionEdit();
       const outcome = await hideContainer();
       passiveCancel(200);
       return outcome;
@@ -3028,13 +2881,6 @@ async function mainAsyncLocal() {
     emit: handlePopupPresentationIntent,
   });
   popupEvents.install();
-
-  $(document.body).on('click', '._JX_action_item', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const actionKey = e.currentTarget.getAttribute('data-action-key');
-    handleQuickAction(actionKey).catch(() => {});
-  });
 
   $(document.body).on('click', '._JX_field_chip_edit', function (e) {
     e.preventDefault();
@@ -3488,7 +3334,7 @@ async function mainAsyncLocal() {
 
   $(document.body).on('paste', '._JX_description_input', function (e) {
     const imageFiles = commentPresentation.clipboardImages(e);
-    if (!imageFiles.length || !popupState?.issueData?.key || !popupState?.descriptionEditState?.open) {
+    if (!imageFiles.length || !currentPopupState()?.issueData?.key || !currentPopupState()?.descriptionEditState?.open) {
       return;
     }
     e.preventDefault();
@@ -3528,8 +3374,8 @@ async function mainAsyncLocal() {
   async function clearPopupSurface() {
     lastHoveredKey = '';
     clearDescriptionStatusTimer();
-    const descriptionStateSnapshot = popupState?.descriptionEditState;
-    popupState = null;
+    const descriptionStateSnapshot = currentPopupState()?.descriptionEditState;
+    popupModel.close();
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
     await popupShell.dispatch({type: 'clear'});
 
@@ -3829,9 +3675,10 @@ async function mainAsyncLocal() {
   }
 
   function fetchAndShowPopup(key, pointerX, pointerY) {
-    if (popupState?.key && popupState.key !== key && popupState.descriptionEditState?.open) {
+    const popupView = currentPopupState();
+    if (popupView?.key && popupView.key !== key && popupView.descriptionEditState?.open) {
       clearDescriptionStatusTimer();
-      discardDescriptionEditStateSnapshot(popupState.descriptionEditState, {deleteUploaded: true}).catch(() => {});
+      discardDescriptionEditStateSnapshot(popupView.descriptionEditState, {deleteUploaded: true}).catch(() => {});
     }
     popupSession.activate({
       issueKey: key,

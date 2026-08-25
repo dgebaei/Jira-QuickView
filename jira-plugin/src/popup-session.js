@@ -68,6 +68,9 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   let stateRevision = 0;
   let watcherFeedbackTimer = null;
   let linkedSearchTimer = null;
+  let notice = '';
+  let noticeTimer = null;
+  let quickActionNoticeTimer = null;
   let state = {
     activation: '',
     anchor: null,
@@ -118,6 +121,26 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     linkedSearchTimer = null;
   }
 
+  function clearNoticeTimers() {
+    if (noticeTimer) clearTimeout(noticeTimer);
+    if (quickActionNoticeTimer) clearTimeout(quickActionNoticeTimer);
+    noticeTimer = null;
+    quickActionNoticeTimer = null;
+  }
+
+  function setNotice(value, sessionId, duration = 5000) {
+    notice = String(value || '');
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = null;
+    if (!notice || !duration) return;
+    noticeTimer = setTimeout(() => {
+      noticeTimer = null;
+      if (!isCurrent(sessionId)) return;
+      notice = '';
+      scheduleRender('notice-cleared').catch(() => {});
+    }, duration);
+  }
+
   async function closeCompetingPanels(activePanel) {
     if (activePanel !== 'watchers' && watchers.view().open) {
       clearWatcherFeedbackTimer();
@@ -153,6 +176,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       watchers: watchers.view(),
       history: projectHistory(),
       linkedIssues: linkedIssues.view(),
+      notice,
       ...details,
     };
     const context = {
@@ -172,6 +196,8 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     previous.controller?.abort();
     clearWatcherFeedbackTimer();
     clearLinkedSearchTimer();
+    clearNoticeTimers();
+    notice = '';
     await fieldEditing.detach({sessionId: previous.sessionId, reason});
     await comments.detach({sessionId: previous.sessionId, reason});
     await quickActions.detach({sessionId: previous.sessionId, reason});
@@ -399,6 +425,34 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
       }
       return {...rendered, watcherOutcome};
     }
+    if (intent.type === 'execute-quick-action') {
+      const sessionId = state.sessionId;
+      const pending = quickActions.dispatch({
+        type: 'execute',
+        actionKey: intent.actionKey,
+        requirements: intent.requirements || {},
+      });
+      const transition = transitionPopupPresentation(state.presentation, {type: 'close-actions'});
+      if (transition.kind !== 'ignored') state = {...state, presentation: transition.presentation};
+      await scheduleRender('quick-action-pending');
+      const actionOutcome = await pending;
+      if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});
+      if (actionOutcome.refreshedSnapshot?.core) {
+        state = {...state, snapshot: mergeIssueSnapshots(state.snapshot, actionOutcome.refreshedSnapshot)};
+      }
+      const rendered = await scheduleRender(`quick-action-${actionOutcome.kind}`);
+      if (actionOutcome.kind === 'executed' && actionOutcome.notice) {
+        if (quickActionNoticeTimer) clearTimeout(quickActionNoticeTimer);
+        quickActionNoticeTimer = setTimeout(() => {
+          quickActionNoticeTimer = null;
+          if (!isCurrent(sessionId)) return;
+          quickActions.dispatch({type: 'clearNotice', notice: actionOutcome.notice}).then(() => {
+            return scheduleRender('quick-action-notice-cleared');
+          }).catch(() => {});
+        }, 5000);
+      }
+      return {...rendered, actionOutcome};
+    }
     if (['toggle-linkedIssues', 'close-linkedIssues', 'dismiss-linkedIssues'].includes(intent.type)) {
       const opening = intent.type === 'toggle-linkedIssues' && state.presentation.activePanel !== 'linkedIssues';
       const transition = transitionPopupPresentation(state.presentation, {
@@ -468,6 +522,9 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     }
     if (intent.type === 'render') {
       const sessionId = state.sessionId;
+      if (Object.prototype.hasOwnProperty.call(intent, 'notice')) {
+        setNotice(intent.notice, sessionId, intent.noticeDuration ?? 5000);
+      }
       const nextSnapshot = intent.issueSnapshot;
       const nextIssueKey = normalizeIssueKey(nextSnapshot?.issueKey || nextSnapshot?.core?.key);
       if (nextSnapshot?.core && nextIssueKey !== state.issueKey) {

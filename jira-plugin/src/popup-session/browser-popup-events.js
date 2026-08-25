@@ -2,6 +2,10 @@ const EVENT_NAMESPACE = '.jiraQuickViewPopupPresentation';
 
 const PRESENTATION_EVENTS = [
   {selector: '._JX_actions_toggle', intent: () => ({type: 'toggle-actions'})},
+  {
+    selector: '._JX_action_item',
+    intent: element => ({type: 'execute-quick-action', actionKey: element.getAttribute('data-action-key') || ''}),
+  },
   {selector: '._JX_pin_button', intent: () => ({type: 'pin'})},
   {selector: '._JX_close_button', intent: () => ({type: 'close-popup'})},
   {
