@@ -558,8 +558,11 @@ test('popup session owns watcher panel loading and feature render scheduling', a
     });
     await popup.activate({issueKey: 'ABC-1'});
     const pending = popup.dispatch({type: 'toggle-watchers'});
-    for (let attempt = 0; attempt < 20 && surface.getFrames().length < 2; attempt += 1) await Promise.resolve();
-    const loadingFrame = surface.getFrames().at(-1);
+    let loadingFrame;
+    for (let attempt = 0; attempt < 20 && !loadingFrame; attempt += 1) {
+      await Promise.resolve();
+      loadingFrame = surface.getFrames().find(frame => frame.reason === 'watchers-loading');
+    }
     loaded.resolve();
     const outcome = await pending;
     const readyFrame = surface.getFrames().at(-1);
@@ -602,8 +605,11 @@ test('popup session owns history acquisition, loading, and snapshot projection',
     });
     await popup.activate({issueKey: 'ABC-1'});
     const pending = popup.dispatch({type: 'toggle-history'});
-    for (let attempt = 0; attempt < 20 && surface.getFrames().length < 2; attempt += 1) await Promise.resolve();
-    const loadingFrame = surface.getFrames().at(-1);
+    let loadingFrame;
+    for (let attempt = 0; attempt < 20 && !loadingFrame; attempt += 1) {
+      await Promise.resolve();
+      loadingFrame = surface.getFrames().find(frame => frame.reason === 'history-loading');
+    }
     history.resolve({snapshot: {
       issueKey: 'ABC-1',
       core: {key: 'ABC-1', fields: {}},

@@ -105,7 +105,7 @@ export function createBrowserCommentPresentation({comments, container, shell}) {
     else html = mention.suggestions.map((candidate, index) => {
       const selectedClass = index === mention.selectedIndex ? ' is-selected' : '';
       const secondary = candidate.secondaryText
-        ? `<span class="_JX_comment_mention_secondary">${escapeHtml(candidate.secondaryText)}</span>`
+        ? ` <span class="_JX_comment_mention_secondary">${escapeHtml(candidate.secondaryText)}</span>`
         : '';
       return `<button class="_JX_comment_mention_option${selectedClass}" type="button" data-mention-index="${index}">
         <span><span class="_JX_comment_mention_primary">${escapeHtml(candidate.displayName)}</span>${secondary}</span></button>`;
