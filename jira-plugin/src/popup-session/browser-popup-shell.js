@@ -10,7 +10,10 @@ export function createBrowserPopupShell({
   container,
   media,
   previewOverlay,
-  scheduler = {set: setTimeout, clear: clearTimeout},
+  scheduler = {
+    set(callback, delay) { return setTimeout(callback, delay); },
+    clear(timer) { clearTimeout(timer); },
+  },
   viewport = window,
 }) {
   if (typeof close !== 'function') throw new TypeError('Browser popup shell requires close()');

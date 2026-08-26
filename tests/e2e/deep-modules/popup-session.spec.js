@@ -448,6 +448,7 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
     });
     await popup.activate({issueKey: 'ABC-1'});
     const history = await popup.dispatch({type: 'open-panel', panel: 'history'});
+    const inactivePanelClose = await popup.dispatch({type: 'close-panel', panel: 'watchers'});
     const watchers = await popup.dispatch({type: 'open-panel', panel: 'watchers'});
     const watchersClosed = await popup.dispatch({type: 'toggle-panel', panel: 'watchers'});
     const linkedIssues = await popup.dispatch({type: 'open-panel', panel: 'linkedIssues'});
@@ -456,6 +457,7 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
     return {
       outcomes: [history, watchers, watchersClosed, linkedIssues, linkedIssuesClosed]
         .map(item => item.presentation.activePanel),
+      inactivePanelClose: {kind: inactivePanelClose.kind, reason: inactivePanelClose.reason},
       invalid: {kind: invalid.kind, reason: invalid.reason},
       frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
         kind: frame.kind,
@@ -467,6 +469,7 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
 
   expect(result).toEqual({
     outcomes: ['history', 'watchers', '', 'linkedIssues', ''],
+    inactivePanelClose: {kind: 'ignored', reason: 'panel-unchanged'},
     invalid: {kind: 'ignored', reason: 'invalid-panel'},
     frames: [
       {kind: 'visible', reason: '', activePanel: ''},
@@ -876,6 +879,26 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
       view: {cooldownActive: false, pinned: false, previewOpen: false, previewSource: ''},
     },
   });
+});
+
+test('browser popup shell default scheduler releases cooldown in Chromium', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupShell, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup">Issue</div><div id="preview"><img></div>';
+    const shell = createBrowserPopupShell({
+      close() {},
+      container: $('#popup'),
+      media: {displayUrl: source => Promise.resolve(source)},
+      previewOverlay: $('#preview'),
+    });
+
+    await shell.dispatch({type: 'begin-cooldown', delay: 10});
+    const activeBefore = shell.view().cooldownActive;
+    await new Promise(resolve => window.setTimeout(resolve, 25));
+    return {activeBefore, activeAfter: shell.view().cooldownActive};
+  });
+
+  expect(result).toEqual({activeBefore: true, activeAfter: false});
 });
 
 test('browser comment presentation renders lifecycle state through one DOM interface', async ({page}) => {

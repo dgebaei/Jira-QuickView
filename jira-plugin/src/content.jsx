@@ -1952,7 +1952,11 @@ async function mainAsyncLocal() {
       const hasDisplayValue = Array.isArray(rawValue)
         ? rawValue.some(value => value !== undefined && value !== null && value !== '')
         : !(rawValue === undefined || rawValue === null || rawValue === '');
-      const fieldOutcome = await jiraFieldEditing.dispatch({type: 'describeField', fieldId}).catch(() => null);
+      const fieldOutcome = await jiraFieldEditing.dispatch({
+        type: 'describeField',
+        fieldId,
+        configured: true,
+      }).catch(() => null);
       const field = fieldOutcome?.field;
       if (field?.supported && (hasDisplayValue || field.visibleWhenEmpty)) {
         const baseChip = buildFilterChip(field.text, field.jqlClause, {linkLabel: field.linkLabel});
@@ -2856,9 +2860,7 @@ async function mainAsyncLocal() {
     if (intent.type === 'pin-after-drag') return popupShell.dispatch({type: 'pin', announce: true});
     if (intent.type === 'open-preview' || intent.type === 'close-preview') return popupShell.dispatch(intent);
     if (intent.type === 'close-popup') {
-      const outcome = await hideContainer();
-      passiveCancel(200);
-      return outcome;
+      return hideContainer();
     }
     if (intent.type === 'dismiss-popup') {
       if (!container.html() || popupShell.view().pinned) return {kind: 'ignored', reason: 'popup-not-dismissible'};
@@ -2869,9 +2871,7 @@ async function mainAsyncLocal() {
       if (currentPopupState()?.historyOpen) return popupSession.dispatch({type: 'close-history'});
       if (linkedIssueLifecycle.view().open) return popupSession.dispatch({type: 'close-linkedIssues'});
       if (currentPopupState()?.descriptionEditState?.open) return cancelDescriptionEdit();
-      const outcome = await hideContainer();
-      passiveCancel(200);
-      return outcome;
+      return hideContainer();
     }
     return {kind: 'ignored', reason: 'unsupported-presentation-intent'};
   }

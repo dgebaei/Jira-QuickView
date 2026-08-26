@@ -40,9 +40,9 @@ export function transitionPopupPresentation(current, intent = {}) {
   if (['open-panel', 'close-panel', 'toggle-panel'].includes(intent.type)) {
     const panel = String(intent.panel || '');
     if (!PANELS.has(panel)) return {kind: 'ignored', reason: 'invalid-panel'};
-    const shouldClose = intent.type === 'close-panel' ||
-      (intent.type === 'toggle-panel' && current.activePanel === panel);
-    const activePanel = shouldClose ? '' : panel;
+    const activePanel = intent.type === 'close-panel'
+      ? (current.activePanel === panel ? '' : current.activePanel)
+      : (intent.type === 'toggle-panel' && current.activePanel === panel ? '' : panel);
     if (current.activePanel === activePanel) return {kind: 'ignored', reason: 'panel-unchanged'};
     return {
       kind: 'changed',
