@@ -1,4 +1,5 @@
 const fs = require('fs/promises');
+const path = require('path');
 const extensionManifest = require('../../jira-plugin/manifest.json');
 const {test, expect, configureExtension} = require('./helpers/extension-fixtures');
 const {failWithJson, patchJsonResponse} = require('./helpers/jira-route-mocks');
@@ -7,6 +8,7 @@ const {contentBlockItem, customFieldLibraryItem, openAdvancedSettings, optionsPa
 const {buildExtensionConfig, requireJiraTestTarget} = require('./helpers/test-targets');
 
 const CURRENT_EXTENSION_VERSION = String(extensionManifest.version || '');
+const themeScreenshotDir = String(process.env.JHL_CAPTURE_THEME_SCREENSHOTS || '').trim();
 
 function baseConfig(servers, target, overrides = {}) {
   return {
@@ -283,6 +285,32 @@ test('persists hover behavior settings through the options page', async ({option
   const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['hoverDepth', 'hoverModifierKey']));
   expect(stored.hoverDepth).toBe('deep');
   expect(stored.hoverModifierKey).toBe('shift');
+});
+
+test('keeps native dropdown surfaces aligned with the selected theme', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+
+  await optionsPage.emulateMedia({colorScheme: 'dark'});
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  await optionsPage.evaluate(() => chrome.storage.sync.set({themeMode: 'light'}));
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+
+  await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'light');
+  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('background-color', 'rgb(248, 250, 252)');
+  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('color', 'rgb(55, 65, 81)');
+  if (themeScreenshotDir) {
+    await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-light.png')});
+  }
+
+  await optionsPage.getByTestId('options-theme-mode-dark').click();
+  await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'dark');
+  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('background-color', 'rgb(30, 41, 59)');
+  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('color', 'rgb(237, 243, 249)');
+  if (themeScreenshotDir) {
+    await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-dark.png')});
+  }
 });
 
 test('enables Jira inline copy buttons by default and persists the preference', async ({optionsPage, servers}) => {

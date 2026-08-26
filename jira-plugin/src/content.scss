@@ -880,9 +880,15 @@ body ._JX {
   }
 
   &_linked_issues_type_select {
+    color-scheme: light;
     min-height: 32px;
     padding-bottom: 6px;
     padding-top: 6px;
+
+    option {
+      background-color: #fff;
+      color: #172b4d;
+    }
   }
 
   &_linked_issues_selected_values {
@@ -3431,88 +3437,97 @@ html[data-jhl-theme='dark'] body ._JX {
     filter: invert(1) hue-rotate(180deg);
   }
 
-  &_edit_field_label {
+  &_edit_popover ._JX_edit_field_label {
     color: #c7d1df;
   }
 
-  &_edit_input {
+  &_edit_popover ._JX_edit_input {
     background: #202733;
     border-color: #64748b;
     color: #f1f5f9;
   }
 
-  &_edit_input::placeholder {
+  &_edit_popover ._JX_edit_input::placeholder {
     color: #aeb9c8;
   }
 
-  &_edit_input:focus {
+  &_edit_popover ._JX_edit_input:focus {
     border-color: #579dff;
     box-shadow: 0 0 0 2px rgba(87, 157, 255, 0.28);
   }
 
-  &_edit_selected_chip {
+  &_edit_popover ._JX_edit_selected_chip {
     background: #20395c;
     border-color: #3f6fa8;
     color: #e7f1ff;
   }
 
-  &_edit_selected_remove {
+  &_edit_popover ._JX_edit_selected_remove {
     color: #b9d4f5;
   }
 
-  &_edit_selected_remove:hover,
-  &_edit_selected_remove:focus-visible {
+  &_edit_popover ._JX_edit_selected_remove:hover,
+  &_edit_popover ._JX_edit_selected_remove:focus-visible {
     background: #315f8f;
     color: #fff;
   }
 
-  &_edit_dropdown {
+  &_edit_popover ._JX_edit_dropdown {
     background: #161b22;
     border-color: #3d4654;
   }
 
-  &_edit_group_label {
+  &_edit_popover ._JX_edit_group_label {
     background: #202733;
     border-color: #3d4654;
     color: #c7d1df;
   }
 
-  &_edit_option {
+  &_edit_popover ._JX_edit_option {
     color: #f1f5f9;
   }
 
-  &_edit_option.is-selected {
+  &_edit_popover ._JX_edit_option.is-selected {
     background: #26384f;
   }
 
-  &_edit_option:hover,
-  &_edit_option.is-highlighted {
+  &_edit_popover ._JX_edit_option:hover,
+  &_edit_popover ._JX_edit_option.is-highlighted {
     background: #315f8f;
     color: #fff;
   }
 
-  &_edit_option_meta {
+  &_edit_popover ._JX_edit_option_meta {
     color: #b2bdcc;
   }
 
-  &_edit_option_check {
+  &_edit_popover ._JX_edit_option_check {
     color: #7aaeff;
   }
 
-  &_edit_cancel,
-  &_edit_discard {
+  &_linked_issues_type_select {
+    color-scheme: dark;
+
+    option {
+      background-color: #202733;
+      color: #f1f5f9;
+    }
+  }
+
+  &_edit_popover ._JX_edit_cancel,
+  &_edit_popover ._JX_edit_discard {
     background: #202733;
     border-color: #3d4654;
     color: #dbe5f1;
   }
 
-  &_edit_cancel:hover,
-  &_edit_discard:hover {
+  &_edit_popover ._JX_edit_cancel:hover,
+  &_edit_popover ._JX_edit_discard:hover {
     background: #2b3442;
   }
 
-  &_edit_empty,
-  &_edit_hint {
+  &_edit_popover ._JX_edit_empty,
+  &_edit_popover ._JX_edit_hint {
     color: #b2bdcc;
   }
 

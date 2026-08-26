@@ -1,8 +1,11 @@
+const path = require('path');
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
 const {getCurrentUser} = require('./helpers/live-jira-api');
 const {popupModel} = require('./helpers/popup');
 const {buildExtensionConfig, requireJiraTestTarget, replaceIssueKeysOnPage, resolveTargetIssueKeys} = require('./helpers/test-targets');
 const {failWithJson, patchJsonResponse} = require('./helpers/jira-route-mocks');
+
+const themeScreenshotDir = String(process.env.JHL_CAPTURE_THEME_SCREENSHOTS || '').trim();
 
 function baseConfig(servers, target, overrides = {}) {
   return buildExtensionConfig(servers, {
@@ -259,6 +262,42 @@ test('keeps fix version options readable and distinct in dark mode @mock-only', 
   await expect(selectedOption).toHaveCSS('background-color', 'rgb(38, 56, 79)');
   await expect(highlightedOption).toHaveCSS('background-color', 'rgb(49, 95, 143)');
   await expect(highlightedOption).toHaveCSS('color', 'rgb(255, 255, 255)');
+
+  await page.close();
+});
+
+test('themes the linked-issue relationship dropdown in light and dark modes @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Relationship dropdown colors are deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('linked-issues');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  await optionsPage.evaluate(() => chrome.storage.sync.set({themeMode: 'light'}));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  await page.getByTestId('jira-popup-linked-issues-trigger').click();
+  const relationshipSelect = page.getByRole('combobox', {name: 'Relationship'});
+  const issueSearchInput = page.getByTestId('jira-popup-linked-issues-search');
+  const firstOption = relationshipSelect.locator('option').first();
+
+  await expect(relationshipSelect).toHaveCSS('color-scheme', 'light');
+  await expect(firstOption).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(firstOption).toHaveCSS('color', 'rgb(23, 43, 77)');
+  if (themeScreenshotDir) {
+    await page.getByTestId('jira-popup-linked-issues-panel').screenshot({path: path.join(themeScreenshotDir, 'linked-issues-dropdown-light.png')});
+  }
+
+  await page.locator('html').evaluate(element => element.setAttribute('data-jhl-theme', 'dark'));
+  await expect(relationshipSelect).toHaveCSS('color-scheme', 'dark');
+  await expect(relationshipSelect).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(relationshipSelect).toHaveCSS('color', 'rgb(23, 43, 77)');
+  await expect(issueSearchInput).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(issueSearchInput).toHaveCSS('color', 'rgb(23, 43, 77)');
+  await expect(firstOption).toHaveCSS('background-color', 'rgb(32, 39, 51)');
+  await expect(firstOption).toHaveCSS('color', 'rgb(241, 245, 249)');
+  if (themeScreenshotDir) {
+    await page.getByTestId('jira-popup-linked-issues-panel').screenshot({path: path.join(themeScreenshotDir, 'linked-issues-dropdown-dark.png')});
+  }
 
   await page.close();
 });

@@ -17,8 +17,10 @@ const RESULT_LINK_SELECTOR = 'a[href*="/browse/"]';
 const RESULT_KEY_SELECTORS = [
   '[data-testid*="key"]',
   '.issue-key',
+  '.issuekey',
   '.card-key',
 ];
+const RESULT_KEY_SELECTOR = RESULT_KEY_SELECTORS.join(', ');
 const RESULT_CONTAINER_SELECTOR = '[data-issue-key], [data-issuekey], tr, [role="row"], article, li';
 
 function getIssueKey(element) {
@@ -272,6 +274,28 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       const key = getIssueKey(issueElement);
       const elementText = String(issueElement.textContent || '').trim();
       if (!key || !elementText.includes(key) || issueElement.closest('._JX_container')) {
+        continue;
+      }
+      removeStaleCopyButtons(issueElement, key);
+      const existing = issueElement.nextElementSibling;
+      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
+        continue;
+      }
+      const resultSummary = getResultSummary(issueElement, key);
+      if (!resultSummary) {
+        continue;
+      }
+      insertResultCopyButton(documentRef, issueElement, {
+        key,
+        summary: resultSummary,
+        url: buildIssueUrl(instanceUrl, key),
+      }, copy);
+    }
+
+    for (const candidate of documentRef.querySelectorAll(RESULT_KEY_SELECTOR)) {
+      const key = getIssueKey(candidate);
+      const issueElement = findResultKeyElement(candidate, key) || candidate;
+      if (!key || !issueElement || issueElement.closest('._JX_container')) {
         continue;
       }
       removeStaleCopyButtons(issueElement, key);

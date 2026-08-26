@@ -120,6 +120,45 @@ test('adds one copy button per Jira result and follows SPA additions @mock-only'
   await page.close();
 });
 
+test('adds copy buttons beside issue keys in modern JQL result rows @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Modern JQL result markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.jira.origin});
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    document.querySelector('#issue-results').innerHTML = `
+      <table aria-label="Search results">
+        <tbody>
+          <tr role="row" data-testid="issue-table.ui.issue-row">
+            <td data-testid="issue-table.common.ui.issue-cells.issue-key">
+              <a href="/jira/software/c/projects/PLATFORM/issues/PLATFORM-101">PLATFORM-101</a>
+            </td>
+            <td data-testid="issue-table.common.ui.issue-cells.summary">
+              <span>Cross-project platform initiative</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>`;
+  });
+
+  const copyButton = page.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
+  await expect(copyButton).toHaveCount(1);
+  await page.getByRole('row').hover();
+  await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-modern-jql.png');
+  await copyButton.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `${servers.jira.origin}/browse/PLATFORM-101`
+  );
+  await page.close();
+});
+
 test('adds copy buttons to Jira board cards without issue links @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Inline Jira UI coverage is deterministic in mocked mode only.');

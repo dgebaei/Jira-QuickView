@@ -60,6 +60,7 @@
   --tooltip-header-text: #374151;
   --tooltip-row-bg: #f8fafc;
   --tooltip-row-border: #e2e8f0;
+  color-scheme: light;
   color: var(--page-text);
   font-family: 'Segoe UI Variable Text', 'Aptos', 'Segoe UI', sans-serif;
 }
@@ -126,6 +127,7 @@
   --tooltip-header-text: #f8fafc;
   --tooltip-row-bg: #0f172a;
   --tooltip-row-border: #334155;
+  color-scheme: dark;
 }
 
 body {
@@ -484,6 +486,11 @@ select {
   background-repeat: no-repeat;
   background-size: 10px 6px;
   padding-right: 34px;
+}
+
+select option {
+  background-color: var(--input-bg);
+  color: var(--input-text);
 }
 
 input:focus,
