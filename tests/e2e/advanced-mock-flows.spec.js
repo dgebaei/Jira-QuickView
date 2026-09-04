@@ -634,6 +634,50 @@ test('updates sprint and version fields through edit popovers', async ({extensio
   await page.close();
 });
 
+test('autosaves dropdown field edits when focus leaves the popover @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers);
+  test.skip(target.mode !== 'mock', 'Autosave payload coverage is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+
+  await popup.editButton('sprint').click();
+  const sprintOptions = popup.editOptions('sprint');
+  await waitForOptions(sprintOptions, 2);
+  const selectedSprint = page.locator('._JX_edit_option[data-field-key="sprint"].is-selected').first();
+  const currentSprintId = await selectedSprint.getAttribute('data-option-id');
+  const sprintCount = await sprintOptions.count();
+  for (let index = 0; index < sprintCount; index += 1) {
+    const option = sprintOptions.nth(index);
+    if (await option.getAttribute('data-option-id') !== currentSprintId) {
+      await option.click();
+      break;
+    }
+  }
+  await page.locator('._JX_content_blocks').click({position: {x: 4, y: 4}});
+  await expect(popup.root).toContainText(/Sprint:/i);
+  await expect(popup.editPopover('sprint')).toHaveCount(0);
+
+  await popup.editButton('fixVersions').click();
+  const fixVersionOptions = popup.editOptions('fixVersions');
+  await waitForOptions(fixVersionOptions, 2);
+  const originalFixIds = await getSelectedOptionIds(fixVersionOptions);
+  const fixCount = await fixVersionOptions.count();
+  for (let index = 0; index < fixCount; index += 1) {
+    const option = fixVersionOptions.nth(index);
+    const optionId = await option.getAttribute('data-option-id');
+    if (optionId && !originalFixIds.includes(optionId)) {
+      await option.click();
+      break;
+    }
+  }
+  await page.locator('._JX_content_blocks').click({position: {x: 4, y: 4}});
+  await expect(popup.root).toContainText(/Fix version/i);
+  await expect(popup.editPopover('fixVersions')).toHaveCount(0);
+  await page.close();
+});
+
 test('removes a selected fix version directly from its chip @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Fix version removal coverage is deterministic in mocked mode only.');

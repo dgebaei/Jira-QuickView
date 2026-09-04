@@ -92,7 +92,9 @@ export function createBrowserPopupRenderer({
     }
 
     commentPresentation.render({applyValue: true, restoreFocus: true});
-    if (!shell.view().pinned) {
+    if (shell.view().pinned) {
+      await shell.dispatch({type: 'reposition', anchor: {x: state.pointerX, y: state.pointerY}});
+    } else {
       container.css(shell.position({x: state.pointerX, y: state.pointerY}));
     }
 

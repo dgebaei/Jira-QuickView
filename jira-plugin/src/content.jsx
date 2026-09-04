@@ -13,7 +13,7 @@ import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
-import config, {buildTooltipLayoutFromDisplayFields} from 'options/config.js';
+import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivationMode} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
@@ -295,6 +295,7 @@ async function mainAsyncLocal() {
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
   const hoverModifierKey = config.hoverModifierKey || 'any';
+  const activationMode = resolveQuickViewActivationMode(config);
   const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
   installJiraInlineCopyButtons({
     document,
@@ -2637,6 +2638,12 @@ async function mainAsyncLocal() {
     if (jiraFieldEditing.view().edit) dispatchJiraFieldEditing({type: 'cancel'}).catch(() => {});
   }
 
+  function commitFieldEditOnOutsideInteraction() {
+    const fieldView = jiraFieldEditing.view().edit;
+    if (!fieldView) return;
+    dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
+  }
+
   function selectFieldEditOption(optionId) {
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView && fieldView.options?.some(option => option.id === String(optionId || ''))) {
@@ -2972,7 +2979,7 @@ async function mainAsyncLocal() {
     }).catch(() => {});
   });
 
-  $(document.body).on('mousedown', function (e) {
+  $(document.body).on('click', function (e) {
     if (!getActiveFieldEditState()) {
       return;
     }
@@ -2980,11 +2987,11 @@ async function mainAsyncLocal() {
       return;
     }
     if ($(e.target).closest('._JX_container').length === 0) {
-      cancelFieldEdit();
+      commitFieldEditOnOutsideInteraction();
       return;
     }
     if ($(e.target).closest('._JX_field_chip_editable_group').length === 0 && $(e.target).closest('._JX_edit_popover').length === 0 && $(e.target).closest('._JX_title_summary_slot').length === 0) {
-      cancelFieldEdit();
+      commitFieldEditOnOutsideInteraction();
     }
   });
 
@@ -3686,7 +3693,7 @@ async function mainAsyncLocal() {
     return popupSession.activate({
       issueKey: key,
       anchor: {x: pointerX, y: pointerY},
-      activation: activation || (hoverModifierKey === 'none' ? 'hover' : 'modifier'),
+      activation: activation || (activationMode === 'hover-modifier' ? 'modifier' : activationMode),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
         children: showChildren,
@@ -3713,7 +3720,7 @@ async function mainAsyncLocal() {
   }
 
   function getClickedIssueLink(target) {
-    if (!config.openQuickViewOnClick || !target?.closest) return null;
+    if (activationMode !== 'click' || !target?.closest) return null;
     const link = target.closest('a[href]');
     if (!link || link.closest('._JX_container') || link.hasAttribute('download')) return null;
     let linkUrl;
@@ -3730,7 +3737,7 @@ async function mainAsyncLocal() {
     return {key: keyMatch[1].toUpperCase(), link};
   }
 
-  if (config.openQuickViewOnClick) {
+  if (activationMode === 'click') {
     document.addEventListener('click', function (e) {
       if (e.defaultPrevented || e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const clickedIssue = getClickedIssueLink(e.target);
@@ -3748,7 +3755,7 @@ async function mainAsyncLocal() {
     }, true);
   }
 
-  if (hoverModifierKey !== 'none') {
+  if (activationMode === 'hover-modifier') {
     document.addEventListener('keydown', function (e) {
       if (popupShell.view().pinned || isTypingTargetBlockingModifierTrigger(currentPointer.clientX, currentPointer.clientY)) {
         return;
@@ -3802,7 +3809,10 @@ async function mainAsyncLocal() {
       return;
     }
     if (element) {
-      if (hoverModifierKey !== 'none') {
+      if (activationMode === 'click') {
+        return;
+      }
+      if (activationMode === 'hover-modifier') {
         const resolvedKey = resolveModifierKeyAtClientPoint(e.clientX, e.clientY);
         if (!resolvedKey) {
           return;

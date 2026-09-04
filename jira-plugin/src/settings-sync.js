@@ -1,4 +1,4 @@
-import defaultConfig from 'options/config.js';
+import defaultConfig, {QUICKVIEW_ACTIVATION_MODES, resolveQuickViewActivationMode} from 'options/config.js';
 import {toMatchUrl} from 'options/declarative';
 import {normalizeCustomFields, normalizeInstanceUrl} from 'options/options-utils';
 import {normalizeThemeMode} from 'src/theme';
@@ -17,10 +17,10 @@ export const DEFAULT_SYNC_POLICY = {
   instanceUrl: 'locked',
   domains: 'default',
   themeMode: 'unmanaged',
+  activationMode: 'default',
   hoverDepth: 'default',
   hoverModifierKey: 'default',
   inlineCopyButtons: 'default',
-  openQuickViewOnClick: 'default',
   displayFields: 'default',
   tooltipLayout: 'default',
   customFields: 'default',
@@ -268,12 +268,18 @@ export function normalizeSettingsPayload(payload) {
     settings.hoverModifierKey = VALID_HOVER_MODIFIER_KEYS.includes(hoverModifierKey) ? hoverModifierKey : defaultConfig.hoverModifierKey;
   }
 
-  if (Object.prototype.hasOwnProperty.call(rawSettings, 'inlineCopyButtons')) {
-    settings.inlineCopyButtons = rawSettings.inlineCopyButtons !== false;
+  if (Object.prototype.hasOwnProperty.call(rawSettings, 'activationMode')) {
+    const activationMode = String(rawSettings.activationMode || '').trim();
+    settings.activationMode = QUICKVIEW_ACTIVATION_MODES.includes(activationMode)
+      ? activationMode
+      : resolveQuickViewActivationMode(defaultConfig);
+  } else if (Object.prototype.hasOwnProperty.call(rawSettings, 'openQuickViewOnClick')
+      || Object.prototype.hasOwnProperty.call(rawSettings, 'hoverModifierKey')) {
+    settings.activationMode = resolveQuickViewActivationMode(rawSettings);
   }
 
-  if (Object.prototype.hasOwnProperty.call(rawSettings, 'openQuickViewOnClick')) {
-    settings.openQuickViewOnClick = rawSettings.openQuickViewOnClick === true;
+  if (Object.prototype.hasOwnProperty.call(rawSettings, 'inlineCopyButtons')) {
+    settings.inlineCopyButtons = rawSettings.inlineCopyButtons !== false;
   }
 
   if (isObject(rawSettings.displayFields)) {

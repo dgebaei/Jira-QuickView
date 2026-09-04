@@ -13,7 +13,7 @@ function optionsPageModel(page) {
     instanceUrlInput: page.getByTestId('options-instance-url'),
     domainsInput: page.getByTestId('options-domains'),
     inlineCopyButtonsCheckbox: page.getByTestId('options-inline-copy-buttons'),
-    openQuickViewOnClickCheckbox: page.getByTestId('options-open-quickview-on-click'),
+    activationModeSelect: page.getByTestId('options-activation-mode'),
     advancedToggle: page.getByTestId('options-advanced-toggle'),
     hoverDepthSelect: page.getByTestId('options-hover-depth'),
     hoverModifierSelect: page.getByTestId('options-hover-modifier'),

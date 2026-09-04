@@ -94,6 +94,16 @@ export function createBrowserPopupShell({
     return outcome('pinned');
   }
 
+  function reposition(anchor = {}) {
+    if (!pinned || !container.html()) return outcome('ignored', {reason: pinned ? 'empty-popup' : 'not-pinned'});
+    const scrollingElement = viewport.document?.scrollingElement || viewport.document?.documentElement;
+    const scrollLeft = scrollingElement?.scrollLeft || viewport.scrollX || 0;
+    const scrollTop = scrollingElement?.scrollTop || viewport.scrollY || 0;
+    const nextPosition = position(anchor);
+    container.css({left: nextPosition.left - scrollLeft, top: nextPosition.top - scrollTop});
+    return outcome('repositioned', {position: nextPosition});
+  }
+
   function closePreview() {
     previewRequest += 1;
     previewOpen = false;
@@ -113,6 +123,7 @@ export function createBrowserPopupShell({
       return outcome('opening-prepared');
     }
     if (intent.type === 'pin') return pin(intent);
+    if (intent.type === 'reposition') return reposition(intent.anchor);
     if (intent.type === 'keep-visible') {
       if (pinned || !container.html()) return outcome('ignored', {reason: pinned ? 'pinned' : 'empty-popup'});
       const currentLeft = Number.parseFloat(container.css('left'));

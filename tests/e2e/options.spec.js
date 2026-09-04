@@ -89,7 +89,7 @@ test('expands and collapses advanced settings from anywhere in the header', asyn
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(form.hoverDepthSelect).toBeVisible();
 
-  await toggle.getByText('Hover trigger depth, modifier keys, field layout editor, custom fields, and settings sync.', {exact: true}).click();
+  await toggle.getByText('Hover detection, field layout editor, custom fields, and settings sync.', {exact: true}).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(form.hoverDepthSelect).toBeHidden();
 
@@ -267,7 +267,7 @@ test('persists custom field row changes when moving a field into row 2', async (
 test('persists hover behavior settings through the options page', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
-  await configureExtension(optionsPage, baseConfig(servers, target));
+  await configureExtension(optionsPage, baseConfig(servers, target, {activationMode: 'hover-modifier'}));
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
 
@@ -346,15 +346,24 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   expect(stored.inlineCopyButtons).toBe(false);
 });
 
-test('keeps link navigation by default and persists click-to-QuickView when enabled', async ({optionsPage, servers}) => {
+test('persists one mutually exclusive QuickView activation mode', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
 
-  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
-  await optionsPage.getByText('Open QuickView when clicking issue links', {exact: true}).click();
-  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.activationModeSelect).toHaveValue('hover');
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.remove('activationMode');
+    await chrome.storage.sync.set({openQuickViewOnClick: true});
+  });
+  await optionsPage.reload();
+  await expect(form.activationModeSelect).toHaveValue('click');
+  await form.activationModeSelect.selectOption('hover-modifier');
+  await openAdvancedSettings(optionsPage);
+  await expect(form.hoverModifierSelect).toBeVisible();
+  await form.activationModeSelect.selectOption('click');
+  await expect(form.activationModeSelect).toHaveValue('click');
   await expect(form.statusPill).toContainText('Unsaved changes.');
   if (themeScreenshotDir) {
     await optionsPage.locator('.settingsCard').filter({hasText: 'Appearance'}).screenshot({path: path.join(themeScreenshotDir, 'options-click-to-quickview.png')});
@@ -363,9 +372,9 @@ test('keeps link navigation by default and persists click-to-QuickView when enab
   await expect(form.saveNotice).toContainText('Options saved successfully.');
 
   await optionsPage.reload();
-  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
-  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['openQuickViewOnClick']));
-  expect(stored.openQuickViewOnClick).toBe(true);
+  await expect(form.activationModeSelect).toHaveValue('click');
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['activationMode']));
+  expect(stored.activationMode).toBe('click');
 });
 
 test('persists reordered content blocks through the options page', async ({optionsPage, servers}) => {

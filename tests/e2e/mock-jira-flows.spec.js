@@ -170,6 +170,10 @@ test('shows issue-key loading feedback beside the pointer until Jira data is rea
     await expect(loading).toBeVisible();
     await expect(loading).toContainText(`Loading ${target.primaryIssueKey}`);
     await expect(loading.locator('._JX_loading_spinner')).toBeVisible();
+    await expect.poll(() => loading.locator('._JX_loading_spinner').evaluate(node => {
+      const style = getComputedStyle(node);
+      return {name: style.animationName, duration: style.animationDuration, playState: style.animationPlayState};
+    })).toEqual({name: '_JX_loading_spin', duration: '0.75s', playState: 'running'});
     const [markerBox, loadingBox] = await Promise.all([marker.boundingBox(), loading.boundingBox()]);
     expect(markerBox).not.toBeNull();
     expect(loadingBox).not.toBeNull();
@@ -205,14 +209,17 @@ test('opens and pins QuickView instead of navigating on a plain issue-link click
     }
   );
   await configureExtension(optionsPage, baseConfig(servers, target, {
+    activationMode: 'click',
     hoverModifierKey: 'any',
-    openQuickViewOnClick: true,
   }));
 
   const page = await extensionApp.context.newPage();
   await page.goto(`${servers.allowedPage.origin}/`);
   await page.locator('#issue-link a').evaluate((link, href) => {
     link.href = href;
+    link.style.position = 'fixed';
+    link.style.right = '0px';
+    link.style.bottom = '0px';
   }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
   await injectContentScript(extensionApp, page);
   const originalUrl = page.url();
@@ -230,6 +237,13 @@ test('opens and pins QuickView instead of navigating on a plain issue-link click
   }
   await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
   await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
+  const popupBox = await page.locator('._JX_container').boundingBox();
+  const viewport = page.viewportSize();
+  expect(popupBox).not.toBeNull();
+  expect(popupBox.x).toBeGreaterThanOrEqual(0);
+  expect(popupBox.y).toBeGreaterThanOrEqual(0);
+  expect(popupBox.x + popupBox.width).toBeLessThanOrEqual(viewport.width);
+  expect(popupBox.y + popupBox.height).toBeLessThanOrEqual(viewport.height);
   expect(page.url()).toBe(originalUrl);
   await page.close();
 });
@@ -1330,8 +1344,11 @@ test('toggles the top filtered multi-select option with Enter in mocked mode @mo
   await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
   const labelInput = page.locator('._JX_edit_input[data-field-key="labels"]');
   await labelInput.fill('release-candidate');
+  await expect(page.locator('._JX_edit_option[data-field-key="labels"]').first()).toBeVisible();
   await labelInput.press('Enter');
-  await page.locator('._JX_edit_save[data-field-key="labels"]').click();
+  const saveLabels = page.locator('._JX_edit_save[data-field-key="labels"]');
+  await expect(saveLabels).toBeEnabled();
+  await saveLabels.click();
 
   await expect(popup.root).toContainText('Labels updated');
   await expect(popup.root).toContainText('release-candidate');

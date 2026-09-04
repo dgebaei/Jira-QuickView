@@ -14,12 +14,22 @@ export function buildTooltipLayoutFromDisplayFields(displayFields) {
   return { row1, row2, row3, contentBlocks, people };
 }
 
+export const QUICKVIEW_ACTIVATION_MODES = ['hover', 'hover-modifier', 'click'];
+
+export function resolveQuickViewActivationMode(settings = {}) {
+  const configuredMode = String(settings.activationMode || '').trim();
+  if (QUICKVIEW_ACTIVATION_MODES.includes(configuredMode)) return configuredMode;
+  if (settings.openQuickViewOnClick === true) return 'click';
+  return String(settings.hoverModifierKey || '').trim() === 'none' ? 'hover' : 'hover-modifier';
+}
+
 export default {
   domains: [],
   instanceUrl: '',
   themeMode: 'system',
   v15upgrade: false,
   customFields: [],
+  activationMode: '',
   hoverDepth: 'exact',
   hoverModifierKey: 'any',
   inlineCopyButtons: true,
