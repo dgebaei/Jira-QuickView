@@ -31,7 +31,7 @@ async function openPopup(extensionApp, servers, target) {
   await injectContentScript(extensionApp, page);
   await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
   await hoverIssueKey(page, '#popup-key');
-  await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
+  await expect(page.locator('#_JX_title_link')).toContainText(resolvedTarget.primaryIssueKey);
   return {page, target: resolvedTarget};
 }
 
