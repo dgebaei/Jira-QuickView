@@ -23,6 +23,7 @@ export default {
   hoverDepth: 'exact',
   hoverModifierKey: 'any',
   inlineCopyButtons: true,
+  openQuickViewOnClick: false,
   displayFields: {
     issueType: true,
     status: true,
@@ -33,7 +34,7 @@ export default {
     environment: true,
     labels: true,
     epicParent: true,
-    attachments: false,
+    attachments: true,
     comments: true,
     description: true,
     children: true,
@@ -46,7 +47,7 @@ export default {
     row1: ['issueType', 'status', 'priority'],
     row2: ['epicParent', 'sprint', 'affects', 'fixVersions'],
     row3: ['environment', 'labels'],
-    contentBlocks: ['description', 'timeTracking', 'children', 'pullRequests', 'comments'],
+    contentBlocks: ['description', 'timeTracking', 'children', 'pullRequests', 'attachments', 'comments'],
     people: ['reporter', 'assignee']
   }
 };

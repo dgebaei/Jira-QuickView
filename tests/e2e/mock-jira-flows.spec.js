@@ -1,3 +1,4 @@
+const path = require('path');
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
 const {popupModel} = require('./helpers/popup');
 const {deleteIssueComment, getIssueComments, getLiveIssue, getMentionUsers, jiraApiPattern} = require('./helpers/live-jira-api');
@@ -9,10 +10,12 @@ const TEST_PNG_BYTES = Array.from(Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0wAAAABJRU5ErkJggg==',
   'base64'
 ));
+const betaScreenshotDir = String(process.env.JHL_CAPTURE_BETA_SCREENSHOTS || '').trim();
 
-function baseConfig(servers, target) {
+function baseConfig(servers, target, overrides = {}) {
   return buildExtensionConfig(servers, {
     customFields: target.mode === 'mock' ? [{fieldId: 'customfield_12345', row: 2}] : [],
+    ...overrides,
   }, target);
 }
 
@@ -132,6 +135,102 @@ test('accepts paginated Jira project responses during popup startup @mock-only',
   await hoverIssueKey(page, '#popup-key');
   await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
   expect(pageErrors).toEqual([]);
+  await page.close();
+});
+
+test('shows issue-key loading feedback beside the pointer until Jira data is ready @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Initial loading feedback is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+
+  let releaseIssueRequest;
+  const issueRequestGate = new Promise(resolve => {
+    releaseIssueRequest = resolve;
+  });
+  await patchJsonResponse(
+    extensionApp.context,
+    target.instanceUrl,
+    `/rest/api/2/issue/${target.primaryIssueKey}\\?[^#]+$`,
+    async payload => {
+      await issueRequestGate;
+      return payload;
+    }
+  );
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/popup-actions`);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  const marker = page.locator('#popup-key');
+  await marker.hover();
+
+  const loading = page.getByTestId('jira-popup-loading');
+  try {
+    await expect(loading).toBeVisible();
+    await expect(loading).toContainText(`Loading ${target.primaryIssueKey}`);
+    await expect(loading.locator('._JX_loading_spinner')).toBeVisible();
+    const [markerBox, loadingBox] = await Promise.all([marker.boundingBox(), loading.boundingBox()]);
+    expect(markerBox).not.toBeNull();
+    expect(loadingBox).not.toBeNull();
+    expect(loadingBox.x).toBeGreaterThan(markerBox.x);
+    expect(loadingBox.y).toBeGreaterThan(markerBox.y);
+    if (betaScreenshotDir) {
+      await page.screenshot({path: path.join(betaScreenshotDir, 'popup-loading-hover.png')});
+    }
+  } finally {
+    releaseIssueRequest();
+  }
+  await expect(page.getByTestId('jira-popup-loading')).toHaveCount(0);
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  await page.close();
+});
+
+test('opens and pins QuickView instead of navigating on a plain issue-link click when enabled @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Click interception is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+
+  let releaseIssueRequest;
+  const issueRequestGate = new Promise(resolve => {
+    releaseIssueRequest = resolve;
+  });
+  await patchJsonResponse(
+    extensionApp.context,
+    target.instanceUrl,
+    `/rest/api/2/issue/${target.primaryIssueKey}\\?[^#]+$`,
+    async payload => {
+      await issueRequestGate;
+      return payload;
+    }
+  );
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    hoverModifierKey: 'any',
+    openQuickViewOnClick: true,
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/`);
+  await page.locator('#issue-link a').evaluate((link, href) => {
+    link.href = href;
+  }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await injectContentScript(extensionApp, page);
+  const originalUrl = page.url();
+  await page.locator('#issue-link a').click();
+
+  const loading = page.getByTestId('jira-popup-loading');
+  try {
+    await expect(loading).toContainText(`Loading ${target.primaryIssueKey}`);
+    expect(page.url()).toBe(originalUrl);
+    if (betaScreenshotDir) {
+      await page.screenshot({path: path.join(betaScreenshotDir, 'popup-loading-click.png')});
+    }
+  } finally {
+    releaseIssueRequest();
+  }
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
+  expect(page.url()).toBe(originalUrl);
   await page.close();
 });
 

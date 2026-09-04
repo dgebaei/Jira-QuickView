@@ -266,6 +266,79 @@ test('keeps fix version options readable and distinct in dark mode @mock-only', 
   await page.close();
 });
 
+test('keeps highlighted and selected fix version options light in light mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Light-theme editor colors are deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  await optionsPage.evaluate(() => chrome.storage.sync.set({themeMode: 'light'}));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  await expect(page.locator('html')).toHaveAttribute('data-jhl-theme', 'light');
+  await popup.editButton('fixVersions').click();
+
+  const options = popup.editOptions('fixVersions');
+  await waitForOptions(options, 4);
+  const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
+  const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected:not(.is-highlighted)').first();
+  await expect(highlightedOption).toHaveCSS('background-color', 'rgb(204, 224, 255)');
+  await expect(highlightedOption).toHaveCSS('color', 'rgb(9, 30, 66)');
+  await expect(selectedOption).toHaveCSS('background-color', 'rgb(233, 242, 255)');
+  await expect(selectedOption).toHaveCSS('color', 'rgb(23, 43, 77)');
+  if (themeScreenshotDir) {
+    await popup.editPopover('fixVersions').screenshot({path: path.join(themeScreenshotDir, 'popup-version-dropdown-light.png')});
+  }
+
+  await page.close();
+});
+
+test('uses initials instead of Jira default avatars while preserving custom avatars @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Avatar fallback rendering is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  const defaultAvatarUrl = `${target.instanceUrl}secure/useravatar?avatarId=10122`;
+  await patchJsonResponse(extensionApp.context, target.instanceUrl, `/rest/api/2/issue/${target.primaryIssueKey}\\?[^#]+$`, payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      reporter: {...payload.fields.reporter, isDefaultAvatar: true, avatarUrls: {'48x48': defaultAvatarUrl}},
+      assignee: {...payload.fields.assignee, isDefaultAvatar: true, avatarUrls: {'48x48': defaultAvatarUrl}},
+      comment: {
+        ...payload.fields.comment,
+        comments: (payload.fields.comment?.comments || []).map(comment => ({
+          ...comment,
+          author: {...comment.author, isDefaultAvatar: true, avatarUrls: {'48x48': defaultAvatarUrl}},
+        })),
+      },
+    },
+  }));
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const reporter = page.locator('._JX_title_users > ._JX_title_user_placeholder').first();
+  const assignee = page.locator('._JX_title_user_assignee._JX_title_user_placeholder');
+  const commentAuthor = page.locator('._JX_comment_author_avatar_placeholder').first();
+
+  await expect(reporter).toHaveText('RR');
+  await expect(assignee).toHaveText('AR');
+  await expect(commentAuthor).toHaveText(/^[A-Z]{2}$/);
+  await expect(page.locator('._JX_title_users img._JX_title_user')).toHaveCount(0);
+  await expect(page.locator('._JX_comment_author_avatar:not(._JX_comment_author_avatar_placeholder)')).toHaveCount(0);
+  const popup = popupModel(page);
+  await popup.editButton('assignee').click();
+  await popup.editInput('assignee').fill('Morgan');
+  const customAvatarResult = popup.editOptions('assignee').filter({hasText: 'Morgan Agent'}).first();
+  await expect(customAvatarResult.locator('img._JX_edit_option_avatar')).toBeVisible();
+  if (themeScreenshotDir) {
+    await page.locator('._JX_annotation').screenshot({path: path.join(themeScreenshotDir, 'popup-avatar-initials-fallback.png')});
+  }
+
+  await page.close();
+});
+
 test('themes the linked-issue relationship dropdown in light and dark modes @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Relationship dropdown colors are deterministic in mocked mode only.');
@@ -864,6 +937,55 @@ test('shows attachments when the persisted tooltip layout enables the block @moc
 
   await expect(attachments).toContainText('Attachments');
   await expect(attachments.locator('._JX_thumb')).toHaveCount(4);
+  await page.close();
+});
+
+test('renders non-image attachments as downloadable file rows alongside image previews @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Non-image attachment rendering is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await patchJsonResponse(extensionApp.context, target.instanceUrl, `/rest/api/2/issue/${target.primaryIssueKey}\\?[^#]+$`, payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      attachment: [
+        ...(payload.fields?.attachment || []),
+        {
+          id: 'report-pdf',
+          filename: 'release-report.pdf',
+          mimeType: 'application/pdf',
+          content: `${target.instanceUrl}rest/api/2/attachment/content/report-pdf`,
+          size: 24576,
+        },
+        {
+          id: 'notes-text',
+          filename: 'release-notes.txt',
+          mimeType: 'text/plain',
+          content: `${target.instanceUrl}rest/api/2/attachment/content/notes-text`,
+          size: 1024,
+        },
+      ],
+    },
+  }));
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const attachmentBlock = page.locator('[data-content-block="attachments"]');
+  const pdf = attachmentBlock.locator('[data-attachment-id="report-pdf"]');
+  const textFile = attachmentBlock.locator('[data-attachment-id="notes-text"]');
+
+  await expect(pdf).toContainText('release-report.pdf');
+  await expect(pdf).toContainText('PDF');
+  await expect(pdf.locator('a')).toHaveAttribute('href', /attachment\/content\/report-pdf/);
+  await expect(textFile).toContainText('release-notes.txt');
+  await expect(textFile).toContainText('TXT');
+  await expect(attachmentBlock.locator('._JX_thumb')).toHaveCount(4);
+  await expect(attachmentBlock.locator('._JX_attachment_file')).toHaveCount(2);
+  if (themeScreenshotDir) {
+    await attachmentBlock.screenshot({path: path.join(themeScreenshotDir, 'popup-mixed-attachments.png')});
+  }
+
   await page.close();
 });
 

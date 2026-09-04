@@ -493,6 +493,17 @@ select option {
   color: var(--input-text);
 }
 
+select option:checked {
+  background: var(--pill-selected-bg) linear-gradient(0deg, var(--pill-selected-bg) 0%, var(--pill-selected-bg) 100%);
+  color: var(--pill-selected-text);
+}
+
+select option:hover,
+select option:focus {
+  background: var(--display-option-hover-bg) linear-gradient(0deg, var(--display-option-hover-bg) 0%, var(--display-option-hover-bg) 100%);
+  color: var(--input-text);
+}
+
 input:focus,
 textarea:focus,
 select:focus {

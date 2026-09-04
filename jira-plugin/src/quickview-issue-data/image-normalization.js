@@ -27,6 +27,23 @@ function attachmentProxyUrl(instanceUrl, url) {
   return resolved;
 }
 
+function isLikelyDefaultUserAvatar(user, avatarUrl) {
+  if (user?.isDefaultAvatar === true) return true;
+  const normalizedUrl = String(avatarUrl || '').toLowerCase();
+  if (!normalizedUrl) return false;
+  return normalizedUrl.startsWith('data:image/svg+xml;base64,phn2zybpzd0iv2fyc3r3yvgx') ||
+    normalizedUrl.includes('defaultavatar') ||
+    normalizedUrl.includes('/avatar.png') ||
+    normalizedUrl.includes('avatar/default') ||
+    normalizedUrl.includes('initials=') ||
+    (normalizedUrl.includes('/initials/') && normalizedUrl.includes('avatar')) ||
+    (/\buseravatar\b/.test(normalizedUrl) && !normalizedUrl.includes('ownerid='));
+}
+
+function hasInitialsSource(user) {
+  return !!String(user?.displayName || user?.name || user?.username || user?.emailAddress || '').trim();
+}
+
 export function createImageNormalization(options = {}) {
   const cache = options.cache;
   const instanceUrl = options.instanceUrl;
@@ -58,29 +75,22 @@ export function createImageNormalization(options = {}) {
     if (!user || typeof user !== 'object') return user;
     const raw = user?.avatarUrls?.['48x48'] || user?.avatarUrl || '';
     if (!raw) return user;
+    const isDefaultAvatar = isLikelyDefaultUserAvatar(user, raw);
+    user.isDefaultAvatar = isDefaultAvatar;
+    if (isDefaultAvatar && hasInitialsSource(user)) {
+      user.defaultAvatarUrl = raw;
+      user.avatarUrls = {...(user.avatarUrls || {}), '48x48': ''};
+      user.avatarUrl = '';
+      return user;
+    }
     const avatarUrl = await resolve(raw, '', signal);
     user.avatarUrls = {...(user.avatarUrls || {}), '48x48': avatarUrl};
     user.avatarUrl = avatarUrl;
     return user;
   }
 
-  function hideSharedAvatars(users) {
-    const counts = new Map();
-    (users || []).forEach(user => {
-      const url = user?.avatarUrls?.['48x48'] || user?.avatarUrl || '';
-      if (url) counts.set(url, (counts.get(url) || 0) + 1);
-    });
-    (users || []).forEach(user => {
-      const url = user?.avatarUrls?.['48x48'] || user?.avatarUrl || '';
-      if (!url || counts.get(url) < 2) return;
-      user.avatarUrls = {...(user.avatarUrls || {}), '48x48': ''};
-      user.avatarUrl = '';
-    });
-  }
-
   async function normalizeUsers(users, signal) {
     await Promise.all((users || []).map(user => normalizeUser(user, signal)));
-    hideSharedAvatars(users);
     return users;
   }
 
@@ -89,6 +99,19 @@ export function createImageNormalization(options = {}) {
     const mimeType = String(attachment.mimeType || '');
     const content = absoluteUrl(instanceUrl, attachment.rawContentUrl || attachment.content);
     const thumbnail = absoluteUrl(instanceUrl, attachment.rawThumbnailUrl || attachment.thumbnail || content);
+    if (!mimeType.toLowerCase().startsWith('image/')) {
+      Object.assign(attachment, {
+        rawContentUrl: content,
+        rawThumbnailUrl: thumbnail,
+        content,
+        inlineDataUrl: '',
+        previewDataUrl: '',
+        displayContent: '',
+        previewDisplaySrc: '',
+        thumbnail: '',
+      });
+      return attachment;
+    }
     const inline = isDataUrl(attachment.inlineDataUrl)
       ? attachment.inlineDataUrl
       : await resolve(thumbnail || content, mimeType, signal);

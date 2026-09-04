@@ -671,10 +671,41 @@ test('reaction refresh invalidates only reactions and reuses core and history fa
   expect(result.newRequests).toEqual([{operation: 'write', path: 'https://jira.example/rest/internal/2/reactions/view'}]);
 });
 
+test('default Jira avatars are marked before image normalization so callers can prefer initials', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const defaultAvatarUrl = 'https://jira.example/secure/useravatar?avatarId=10122';
+    const customAvatarUrl = 'https://jira.example/secure/useravatar?ownerId=custom-user&avatarId=20001';
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: []},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {
+        summary: 'Issue',
+        reporter: {accountId: 'default-user', displayName: 'Default User', avatarUrls: {'48x48': defaultAvatarUrl}},
+        assignee: {accountId: 'custom-user', displayName: 'Custom User', avatarUrls: {'48x48': customAvatarUrl}},
+      }}},
+      {operation: 'image', path: defaultAvatarUrl, result: 'data:image/png;base64,ZGVmYXVsdA=='},
+      {operation: 'image', path: customAvatarUrl, result: 'data:image/png;base64,Y3VzdG9t'},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const opened = await issueData.openIssue({issueKey: 'ABC-1'});
+    const reporter = opened.snapshot.core.fields.reporter;
+    const assignee = opened.snapshot.core.fields.assignee;
+    return {
+      reporter: {avatarUrl: reporter.avatarUrls['48x48'], isDefaultAvatar: reporter.isDefaultAvatar},
+      assignee: {avatarUrl: assignee.avatarUrls['48x48'], isDefaultAvatar: assignee.isDefaultAvatar},
+    };
+  });
+
+  expect(result).toEqual({
+    reporter: {avatarUrl: '', isDefaultAvatar: true},
+    assignee: {avatarUrl: 'data:image/png;base64,Y3VzdG9t', isDefaultAvatar: false},
+  });
+});
+
 test('failed Jira image normalization falls back safely and retries without refetching core', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
-    const avatarUrl = 'https://jira.example/secure/useravatar?avatarId=1';
+    const avatarUrl = 'https://jira.example/secure/useravatar?ownerId=ada&avatarId=1';
     const jira = createMockJiraAdapter({scripts: [
       {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'summary', name: 'Summary'}]},
       {operation: 'read', match: request => request.path.includes('/issue/ABC-1?fields='), result: {
@@ -694,7 +725,7 @@ test('failed Jira image normalization falls back safely and retries without refe
   });
 
   expect(result).toEqual({
-    avatars: ['https://jira.example/secure/useravatar?avatarId=1', 'data:image/png;base64,b2s='],
+    avatars: ['https://jira.example/secure/useravatar?ownerId=ada&avatarId=1', 'data:image/png;base64,b2s='],
     coreReads: 1,
     imageReads: 2,
   });

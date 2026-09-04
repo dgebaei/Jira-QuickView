@@ -104,6 +104,14 @@ export function createBrowserPopupShell({
   }
 
   async function dispatch(intent = {}) {
+    if (intent.type === 'prepare-opening') {
+      cancelCooldown();
+      cancelHide();
+      closePreview();
+      pinned = false;
+      container.removeClass('container-pinned');
+      return outcome('opening-prepared');
+    }
     if (intent.type === 'pin') return pin(intent);
     if (intent.type === 'keep-visible') {
       if (pinned || !container.html()) return outcome('ignored', {reason: pinned ? 'pinned' : 'empty-popup'});

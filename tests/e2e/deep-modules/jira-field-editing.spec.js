@@ -563,12 +563,65 @@ test('fix version editing owns multi-selection, filtering, keyboard selection, a
   });
 
   expect(result).toEqual({
-    begun: {kind: 'changed', labels: ['v10', 'v1'], selectedOptionIds: ['1']},
+    begun: {kind: 'changed', labels: ['N/A', 'Unreleased', 'v1', 'v10'], selectedOptionIds: ['1']},
     filtered: {kind: 'changed', inputValue: 'v10'},
     selected: {kind: 'changed', selectedOptionIds: ['1', '10'], hasChanges: true},
     writesBeforeSave: 0,
     saved: {kind: 'saved', notice: 'Fix versions updated'},
     writeBody: {fields: {fixVersions: [{id: '1'}, {id: '10'}]}},
+  });
+});
+
+test('version choices expose N/A, unreleased versions oldest first, and only the five latest released versions', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'fixVersions', name: 'Fix Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {fixVersions: {
+        name: 'Fix Version/s',
+        operations: ['set'],
+      }}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [
+        {id: 'u2', name: '2027.2', released: false, startDate: '2027-02-01'},
+        {id: 'r3', name: '2026.3', released: true, releaseDate: '2026-03-01'},
+        {id: 'r6', name: '2026.6', released: true, releaseDate: '2026-06-01'},
+        {id: 'u1', name: '2027.1', released: false, startDate: '2027-01-01'},
+        {id: 'r1', name: '2026.1', released: true, releaseDate: '2026-01-01'},
+        {id: 'r5', name: '2026.5', released: true, releaseDate: '2026-05-01'},
+        {id: 'r2', name: '2026.2', released: true, releaseDate: '2026-02-01'},
+        {id: 'r4', name: '2026.4', released: true, releaseDate: '2026-04-01'},
+        {id: 'archived', name: 'Archived', archived: true},
+      ]},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: 'u1', name: '2027.1'}]}}, sections: {}},
+    });
+
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
+    const cleared = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '__clear__'});
+    return {
+      options: begun.view.edit.options.map(option => ({id: option.id, label: option.label, isGroupLabel: !!option.isGroupLabel})),
+      selectedOptionIds: cleared.view.edit.selectedOptionIds,
+    };
+  });
+
+  expect(result).toEqual({
+    options: [
+      {id: '__clear__', label: 'N/A', isGroupLabel: false},
+      {id: '__group__versions-unreleased', label: 'Unreleased', isGroupLabel: true},
+      {id: 'u1', label: '2027.1', isGroupLabel: false},
+      {id: 'u2', label: '2027.2', isGroupLabel: false},
+      {id: '__group__versions-released', label: 'Released (latest 5)', isGroupLabel: true},
+      {id: 'r6', label: '2026.6', isGroupLabel: false},
+      {id: 'r5', label: '2026.5', isGroupLabel: false},
+      {id: 'r4', label: '2026.4', isGroupLabel: false},
+      {id: 'r3', label: '2026.3', isGroupLabel: false},
+      {id: 'r2', label: '2026.2', isGroupLabel: false},
+    ],
+    selectedOptionIds: [],
   });
 });
 

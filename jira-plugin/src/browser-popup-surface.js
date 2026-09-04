@@ -4,16 +4,23 @@ function requireOperation(operation, name) {
   }
 }
 
-export function createBrowserPopupSurface({commitCurrent, commitVisible, hidePopup, reportFailure}) {
+export function createBrowserPopupSurface({commitCurrent, commitLoading, commitVisible, hidePopup, reportFailure}) {
   requireOperation(commitCurrent, 'commitCurrent');
+  requireOperation(commitLoading, 'commitLoading');
   requireOperation(commitVisible, 'commitVisible');
   requireOperation(hidePopup, 'hidePopup');
   requireOperation(reportFailure, 'reportFailure');
 
   async function render(frame, context = {}) {
-    if (frame.kind === 'loading') return {kind: 'deferred'};
+    if (frame.kind === 'loading') {
+      await commitLoading(frame, context);
+      return typeof context.isCurrent === 'function' && !context.isCurrent()
+        ? {kind: 'stale'}
+        : {kind: 'committed'};
+    }
     if (typeof context.isCurrent === 'function' && !context.isCurrent()) return {kind: 'stale'};
     if (frame.kind === 'error') {
+      await hidePopup({reason: 'load-error', sessionId: frame.sessionId});
       reportFailure(frame.failure);
       return {kind: 'reported'};
     }

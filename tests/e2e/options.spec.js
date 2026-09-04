@@ -298,19 +298,33 @@ test('keeps native dropdown surfaces aligned with the selected theme', async ({o
   await openAdvancedSettings(optionsPage);
 
   await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'light');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('background-color', 'rgb(248, 250, 252)');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('color', 'rgb(55, 65, 81)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(248, 250, 252)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(55, 65, 81)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(219, 234, 254)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(30, 64, 175)');
   if (themeScreenshotDir) {
     await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-light.png')});
   }
 
   await optionsPage.getByTestId('options-theme-mode-dark').click();
   await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'dark');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('background-color', 'rgb(30, 41, 59)');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('color', 'rgb(237, 243, 249)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(30, 41, 59)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(237, 243, 249)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(30, 58, 95)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(147, 197, 253)');
   if (themeScreenshotDir) {
     await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-dark.png')});
   }
+});
+
+test('includes attachments in the default layout for a new installation', async ({optionsPage}) => {
+  const form = optionsPageModel(optionsPage);
+  await optionsPage.evaluate(async () => chrome.storage.sync.clear());
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+
+  await expect(contentBlockItem(optionsPage, 'attachments')).toBeVisible();
+  await expect(form.contentBlocksDropzone).toHaveAttribute('data-content-order', /(?:^|,)attachments(?:,|$)/);
 });
 
 test('enables Jira inline copy buttons by default and persists the preference', async ({optionsPage, servers}) => {
@@ -330,6 +344,28 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   await expect(form.inlineCopyButtonsCheckbox).not.toBeChecked();
   const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['inlineCopyButtons']));
   expect(stored.inlineCopyButtons).toBe(false);
+});
+
+test('keeps link navigation by default and persists click-to-QuickView when enabled', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  await optionsPage.reload();
+
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await optionsPage.getByText('Open QuickView when clicking issue links', {exact: true}).click();
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.statusPill).toContainText('Unsaved changes.');
+  if (themeScreenshotDir) {
+    await optionsPage.locator('.settingsCard').filter({hasText: 'Appearance'}).screenshot({path: path.join(themeScreenshotDir, 'options-click-to-quickview.png')});
+  }
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+
+  await optionsPage.reload();
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['openQuickViewOnClick']));
+  expect(stored.openQuickViewOnClick).toBe(true);
 });
 
 test('persists reordered content blocks through the options page', async ({optionsPage, servers}) => {

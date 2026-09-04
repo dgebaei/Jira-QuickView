@@ -103,9 +103,42 @@ function resolveOptions(optionIds, options, fallbackOptions = []) {
   return normalizeOptionIds(optionIds).map(optionId => optionsById.get(optionId)).filter(Boolean);
 }
 
-function compareVersionOptions(left, right) {
+function compareVersionNames(left, right) {
   const sortName = option => String(option?.name || '').trim().replace(/^v(?=\d)/i, '');
-  return sortName(right).localeCompare(sortName(left), undefined, {numeric: true, sensitivity: 'base'});
+  return sortName(left).localeCompare(sortName(right), undefined, {numeric: true, sensitivity: 'base'});
+}
+
+function compareVersionDates(left, right, direction = 1) {
+  const leftDate = Date.parse(left?.releaseDate || left?.startDate || '');
+  const rightDate = Date.parse(right?.releaseDate || right?.startDate || '');
+  if (Number.isFinite(leftDate) && Number.isFinite(rightDate) && leftDate !== rightDate) {
+    return (leftDate - rightDate) * direction;
+  }
+  if (Number.isFinite(leftDate) !== Number.isFinite(rightDate)) {
+    return Number.isFinite(leftDate) ? -1 : 1;
+  }
+  return compareVersionNames(left, right) * direction;
+}
+
+function buildVersionOptions(versions) {
+  const available = (Array.isArray(versions) ? versions : []).filter(version => version?.id && version?.name);
+  const unreleased = available
+    .filter(version => version.released !== true)
+    .sort((left, right) => compareVersionDates(left, right));
+  const released = available
+    .filter(version => version.released === true)
+    .sort((left, right) => compareVersionDates(left, right, -1))
+    .slice(0, 5);
+  const options = [{id: '__clear__', label: 'N/A', rawValue: null, searchText: 'n/a none clear'}];
+  if (unreleased.length) {
+    options.push({id: '__group__versions-unreleased', isGroupLabel: true, label: 'Unreleased', searchText: 'unreleased'});
+    options.push(...unreleased.map(buildAllowedValueOption));
+  }
+  if (released.length) {
+    options.push({id: '__group__versions-released', isGroupLabel: true, label: 'Released (latest 5)', searchText: 'released'});
+    options.push(...released.map(buildAllowedValueOption));
+  }
+  return options;
 }
 
 function sprintEntries(issue) {
@@ -243,10 +276,15 @@ function buildSprintOptions(issue, sprints) {
 function buildUserOption(user) {
   const id = String(user?.accountId || user?.name || user?.key || '');
   const label = String(user?.displayName || user?.name || user?.key || '');
+  const nameParts = label.trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length > 1
+    ? `${nameParts[0][0] || ''}${nameParts[nameParts.length - 1][0] || ''}`.toUpperCase()
+    : String(nameParts[0] || '').slice(0, 2).toUpperCase();
   return {
     id,
     label,
     avatarUrl: user?.avatarUrls?.['48x48'] || '',
+    initials,
     metaText: user?.name || user?.key || '',
     rawValue: {
       accountId: user?.accountId || '',
@@ -1130,12 +1168,7 @@ export function createJiraFieldEditing(options = {}) {
       const currentOptions = currentValues
         .filter(value => value?.id && value?.name)
         .map(buildAllowedValueOption);
-      const availableOptions = (context?.options || [])
-        .filter(value => value?.id && value?.name)
-        .slice()
-        .sort(compareVersionOptions)
-        .map(buildAllowedValueOption);
-      const versionOptions = mergeOptions(availableOptions, currentOptions);
+      const versionOptions = buildVersionOptions(context?.options || []);
       if (!context?.editable || fieldOutcome.failures?.options) {
         const failure = fieldOutcome.failures?.options || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
         edit = null;
@@ -1508,9 +1541,11 @@ export function createJiraFieldEditing(options = {}) {
     if (!selectedOption || selectedOption.isGroupLabel) return outcome('ignored');
     if (edit.selectionMode === 'multi') {
       const selectedOptionIds = normalizeOptionIds(edit.selectedOptionIds);
-      const nextSelectedOptionIds = selectedOptionIds.includes(selectedOption.id)
-        ? selectedOptionIds.filter(optionId => optionId !== selectedOption.id)
-        : [...selectedOptionIds, selectedOption.id];
+      const nextSelectedOptionIds = selectedOption.id === '__clear__'
+        ? []
+        : (selectedOptionIds.includes(selectedOption.id)
+            ? selectedOptionIds.filter(optionId => optionId !== selectedOption.id)
+            : [...selectedOptionIds, selectedOption.id]);
       const inputValue = edit.editorType === 'label-search' ? edit.inputValue : '';
       edit = {
         ...edit,

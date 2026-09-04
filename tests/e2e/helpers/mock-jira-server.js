@@ -1692,10 +1692,10 @@ async function createMockJiraServer() {
 
     if (pathname === '/rest/api/2/project/JRACLOUD/versions' && req.method === 'GET') {
       json(res, 200, [
-        {id: '301', name: '2026.03'},
-        {id: '302', name: '2026.05'},
-        {id: '401', name: '2026.04'},
-        {id: '402', name: '2026.06'},
+        {id: '301', name: '2026.03', released: true, releaseDate: '2026-03-31'},
+        {id: '302', name: '2026.05', released: false, startDate: '2026-05-01'},
+        {id: '401', name: '2026.04', released: false, startDate: '2026-04-01'},
+        {id: '402', name: '2026.06', released: false, startDate: '2026-06-01'},
       ]);
       return;
     }

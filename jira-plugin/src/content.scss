@@ -9,6 +9,31 @@ body ._JX {
     }
   }
 
+  &_loading_tooltip {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #c9d3df;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(9, 30, 66, 0.2);
+    color: #172b4d;
+    display: inline-flex;
+    font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    gap: 8px;
+    padding: 9px 12px;
+    white-space: nowrap;
+  }
+
+  &_loading_spinner {
+    animation: _JX_loading_spin 0.75s linear infinite;
+    border: 2px solid #d8e2ee;
+    border-radius: 50%;
+    border-top-color: #0c66e4;
+    box-sizing: border-box;
+    display: inline-block;
+    height: 15px;
+    width: 15px;
+  }
+
   &_title {
     background-color: #f2f8fa;
     padding: 10px 10px;
@@ -3100,8 +3125,11 @@ body ._JX {
 
   &_edit_option {
     align-items: center;
+    appearance: none;
     background: transparent;
+    background-image: none;
     border: none;
+    box-shadow: none;
     color: #172b4d;
     cursor: pointer;
     display: flex;
@@ -3111,12 +3139,17 @@ body ._JX {
     line-height: 16px;
     padding: 9px 10px;
     text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  &_edit_option.is-selected {
+    background: #e9f2ff;
   }
 
   &_edit_option:hover,
-  &_edit_option.is-highlighted,
-  &_edit_option.is-selected {
-    background: #e9f2ff;
+  &_edit_option.is-highlighted {
+    background: #cce0ff;
+    color: #091e42;
   }
 
   &_edit_option_icon,
@@ -3304,9 +3337,13 @@ body ._JX {
     padding: 5px;
   }
 
+  &_attachment_grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
   &_thumb {
-    float: left;
-    margin: 5px;
     border: 1px solid rgb(221, 228, 230) !important;
     cursor: pointer;
     height: auto;
@@ -3349,6 +3386,70 @@ body ._JX {
     top: 23%;
     left: 35%;
     position: absolute;
+  }
+
+  &_attachment_files {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  &_attachment_file > a {
+    align-items: center;
+    background: #f7f8f9;
+    border: 1px solid #d9e1ea;
+    border-radius: 7px;
+    color: #172b4d;
+    display: flex;
+    gap: 9px;
+    min-width: 0;
+    padding: 8px 10px;
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+      background: #e9f2ff;
+      border-color: #85b8ff;
+      outline: none;
+    }
+  }
+
+  &_attachment_file_type {
+    align-items: center;
+    background: #dfe1e6;
+    border-radius: 5px;
+    color: #44546f;
+    display: inline-flex;
+    flex: 0 0 42px;
+    font-size: 10px;
+    font-weight: 700;
+    height: 28px;
+    justify-content: center;
+    letter-spacing: 0.03em;
+  }
+
+  &_attachment_file_details {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &_attachment_file_name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &_attachment_file_size {
+    color: #6b778c;
+    font-size: 10px;
+  }
+
+  &_attachment_file_open {
+    color: #44546f;
+    flex: 0 0 auto;
+    font-size: 14px;
   }
 
   &_preview_overlay {
@@ -3420,6 +3521,12 @@ body ._JX {
     &_time_tracking_save {
       width: 100%;
     }
+  }
+}
+
+@keyframes _JX_loading_spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

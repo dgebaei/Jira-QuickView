@@ -91,6 +91,7 @@ function ConfigPage(props) {
   const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || 'shallow');
   const [hoverModifierKey, setHoverModifierKey] = useState(props.hoverModifierKey || 'none');
   const [inlineCopyButtons, setInlineCopyButtons] = useState(props.inlineCopyButtons !== false);
+  const [openQuickViewOnClick, setOpenQuickViewOnClick] = useState(props.openQuickViewOnClick === true);
   const [customFields, setCustomFields] = useState(() =>
     normalizeCustomFields(props.customFields, initialTooltipLayout).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
   );
@@ -118,6 +119,7 @@ function ConfigPage(props) {
     hoverDepth: props.hoverDepth || 'shallow',
     hoverModifierKey: props.hoverModifierKey || 'none',
     inlineCopyButtons: props.inlineCopyButtons !== false,
+    openQuickViewOnClick: props.openQuickViewOnClick === true,
     tooltipLayout,
     customFields,
   }));
@@ -128,6 +130,7 @@ function ConfigPage(props) {
     hoverDepth,
     hoverModifierKey,
     inlineCopyButtons,
+    openQuickViewOnClick,
     tooltipLayout,
     customFields,
   });
@@ -165,6 +168,7 @@ function ConfigPage(props) {
     const nextHoverDepth = config.hoverDepth || 'shallow';
     const nextHoverModifierKey = config.hoverModifierKey || 'none';
     const nextInlineCopyButtons = config.inlineCopyButtons !== false;
+    const nextOpenQuickViewOnClick = config.openQuickViewOnClick === true;
     const nextCustomFields = normalizeCustomFields(config.customFields, nextTooltipLayout)
       .map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}));
 
@@ -174,6 +178,7 @@ function ConfigPage(props) {
     setHoverDepth(nextHoverDepth);
     setHoverModifierKey(nextHoverModifierKey);
     setInlineCopyButtons(nextInlineCopyButtons);
+    setOpenQuickViewOnClick(nextOpenQuickViewOnClick);
     setDisplayFields({
       ...defaultConfig.displayFields,
       ...(config.displayFields || {})
@@ -187,6 +192,7 @@ function ConfigPage(props) {
       hoverDepth: nextHoverDepth,
       hoverModifierKey: nextHoverModifierKey,
       inlineCopyButtons: nextInlineCopyButtons,
+      openQuickViewOnClick: nextOpenQuickViewOnClick,
       tooltipLayout: nextTooltipLayout,
       customFields: nextCustomFields,
     });
@@ -352,6 +358,7 @@ function ConfigPage(props) {
       hoverDepth,
       hoverModifierKey,
       inlineCopyButtons,
+      openQuickViewOnClick,
       displayFields,
       tooltipLayout,
       customFields: normalizeCustomFields(customFields, tooltipLayout)
@@ -394,6 +401,7 @@ function ConfigPage(props) {
         setHoverDepth(config.hoverDepth || 'shallow');
         setHoverModifierKey(config.hoverModifierKey || 'none');
         setInlineCopyButtons(config.inlineCopyButtons !== false);
+        setOpenQuickViewOnClick(config.openQuickViewOnClick === true);
         setDisplayFields(config.displayFields || defaultConfig.displayFields);
         const nextTooltipLayout = config.tooltipLayout || defaultConfig.tooltipLayout;
         setTooltipLayout(nextTooltipLayout);
@@ -624,6 +632,7 @@ function ConfigPage(props) {
         hoverDepth,
         hoverModifierKey,
         inlineCopyButtons,
+        openQuickViewOnClick,
         displayFields,
         tooltipLayout,
         customFields: normalizeCustomFields(customFields, tooltipLayout)
@@ -799,6 +808,19 @@ function ConfigPage(props) {
               <span className='inlineCopySettingCopy'>
                 <strong>Show copy buttons in Jira</strong>
                 <span>Add a copy action beside issue keys on Jira details, search results, boards, and backlogs.</span>
+              </span>
+            </label>
+            <label className='inlineCopySetting'>
+              <input
+                type='checkbox'
+                data-testid='options-open-quickview-on-click'
+                checked={openQuickViewOnClick}
+                onChange={event => setOpenQuickViewOnClick(event.target.checked)}
+              />
+              <span className='inlineCopySettingSwitch' aria-hidden='true' />
+              <span className='inlineCopySettingCopy'>
+                <strong>Open QuickView when clicking issue links</strong>
+                <span>Open and pin the issue popup on allowed pages instead of navigating away. Modifier-clicks keep their normal browser behavior.</span>
               </span>
             </label>
           </div>

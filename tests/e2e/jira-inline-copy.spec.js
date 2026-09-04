@@ -64,6 +64,49 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   await page.close();
 });
 
+test('copies the issue title from an Active Sprint side panel instead of its development summary @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Side-by-side Jira markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+    hoverModifierKey: 'any',
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.jira.origin});
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(issueKey => {
+    document.body.innerHTML = `
+      <main style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+        <section class="ghx-swimlane" data-testid="active-sprint-board">
+          <article class="ghx-issue" data-issue-key="PLATFORM-101">
+            <div class="ghx-key"><a href="/browse/PLATFORM-101">PLATFORM-101</a></div>
+            <div class="ghx-summary">Board card summary</div>
+          </article>
+        </section>
+        <aside role="dialog" data-testid="active-sprint-issue-details-panel" data-issue-key="${issueKey}">
+          <a data-testid="issue-detail-key" href="/browse/${issueKey}">${issueKey}</a>
+          <section data-testid="development-summary">1 branch</section>
+          <h1 data-testid="issue-detail-summary">Correct Active Sprint side-panel title</h1>
+        </aside>
+      </main>`;
+  }, target.primaryIssueKey);
+
+  const copyButton = page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`});
+  await expect(copyButton).toBeVisible();
+  await expect(copyButton).toHaveAttribute('data-jx-inline-copy-summary', 'Correct Active Sprint side-panel title');
+  await page.locator('[data-testid="active-sprint-issue-details-panel"]').hover();
+  await expect(copyButton).toHaveCSS('opacity', '1');
+  await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-active-sprint-side-panel.png');
+  await copyButton.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `${servers.jira.origin}/browse/${target.primaryIssueKey}`
+  );
+  await page.close();
+});
+
 test('adds one copy button per Jira result and follows SPA additions @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Inline Jira UI coverage is deterministic in mocked mode only.');

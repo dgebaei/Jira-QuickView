@@ -407,7 +407,7 @@ export function createPopupProjectView(options) {
     const sprints = readSprintsFromIssue(issueData);
     const commentsTotal = commentsForDisplay.length;
     const attachments = issueData.fields.attachment || [];
-    const previewAttachments = attachmentPresentation.buildPreviewAttachments(attachments);
+    const attachmentViews = attachmentPresentation.buildSectionAttachments(attachments);
     const labels = issueData.fields.labels || [];
     const linkageOutcome = await fieldEditing.dispatch({type: 'describeLinkage'});
     const linkageData = linkageOutcome.linkage || {mode: '', label: 'Parent', editable: false, fieldId: '', currentLink: null};
@@ -610,7 +610,9 @@ export function createPopupProjectView(options) {
     const showComments = layoutContentBlocks.includes('comments');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');
     const visibleCommentsTotal = showComments ? commentsTotal : 0;
-    const visibleAttachments = showAttachments ? previewAttachments : [];
+    const visibleAttachmentImages = showAttachments ? attachmentViews.images : [];
+    const visibleAttachmentFiles = showAttachments ? attachmentViews.files : [];
+    const visibleAttachmentsTotal = visibleAttachmentImages.length + visibleAttachmentFiles.length;
     const normalizedChildrenSort = normalizeChildrenSortState(childrenSort);
     const normalizedPullRequestsSort = normalizePullRequestsSortState(pullRequestsSort);
     const childIssues = Array.isArray(children) ? children.filter(Boolean) : [];
@@ -742,11 +744,13 @@ export function createPopupProjectView(options) {
       description: showDescription ? normalizedDescription : '',
       descriptionSection,
       hasBodyContent: true,
-      emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
+      emptyBodyText: (!normalizedDescription && visibleAttachmentsTotal === 0 && visibleCommentsTotal === 0)
         ? 'No description, attachments or comments.'
         : '',
       attachments,
-      previewAttachments: visibleAttachments,
+      fileAttachments: visibleAttachmentFiles,
+      previewAttachments: visibleAttachmentImages,
+      showAttachmentsSection: visibleAttachmentsTotal > 0,
       commentSortToggleAriaPressed: normalizedCommentSortOrder === 'newest' ? 'true' : 'false',
       commentSortToggleLabel: normalizedCommentSortOrder === 'newest' ? 'Newest first' : 'Oldest first',
       commentSortToggleIsNewest: normalizedCommentSortOrder === 'newest',

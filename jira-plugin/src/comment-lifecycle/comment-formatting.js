@@ -187,10 +187,12 @@ function isLikelyDefaultAvatar(user, avatarUrl) {
 function userView(user) {
   const displayName = user?.displayName || user?.name || user?.username || user?.emailAddress || '';
   const rawAvatarUrl = user?.avatarUrls?.['48x48'] || user?.avatarUrl || '';
+  const fallbackInitials = initials(displayName);
+  const useInitials = !!displayName && isLikelyDefaultAvatar(user, rawAvatarUrl);
   return {
     displayName,
-    avatarUrl: isLikelyDefaultAvatar(user, rawAvatarUrl) ? '' : rawAvatarUrl,
-    initials: initials(displayName),
+    avatarUrl: useInitials ? '' : rawAvatarUrl,
+    initials: fallbackInitials,
   };
 }
 

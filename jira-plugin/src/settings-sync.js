@@ -20,6 +20,7 @@ export const DEFAULT_SYNC_POLICY = {
   hoverDepth: 'default',
   hoverModifierKey: 'default',
   inlineCopyButtons: 'default',
+  openQuickViewOnClick: 'default',
   displayFields: 'default',
   tooltipLayout: 'default',
   customFields: 'default',
@@ -269,6 +270,10 @@ export function normalizeSettingsPayload(payload) {
 
   if (Object.prototype.hasOwnProperty.call(rawSettings, 'inlineCopyButtons')) {
     settings.inlineCopyButtons = rawSettings.inlineCopyButtons !== false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(rawSettings, 'openQuickViewOnClick')) {
+    settings.openQuickViewOnClick = rawSettings.openQuickViewOnClick === true;
   }
 
   if (isObject(rawSettings.displayFields)) {

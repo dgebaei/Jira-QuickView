@@ -688,13 +688,14 @@
         </div>
         {{/descriptionSection}}
 
-        {{#previewAttachments.length}}
+        {{#showAttachmentsSection}}
         <div class="_JX_content_block" data-content-block="attachments">
         <div class="_JX_description_attachments">
             <div class="_JX_section_title">Attachments</div>
             <div class="_JX_section_content">
+            <div class="_JX_attachment_grid">
             {{#previewAttachments}}
-            <div data-mime-type="{{mimeType}}" data-url="{{content}}" data-preview-src="{{previewDisplaySrc}}" class="_JX_thumb">
+            <div data-attachment-id="{{id}}" data-mime-type="{{mimeType}}" data-url="{{content}}" data-preview-src="{{previewDisplaySrc}}" class="_JX_thumb">
                 <a href="{{content}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">
                     <img class="_JX_previewable" data-jx-preview-src="{{previewDisplaySrc}}" title="{{linkTitle}}" src="{{thumbnail}}">
                     <div class="_JX_thumb_filename">{{filename}}</div>
@@ -703,9 +704,26 @@
             </div>
             {{/previewAttachments}}
             </div>
+            {{#fileAttachments.length}}
+            <div class="_JX_attachment_files">
+            {{#fileAttachments}}
+            <div class="_JX_attachment_file" data-attachment-id="{{id}}" data-mime-type="{{mimeType}}">
+                <a href="{{content}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">
+                    <span class="_JX_attachment_file_type" aria-hidden="true">{{fileTypeLabel}}</span>
+                    <span class="_JX_attachment_file_details">
+                        <span class="_JX_attachment_file_name">{{filename}}</span>
+                        {{#sizeLabel}}<span class="_JX_attachment_file_size">{{sizeLabel}}</span>{{/sizeLabel}}
+                    </span>
+                    <span class="_JX_attachment_file_open" aria-hidden="true">↗</span>
+                </a>
+            </div>
+            {{/fileAttachments}}
+            </div>
+            {{/fileAttachments.length}}
+            </div>
         </div>
         </div>
-        {{/previewAttachments.length}}
+        {{/showAttachmentsSection}}
 
         {{#showChildrenSection}}
         <div class="_JX_content_block" data-content-block="children">

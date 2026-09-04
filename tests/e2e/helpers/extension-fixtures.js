@@ -134,6 +134,7 @@ async function configureExtension(optionsPage, config) {
     hoverDepth: config.hoverDepth || 'exact',
     hoverModifierKey: config.hoverModifierKey || 'none',
     inlineCopyButtons: config.inlineCopyButtons !== false,
+    openQuickViewOnClick: config.openQuickViewOnClick === true,
     displayFields: config.displayFields || {},
     customFields: config.customFields || [],
     tooltipLayout,

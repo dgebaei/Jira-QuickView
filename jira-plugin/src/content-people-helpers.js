@@ -54,11 +54,12 @@ export function createContentPeopleHelpers(options) {
   function buildUserView(user) {
     const displayName = user?.displayName || user?.name || user?.username || user?.emailAddress || '';
     const rawAvatarUrl = user?.avatarUrls?.['48x48'] || user?.avatarUrl || '';
-    const useInitials = isLikelyDefaultAvatar(user, rawAvatarUrl);
+    const initials = getUserInitials(displayName, '');
+    const useInitials = !!initials && isLikelyDefaultAvatar(user, rawAvatarUrl);
     return {
       displayName,
       avatarUrl: useInitials ? '' : rawAvatarUrl,
-      initials: getUserInitials(displayName, '--'),
+      initials: initials || (rawAvatarUrl ? '' : '--'),
       accountId: user?.accountId || '',
       name: user?.name || user?.username || '',
       key: user?.key || '',

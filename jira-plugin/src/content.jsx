@@ -273,7 +273,7 @@ async function mainAsyncLocal() {
     environment: true,
     labels: true,
     epicParent: true,
-    attachments: false,
+    attachments: true,
     comments: true,
     description: true,
     children: true,
@@ -286,7 +286,7 @@ async function mainAsyncLocal() {
   const tooltipLayout = hasStoredTooltipLayout
     ? config.tooltipLayout
     : buildTooltipLayoutFromDisplayFields(displayFields);
-  const defaultContentBlocks = ['description', 'timeTracking', 'children', 'pullRequests', 'comments'];
+  const defaultContentBlocks = ['description', 'timeTracking', 'children', 'pullRequests', 'attachments', 'comments'];
   const layoutContentBlocks = [...(tooltipLayout.contentBlocks || defaultContentBlocks)];
   if (displayFields.description !== false && !layoutContentBlocks.includes('description')) {
     layoutContentBlocks.unshift('description');
@@ -525,6 +525,9 @@ async function mainAsyncLocal() {
   const popupSurface = createBrowserPopupSurface({
     commitCurrent(frame, context) {
       return popupModel.commit(frame, context);
+    },
+    commitLoading(frame, context) {
+      return popupRenderer.renderLoading(frame, context);
     },
     commitVisible(frame, context) {
       return popupModel.commit(frame, context, {opening: true});
@@ -3674,16 +3677,16 @@ async function mainAsyncLocal() {
     return hoveredElement === activeElement || activeElement.contains(hoveredElement);
   }
 
-  function fetchAndShowPopup(key, pointerX, pointerY) {
+  function fetchAndShowPopup(key, pointerX, pointerY, activation = '') {
     const popupView = currentPopupState();
     if (popupView?.key && popupView.key !== key && popupView.descriptionEditState?.open) {
       clearDescriptionStatusTimer();
       discardDescriptionEditStateSnapshot(popupView.descriptionEditState, {deleteUploaded: true}).catch(() => {});
     }
-    popupSession.activate({
+    return popupSession.activate({
       issueKey: key,
       anchor: {x: pointerX, y: pointerY},
-      activation: hoverModifierKey === 'none' ? 'hover' : 'modifier',
+      activation: activation || (hoverModifierKey === 'none' ? 'hover' : 'modifier'),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
         children: showChildren,
@@ -3697,16 +3700,52 @@ async function mainAsyncLocal() {
     });
   }
 
-  function triggerPopupForKey(key, pointerX, pointerY, immediate) {
+  function triggerPopupForKey(key, pointerX, pointerY, immediate, activation = '') {
     clearTimeout(hoverDelayTimeout);
     lastHoveredKey = key;
     if (immediate) {
-      fetchAndShowPopup(key, pointerX, pointerY);
+      fetchAndShowPopup(key, pointerX, pointerY, activation);
     } else {
       hoverDelayTimeout = setTimeout(function () {
-        fetchAndShowPopup(key, pointerX, pointerY);
+        fetchAndShowPopup(key, pointerX, pointerY, activation);
       }, 250);
     }
+  }
+
+  function getClickedIssueLink(target) {
+    if (!config.openQuickViewOnClick || !target?.closest) return null;
+    const link = target.closest('a[href]');
+    if (!link || link.closest('._JX_container') || link.hasAttribute('download')) return null;
+    let linkUrl;
+    let jiraOrigin;
+    try {
+      linkUrl = new URL(link.href, document.location.href);
+      jiraOrigin = new URL(INSTANCE_URL).origin;
+    } catch (error) {
+      return null;
+    }
+    if (linkUrl.origin !== jiraOrigin) return null;
+    const keyMatch = linkUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i);
+    if (!keyMatch) return null;
+    return {key: keyMatch[1].toUpperCase(), link};
+  }
+
+  if (config.openQuickViewOnClick) {
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const clickedIssue = getClickedIssueLink(e.target);
+      if (!clickedIssue) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = clickedIssue.link.getBoundingClientRect();
+      const pointerX = Number.isFinite(e.pageX) && e.pageX > 0
+        ? e.pageX
+        : rect.left + window.scrollX + (rect.width / 2);
+      const pointerY = Number.isFinite(e.pageY) && e.pageY > 0
+        ? e.pageY
+        : rect.top + window.scrollY + rect.height;
+      triggerPopupForKey(clickedIssue.key, pointerX, pointerY, true, 'click');
+    }, true);
   }
 
   if (hoverModifierKey !== 'none') {

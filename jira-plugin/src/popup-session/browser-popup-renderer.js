@@ -33,6 +33,35 @@ export function createBrowserPopupRenderer({
   projectState,
   template,
 }) {
+  async function renderLoading(frame, context = {}) {
+    if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
+      return {kind: 'stale'};
+    }
+    await shell.dispatch({type: 'prepare-opening'});
+    if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
+      return {kind: 'stale'};
+    }
+
+    const documentRef = container[0]?.ownerDocument;
+    const loading = documentRef?.createElement('div');
+    if (!loading) return {kind: 'ignored', reason: 'missing-document'};
+    loading.className = '_JX_loading_tooltip';
+    loading.dataset.testid = 'jira-popup-loading';
+    loading.setAttribute('role', 'status');
+    loading.setAttribute('aria-live', 'polite');
+    const spinner = documentRef.createElement('span');
+    spinner.className = '_JX_loading_spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const message = documentRef.createElement('span');
+    message.textContent = `Loading ${String(frame.issueKey || '')}`;
+    loading.append(spinner, message);
+    container.html('').append(loading).css(shell.position(frame.anchor));
+    if (frame.activation === 'click') {
+      await shell.dispatch({type: 'pin', announce: false});
+    }
+    return {kind: 'committed'};
+  }
+
   async function render(state, context = {}) {
     if (!state?.issueData) return {kind: 'ignored', reason: 'missing-issue-data'};
     if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
@@ -111,5 +140,5 @@ export function createBrowserPopupRenderer({
     return {kind: 'committed'};
   }
 
-  return {render};
+  return {render, renderLoading};
 }

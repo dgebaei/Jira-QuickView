@@ -1016,6 +1016,52 @@ test('browser renderer commits one deterministic DOM path and restores continuit
   });
 });
 
+test('browser renderer presents current loading identity at the pointer and pins click activations', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup"></div>';
+    const shellIntents = [];
+    const renderer = createBrowserPopupRenderer({
+      comments: {dispatch() { return Promise.resolve(); }, view() { return {}; }},
+      commentPresentation: {render() {}},
+      container: $('#popup'),
+      contentBlockOrder: [],
+      continuity: {constrainPopovers() {}, renderEditMentions() {}},
+      fieldEditing: {view() { return null; }},
+      shell: {
+        dispatch(intent) { shellIntents.push(intent); return Promise.resolve({kind: 'handled'}); },
+        position(anchor) { return {left: anchor.x + 20, top: anchor.y + 25}; },
+        view() { return {pinned: false}; },
+      },
+      projectState() { return {}; },
+      template: '',
+    });
+    const receipt = await renderer.renderLoading({
+      activation: 'click',
+      anchor: {x: 40, y: 60},
+      issueKey: 'ABC-123',
+    }, {isCurrent() { return true; }});
+    return {
+      receipt,
+      text: $('#popup').text().replace(/\s+/g, ' ').trim(),
+      hasSpinner: $('#popup ._JX_loading_spinner').length === 1,
+      position: {left: $('#popup').css('left'), top: $('#popup').css('top')},
+      shellIntents,
+    };
+  });
+
+  expect(result).toEqual({
+    receipt: {kind: 'committed'},
+    text: 'Loading ABC-123',
+    hasSpinner: true,
+    position: {left: '60px', top: '85px'},
+    shellIntents: [
+      {type: 'prepare-opening'},
+      {type: 'pin', announce: false},
+    ],
+  });
+});
+
 test('browser renderer rejects a stale asynchronous projection before DOM commit', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createBrowserPopupRenderer, createDeferred, jquery: $} = window.JiraQuickViewDeepModules;
