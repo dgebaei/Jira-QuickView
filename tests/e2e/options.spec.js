@@ -89,7 +89,7 @@ test('expands and collapses advanced settings from anywhere in the header', asyn
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(form.hoverDepthSelect).toBeVisible();
 
-  await toggle.getByText('Hover detection, field layout editor, custom fields, and settings sync.', {exact: true}).click();
+  await toggle.getByText('QuickView activation, field layout editor, custom fields, and settings sync.', {exact: true}).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(form.hoverDepthSelect).toBeHidden();
 
@@ -349,12 +349,29 @@ test('enables Jira inline copy buttons by default and persists the preference', 
 test('persists one mutually exclusive QuickView activation mode', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
+  await optionsPage.evaluate(async () => chrome.storage.sync.clear());
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.activationModeSelect).toHaveValue('click');
+  await expect(form.hoverDepthSelect).toBeDisabled();
+  await expect(form.hoverModifierSelect).toBeDisabled();
+
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
 
   await expect(form.activationModeSelect).toHaveValue('hover');
   await optionsPage.evaluate(async () => {
     await chrome.storage.sync.remove('activationMode');
+    await chrome.storage.sync.set({openQuickViewOnClick: false, hoverModifierKey: 'shift'});
+  });
+  await optionsPage.reload();
+  await expect(form.activationModeSelect).toHaveValue('hover-modifier');
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.set({openQuickViewOnClick: false, hoverModifierKey: 'none'});
+  });
+  await optionsPage.reload();
+  await expect(form.activationModeSelect).toHaveValue('hover');
+  await optionsPage.evaluate(async () => {
     await chrome.storage.sync.set({openQuickViewOnClick: true});
   });
   await optionsPage.reload();
@@ -362,11 +379,20 @@ test('persists one mutually exclusive QuickView activation mode', async ({option
   await form.activationModeSelect.selectOption('hover-modifier');
   await openAdvancedSettings(optionsPage);
   await expect(form.hoverModifierSelect).toBeVisible();
+  await expect(form.hoverDepthSelect).toBeEnabled();
+  await expect(form.hoverModifierSelect).toBeEnabled();
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.activationModeSelect).toHaveValue('hover-modifier');
   await form.activationModeSelect.selectOption('click');
   await expect(form.activationModeSelect).toHaveValue('click');
+  await expect(form.hoverDepthSelect).toBeDisabled();
+  await expect(form.hoverModifierSelect).toBeDisabled();
   await expect(form.statusPill).toContainText('Unsaved changes.');
   if (themeScreenshotDir) {
-    await optionsPage.locator('.settingsCard').filter({hasText: 'Appearance'}).screenshot({path: path.join(themeScreenshotDir, 'options-click-to-quickview.png')});
+    await optionsPage.locator('.settingsCard').filter({hasText: 'QuickView Activation'}).screenshot({path: path.join(themeScreenshotDir, 'options-quickview-activation.png')});
   }
   await form.saveButton.click();
   await expect(form.saveNotice).toContainText('Options saved successfully.');

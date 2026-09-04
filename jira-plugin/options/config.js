@@ -20,7 +20,12 @@ export function resolveQuickViewActivationMode(settings = {}) {
   const configuredMode = String(settings.activationMode || '').trim();
   if (QUICKVIEW_ACTIVATION_MODES.includes(configuredMode)) return configuredMode;
   if (settings.openQuickViewOnClick === true) return 'click';
-  return String(settings.hoverModifierKey || '').trim() === 'none' ? 'hover' : 'hover-modifier';
+  const hasLegacyActivation = Object.prototype.hasOwnProperty.call(settings, 'openQuickViewOnClick')
+    || Object.prototype.hasOwnProperty.call(settings, 'hoverModifierKey');
+  if (hasLegacyActivation) {
+    return String(settings.hoverModifierKey || '').trim() === 'none' ? 'hover' : 'hover-modifier';
+  }
+  return 'click';
 }
 
 export default {
@@ -29,7 +34,7 @@ export default {
   themeMode: 'system',
   v15upgrade: false,
   customFields: [],
-  activationMode: '',
+  activationMode: 'click',
   hoverDepth: 'exact',
   hoverModifierKey: 'any',
   inlineCopyButtons: true,

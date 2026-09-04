@@ -66,8 +66,17 @@ const HERO_LINKS = [
   },
 ];
 
+async function loadStoredConfig() {
+  const storedConfig = await storageGet(null);
+  return {
+    ...defaultConfig,
+    ...storedConfig,
+    activationMode: resolveQuickViewActivationMode(storedConfig),
+  };
+}
+
 async function main() {
-  const storedConfig = await storageGet(defaultConfig);
+  const storedConfig = await loadStoredConfig();
   syncDocumentTheme(document, storedConfig.themeMode || DEFAULT_THEME_MODE);
   ReactDOM.render(
     <ConfigPage {...storedConfig} />,
@@ -228,7 +237,7 @@ function ConfigPage(props) {
           throw new Error(response.error);
         }
         await refreshSimpleSyncState();
-        const nextConfig = await storageGet(defaultConfig);
+        const nextConfig = await loadStoredConfig();
         applyConfigToForm(nextConfig);
       })
       .catch(async () => {
@@ -420,7 +429,7 @@ function ConfigPage(props) {
   const runSimpleSyncNow = async () => {
     setIsSyncing(true);
     try {
-      const currentConfig = await storageGet(defaultConfig);
+      const currentConfig = await loadStoredConfig();
       const savedInstanceUrl = resolveInstanceUrl(currentConfig.instanceUrl || '') || normalizeInstanceUrl(currentConfig.instanceUrl || '');
       const draftInstanceUrl = resolveInstanceUrl(instanceUrl || '') || normalizeInstanceUrl(instanceUrl || '');
       const effectiveInstanceUrl = draftInstanceUrl || savedInstanceUrl;
@@ -476,7 +485,7 @@ function ConfigPage(props) {
         });
         setSimpleSyncState(transientState);
       }
-      const nextConfig = await storageGet(defaultConfig);
+      const nextConfig = await loadStoredConfig();
       applyConfigToForm(nextConfig);
     } catch (error) {
       setSimpleSyncState(current => normalizeSimpleSyncState({
@@ -497,7 +506,7 @@ function ConfigPage(props) {
   const grantSimpleSyncPermissions = async () => {
     setIsSyncing(true);
     try {
-      const currentConfig = await storageGet(defaultConfig);
+      const currentConfig = await loadStoredConfig();
       const origins = getConfigPermissionOrigins(currentConfig);
       if (!origins.length) {
         return;
@@ -575,7 +584,7 @@ function ConfigPage(props) {
     }
 
     const permissionDomains = domains.concat([resolvedInstanceUrl]);
-    const currentInstanceUrl = await storageGet(defaultConfig);
+    const currentInstanceUrl = await loadStoredConfig();
     if (!currentInstanceUrl.instanceUrl) {
       domains.push(resolvedInstanceUrl);
     }
@@ -810,17 +819,6 @@ function ConfigPage(props) {
                 <span>Add a copy action beside issue keys on Jira details, search results, boards, and backlogs.</span>
               </span>
             </label>
-            <label className='formField'>
-              <span className='fieldLabel'>Open QuickView</span>
-              <select data-testid='options-activation-mode' value={activationMode} onChange={event => setActivationMode(event.target.value)}>
-                <option value='hover'>When hovering over an issue key</option>
-                <option value='hover-modifier'>When hovering while holding a modifier key</option>
-                <option value='click'>When clicking an issue link</option>
-              </select>
-              <span className='fieldHelp'>
-                Choose one activation behavior. Click mode pins QuickView instead of navigating; modifier-clicks keep normal browser navigation.
-              </span>
-            </label>
           </div>
         </section>
 
@@ -843,7 +841,7 @@ function ConfigPage(props) {
           </svg>
           <span className='advToggleText'>
             <span className='advToggleTitle'>Show advanced settings</span>
-            <span className='advToggleDescription'>Hover detection, field layout editor, custom fields, and settings sync.</span>
+            <span className='advToggleDescription'>QuickView activation, field layout editor, custom fields, and settings sync.</span>
           </span>
           <span className='advToggleBtn' aria-hidden='true'>
             {showAdvanced ? 'Hide' : 'Show'}
@@ -853,45 +851,49 @@ function ConfigPage(props) {
         {showAdvanced && (
           <div className='advancedPanelBody' id='advanced-settings-panel'>
             <div className='settingsGrid advancedSettingsGrid'>
-          {/* ── Hover Behavior ───────────────────────────── */}
-          {activationMode !== 'click' && <section className='settingsCard settingsGridFull'>
+          {/* ── QuickView Activation ─────────────────────── */}
+          <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
               <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
-              <h2>Hover Detection</h2>
-              <p>Control when the tooltip appears as you move the mouse over Jira issue keys.</p>
+              <h2>QuickView Activation</h2>
+              <p>Choose how QuickView opens and tune the matching behavior in one place.</p>
             </div>
             <div className='cardBody'>
               <div className='hoverRow'>
                 <label className='formField'>
-                  <span className='fieldLabel'>Trigger depth</span>
-                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)}>
+                  <span className='fieldLabel'>Open popup trigger</span>
+                  <select data-testid='options-activation-mode' value={activationMode} onChange={event => setActivationMode(event.target.value)}>
+                    <option value='hover'>Hover</option>
+                    <option value='hover-modifier'>Hover with modifier</option>
+                    <option value='click'>Click issue link</option>
+                  </select>
+                  <span className='fieldHelp'>Click mode pins QuickView; modifier-click keeps normal browser navigation.</span>
+                </label>
+
+                <label className='formField'>
+                  <span className='fieldLabel'>Depth</span>
+                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)} disabled={activationMode === 'click'}>
                     <option value='exact'>Exact — only the hovered element itself</option>
                     <option value='shallow'>Shallow — hovered element + immediate parent</option>
                     <option value='deep'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
                   </select>
-                  <span className='fieldHelp'>
-                    How aggressively the extension searches surrounding DOM elements for Jira keys.
-                    Use &ldquo;Exact&rdquo; if the tooltip triggers too often on pages with dense text.
-                  </span>
+                  <span className='fieldHelp'>How far hover activation searches surrounding page elements for Jira keys.</span>
                 </label>
 
-                {activationMode === 'hover-modifier' && <label className='formField'>
+                <label className='formField'>
                   <span className='fieldLabel'>Modifier key</span>
-                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
+                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)} disabled={activationMode !== 'hover-modifier'}>
                     <option value='none'>None — hover alone triggers the tooltip</option>
                     <option value='alt'>Alt — press Alt after hovering</option>
                     <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
                     <option value='shift'>Shift — press Shift after hovering</option>
                     <option value='any'>Any — press Alt, Ctrl, or Shift after hovering</option>
                   </select>
-                  <span className='fieldHelp'>
-                    When set, hover over a Jira key and then press the chosen key to reveal the tooltip.
-                    Useful for on-demand activation instead of automatic popups.
-                  </span>
-                </label>}
+                  <span className='fieldHelp'>Used only with the Hover with modifier trigger.</span>
+                </label>
               </div>
             </div>
-          </section>}
+          </section>
 
           {/* ── Tooltip Layout ───────────────────────────── */}
           <section className='settingsCard settingsGridFull'>

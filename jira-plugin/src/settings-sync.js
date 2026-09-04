@@ -272,7 +272,7 @@ export function normalizeSettingsPayload(payload) {
     const activationMode = String(rawSettings.activationMode || '').trim();
     settings.activationMode = QUICKVIEW_ACTIVATION_MODES.includes(activationMode)
       ? activationMode
-      : resolveQuickViewActivationMode(defaultConfig);
+      : resolveQuickViewActivationMode({});
   } else if (Object.prototype.hasOwnProperty.call(rawSettings, 'openQuickViewOnClick')
       || Object.prototype.hasOwnProperty.call(rawSettings, 'hoverModifierKey')) {
     settings.activationMode = resolveQuickViewActivationMode(rawSettings);

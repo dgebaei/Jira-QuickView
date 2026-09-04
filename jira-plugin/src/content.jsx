@@ -48,13 +48,15 @@ const getInstanceUrl = async () => (await storageGet({
 })).instanceUrl;
 
 const getConfig = async () => {
-  const [resolvedConfig, storedTooltipLayout] = await Promise.all([
-    storageGet(config),
-    storageGet('tooltipLayout')
-  ]);
+  const storedConfig = await storageGet(null);
+  const resolvedConfig = {
+    ...config,
+    ...storedConfig,
+    activationMode: resolveQuickViewActivationMode(storedConfig),
+  };
   return {
     resolvedConfig,
-    hasStoredTooltipLayout: !!storedTooltipLayout?.tooltipLayout
+    hasStoredTooltipLayout: !!storedConfig?.tooltipLayout
   };
 };
 
