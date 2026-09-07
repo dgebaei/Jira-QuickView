@@ -297,7 +297,10 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
       try { url = new URL(href, documentRef.location.href); } catch (error) { continue; }
       if (url.origin !== base.origin) continue;
       const key = url.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)\/?$/i)?.[1]?.toUpperCase();
-      if (!key) continue;
+      // Only decorate a link when the visible link itself identifies the issue.
+      // Jira action links such as “View issue” and “Add comment” can point at
+      // an issue URL but are not issue references users should copy.
+      if (!key || !new RegExp(`\\b${key}\\b`, 'i').test(link.textContent || '')) continue;
       const button = makeButton(key);
       link.after(button);
       references.set(link, {href: link.href, button});

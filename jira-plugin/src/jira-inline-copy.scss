@@ -45,8 +45,21 @@
 
   &:hover,
   &:focus-visible {
-    background: color-mix(in srgb, currentColor 12%, transparent);
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 42%, transparent);
     color: inherit;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  ._JX_inline_copy_button_global {
+    color: #d8deef;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.42);
+    }
   }
 }
 

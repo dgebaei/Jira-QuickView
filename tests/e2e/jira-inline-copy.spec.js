@@ -26,13 +26,16 @@ test('copies linked and plain Jira IDs on allowed pages without eager issue read
     const action = document.createElement('button');
     action.id = 'action';
     action.textContent = key;
-    main.append(editor, action);
+    const actionLink = document.createElement('a');
+    actionLink.href = `${location.origin}/browse/${key}`;
+    actionLink.textContent = 'View issue';
+    main.append(editor, action, actionLink);
   }, target.primaryIssueKey);
   await injectContentScript(extensionApp, page);
   const buttons = page.getByTestId(`jira-inline-copy-${target.primaryIssueKey}`);
   await expect(buttons).toHaveCount(2);
   expect(issueReads).toBe(0);
-  await expect(page.locator('#editor button, #action button')).toHaveCount(0);
+  await expect(page.locator('#editor button, #action button, a[href*="/browse/"] button')).toHaveCount(0);
   await buttons.first().click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
   const html = await page.evaluate(async () => {
@@ -50,6 +53,11 @@ test('copies linked and plain Jira IDs on allowed pages without eager issue read
     main.append(paragraph);
   }, target.primaryIssueKey);
   await expect(buttons).toHaveCount(3);
+  await page.locator('main').evaluate(main => {
+    main.style.background = '#24262b';
+    main.style.color = '#e5e7f0';
+  });
+  await buttons.last().hover();
   await expect(page.locator('#_JX_title_link')).toHaveCount(0);
   await captureInlineCopyScreenshot(page.locator('main'), 'global-inline-copy.png');
   await page.close();
