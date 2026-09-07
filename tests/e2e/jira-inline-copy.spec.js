@@ -104,10 +104,17 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   const page = await extensionApp.context.newPage();
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.jira.origin});
   await page.goto(`${servers.jira.origin}/browse/${target.primaryIssueKey}`);
+  await page.locator('main').evaluate((main, key) => {
+    const commentLink = document.createElement('a');
+    commentLink.href = `/browse/${key}?focusedCommentId=123#comment-123`;
+    commentLink.textContent = '31 Aug 2026';
+    main.append(commentLink);
+  }, target.primaryIssueKey);
   await injectContentScript(extensionApp, page);
 
   const copyButton = page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`});
   await expect(copyButton).toBeVisible();
+  await expect(page.getByRole('button', {name: `Copy ${target.primaryIssueKey} comment link`})).toBeVisible();
   await copyButton.hover();
   await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-cloud-detail.png');
   await copyButton.click();

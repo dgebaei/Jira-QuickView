@@ -86,6 +86,14 @@
   width: 16px;
 }
 
+._JX_inline_copy_button_comment {
+  flex: 0 0 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  width: 16px;
+}
+
 ._JX_inline_copy_scope:hover ._JX_inline_copy_button_result,
 ._JX_inline_copy_scope:focus-within ._JX_inline_copy_button_result,
 ._JX_inline_copy_button_result:focus-visible {

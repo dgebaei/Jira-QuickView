@@ -223,7 +223,9 @@ function createCopyButton(documentRef, reference, copy, variant) {
   button.dataset.testid = `jira-inline-copy-${reference.key}`;
   // Global copy buttons sit in arbitrary host-page themes. Keep their accessible
   // name without invoking the browser's unstyleable light tooltip on hover.
-  const copyLabel = `Copy ${reference.key} issue link`;
+  const copyLabel = variant === 'comment'
+    ? `Copy ${reference.key} comment link`
+    : `Copy ${reference.key} issue link`;
   button.title = variant === 'global' ? '' : copyLabel;
   button.setAttribute('aria-label', copyLabel);
   button.appendChild(buildCopyIcon(documentRef));
@@ -262,6 +264,26 @@ function insertResultCopyButton(documentRef, issueElement, reference, copy) {
   container.classList.add('_JX_inline_copy_scope');
   issueElement.classList.add('_JX_inline_copy_anchor');
   issueElement.insertAdjacentElement('afterend', createCopyButton(documentRef, reference, copy, 'result'));
+}
+
+function installNativeCommentCopyButtons(documentRef, copy) {
+  const issueElement = documentRef.querySelector('#key-val, [data-testid*="issue.views.issue-base.foundation.breadcrumbs.breadcrumb-current-issue-container"] a[href]');
+  const key = getIssueKey(issueElement);
+  const summary = getIssueSummary(documentRef, issueElement);
+  if (!key || !summary) return;
+
+  for (const commentLink of documentRef.querySelectorAll('a[href*="focusedCommentId"], a[href*="#comment-"]')) {
+    if (commentLink.closest('._JX_container') || commentLink.nextElementSibling?.matches('._JX_inline_copy_button_comment')) {
+      continue;
+    }
+    const href = commentLink.getAttribute('href') || '';
+    if (!href || href.startsWith('#')) continue;
+    commentLink.insertAdjacentElement('afterend', createCopyButton(documentRef, {
+      key,
+      summary,
+      url: new URL(href, documentRef.location.href).toString(),
+    }, copy, 'comment'));
+  }
 }
 
 function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
@@ -389,6 +411,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
 
     const currentIssueKey = getIssueKey(documentRef.querySelector('#key-val'));
     installNativeChildrenJqlLinks(documentRef, instanceUrl, currentIssueKey);
+    installNativeCommentCopyButtons(documentRef, copy);
 
     for (const issueElement of documentRef.querySelectorAll(RESULT_LINK_SELECTOR)) {
       const key = getIssueKey(issueElement);
