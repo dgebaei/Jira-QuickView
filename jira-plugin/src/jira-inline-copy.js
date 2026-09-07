@@ -86,11 +86,20 @@ function getResultSummary(issueElement, key) {
   if (explicitSummary) {
     return String(explicitSummary.textContent || '').trim();
   }
+  const directText = String(issueElement.textContent || '').replace(/\s+/g, ' ').trim();
+  if (directText && directText.toUpperCase() !== key) {
+    return directText;
+  }
   const relatedLink = Array.from(container.querySelectorAll(RESULT_LINK_SELECTOR)).find(link => {
     const text = String(link.textContent || '').trim();
     return link !== issueElement && text && text !== key;
   });
   return String(relatedLink?.textContent || '').trim();
+}
+
+function findResultCopyTarget(container) {
+  if (!container) return null;
+  return container.querySelector('[data-testid*="summary"], .summary, .ghx-summary, td:nth-child(3)') || null;
 }
 
 function findResultKeyElement(container, key) {
@@ -246,6 +255,14 @@ function createCopyButton(documentRef, reference, copy, variant) {
 }
 
 function removeStaleCopyButtons(issueElement, key, summary) {
+  if (!issueElement.matches('a, span, strong')) {
+    for (const button of issueElement.querySelectorAll('._JX_inline_copy_button')) {
+      if (button.dataset.jxInlineCopyKey !== key || button.dataset.jxInlineCopySummary !== summary) {
+        button.remove();
+      }
+    }
+    return;
+  }
   let sibling = issueElement.nextElementSibling;
   while (sibling?.classList.contains('_JX_inline_copy_button')) {
     const nextSibling = sibling.nextElementSibling;
@@ -262,8 +279,13 @@ function insertResultCopyButton(documentRef, issueElement, reference, copy) {
     return;
   }
   container.classList.add('_JX_inline_copy_scope');
-  issueElement.classList.add('_JX_inline_copy_anchor');
-  issueElement.insertAdjacentElement('afterend', createCopyButton(documentRef, reference, copy, 'result'));
+  const button = createCopyButton(documentRef, reference, copy, 'result');
+  if (issueElement.matches('a, span, strong')) {
+    issueElement.classList.add('_JX_inline_copy_anchor');
+    issueElement.insertAdjacentElement('afterend', button);
+  } else {
+    issueElement.append(button);
+  }
 }
 
 function installNativeCommentCopyButtons(documentRef, copy) {
@@ -416,19 +438,27 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
     for (const issueElement of documentRef.querySelectorAll(RESULT_LINK_SELECTOR)) {
       const key = getIssueKey(issueElement);
       const elementText = String(issueElement.textContent || '').trim();
-      if (!key || !elementText.includes(key) || issueElement.closest('._JX_container')) {
+      const resultContainer = getResultContainer(issueElement);
+      const isKeyOnlyLink = elementText.toUpperCase() === key;
+      const hasSeparateKey = !!resultContainer && !!findResultKeyElement(resultContainer, key);
+      const copyTarget = isKeyOnlyLink ? findResultCopyTarget(resultContainer) : issueElement;
+      if (!key || (isKeyOnlyLink && (!copyTarget || copyTarget === issueElement))
+        || (!elementText.toUpperCase().includes(key) && !hasSeparateKey)
+        || issueElement.closest('._JX_container')) {
         continue;
       }
-      const resultSummary = getResultSummary(issueElement, key);
+      const resultSummary = getResultSummary(copyTarget, key);
       if (!resultSummary) {
         continue;
       }
-      removeStaleCopyButtons(issueElement, key, resultSummary);
-      const existing = issueElement.nextElementSibling;
+      removeStaleCopyButtons(copyTarget, key, resultSummary);
+      const existing = copyTarget.matches('a, span, strong')
+        ? copyTarget.nextElementSibling
+        : copyTarget.querySelector('._JX_inline_copy_button');
       if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
         continue;
       }
-      insertResultCopyButton(documentRef, issueElement, {
+      insertResultCopyButton(documentRef, copyTarget, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
@@ -438,7 +468,10 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
     for (const candidate of documentRef.querySelectorAll(RESULT_KEY_SELECTOR)) {
       const key = getIssueKey(candidate);
       const issueElement = findResultKeyElement(candidate, key) || candidate;
-      if (!key || !issueElement || issueElement.closest('._JX_container')) {
+      const resultContainer = getResultContainer(issueElement);
+      const hasSeparateSummaryLink = !!resultContainer && Array.from(resultContainer.querySelectorAll(RESULT_LINK_SELECTOR))
+        .some(link => String(link.textContent || '').trim().toUpperCase() !== key);
+      if (!key || !issueElement || hasSeparateSummaryLink || issueElement.closest('._JX_container')) {
         continue;
       }
       const resultSummary = getResultSummary(issueElement, key);

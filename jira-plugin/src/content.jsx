@@ -3767,6 +3767,10 @@ async function mainAsyncLocal() {
       ? currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)
       : null;
     if (currentKeyMatch?.[1]?.toUpperCase() === key) return null;
+    // Jira's project issue navigator uses these links to open its native
+    // side-by-side issue panel. Preserve that interaction when QuickView
+    // click interception is enabled globally.
+    if (/\/projects\/[^/]+\/issues(?:\/|$)/i.test(currentUrl.pathname)) return null;
     return {key, link};
   }
 
