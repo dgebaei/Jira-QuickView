@@ -221,8 +221,11 @@ function createCopyButton(documentRef, reference, copy, variant) {
   button.dataset.jxInlineCopyKey = reference.key;
   button.dataset.jxInlineCopySummary = reference.summary;
   button.dataset.testid = `jira-inline-copy-${reference.key}`;
-  button.title = `Copy ${reference.key} issue link`;
-  button.setAttribute('aria-label', button.title);
+  // Global copy buttons sit in arbitrary host-page themes. Keep their accessible
+  // name without invoking the browser's unstyleable light tooltip on hover.
+  const copyLabel = `Copy ${reference.key} issue link`;
+  button.title = variant === 'global' ? '' : copyLabel;
+  button.setAttribute('aria-label', copyLabel);
   button.appendChild(buildCopyIcon(documentRef));
   button.addEventListener('click', event => {
     event.preventDefault();

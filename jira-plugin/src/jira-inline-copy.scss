@@ -41,6 +41,13 @@
 
 ._JX_inline_copy_button_global {
   color: inherit;
+  transform: translateY(-1px);
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    color: inherit;
+  }
 }
 
 ._JX_inline_copy_button_result {
