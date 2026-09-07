@@ -3725,18 +3725,27 @@ async function mainAsyncLocal() {
     if (activationMode !== 'click' || !target?.closest) return null;
     const link = target.closest('a[href]');
     if (!link || link.closest('._JX_container') || link.hasAttribute('download')) return null;
+    const declaredHref = String(link.getAttribute('href') || '').trim();
+    if (!declaredHref || declaredHref.startsWith('#')) return null;
     let linkUrl;
     let jiraOrigin;
+    let currentUrl;
     try {
-      linkUrl = new URL(link.href, document.location.href);
+      linkUrl = new URL(declaredHref, document.location.href);
       jiraOrigin = new URL(INSTANCE_URL).origin;
+      currentUrl = new URL(document.location.href);
     } catch (error) {
       return null;
     }
-    if (linkUrl.origin !== jiraOrigin) return null;
+    if (!['http:', 'https:'].includes(linkUrl.protocol) || linkUrl.origin !== jiraOrigin) return null;
     const keyMatch = linkUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i);
     if (!keyMatch) return null;
-    return {key: keyMatch[1].toUpperCase(), link};
+    const key = keyMatch[1].toUpperCase();
+    const currentKeyMatch = currentUrl.origin === jiraOrigin
+      ? currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)
+      : null;
+    if (currentKeyMatch?.[1]?.toUpperCase() === key) return null;
+    return {key, link};
   }
 
   if (activationMode === 'click') {

@@ -248,6 +248,42 @@ test('opens and pins QuickView instead of navigating on a plain issue-link click
   await page.close();
 });
 
+test('ignores Jira action links that resolve to the currently displayed issue @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira action-link interception is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    activationMode: 'click',
+    domains: [target.instanceUrl],
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${target.instanceUrl}/browse/${target.primaryIssueKey}?jql=project%20%3D%20TEST`);
+  await page.evaluate(issueKey => {
+    const cancel = document.createElement('a');
+    cancel.id = 'fragment-action';
+    cancel.href = '#comment-editor';
+    cancel.textContent = 'Cancel';
+    document.body.appendChild(cancel);
+    const link = document.createElement('a');
+    link.id = 'same-issue-action';
+    link.href = `/browse/${issueKey}?jql=project%20%3D%20TEST&view=list`;
+    link.textContent = 'List View';
+    document.body.appendChild(link);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  await page.waitForTimeout(500);
+
+  await page.locator('#fragment-action').click();
+  await expect(page).toHaveURL(/#comment-editor$/);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.locator('#same-issue-action').click();
+  await expect(page).toHaveURL(/(?:\?|&)view=list(?:&|$)/);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.close();
+});
+
 test('shows the Children block above pull requests and sorts it from the column headers @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Child table ordering and sorting are deterministic in mocked mode only.');
