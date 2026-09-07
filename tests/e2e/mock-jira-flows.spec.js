@@ -1688,7 +1688,7 @@ test('supports mentions and saving new comments in mocked mode', async ({extensi
     ? new Set((await getIssueComments(resolvedTarget.primaryIssueKey, resolvedTarget)).map(comment => String(comment.id)))
     : null;
 
-  await page.locator('._JX_comment_save').click();
+  await page.locator('._JX_comment_save').click({modifiers: target.mode === 'mock' ? ['Control'] : []});
 
   const newestComment = page.locator('._JX_comment').last();
   await expect(newestComment).toContainText('Investigated and reproduced locally.');
@@ -1780,7 +1780,7 @@ test('supports user tagging while editing comments in mocked mode @mock-only', a
   await page.locator('._JX_comment_edit_mention_option', {hasText: 'Alex Reviewer'}).click();
   await expect(editInput).toHaveValue(/@Alex Reviewer/);
   await expect(editInput).not.toHaveValue(/\[~/);
-  await newestComment.locator('._JX_comment_edit_save').click();
+  await newestComment.locator('._JX_comment_edit_save').click({modifiers: ['Control']});
 
   await expect(page.locator('._JX_comment').last()).toContainText('Alex Reviewer');
   await expect(page.locator('._JX_comment').last().locator('._JX_mention')).toContainText('Alex Reviewer');

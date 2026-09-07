@@ -3188,6 +3188,10 @@ async function mainAsyncLocal() {
 
   $(document.body).on('click', '._JX_comment_save', function (e) {
     e.preventDefault();
+    // Treat modifier-click as an explicit save gesture too. Stopping propagation
+    // keeps the popup's document-level click handler from closing the session
+    // before the asynchronous comment mutation starts.
+    e.stopPropagation();
     handleCommentSave().catch(() => {});
   });
 
