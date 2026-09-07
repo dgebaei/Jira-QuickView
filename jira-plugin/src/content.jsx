@@ -3743,7 +3743,8 @@ async function mainAsyncLocal() {
   function getClickedIssueLink(target) {
     if (!openQuickViewOnClick || !target?.closest) return null;
     const link = target.closest('a[href]');
-    if (!link || link.closest('._JX_container') || link.hasAttribute('download')) return null;
+    if (!link || link.closest('._JX_container') || link.hasAttribute('download')
+      || link.closest('button, input, textarea, select, option, summary, [role="button"], [role="menuitem"], [contenteditable]')) return null;
     const declaredHref = String(link.getAttribute('href') || '').trim();
     if (!declaredHref || declaredHref.startsWith('#')) return null;
     let linkUrl;
@@ -3760,6 +3761,8 @@ async function mainAsyncLocal() {
     const keyMatch = linkUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i);
     if (!keyMatch) return null;
     const key = keyMatch[1].toUpperCase();
+    const linkText = String(link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (/^(view issue|add comment|comment|cancel|edit|assign)$/.test(linkText)) return null;
     const currentKeyMatch = currentUrl.origin === jiraOrigin
       ? currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)
       : null;
@@ -3769,7 +3772,7 @@ async function mainAsyncLocal() {
 
   if (openQuickViewOnClick) {
     document.addEventListener('click', function (e) {
-      if (e.defaultPrevented || e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const clickedIssue = getClickedIssueLink(e.target);
       if (!clickedIssue) return;
       e.preventDefault();

@@ -73,7 +73,17 @@
 
 ._JX_inline_copy_scope ._JX_inline_copy_anchor {
   display: inline-flex;
+  flex: 0 0 auto;
+  white-space: nowrap;
   vertical-align: middle;
+}
+
+._JX_inline_copy_button_result {
+  flex: 0 0 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  width: 16px;
 }
 
 ._JX_inline_copy_scope:hover ._JX_inline_copy_button_result,
