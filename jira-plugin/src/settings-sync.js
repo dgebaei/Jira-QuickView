@@ -1,4 +1,4 @@
-import defaultConfig, {QUICKVIEW_ACTIVATION_MODES, resolveQuickViewActivationMode} from 'options/config.js';
+import defaultConfig, {QUICKVIEW_HOVER_MODES, QUICKVIEW_MODIFIER_KEYS, resolveQuickViewActivation} from 'options/config.js';
 import {toMatchUrl} from 'options/declarative';
 import {normalizeCustomFields, normalizeInstanceUrl} from 'options/options-utils';
 import {normalizeThemeMode} from 'src/theme';
@@ -17,7 +17,8 @@ export const DEFAULT_SYNC_POLICY = {
   instanceUrl: 'locked',
   domains: 'default',
   themeMode: 'unmanaged',
-  activationMode: 'default',
+  openQuickViewOnClick: 'default',
+  hoverActivationMode: 'default',
   hoverDepth: 'default',
   hoverModifierKey: 'default',
   inlineCopyButtons: 'default',
@@ -28,7 +29,7 @@ export const DEFAULT_SYNC_POLICY = {
 
 const VALID_POLICY_VALUES = ['locked', 'default', 'unmanaged'];
 const VALID_HOVER_DEPTHS = ['exact', 'shallow', 'deep'];
-const VALID_HOVER_MODIFIER_KEYS = ['none', 'alt', 'ctrl', 'shift', 'any'];
+const VALID_HOVER_MODIFIER_KEYS = QUICKVIEW_MODIFIER_KEYS;
 const SYNCABLE_SETTING_KEYS = Object.keys(DEFAULT_SYNC_POLICY);
 const TOOLTIP_LAYOUT_ZONES = ['row1', 'row2', 'row3', 'contentBlocks', 'people'];
 
@@ -68,6 +69,11 @@ function normalizePolicy(policy = {}) {
       normalized[key] = value;
     }
   });
+  const legacyActivationPolicy = String(policy?.activationMode || '').trim();
+  if (VALID_POLICY_VALUES.includes(legacyActivationPolicy)) {
+    normalized.openQuickViewOnClick = legacyActivationPolicy;
+    normalized.hoverActivationMode = legacyActivationPolicy;
+  }
   return normalized;
 }
 
@@ -268,14 +274,16 @@ export function normalizeSettingsPayload(payload) {
     settings.hoverModifierKey = VALID_HOVER_MODIFIER_KEYS.includes(hoverModifierKey) ? hoverModifierKey : defaultConfig.hoverModifierKey;
   }
 
-  if (Object.prototype.hasOwnProperty.call(rawSettings, 'activationMode')) {
-    const activationMode = String(rawSettings.activationMode || '').trim();
-    settings.activationMode = QUICKVIEW_ACTIVATION_MODES.includes(activationMode)
-      ? activationMode
-      : resolveQuickViewActivationMode({});
-  } else if (Object.prototype.hasOwnProperty.call(rawSettings, 'openQuickViewOnClick')
+  if (Object.prototype.hasOwnProperty.call(rawSettings, 'activationMode')
+      || Object.prototype.hasOwnProperty.call(rawSettings, 'openQuickViewOnClick')
+      || Object.prototype.hasOwnProperty.call(rawSettings, 'hoverActivationMode')
       || Object.prototype.hasOwnProperty.call(rawSettings, 'hoverModifierKey')) {
-    settings.activationMode = resolveQuickViewActivationMode(rawSettings);
+    const activation = resolveQuickViewActivation(rawSettings);
+    settings.openQuickViewOnClick = activation.openQuickViewOnClick;
+    settings.hoverActivationMode = QUICKVIEW_HOVER_MODES.includes(activation.hoverActivationMode)
+      ? activation.hoverActivationMode
+      : defaultConfig.hoverActivationMode;
+    settings.hoverModifierKey = activation.hoverModifierKey;
   }
 
   if (Object.prototype.hasOwnProperty.call(rawSettings, 'inlineCopyButtons')) {

@@ -1,7 +1,7 @@
 /*global chrome */
 import React, {useEffect, useState, useCallback, useRef} from 'react';
 import ReactDOM from 'react-dom';
-import defaultConfig, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivationMode} from 'options/config';
+import defaultConfig, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation} from 'options/config';
 import {storageGet, storageSet, storageLocalGet, storageLocalSet, storageLocalRemove, permissionsRequest, sendMessage} from 'src/chrome';
 import {resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocumentTheme} from 'src/theme';
@@ -71,7 +71,7 @@ async function loadStoredConfig() {
   return {
     ...defaultConfig,
     ...storedConfig,
-    activationMode: resolveQuickViewActivationMode(storedConfig),
+    ...resolveQuickViewActivation(storedConfig),
   };
 }
 
@@ -97,9 +97,11 @@ function ConfigPage(props) {
     ...defaultConfig.displayFields,
     ...(props.displayFields || {})
   });
-  const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || 'shallow');
-  const [hoverModifierKey, setHoverModifierKey] = useState(props.hoverModifierKey || 'none');
-  const [activationMode, setActivationMode] = useState(resolveQuickViewActivationMode(props));
+  const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || defaultConfig.hoverDepth);
+  const initialActivation = resolveQuickViewActivation(props);
+  const [openQuickViewOnClick, setOpenQuickViewOnClick] = useState(initialActivation.openQuickViewOnClick);
+  const [hoverActivationMode, setHoverActivationMode] = useState(initialActivation.hoverActivationMode);
+  const [hoverModifierKey, setHoverModifierKey] = useState(initialActivation.hoverModifierKey);
   const [inlineCopyButtons, setInlineCopyButtons] = useState(props.inlineCopyButtons !== false);
   const [customFields, setCustomFields] = useState(() =>
     normalizeCustomFields(props.customFields, initialTooltipLayout).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
@@ -125,9 +127,10 @@ function ConfigPage(props) {
     instanceUrl: props.instanceUrl || '',
     domainsText: (props.domains || []).join(', '),
     themeMode: normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE),
-    activationMode: resolveQuickViewActivationMode(props),
-    hoverDepth: props.hoverDepth || 'shallow',
-    hoverModifierKey: props.hoverModifierKey || 'none',
+    openQuickViewOnClick: initialActivation.openQuickViewOnClick,
+    hoverActivationMode: initialActivation.hoverActivationMode,
+    hoverDepth: props.hoverDepth || defaultConfig.hoverDepth,
+    hoverModifierKey: initialActivation.hoverModifierKey,
     inlineCopyButtons: props.inlineCopyButtons !== false,
     tooltipLayout,
     customFields,
@@ -136,7 +139,8 @@ function ConfigPage(props) {
     instanceUrl,
     domainsText,
     themeMode,
-    activationMode,
+    openQuickViewOnClick,
+    hoverActivationMode,
     hoverDepth,
     hoverModifierKey,
     inlineCopyButtons,
@@ -174,9 +178,9 @@ function ConfigPage(props) {
     const nextInstanceUrl = config.instanceUrl || '';
     const nextDomainsText = (config.domains || []).join(', ');
     const nextThemeMode = normalizeThemeMode(config.themeMode || DEFAULT_THEME_MODE);
-    const nextActivationMode = resolveQuickViewActivationMode(config);
-    const nextHoverDepth = config.hoverDepth || 'shallow';
-    const nextHoverModifierKey = config.hoverModifierKey || 'none';
+    const nextActivation = resolveQuickViewActivation(config);
+    const nextHoverDepth = config.hoverDepth || defaultConfig.hoverDepth;
+    const nextHoverModifierKey = nextActivation.hoverModifierKey;
     const nextInlineCopyButtons = config.inlineCopyButtons !== false;
     const nextCustomFields = normalizeCustomFields(config.customFields, nextTooltipLayout)
       .map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}));
@@ -184,7 +188,8 @@ function ConfigPage(props) {
     setInstanceUrl(nextInstanceUrl);
     setDomainsText(nextDomainsText);
     setThemeMode(nextThemeMode);
-    setActivationMode(nextActivationMode);
+    setOpenQuickViewOnClick(nextActivation.openQuickViewOnClick);
+    setHoverActivationMode(nextActivation.hoverActivationMode);
     setHoverDepth(nextHoverDepth);
     setHoverModifierKey(nextHoverModifierKey);
     setInlineCopyButtons(nextInlineCopyButtons);
@@ -198,7 +203,8 @@ function ConfigPage(props) {
       instanceUrl: nextInstanceUrl,
       domainsText: nextDomainsText,
       themeMode: nextThemeMode,
-      activationMode: nextActivationMode,
+      openQuickViewOnClick: nextActivation.openQuickViewOnClick,
+      hoverActivationMode: nextActivation.hoverActivationMode,
       hoverDepth: nextHoverDepth,
       hoverModifierKey: nextHoverModifierKey,
       inlineCopyButtons: nextInlineCopyButtons,
@@ -364,7 +370,8 @@ function ConfigPage(props) {
       instanceUrl,
       domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
       themeMode,
-      activationMode,
+      openQuickViewOnClick,
+      hoverActivationMode,
       hoverDepth,
       hoverModifierKey,
       inlineCopyButtons,
@@ -407,9 +414,11 @@ function ConfigPage(props) {
         setInstanceUrl(config.instanceUrl || '');
         setDomainsText((config.domains || []).join(', '));
         setThemeMode(normalizeThemeMode(config.themeMode || 'system'));
-        setActivationMode(resolveQuickViewActivationMode(config));
-        setHoverDepth(config.hoverDepth || 'shallow');
-        setHoverModifierKey(config.hoverModifierKey || 'none');
+        const nextActivation = resolveQuickViewActivation(config);
+        setOpenQuickViewOnClick(nextActivation.openQuickViewOnClick);
+        setHoverActivationMode(nextActivation.hoverActivationMode);
+        setHoverDepth(config.hoverDepth || defaultConfig.hoverDepth);
+        setHoverModifierKey(nextActivation.hoverModifierKey);
         setInlineCopyButtons(config.inlineCopyButtons !== false);
         setDisplayFields(config.displayFields || defaultConfig.displayFields);
         const nextTooltipLayout = config.tooltipLayout || defaultConfig.tooltipLayout;
@@ -637,7 +646,8 @@ function ConfigPage(props) {
         instanceUrl: resolvedInstanceUrl,
         domains,
         themeMode: normalizeThemeMode(themeMode),
-        activationMode,
+        openQuickViewOnClick,
+        hoverActivationMode,
         v15upgrade: true,
         hoverDepth,
         hoverModifierKey,
@@ -856,23 +866,36 @@ function ConfigPage(props) {
             <div className='cardHeader'>
               <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
               <h2>QuickView Activation</h2>
-              <p>Choose how QuickView opens and tune the matching behavior in one place.</p>
+              <p>Choose click navigation and hover preview behavior independently.</p>
             </div>
             <div className='cardBody'>
+              <label className='inlineCopySetting activationClickSetting'>
+                <input
+                  type='checkbox'
+                  data-testid='options-open-quickview-on-click'
+                  checked={openQuickViewOnClick}
+                  onChange={event => setOpenQuickViewOnClick(event.target.checked)}
+                />
+                <span className='inlineCopySettingSwitch' aria-hidden='true' />
+                <span className='inlineCopySettingCopy'>
+                  <strong>Open Jira issue links in QuickView instead of navigating</strong>
+                  <span>Applies only to a plain left click on a genuine Jira issue link. Modifier-click and middle-click keep normal browser navigation.</span>
+                </span>
+              </label>
               <div className='hoverRow'>
                 <label className='formField'>
-                  <span className='fieldLabel'>Open popup trigger</span>
-                  <select data-testid='options-activation-mode' value={activationMode} onChange={event => setActivationMode(event.target.value)}>
-                    <option value='hover'>Hover</option>
-                    <option value='hover-modifier'>Hover with modifier</option>
-                    <option value='click'>Click issue link</option>
+                  <span className='fieldLabel'>Hover preview</span>
+                  <select data-testid='options-hover-activation-mode' value={hoverActivationMode} onChange={event => setHoverActivationMode(event.target.value)}>
+                    <option value='off'>Off</option>
+                    <option value='automatic'>Automatic</option>
+                    <option value='modifier'>With modifier</option>
                   </select>
-                  <span className='fieldHelp'>Click mode pins QuickView; modifier-click keeps normal browser navigation.</span>
+                  <span className='fieldHelp'>Controls whether pointing at a Jira key previews it before clicking.</span>
                 </label>
 
                 <label className='formField'>
                   <span className='fieldLabel'>Depth</span>
-                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)} disabled={activationMode === 'click'}>
+                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)} disabled={hoverActivationMode === 'off'}>
                     <option value='exact'>Exact — only the hovered element itself</option>
                     <option value='shallow'>Shallow — hovered element + immediate parent</option>
                     <option value='deep'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
@@ -882,14 +905,13 @@ function ConfigPage(props) {
 
                 <label className='formField'>
                   <span className='fieldLabel'>Modifier key</span>
-                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)} disabled={activationMode !== 'hover-modifier'}>
-                    <option value='none'>None — hover alone triggers the tooltip</option>
+                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)} disabled={hoverActivationMode !== 'modifier'}>
                     <option value='alt'>Alt — press Alt after hovering</option>
                     <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
                     <option value='shift'>Shift — press Shift after hovering</option>
                     <option value='any'>Any — press Alt, Ctrl, or Shift after hovering</option>
                   </select>
-                  <span className='fieldHelp'>Used only with the Hover with modifier trigger.</span>
+                  <span className='fieldHelp'>Used only when Hover preview is set to With modifier.</span>
                 </label>
               </div>
             </div>

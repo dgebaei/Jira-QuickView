@@ -209,7 +209,8 @@ test('opens and pins QuickView instead of navigating on a plain issue-link click
     }
   );
   await configureExtension(optionsPage, baseConfig(servers, target, {
-    activationMode: 'click',
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
     hoverModifierKey: 'any',
   }));
 
@@ -248,12 +249,68 @@ test('opens and pins QuickView instead of navigating on a plain issue-link click
   await page.close();
 });
 
+test('leaves Jira issue-link navigation native when click interception is disabled @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Click navigation is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: false,
+    hoverActivationMode: 'off',
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/`);
+  const targetUrl = `${target.instanceUrl}/browse/${target.primaryIssueKey}`;
+  await page.locator('#issue-link a').evaluate((link, href) => {
+    link.href = href;
+  }, targetUrl);
+  await injectContentScript(extensionApp, page);
+  await page.locator('#issue-link a').click();
+
+  await expect(page).toHaveURL(targetUrl);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.close();
+});
+
+test('leaves modifier-click native even when click interception is enabled @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Modifier-click handling is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/`);
+  await page.locator('#issue-link a').evaluate((link, href) => {
+    link.href = href;
+  }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await injectContentScript(extensionApp, page);
+
+  const wasPreventedBeforePageHandler = await page.locator('#issue-link a').evaluate(link => new Promise(resolve => {
+    link.addEventListener('click', event => {
+      resolve(event.defaultPrevented);
+      event.preventDefault();
+    }, {once: true});
+    link.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    }));
+  }));
+
+  expect(wasPreventedBeforePageHandler).toBe(false);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.close();
+});
+
 test('ignores Jira action links that resolve to the currently displayed issue @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Jira action-link interception is deterministic in mocked mode only.');
   await servers.jira.setScenario('editable');
   await configureExtension(optionsPage, baseConfig(servers, target, {
-    activationMode: 'click',
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
     domains: [target.instanceUrl],
   }));
 

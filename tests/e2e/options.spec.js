@@ -346,61 +346,99 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   expect(stored.inlineCopyButtons).toBe(false);
 });
 
-test('persists one mutually exclusive QuickView activation mode', async ({optionsPage, servers}) => {
+test('persists independent click interception and hover preview settings', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
   await optionsPage.evaluate(async () => chrome.storage.sync.clear());
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
-  await expect(form.activationModeSelect).toHaveValue('click');
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('off');
   await expect(form.hoverDepthSelect).toBeDisabled();
   await expect(form.hoverModifierSelect).toBeDisabled();
+  if (themeScreenshotDir) {
+    await optionsPage.setViewportSize({width: 1280, height: 1000});
+    await optionsPage.locator('.actionBar').evaluate(element => {
+      element.style.display = 'none';
+    });
+    await optionsPage.locator('.settingsCard').filter({hasText: 'QuickView Activation'}).screenshot({path: path.join(themeScreenshotDir, 'options-quickview-activation.png')});
+    await optionsPage.locator('.actionBar').evaluate(element => {
+      element.style.removeProperty('display');
+    });
+  }
 
-  await configureExtension(optionsPage, baseConfig(servers, target));
-  await optionsPage.reload();
-
-  await expect(form.activationModeSelect).toHaveValue('hover');
   await optionsPage.evaluate(async () => {
-    await chrome.storage.sync.remove('activationMode');
-    await chrome.storage.sync.set({openQuickViewOnClick: false, hoverModifierKey: 'shift'});
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({activationMode: 'click'});
   });
   await optionsPage.reload();
-  await expect(form.activationModeSelect).toHaveValue('hover-modifier');
-  await optionsPage.evaluate(async () => {
-    await chrome.storage.sync.set({openQuickViewOnClick: false, hoverModifierKey: 'none'});
-  });
-  await optionsPage.reload();
-  await expect(form.activationModeSelect).toHaveValue('hover');
-  await optionsPage.evaluate(async () => {
-    await chrome.storage.sync.set({openQuickViewOnClick: true});
-  });
-  await optionsPage.reload();
-  await expect(form.activationModeSelect).toHaveValue('click');
-  await form.activationModeSelect.selectOption('hover-modifier');
   await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('off');
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({activationMode: 'hover'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('automatic');
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({activationMode: 'hover-modifier', hoverModifierKey: 'shift'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('modifier');
+  await expect(form.hoverModifierSelect).toHaveValue('shift');
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({openQuickViewOnClick: true, hoverModifierKey: 'shift'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('modifier');
+  await expect(form.hoverModifierSelect).toHaveValue('shift');
+
   await expect(form.hoverModifierSelect).toBeVisible();
   await expect(form.hoverDepthSelect).toBeEnabled();
   await expect(form.hoverModifierSelect).toBeEnabled();
+  await form.hoverModifierSelect.selectOption('ctrl');
+  await form.instanceUrlInput.fill(target.instanceUrl);
+  await form.domainsInput.fill(servers.allowedPage.origin);
   await form.saveButton.click();
   await expect(form.saveNotice).toContainText('Options saved successfully.');
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
-  await expect(form.activationModeSelect).toHaveValue('hover-modifier');
-  await form.activationModeSelect.selectOption('click');
-  await expect(form.activationModeSelect).toHaveValue('click');
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('modifier');
+  await expect(form.hoverModifierSelect).toHaveValue('ctrl');
+
+  await form.hoverActivationModeSelect.selectOption('off');
   await expect(form.hoverDepthSelect).toBeDisabled();
   await expect(form.hoverModifierSelect).toBeDisabled();
+  await optionsPage.getByText('Open Jira issue links in QuickView instead of navigating', {exact: true}).click();
   await expect(form.statusPill).toContainText('Unsaved changes.');
-  if (themeScreenshotDir) {
-    await optionsPage.locator('.settingsCard').filter({hasText: 'QuickView Activation'}).screenshot({path: path.join(themeScreenshotDir, 'options-quickview-activation.png')});
-  }
   await form.saveButton.click();
   await expect(form.saveNotice).toContainText('Options saved successfully.');
 
   await optionsPage.reload();
-  await expect(form.activationModeSelect).toHaveValue('click');
-  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['activationMode']));
-  expect(stored.activationMode).toBe('click');
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('off');
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get([
+    'openQuickViewOnClick', 'hoverActivationMode', 'hoverModifierKey'
+  ]));
+  expect(stored).toMatchObject({
+    openQuickViewOnClick: false,
+    hoverActivationMode: 'off',
+    hoverModifierKey: 'ctrl',
+  });
 });
 
 test('persists reordered content blocks through the options page', async ({optionsPage, servers}) => {
@@ -454,6 +492,8 @@ test('exports the current settings as JSON', async ({optionsPage, servers}) => {
   expect(exported.minimumExtensionVersion).toBe(CURRENT_EXTENSION_VERSION);
   expect(exported.policy.instanceUrl).toBe('locked');
   expect(exported.settings.instanceUrl).toBe('https://example.atlassian.net/');
+  expect(exported.settings.openQuickViewOnClick).toBe(false);
+  expect(exported.settings.hoverActivationMode).toBe('modifier');
   expect(exported.settings.hoverDepth).toBe('deep');
   expect(exported.settings.hoverModifierKey).toBe('shift');
   expect(exported.settings.tooltipLayout.contentBlocks).toContain('children');

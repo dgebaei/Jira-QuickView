@@ -13,7 +13,7 @@ import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
-import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivationMode} from 'options/config.js';
+import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
@@ -52,7 +52,7 @@ const getConfig = async () => {
   const resolvedConfig = {
     ...config,
     ...storedConfig,
-    activationMode: resolveQuickViewActivationMode(storedConfig),
+    ...resolveQuickViewActivation(storedConfig),
   };
   return {
     resolvedConfig,
@@ -296,8 +296,9 @@ async function mainAsyncLocal() {
   const showChildren = layoutContentBlocks.includes('children');
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
-  const hoverModifierKey = config.hoverModifierKey || 'any';
-  const activationMode = resolveQuickViewActivationMode(config);
+  const activation = resolveQuickViewActivation(config);
+  const hoverModifierKey = activation.hoverModifierKey;
+  const {openQuickViewOnClick, hoverActivationMode} = activation;
   const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
   installJiraInlineCopyButtons({
     document,
@@ -3695,7 +3696,7 @@ async function mainAsyncLocal() {
     return popupSession.activate({
       issueKey: key,
       anchor: {x: pointerX, y: pointerY},
-      activation: activation || (activationMode === 'hover-modifier' ? 'modifier' : activationMode),
+      activation: activation || (hoverActivationMode === 'modifier' ? 'modifier' : 'hover'),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
         children: showChildren,
@@ -3722,7 +3723,7 @@ async function mainAsyncLocal() {
   }
 
   function getClickedIssueLink(target) {
-    if (activationMode !== 'click' || !target?.closest) return null;
+    if (!openQuickViewOnClick || !target?.closest) return null;
     const link = target.closest('a[href]');
     if (!link || link.closest('._JX_container') || link.hasAttribute('download')) return null;
     const declaredHref = String(link.getAttribute('href') || '').trim();
@@ -3748,7 +3749,7 @@ async function mainAsyncLocal() {
     return {key, link};
   }
 
-  if (activationMode === 'click') {
+  if (openQuickViewOnClick) {
     document.addEventListener('click', function (e) {
       if (e.defaultPrevented || e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const clickedIssue = getClickedIssueLink(e.target);
@@ -3766,7 +3767,7 @@ async function mainAsyncLocal() {
     }, true);
   }
 
-  if (activationMode === 'hover-modifier') {
+  if (hoverActivationMode === 'modifier') {
     document.addEventListener('keydown', function (e) {
       if (popupShell.view().pinned || isTypingTargetBlockingModifierTrigger(currentPointer.clientX, currentPointer.clientY)) {
         return;
@@ -3820,10 +3821,10 @@ async function mainAsyncLocal() {
       return;
     }
     if (element) {
-      if (activationMode === 'click') {
+      if (hoverActivationMode === 'off') {
         return;
       }
-      if (activationMode === 'hover-modifier') {
+      if (hoverActivationMode === 'modifier') {
         const resolvedKey = resolveModifierKeyAtClientPoint(e.clientX, e.clientY);
         if (!resolvedKey) {
           return;

@@ -1,7 +1,7 @@
 {
   "name": "jira-quickview",
-  "version": "2.8.0-beta.6",
-  "description": "Jira QuickView, quick access to Jira metadata when hovering over ticket numbers!",
+  "version": "2.8.0-beta.7",
+  "description": "Jira QuickView, quick access to Jira issue details from links and ticket numbers!",
   "scripts": {
     "analyze": "webpack --mode=production --bail --profile --json > stats.json || webpack-bundle-analyzer stats.json",
     "build": "node scripts/build-extension-and-reload.js",

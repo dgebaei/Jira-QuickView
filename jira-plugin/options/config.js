@@ -15,17 +15,40 @@ export function buildTooltipLayoutFromDisplayFields(displayFields) {
 }
 
 export const QUICKVIEW_ACTIVATION_MODES = ['hover', 'hover-modifier', 'click'];
+export const QUICKVIEW_HOVER_MODES = ['off', 'automatic', 'modifier'];
+export const QUICKVIEW_MODIFIER_KEYS = ['alt', 'ctrl', 'shift', 'any'];
 
-export function resolveQuickViewActivationMode(settings = {}) {
-  const configuredMode = String(settings.activationMode || '').trim();
-  if (QUICKVIEW_ACTIVATION_MODES.includes(configuredMode)) return configuredMode;
-  if (settings.openQuickViewOnClick === true) return 'click';
-  const hasLegacyActivation = Object.prototype.hasOwnProperty.call(settings, 'openQuickViewOnClick')
-    || Object.prototype.hasOwnProperty.call(settings, 'hoverModifierKey');
-  if (hasLegacyActivation) {
-    return String(settings.hoverModifierKey || '').trim() === 'none' ? 'hover' : 'hover-modifier';
+export function resolveQuickViewActivation(settings = {}) {
+  const hasOwn = key => Object.prototype.hasOwnProperty.call(settings, key);
+  const legacyMode = String(settings.activationMode || '').trim();
+  const configuredHoverMode = String(settings.hoverActivationMode || '').trim();
+  const configuredModifier = String(settings.hoverModifierKey || '').trim();
+
+  let hoverActivationMode = 'off';
+  if (hasOwn('hoverActivationMode') && QUICKVIEW_HOVER_MODES.includes(configuredHoverMode)) {
+    hoverActivationMode = configuredHoverMode;
+  } else if (QUICKVIEW_ACTIVATION_MODES.includes(legacyMode)) {
+    hoverActivationMode = legacyMode === 'hover'
+      ? 'automatic'
+      : legacyMode === 'hover-modifier' ? 'modifier' : 'off';
+  } else if (hasOwn('hoverModifierKey')) {
+    hoverActivationMode = configuredModifier === 'none' ? 'automatic' : 'modifier';
   }
-  return 'click';
+
+  let openQuickViewOnClick = true;
+  if (hasOwn('openQuickViewOnClick')) {
+    openQuickViewOnClick = settings.openQuickViewOnClick === true;
+  } else if (QUICKVIEW_ACTIVATION_MODES.includes(legacyMode)) {
+    openQuickViewOnClick = legacyMode === 'click';
+  } else if (hasOwn('hoverModifierKey')) {
+    openQuickViewOnClick = false;
+  }
+
+  return {
+    openQuickViewOnClick,
+    hoverActivationMode,
+    hoverModifierKey: QUICKVIEW_MODIFIER_KEYS.includes(configuredModifier) ? configuredModifier : 'any',
+  };
 }
 
 export default {
@@ -34,11 +57,11 @@ export default {
   themeMode: 'system',
   v15upgrade: false,
   customFields: [],
-  activationMode: 'click',
+  openQuickViewOnClick: true,
+  hoverActivationMode: 'off',
   hoverDepth: 'exact',
   hoverModifierKey: 'any',
   inlineCopyButtons: true,
-  openQuickViewOnClick: false,
   displayFields: {
     issueType: true,
     status: true,
