@@ -34,6 +34,9 @@ test('copies linked and plain Jira IDs on allowed pages without eager issue read
   await injectContentScript(extensionApp, page);
   const buttons = page.getByTestId(`jira-inline-copy-${target.primaryIssueKey}`);
   await expect(buttons).toHaveCount(2);
+  await expect(buttons.first()).toHaveCSS('width', '16px');
+  await expect(buttons.first()).toHaveCSS('height', '16px');
+  await expect(buttons.first()).toHaveCSS('padding', '0px');
   expect(issueReads).toBe(0);
   await expect(page.locator('#editor button, #action button, a[href*="/browse/"] button')).toHaveCount(0);
   await buttons.first().click();
