@@ -24,10 +24,23 @@
     outline: none;
   }
 
+  &:disabled {
+    cursor: progress;
+    opacity: 0.5;
+  }
+
   svg {
     height: 16px;
     width: 16px;
   }
+}
+
+._JX_global_copy_reference {
+  white-space: nowrap;
+}
+
+._JX_inline_copy_button_global {
+  color: inherit;
 }
 
 ._JX_inline_copy_button_result {

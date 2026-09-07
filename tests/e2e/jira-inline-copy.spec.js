@@ -5,6 +5,56 @@ const {optionsPageModel} = require('./helpers/options-page');
 
 const screenshotDir = String(process.env.JHL_CAPTURE_INLINE_COPY_SCREENSHOTS || '').trim();
 
+test('copies linked and plain Jira IDs on allowed pages without eager issue reads @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    hoverActivationMode: 'off', openQuickViewOnClick: true,
+  }, target));
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.allowedPage.origin});
+  let issueReads = 0;
+  page.context().on('request', request => {
+    if (request.url().includes(`/issue/${target.primaryIssueKey}?`)) issueReads += 1;
+  });
+  await page.goto(servers.allowedPage.origin);
+  await page.locator('#issue-link a').evaluate((link, href) => { link.href = href; }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await page.locator('main').evaluate((main, key) => {
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    editor.id = 'editor';
+    editor.textContent = key;
+    const action = document.createElement('button');
+    action.id = 'action';
+    action.textContent = key;
+    main.append(editor, action);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  const buttons = page.getByTestId(`jira-inline-copy-${target.primaryIssueKey}`);
+  await expect(buttons).toHaveCount(2);
+  expect(issueReads).toBe(0);
+  await expect(page.locator('#editor button, #action button')).toHaveCount(0);
+  await buttons.first().click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  const html = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return (await item.getType('text/html')).text();
+  });
+  expect(html).toContain(`[${target.primaryIssueKey}] Pressing END removes non-command text`);
+  expect(issueReads).toBe(1);
+  await buttons.last().click();
+  await expect(buttons.last()).toBeEnabled();
+  expect(issueReads).toBe(1);
+  await page.locator('main').evaluate((main, key) => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = `New email mentions ${key}`;
+    main.append(paragraph);
+  }, target.primaryIssueKey);
+  await expect(buttons).toHaveCount(3);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await captureInlineCopyScreenshot(page.locator('main'), 'global-inline-copy.png');
+  await page.close();
+});
+
 async function captureInlineCopyScreenshot(locator, fileName) {
   if (!screenshotDir) {
     return;

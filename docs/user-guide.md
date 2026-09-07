@@ -41,7 +41,7 @@ The screenshots in this guide are examples. Your popup can look different depend
       <li><a href="#41-basic-connection">4.1 Basic: Connection</a></li>
       <li><a href="#42-basic-appearance">4.2 Basic: Appearance</a></li>
       <li><a href="#43-advanced-show-advanced-settings">4.3 Advanced: Show Advanced Settings</a></li>
-      <li><a href="#44-advanced-quickview-activation">4.4 Advanced: QuickView Activation</a></li>
+      <li><a href="#44-advanced-hover-preview">4.4 Advanced: Hover Preview</a></li>
       <li><a href="#45-advanced-tooltip-layout-overview">4.5 Advanced: Tooltip Layout Overview</a></li>
       <li>
         <a href="#46-advanced-organizing-row-fields">4.6 Advanced: Organizing Row Fields</a>
@@ -302,7 +302,9 @@ Available modes:
 
 Most users should keep `System`. Use `Light` or `Dark` only if you want Jira QuickView to stay fixed regardless of your OS theme.
 
-`Show copy buttons in Jira` is enabled by default. It adds a copy action beside issue keys on Jira issue details, search results, boards, and backlogs. Turn it off if you want Jira QuickView to leave the Jira interface unchanged. This setting supports both Jira Cloud and Jira Data Center.
+`Show copy buttons beside Jira issues` is enabled by default. It adds copy actions in Jira and beside Jira links and plain issue IDs on allowed pages. Issue titles are fetched only when needed for copying. Editable text and action controls are excluded.
+
+`Open Jira issue links in QuickView instead of navigating` is also enabled by default. A plain left click on a genuine Jira issue link opens and pins QuickView instead of leaving the page. Turn it off to preserve normal link navigation. Middle-click and modifier-click always keep native browser behavior.
 
 ### 4.3 Advanced: Show Advanced Settings
 
@@ -312,18 +314,14 @@ The Advanced section is hidden by default so the setup page stays simple. Open i
 
 Advanced settings are still safe to use, but they affect the day-to-day feel of the extension. If you are setting this up for a team, configure one browser first, test the popup on real work pages, then export the configuration for others.
 
-### 4.4 Advanced: QuickView Activation
+### 4.4 Advanced: Hover Preview
 
 ![Hover behavior settings](screenshots/user-guide/options-hover-behavior.png)
 
-QuickView Activation controls click navigation and hover preview independently.
-
-`Open Jira issue links in QuickView instead of navigating` is enabled by default. A plain left click on a genuine Jira issue link opens and pins QuickView instead of leaving the page. Turn it off to preserve normal link navigation. Middle-click and modifier-click always keep native browser behavior.
-
 `Hover preview` has three modes:
 
-- `Off` disables hover preview. This is the default.
-- `Automatic` previews an issue when you hover a recognized Jira key.
+- `Off` disables hover preview.
+- `Automatic` previews an issue when you hover a recognized Jira key. This is the default.
 - `With modifier` previews only while the selected modifier key is pressed.
 
 #### Depth
@@ -553,7 +551,7 @@ The extension only looks for Jira issue keys on allowed pages. It does not scan 
 
 #### 5.1.1 Copy Issue Links Inside Jira
 
-When `Show copy buttons in Jira` is enabled, Jira QuickView adds a copy action beside structured issue keys on your configured Jira instance.
+When `Show copy buttons beside Jira issues` is enabled, Jira QuickView adds copy actions inside Jira and beside recognized Jira links and plain issue IDs on allowed pages.
 
 | Issue details | Search results | Board cards |
 | --- | --- | --- |
@@ -563,7 +561,7 @@ The action is always available beside the key on issue details. In search result
 
 Copying uses the same behavior as the popup header: applications that accept rich clipboard content receive a linked `[KEY] Summary` label, while the plain-text clipboard contains the canonical Jira issue URL. Jira QuickView follows dynamically loaded Jira content and avoids adding duplicate actions during in-app navigation.
 
-The copy action appears only on the Jira instance configured in Options. If it is missing, confirm that `Show copy buttons in Jira` is enabled, save Options, and reload the Jira tab.
+If the copy action is missing, confirm that `Show copy buttons beside Jira issues` is enabled and the page is allowed (or belongs to your configured Jira instance), save Options, and reload the tab.
 
 ### 5.2 Header: Reporter, Assignee, Summary, and Actions
 

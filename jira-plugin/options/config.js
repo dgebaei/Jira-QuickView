@@ -24,7 +24,7 @@ export function resolveQuickViewActivation(settings = {}) {
   const configuredHoverMode = String(settings.hoverActivationMode || '').trim();
   const configuredModifier = String(settings.hoverModifierKey || '').trim();
 
-  let hoverActivationMode = 'off';
+  let hoverActivationMode = 'automatic';
   if (hasOwn('hoverActivationMode') && QUICKVIEW_HOVER_MODES.includes(configuredHoverMode)) {
     hoverActivationMode = configuredHoverMode;
   } else if (QUICKVIEW_ACTIVATION_MODES.includes(legacyMode)) {
@@ -58,7 +58,7 @@ export default {
   v15upgrade: false,
   customFields: [],
   openQuickViewOnClick: true,
-  hoverActivationMode: 'off',
+  hoverActivationMode: 'automatic',
   hoverDepth: 'exact',
   hoverModifierKey: 'any',
   inlineCopyButtons: true,

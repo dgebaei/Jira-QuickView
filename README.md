@@ -43,7 +43,7 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 5. Add the pages where Jira QuickView should run, such as `github.com`, `mail.google.com`, or `outlook.office.com`.
 6. Save, open an allowed page, and click a Jira issue link such as `ABC-123`.
 
-By default, a plain left click on a Jira issue link opens and pins QuickView instead of navigating. Middle-click and modifier-click retain normal browser behavior. Optional Automatic and With modifier hover preview modes are available in Advanced settings.
+By default, a plain left click on a Jira issue link opens and pins QuickView instead of navigating, while hovering previews Jira IDs that are not links. Middle-click and modifier-click retain normal browser behavior. Hover preview can be disabled or require a modifier in Advanced settings.
 
 For full setup details, advanced allowed-page patterns, desktop-app/PWA setup notes, custom fields, troubleshooting, and day-to-day workflows, read the [User guide](docs/user-guide.md).
 

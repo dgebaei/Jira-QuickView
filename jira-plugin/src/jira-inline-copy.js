@@ -227,7 +227,15 @@ function createCopyButton(documentRef, reference, copy, variant) {
   button.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
-    Promise.resolve(copy(reference)).catch(() => {});
+    if (button.disabled) return;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    Promise.resolve().then(() => copy(reference)).catch(() => {
+      button.title = `Could not copy ${reference.key}. Click to retry.`;
+    }).finally(() => {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    });
   });
   return button;
 }
@@ -253,6 +261,88 @@ function insertResultCopyButton(documentRef, issueElement, reference, copy) {
   issueElement.insertAdjacentElement('afterend', createCopyButton(documentRef, reference, copy, 'result'));
 }
 
+function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
+  const excluded = 'a, button, input, textarea, select, option, script, style, noscript, svg, code, pre, [contenteditable], [role="button"], [role="menu"], [role="menuitem"], [role="textbox"], ._JX_container, ._JX_global_copy_reference, ._JX_inline_copy_button';
+  const references = new Map();
+  let frame = 0;
+  const makeButton = key => createCopyButton(documentRef, {
+    key, summary: '', url: buildIssueUrl(instanceUrl, key),
+  }, copy, 'global');
+  const scan = () => {
+    frame = 0;
+    observer.disconnect();
+    for (const wrapper of documentRef.querySelectorAll('._JX_global_copy_reference')) {
+      const key = wrapper.firstChild?.textContent || '';
+      const button = wrapper.querySelector('._JX_inline_copy_button');
+      if (button?.dataset.jxInlineCopyKey !== key) {
+        wrapper.replaceWith(documentRef.createTextNode(key));
+      }
+    }
+    for (const [link, entry] of references) {
+      if (!link.isConnected || link.href !== entry.href) {
+        entry.button.remove();
+        references.delete(link);
+      }
+    }
+    const base = new URL(instanceUrl);
+    for (const link of documentRef.querySelectorAll('a[href]')) {
+      if (references.has(link) || link.parentElement?.closest(excluded)
+          || link.matches('[role="button"], [role="menuitem"], [download], [contenteditable]')) continue;
+      const href = link.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) continue;
+      let url;
+      try { url = new URL(href, documentRef.location.href); } catch (error) { continue; }
+      if (url.origin !== base.origin) continue;
+      const key = url.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)\/?$/i)?.[1]?.toUpperCase();
+      if (!key) continue;
+      const button = makeButton(key);
+      link.after(button);
+      references.set(link, {href: link.href, button});
+    }
+    const walker = documentRef.createTreeWalker(documentRef.body, 4);
+    const nodes = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.parentElement?.closest(excluded) && ISSUE_KEY_PATTERN.test(node.nodeValue || '')) nodes.push(node);
+    }
+    for (const node of nodes) {
+      const fragment = documentRef.createDocumentFragment();
+      const text = node.nodeValue;
+      let offset = 0;
+      for (const match of text.matchAll(/\b[A-Z][A-Z0-9]{1,14}-\d+\b/g)) {
+        fragment.append(text.slice(offset, match.index));
+        const wrapper = documentRef.createElement('span');
+        wrapper.className = '_JX_global_copy_reference';
+        const key = documentRef.createElement('span');
+        key.textContent = match[0];
+        wrapper.append(key, makeButton(match[0]));
+        fragment.append(wrapper);
+        offset = match.index + match[0].length;
+      }
+      fragment.append(text.slice(offset));
+      node.replaceWith(fragment);
+    }
+    observer.observe(documentRef.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href']});
+  };
+  const observer = new documentRef.defaultView.MutationObserver(records => {
+    const relevant = records.some(record => {
+      const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      return !element?.closest('._JX_container, ._JX_snack, ._JX_inline_copy_button');
+    });
+    if (!relevant) return;
+    if (!frame) frame = documentRef.defaultView.requestAnimationFrame(scan);
+  });
+  scan();
+  return () => {
+    observer.disconnect();
+    if (frame) documentRef.defaultView.cancelAnimationFrame(frame);
+    for (const {button} of references.values()) button.remove();
+    for (const wrapper of documentRef.querySelectorAll('._JX_global_copy_reference')) {
+      wrapper.replaceWith(documentRef.createTextNode(wrapper.firstChild.textContent));
+    }
+  };
+}
+
 export function installJiraInlineCopyButtons({document: documentRef, instanceUrl, enabled = true, copy}) {
   if (!enabled || !documentRef?.body || typeof copy !== 'function') {
     return () => {};
@@ -265,7 +355,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
     return () => {};
   }
   if (documentRef.location.origin !== instanceOrigin) {
-    return () => {};
+    return installAllowedPageCopyButtons(documentRef, instanceUrl, copy);
   }
 
   let scanFrame = 0;

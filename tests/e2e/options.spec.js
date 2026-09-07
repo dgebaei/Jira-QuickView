@@ -333,8 +333,16 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
 
+  const appearanceCard = optionsPage.locator('.settingsCard').filter({hasText: 'Appearance'});
+  await expect(appearanceCard.getByTestId('options-inline-copy-buttons')).toBeVisible();
+  await expect(appearanceCard.getByTestId('options-open-quickview-on-click')).toBeVisible();
+  for (const testId of ['options-inline-copy-description', 'options-click-navigation-description']) {
+    const renderedHeight = await appearanceCard.getByTestId(testId).evaluate(element => element.getBoundingClientRect().height);
+    expect(renderedHeight).toBeLessThan(20);
+  }
+
   await expect(form.inlineCopyButtonsCheckbox).toBeChecked();
-  await optionsPage.getByText('Show copy buttons in Jira', {exact: true}).click();
+  await optionsPage.getByText('Show copy buttons beside Jira issues', {exact: true}).click();
   await expect(form.inlineCopyButtonsCheckbox).not.toBeChecked();
   await expect(form.statusPill).toContainText('Unsaved changes.');
   await form.saveButton.click();
@@ -353,15 +361,15 @@ test('persists independent click interception and hover preview settings', async
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
   await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
-  await expect(form.hoverActivationModeSelect).toHaveValue('off');
-  await expect(form.hoverDepthSelect).toBeDisabled();
+  await expect(form.hoverActivationModeSelect).toHaveValue('automatic');
+  await expect(form.hoverDepthSelect).toBeEnabled();
   await expect(form.hoverModifierSelect).toBeDisabled();
   if (themeScreenshotDir) {
-    await optionsPage.setViewportSize({width: 1280, height: 1000});
+    await optionsPage.setViewportSize({width: 1600, height: 1200});
     await optionsPage.locator('.actionBar').evaluate(element => {
       element.style.display = 'none';
     });
-    await optionsPage.locator('.settingsCard').filter({hasText: 'QuickView Activation'}).screenshot({path: path.join(themeScreenshotDir, 'options-quickview-activation.png')});
+    await optionsPage.screenshot({path: path.join(themeScreenshotDir, 'options-quickview-activation.png')});
     await optionsPage.locator('.actionBar').evaluate(element => {
       element.style.removeProperty('display');
     });

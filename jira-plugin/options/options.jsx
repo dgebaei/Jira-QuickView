@@ -825,8 +825,21 @@ function ConfigPage(props) {
               />
               <span className='inlineCopySettingSwitch' aria-hidden='true' />
               <span className='inlineCopySettingCopy'>
-                <strong>Show copy buttons in Jira</strong>
-                <span>Add a copy action beside issue keys on Jira details, search results, boards, and backlogs.</span>
+                <strong>Show copy buttons beside Jira issues</strong>
+                <span data-testid='options-inline-copy-description'>Available in Jira and on allowed pages.</span>
+              </span>
+            </label>
+            <label className='inlineCopySetting'>
+              <input
+                type='checkbox'
+                data-testid='options-open-quickview-on-click'
+                checked={openQuickViewOnClick}
+                onChange={event => setOpenQuickViewOnClick(event.target.checked)}
+              />
+              <span className='inlineCopySettingSwitch' aria-hidden='true' />
+              <span className='inlineCopySettingCopy'>
+                <strong>Open Jira issue links in QuickView instead of navigating</strong>
+                <span data-testid='options-click-navigation-description'>Open plain-clicked Jira issue links without leaving the page.</span>
               </span>
             </label>
           </div>
@@ -851,7 +864,7 @@ function ConfigPage(props) {
           </svg>
           <span className='advToggleText'>
             <span className='advToggleTitle'>Show advanced settings</span>
-            <span className='advToggleDescription'>QuickView activation, field layout editor, custom fields, and settings sync.</span>
+            <span className='advToggleDescription'>Hover preview, field layout editor, custom fields, and settings sync.</span>
           </span>
           <span className='advToggleBtn' aria-hidden='true'>
             {showAdvanced ? 'Hide' : 'Show'}
@@ -861,27 +874,14 @@ function ConfigPage(props) {
         {showAdvanced && (
           <div className='advancedPanelBody' id='advanced-settings-panel'>
             <div className='settingsGrid advancedSettingsGrid'>
-          {/* ── QuickView Activation ─────────────────────── */}
+          {/* ── Hover Preview ────────────────────────────── */}
           <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
               <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
-              <h2>QuickView Activation</h2>
-              <p>Choose click navigation and hover preview behavior independently.</p>
+              <h2>Hover Preview</h2>
+              <p>Choose when pointing at Jira IDs opens a preview.</p>
             </div>
             <div className='cardBody'>
-              <label className='inlineCopySetting activationClickSetting'>
-                <input
-                  type='checkbox'
-                  data-testid='options-open-quickview-on-click'
-                  checked={openQuickViewOnClick}
-                  onChange={event => setOpenQuickViewOnClick(event.target.checked)}
-                />
-                <span className='inlineCopySettingSwitch' aria-hidden='true' />
-                <span className='inlineCopySettingCopy'>
-                  <strong>Open Jira issue links in QuickView instead of navigating</strong>
-                  <span>Applies only to a plain left click on a genuine Jira issue link. Modifier-click and middle-click keep normal browser navigation.</span>
-                </span>
-              </label>
               <div className='hoverRow'>
                 <label className='formField'>
                   <span className='fieldLabel'>Hover preview</span>

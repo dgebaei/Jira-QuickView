@@ -300,13 +300,6 @@ async function mainAsyncLocal() {
   const hoverModifierKey = activation.hoverModifierKey;
   const {openQuickViewOnClick, hoverActivationMode} = activation;
   const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
-  installJiraInlineCopyButtons({
-    document,
-    instanceUrl: INSTANCE_URL,
-    enabled: config.inlineCopyButtons !== false,
-    copy: reference => copyIssueReferenceWithFeedback(reference)
-      .catch(() => snackBar('There was an error!')),
-  });
   let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
   let getJiraKeys = buildFallbackJiraKeyMatcher();
@@ -380,6 +373,27 @@ async function mainAsyncLocal() {
     customFields,
     instanceUrl: INSTANCE_URL,
     jira,
+  });
+  installJiraInlineCopyButtons({
+    document,
+    instanceUrl: INSTANCE_URL,
+    enabled: config.inlineCopyButtons !== false,
+    copy: async reference => {
+      try {
+        let summary = reference.summary;
+        const displayedIssue = currentPopupState()?.issueData;
+        if (!summary && displayedIssue?.key === reference.key) summary = displayedIssue.fields?.summary;
+        if (!summary) {
+          const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
+          summary = outcome.snapshot?.core?.summary;
+          if (!summary) throw new Error('Could not load issue title');
+        }
+        await copyIssueReferenceWithFeedback({...reference, summary});
+      } catch (error) {
+        snackBar('Could not copy issue. Please try again.');
+        throw error;
+      }
+    },
   });
   const jiraFieldEditing = createJiraFieldEditing({
     instanceUrl: INSTANCE_URL,
