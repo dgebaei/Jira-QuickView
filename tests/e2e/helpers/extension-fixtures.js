@@ -132,7 +132,17 @@ async function configureExtension(optionsPage, config) {
     instanceUrl: normalizedUrl,
     domains: config.domains,
     hoverDepth: config.hoverDepth || 'exact',
-    hoverModifierKey: config.hoverModifierKey || 'none',
+    hoverModifierKey: ['alt', 'ctrl', 'shift', 'any'].includes(config.hoverModifierKey)
+      ? config.hoverModifierKey
+      : 'any',
+    openQuickViewOnClick: typeof config.openQuickViewOnClick === 'boolean'
+      ? config.openQuickViewOnClick
+      : config.activationMode === 'click',
+    hoverActivationMode: config.hoverActivationMode
+      || (config.activationMode === 'hover' ? 'automatic'
+        : config.activationMode === 'hover-modifier' ? 'modifier'
+          : config.activationMode === 'click' ? 'off'
+            : config.hoverModifierKey === 'none' ? 'automatic' : 'modifier'),
     inlineCopyButtons: config.inlineCopyButtons !== false,
     displayFields: config.displayFields || {},
     customFields: config.customFields || [],

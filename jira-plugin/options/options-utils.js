@@ -161,11 +161,13 @@ export function updateCustomFieldRow(customFields, layoutKey, zone) {
   });
 }
 
-export function buildOptionsSnapshot({instanceUrl, domainsText, themeMode, hoverDepth, hoverModifierKey, inlineCopyButtons, tooltipLayout, customFields}) {
+export function buildOptionsSnapshot({instanceUrl, domainsText, themeMode, openQuickViewOnClick, hoverActivationMode, hoverDepth, hoverModifierKey, inlineCopyButtons, tooltipLayout, customFields}) {
   return JSON.stringify({
     instanceUrl,
     domainsText,
     themeMode,
+    openQuickViewOnClick,
+    hoverActivationMode,
     hoverDepth,
     hoverModifierKey,
     inlineCopyButtons,

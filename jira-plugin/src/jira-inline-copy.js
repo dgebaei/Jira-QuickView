@@ -9,6 +9,13 @@ const SUMMARY_SELECTORS = [
   '#summary-val',
   '.issue-header-content h1',
 ];
+const SCOPED_SUMMARY_SELECTORS = [
+  ...SUMMARY_SELECTORS,
+  'h1[data-testid*="summary"]',
+  '[role="heading"][aria-level="1"][data-testid*="summary"]',
+  '.issue-summary',
+  '.ghx-summary',
+];
 const DC_CHILD_PANEL_CONFIGS = [
   {selector: '#greenhopper-epics-issue-web-panel', field: '"Epic Link"'},
   {selector: '#subtasks-module, #subtasksmodule, #subtaskmodule', field: 'parent'},
@@ -21,7 +28,27 @@ const RESULT_KEY_SELECTORS = [
   '.card-key',
 ];
 const RESULT_KEY_SELECTOR = RESULT_KEY_SELECTORS.join(', ');
-const RESULT_CONTAINER_SELECTOR = '[data-issue-key], [data-issuekey], tr, [role="row"], article, li';
+const RESULT_CONTAINER_SELECTOR = [
+  '[data-issue-key]',
+  '[data-issuekey]',
+  '[data-testid*="issue-details-panel"]',
+  '[data-testid*="issue-detail-panel"]',
+  '[role="dialog"]',
+  '.ghx-detail-view',
+  '.ghx-detail-issue',
+  'tr',
+  '[role="row"]',
+  'article',
+  'li',
+].join(', ');
+const DROPDOWN_SELECTOR = [
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '.aui-dropdown',
+  '.aui-dropdown2',
+].join(', ');
 
 function getIssueKey(element) {
   const dataKey = String(
@@ -40,9 +67,9 @@ function getIssueKey(element) {
   return String(element?.textContent || '').match(ISSUE_KEY_PATTERN)?.[0] || '';
 }
 
-function getIssueSummary(documentRef) {
-  for (const selector of SUMMARY_SELECTORS) {
-    const summary = String(documentRef.querySelector(selector)?.textContent || '').trim();
+function getSummaryFromScope(scope, selectors = SCOPED_SUMMARY_SELECTORS) {
+  for (const selector of selectors) {
+    const summary = String(scope?.querySelector?.(selector)?.textContent || '').trim();
     if (summary) {
       return summary;
     }
@@ -50,8 +77,24 @@ function getIssueSummary(documentRef) {
   return '';
 }
 
+function getIssueSummary(documentRef, issueElement) {
+  const scopedDetails = issueElement?.closest?.([
+    '[role="dialog"]',
+    '[data-testid*="issue-details"]',
+    '[data-testid*="issue-detail"]',
+    '[data-issue-key]',
+    '[data-issuekey]',
+  ].join(', '));
+  return getSummaryFromScope(scopedDetails) || getSummaryFromScope(documentRef, SUMMARY_SELECTORS);
+}
+
 function getResultContainer(issueElement) {
-  return issueElement.closest(RESULT_CONTAINER_SELECTOR);
+  const container = issueElement?.closest?.(RESULT_CONTAINER_SELECTOR);
+  if (container !== issueElement || !issueElement?.matches?.('a, span, strong')) {
+    return container;
+  }
+  return issueElement.parentElement?.closest(RESULT_CONTAINER_SELECTOR)
+    || issueElement.parentElement;
 }
 
 function getResultSummary(issueElement, key) {
@@ -59,15 +102,44 @@ function getResultSummary(issueElement, key) {
   if (!container) {
     return '';
   }
-  const explicitSummary = container.querySelector('[data-testid*="summary"], .issue-summary, .summary, .ghx-summary');
+  const preciseSummary = getSummaryFromScope(container);
+  if (preciseSummary) {
+    return preciseSummary;
+  }
+  const explicitSummary = Array.from(container.querySelectorAll('[data-testid*="summary"], .summary'))
+    .find(candidate => !/development|branch|commit|pull.request/i.test(String(candidate.getAttribute('data-testid') || '')));
   if (explicitSummary) {
     return String(explicitSummary.textContent || '').trim();
+  }
+  const directText = String(issueElement.textContent || '').replace(/\s+/g, ' ').trim();
+  if (directText && directText.toUpperCase() !== key) {
+    return directText;
   }
   const relatedLink = Array.from(container.querySelectorAll(RESULT_LINK_SELECTOR)).find(link => {
     const text = String(link.textContent || '').trim();
     return link !== issueElement && text && text !== key;
   });
   return String(relatedLink?.textContent || '').trim();
+}
+
+function findResultCopyTarget(container) {
+  const row = container?.matches?.('tr, [role="row"]')
+    ? container
+    : container?.closest?.('tr, [role="row"]');
+  if (!row) return null;
+  return row.querySelector('[data-testid*="summary"], .summary, td:nth-child(3)') || null;
+}
+
+function isIssueHeaderLink(issueElement) {
+  return HEADER_LINK_SELECTORS.some(selector => issueElement?.matches?.(selector));
+}
+
+function isOwnCopyButtonAddition(record) {
+  if (record.type !== 'childList' || record.removedNodes.length > 0) return false;
+  const changedNodes = [...record.addedNodes];
+  return changedNodes.length > 0 && changedNodes.every(node => (
+    node.nodeType === 1 && node.matches('._JX_inline_copy_button')
+  ));
 }
 
 function findResultKeyElement(container, key) {
@@ -196,37 +268,190 @@ function createCopyButton(documentRef, reference, copy, variant) {
   button.type = 'button';
   button.className = `_JX_inline_copy_button _JX_inline_copy_button_${variant}`;
   button.dataset.jxInlineCopyKey = reference.key;
+  button.dataset.jxInlineCopySummary = reference.summary;
   button.dataset.testid = `jira-inline-copy-${reference.key}`;
-  button.title = `Copy ${reference.key} issue link`;
-  button.setAttribute('aria-label', button.title);
+  // Global copy buttons sit in arbitrary host-page themes. Keep their accessible
+  // name without invoking the browser's unstyleable light tooltip on hover.
+  const copyLabel = variant === 'comment'
+    ? `Copy ${reference.key} comment link`
+    : `Copy ${reference.key} issue link`;
+  button.title = variant === 'global' ? '' : copyLabel;
+  button.setAttribute('aria-label', copyLabel);
   button.appendChild(buildCopyIcon(documentRef));
   button.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
-    Promise.resolve(copy(reference)).catch(() => {});
+    if (button.disabled) return;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    Promise.resolve().then(() => copy(reference)).catch(() => {
+      button.title = `Could not copy ${reference.key}. Click to retry.`;
+    }).finally(() => {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    });
   });
   return button;
 }
 
-function removeStaleCopyButtons(issueElement, key) {
+function removeStaleCopyButtons(issueElement, key, summary) {
+  if (!issueElement.matches('a, span, strong')) {
+    for (const button of issueElement.querySelectorAll('._JX_inline_copy_button')) {
+      if (button.dataset.jxInlineCopyKey !== key || button.dataset.jxInlineCopySummary !== summary) {
+        button.remove();
+      }
+    }
+    return;
+  }
   let sibling = issueElement.nextElementSibling;
   while (sibling?.classList.contains('_JX_inline_copy_button')) {
     const nextSibling = sibling.nextElementSibling;
-    if (sibling.dataset.jxInlineCopyKey !== key) {
+    if (sibling.dataset.jxInlineCopyKey !== key || sibling.dataset.jxInlineCopySummary !== summary) {
       sibling.remove();
     }
     sibling = nextSibling;
   }
 }
 
-function insertResultCopyButton(documentRef, issueElement, reference, copy) {
+function reconcileResultCopyButton(documentRef, issueElement, reference, copy) {
   const container = getResultContainer(issueElement);
   if (!container) {
-    return;
+    return null;
+  }
+  const resultButtons = Array.from(container.querySelectorAll('._JX_inline_copy_button_result'));
+  const matchingButton = resultButtons.find(button => (
+    button.dataset.jxInlineCopyKey === reference.key
+    && button.dataset.jxInlineCopySummary === reference.summary
+  ));
+  for (const button of resultButtons) {
+    if (button !== matchingButton) {
+      button.remove();
+    }
+  }
+  if (issueElement.matches('a, span, strong')) {
+    const pairOwner = issueElement.parentElement;
+    pairOwner?.classList.toggle(
+      '_JX_inline_copy_dropdown_pair',
+      !!pairOwner.closest(DROPDOWN_SELECTOR)
+    );
+  }
+  if (matchingButton) {
+    return matchingButton;
   }
   container.classList.add('_JX_inline_copy_scope');
-  issueElement.classList.add('_JX_inline_copy_anchor');
-  issueElement.insertAdjacentElement('afterend', createCopyButton(documentRef, reference, copy, 'result'));
+  const button = createCopyButton(documentRef, reference, copy, 'result');
+  if (issueElement.matches('a, span, strong')) {
+    issueElement.classList.add('_JX_inline_copy_anchor');
+    issueElement.insertAdjacentElement('afterend', button);
+  } else {
+    issueElement.append(button);
+  }
+  return button;
+}
+
+function installNativeCommentCopyButtons(documentRef, copy) {
+  const issueElement = documentRef.querySelector('#key-val, [data-testid*="issue.views.issue-base.foundation.breadcrumbs.breadcrumb-current-issue-container"] a[href]');
+  const key = getIssueKey(issueElement);
+  const summary = getIssueSummary(documentRef, issueElement);
+  if (!key || !summary) return;
+
+  for (const commentLink of documentRef.querySelectorAll('a[href*="focusedCommentId"], a[href*="#comment-"]')) {
+    if (commentLink.closest('._JX_container') || commentLink.nextElementSibling?.matches('._JX_inline_copy_button_comment')) {
+      continue;
+    }
+    const href = commentLink.getAttribute('href') || '';
+    if (!href || href.startsWith('#')) continue;
+    commentLink.insertAdjacentElement('afterend', createCopyButton(documentRef, {
+      key,
+      summary,
+      url: new URL(href, documentRef.location.href).toString(),
+    }, copy, 'comment'));
+  }
+}
+
+function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
+  const excluded = 'a, button, input, textarea, select, option, script, style, noscript, svg, code, pre, [contenteditable], [role="button"], [role="menu"], [role="menuitem"], [role="textbox"], ._JX_container, ._JX_global_copy_reference, ._JX_inline_copy_button';
+  const references = new Map();
+  let frame = 0;
+  const makeButton = key => createCopyButton(documentRef, {
+    key, summary: '', url: buildIssueUrl(instanceUrl, key),
+  }, copy, 'global');
+  const scan = () => {
+    frame = 0;
+    observer.disconnect();
+    for (const wrapper of documentRef.querySelectorAll('._JX_global_copy_reference')) {
+      const key = wrapper.firstChild?.textContent || '';
+      const button = wrapper.querySelector('._JX_inline_copy_button');
+      if (button?.dataset.jxInlineCopyKey !== key) {
+        wrapper.replaceWith(documentRef.createTextNode(key));
+      }
+    }
+    for (const [link, entry] of references) {
+      if (!link.isConnected || link.href !== entry.href) {
+        entry.button.remove();
+        references.delete(link);
+      }
+    }
+    const base = new URL(instanceUrl);
+    for (const link of documentRef.querySelectorAll('a[href]')) {
+      if (references.has(link) || link.parentElement?.closest(excluded)
+          || link.matches('[role="button"], [role="menuitem"], [download], [contenteditable]')) continue;
+      const href = link.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) continue;
+      let url;
+      try { url = new URL(href, documentRef.location.href); } catch (error) { continue; }
+      if (url.origin !== base.origin) continue;
+      const key = url.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)\/?$/i)?.[1]?.toUpperCase();
+      // Only decorate a link when the visible link itself identifies the issue.
+      // Jira action links such as “View issue” and “Add comment” can point at
+      // an issue URL but are not issue references users should copy.
+      if (!key || !new RegExp(`\\b${key}\\b`, 'i').test(link.textContent || '')) continue;
+      const button = makeButton(key);
+      link.after(button);
+      references.set(link, {href: link.href, button});
+    }
+    const walker = documentRef.createTreeWalker(documentRef.body, 4);
+    const nodes = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.parentElement?.closest(excluded) && ISSUE_KEY_PATTERN.test(node.nodeValue || '')) nodes.push(node);
+    }
+    for (const node of nodes) {
+      const fragment = documentRef.createDocumentFragment();
+      const text = node.nodeValue;
+      let offset = 0;
+      for (const match of text.matchAll(/\b[A-Z][A-Z0-9]{1,14}-\d+\b/g)) {
+        fragment.append(text.slice(offset, match.index));
+        const wrapper = documentRef.createElement('span');
+        wrapper.className = '_JX_global_copy_reference';
+        const key = documentRef.createElement('span');
+        key.textContent = match[0];
+        wrapper.append(key, makeButton(match[0]));
+        fragment.append(wrapper);
+        offset = match.index + match[0].length;
+      }
+      fragment.append(text.slice(offset));
+      node.replaceWith(fragment);
+    }
+    observer.observe(documentRef.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href']});
+  };
+  const observer = new documentRef.defaultView.MutationObserver(records => {
+    const relevant = records.some(record => {
+      const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      return !element?.closest('._JX_container, ._JX_snack, ._JX_inline_copy_button');
+    });
+    if (!relevant) return;
+    if (!frame) frame = documentRef.defaultView.requestAnimationFrame(scan);
+  });
+  scan();
+  return () => {
+    observer.disconnect();
+    if (frame) documentRef.defaultView.cancelAnimationFrame(frame);
+    for (const {button} of references.values()) button.remove();
+    for (const wrapper of documentRef.querySelectorAll('._JX_global_copy_reference')) {
+      wrapper.replaceWith(documentRef.createTextNode(wrapper.firstChild.textContent));
+    }
+  };
 }
 
 export function installJiraInlineCopyButtons({document: documentRef, instanceUrl, enabled = true, copy}) {
@@ -241,20 +466,20 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
     return () => {};
   }
   if (documentRef.location.origin !== instanceOrigin) {
-    return () => {};
+    return installAllowedPageCopyButtons(documentRef, instanceUrl, copy);
   }
 
   let scanFrame = 0;
   const scan = () => {
     scanFrame = 0;
-    const summary = getIssueSummary(documentRef);
     for (const selector of HEADER_LINK_SELECTORS) {
       const issueElement = documentRef.querySelector(selector);
       const key = getIssueKey(issueElement);
+      const summary = getIssueSummary(documentRef, issueElement);
       if (!issueElement || !key || !summary || issueElement.closest('._JX_container')) {
         continue;
       }
-      removeStaleCopyButtons(issueElement, key);
+      removeStaleCopyButtons(issueElement, key, summary);
       const existing = issueElement.nextElementSibling;
       if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
         break;
@@ -269,23 +494,24 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
 
     const currentIssueKey = getIssueKey(documentRef.querySelector('#key-val'));
     installNativeChildrenJqlLinks(documentRef, instanceUrl, currentIssueKey);
+    installNativeCommentCopyButtons(documentRef, copy);
 
     for (const issueElement of documentRef.querySelectorAll(RESULT_LINK_SELECTOR)) {
       const key = getIssueKey(issueElement);
       const elementText = String(issueElement.textContent || '').trim();
-      if (!key || !elementText.includes(key) || issueElement.closest('._JX_container')) {
+      const resultContainer = getResultContainer(issueElement);
+      const isKeyOnlyLink = elementText.toUpperCase() === key;
+      const hasSeparateKey = !!resultContainer && !!findResultKeyElement(resultContainer, key);
+      const copyTarget = isKeyOnlyLink
+        ? (findResultCopyTarget(resultContainer) || issueElement)
+        : issueElement;
+      if (!key || isIssueHeaderLink(issueElement)
+        || (!elementText.toUpperCase().includes(key) && !hasSeparateKey)
+        || issueElement.closest('._JX_container')) {
         continue;
       }
-      removeStaleCopyButtons(issueElement, key);
-      const existing = issueElement.nextElementSibling;
-      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
-        continue;
-      }
-      const resultSummary = getResultSummary(issueElement, key);
-      if (!resultSummary) {
-        continue;
-      }
-      insertResultCopyButton(documentRef, issueElement, {
+      const resultSummary = getResultSummary(copyTarget, key);
+      reconcileResultCopyButton(documentRef, copyTarget, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
@@ -295,19 +521,17 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
     for (const candidate of documentRef.querySelectorAll(RESULT_KEY_SELECTOR)) {
       const key = getIssueKey(candidate);
       const issueElement = findResultKeyElement(candidate, key) || candidate;
-      if (!key || !issueElement || issueElement.closest('._JX_container')) {
-        continue;
-      }
-      removeStaleCopyButtons(issueElement, key);
-      const existing = issueElement.nextElementSibling;
-      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
+      const resultContainer = getResultContainer(issueElement);
+      const hasSeparateSummaryLink = !!resultContainer && Array.from(resultContainer.querySelectorAll(RESULT_LINK_SELECTOR))
+        .some(link => String(link.textContent || '').trim().toUpperCase() !== key);
+      if (!key || !issueElement || hasSeparateSummaryLink || issueElement.closest('._JX_container')) {
         continue;
       }
       const resultSummary = getResultSummary(issueElement, key);
       if (!resultSummary) {
         continue;
       }
-      insertResultCopyButton(documentRef, issueElement, {
+      reconcileResultCopyButton(documentRef, issueElement, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
@@ -320,16 +544,11 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       if (!key || !issueElement || issueElement.closest('._JX_container')) {
         continue;
       }
-      removeStaleCopyButtons(issueElement, key);
-      const existing = issueElement.nextElementSibling;
-      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
-        continue;
-      }
       const resultSummary = getResultSummary(issueElement, key);
       if (!resultSummary) {
         continue;
       }
-      insertResultCopyButton(documentRef, issueElement, {
+      reconcileResultCopyButton(documentRef, issueElement, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
@@ -341,7 +560,11 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       scanFrame = documentRef.defaultView.requestAnimationFrame(scan);
     }
   };
-  const observer = new MutationObserver(scheduleScan);
+  const observer = new MutationObserver(records => {
+    if (!records.every(isOwnCopyButtonAddition)) {
+      scheduleScan();
+    }
+  });
   observer.observe(documentRef.body, {
     attributes: true,
     attributeFilter: ['data-issue-key', 'data-issuekey', 'href'],

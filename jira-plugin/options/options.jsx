@@ -1,7 +1,7 @@
 /*global chrome */
 import React, {useEffect, useState, useCallback, useRef} from 'react';
 import ReactDOM from 'react-dom';
-import defaultConfig, {buildTooltipLayoutFromDisplayFields} from 'options/config';
+import defaultConfig, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation} from 'options/config';
 import {storageGet, storageSet, storageLocalGet, storageLocalSet, storageLocalRemove, permissionsRequest, sendMessage} from 'src/chrome';
 import {resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 import {DEFAULT_THEME_MODE, SUPPORTED_THEME_MODES, normalizeThemeMode, syncDocumentTheme} from 'src/theme';
@@ -66,8 +66,17 @@ const HERO_LINKS = [
   },
 ];
 
+async function loadStoredConfig() {
+  const storedConfig = await storageGet(null);
+  return {
+    ...defaultConfig,
+    ...storedConfig,
+    ...resolveQuickViewActivation(storedConfig),
+  };
+}
+
 async function main() {
-  const storedConfig = await storageGet(defaultConfig);
+  const storedConfig = await loadStoredConfig();
   syncDocumentTheme(document, storedConfig.themeMode || DEFAULT_THEME_MODE);
   ReactDOM.render(
     <ConfigPage {...storedConfig} />,
@@ -88,8 +97,11 @@ function ConfigPage(props) {
     ...defaultConfig.displayFields,
     ...(props.displayFields || {})
   });
-  const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || 'shallow');
-  const [hoverModifierKey, setHoverModifierKey] = useState(props.hoverModifierKey || 'none');
+  const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || defaultConfig.hoverDepth);
+  const initialActivation = resolveQuickViewActivation(props);
+  const [openQuickViewOnClick, setOpenQuickViewOnClick] = useState(initialActivation.openQuickViewOnClick);
+  const [hoverActivationMode, setHoverActivationMode] = useState(initialActivation.hoverActivationMode);
+  const [hoverModifierKey, setHoverModifierKey] = useState(initialActivation.hoverModifierKey);
   const [inlineCopyButtons, setInlineCopyButtons] = useState(props.inlineCopyButtons !== false);
   const [customFields, setCustomFields] = useState(() =>
     normalizeCustomFields(props.customFields, initialTooltipLayout).map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}))
@@ -115,8 +127,10 @@ function ConfigPage(props) {
     instanceUrl: props.instanceUrl || '',
     domainsText: (props.domains || []).join(', '),
     themeMode: normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE),
-    hoverDepth: props.hoverDepth || 'shallow',
-    hoverModifierKey: props.hoverModifierKey || 'none',
+    openQuickViewOnClick: initialActivation.openQuickViewOnClick,
+    hoverActivationMode: initialActivation.hoverActivationMode,
+    hoverDepth: props.hoverDepth || defaultConfig.hoverDepth,
+    hoverModifierKey: initialActivation.hoverModifierKey,
     inlineCopyButtons: props.inlineCopyButtons !== false,
     tooltipLayout,
     customFields,
@@ -125,6 +139,8 @@ function ConfigPage(props) {
     instanceUrl,
     domainsText,
     themeMode,
+    openQuickViewOnClick,
+    hoverActivationMode,
     hoverDepth,
     hoverModifierKey,
     inlineCopyButtons,
@@ -162,8 +178,9 @@ function ConfigPage(props) {
     const nextInstanceUrl = config.instanceUrl || '';
     const nextDomainsText = (config.domains || []).join(', ');
     const nextThemeMode = normalizeThemeMode(config.themeMode || DEFAULT_THEME_MODE);
-    const nextHoverDepth = config.hoverDepth || 'shallow';
-    const nextHoverModifierKey = config.hoverModifierKey || 'none';
+    const nextActivation = resolveQuickViewActivation(config);
+    const nextHoverDepth = config.hoverDepth || defaultConfig.hoverDepth;
+    const nextHoverModifierKey = nextActivation.hoverModifierKey;
     const nextInlineCopyButtons = config.inlineCopyButtons !== false;
     const nextCustomFields = normalizeCustomFields(config.customFields, nextTooltipLayout)
       .map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}));
@@ -171,6 +188,8 @@ function ConfigPage(props) {
     setInstanceUrl(nextInstanceUrl);
     setDomainsText(nextDomainsText);
     setThemeMode(nextThemeMode);
+    setOpenQuickViewOnClick(nextActivation.openQuickViewOnClick);
+    setHoverActivationMode(nextActivation.hoverActivationMode);
     setHoverDepth(nextHoverDepth);
     setHoverModifierKey(nextHoverModifierKey);
     setInlineCopyButtons(nextInlineCopyButtons);
@@ -184,6 +203,8 @@ function ConfigPage(props) {
       instanceUrl: nextInstanceUrl,
       domainsText: nextDomainsText,
       themeMode: nextThemeMode,
+      openQuickViewOnClick: nextActivation.openQuickViewOnClick,
+      hoverActivationMode: nextActivation.hoverActivationMode,
       hoverDepth: nextHoverDepth,
       hoverModifierKey: nextHoverModifierKey,
       inlineCopyButtons: nextInlineCopyButtons,
@@ -222,7 +243,7 @@ function ConfigPage(props) {
           throw new Error(response.error);
         }
         await refreshSimpleSyncState();
-        const nextConfig = await storageGet(defaultConfig);
+        const nextConfig = await loadStoredConfig();
         applyConfigToForm(nextConfig);
       })
       .catch(async () => {
@@ -349,6 +370,8 @@ function ConfigPage(props) {
       instanceUrl,
       domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
       themeMode,
+      openQuickViewOnClick,
+      hoverActivationMode,
       hoverDepth,
       hoverModifierKey,
       inlineCopyButtons,
@@ -391,8 +414,11 @@ function ConfigPage(props) {
         setInstanceUrl(config.instanceUrl || '');
         setDomainsText((config.domains || []).join(', '));
         setThemeMode(normalizeThemeMode(config.themeMode || 'system'));
-        setHoverDepth(config.hoverDepth || 'shallow');
-        setHoverModifierKey(config.hoverModifierKey || 'none');
+        const nextActivation = resolveQuickViewActivation(config);
+        setOpenQuickViewOnClick(nextActivation.openQuickViewOnClick);
+        setHoverActivationMode(nextActivation.hoverActivationMode);
+        setHoverDepth(config.hoverDepth || defaultConfig.hoverDepth);
+        setHoverModifierKey(nextActivation.hoverModifierKey);
         setInlineCopyButtons(config.inlineCopyButtons !== false);
         setDisplayFields(config.displayFields || defaultConfig.displayFields);
         const nextTooltipLayout = config.tooltipLayout || defaultConfig.tooltipLayout;
@@ -412,7 +438,7 @@ function ConfigPage(props) {
   const runSimpleSyncNow = async () => {
     setIsSyncing(true);
     try {
-      const currentConfig = await storageGet(defaultConfig);
+      const currentConfig = await loadStoredConfig();
       const savedInstanceUrl = resolveInstanceUrl(currentConfig.instanceUrl || '') || normalizeInstanceUrl(currentConfig.instanceUrl || '');
       const draftInstanceUrl = resolveInstanceUrl(instanceUrl || '') || normalizeInstanceUrl(instanceUrl || '');
       const effectiveInstanceUrl = draftInstanceUrl || savedInstanceUrl;
@@ -468,7 +494,7 @@ function ConfigPage(props) {
         });
         setSimpleSyncState(transientState);
       }
-      const nextConfig = await storageGet(defaultConfig);
+      const nextConfig = await loadStoredConfig();
       applyConfigToForm(nextConfig);
     } catch (error) {
       setSimpleSyncState(current => normalizeSimpleSyncState({
@@ -489,7 +515,7 @@ function ConfigPage(props) {
   const grantSimpleSyncPermissions = async () => {
     setIsSyncing(true);
     try {
-      const currentConfig = await storageGet(defaultConfig);
+      const currentConfig = await loadStoredConfig();
       const origins = getConfigPermissionOrigins(currentConfig);
       if (!origins.length) {
         return;
@@ -567,7 +593,7 @@ function ConfigPage(props) {
     }
 
     const permissionDomains = domains.concat([resolvedInstanceUrl]);
-    const currentInstanceUrl = await storageGet(defaultConfig);
+    const currentInstanceUrl = await loadStoredConfig();
     if (!currentInstanceUrl.instanceUrl) {
       domains.push(resolvedInstanceUrl);
     }
@@ -620,6 +646,8 @@ function ConfigPage(props) {
         instanceUrl: resolvedInstanceUrl,
         domains,
         themeMode: normalizeThemeMode(themeMode),
+        openQuickViewOnClick,
+        hoverActivationMode,
         v15upgrade: true,
         hoverDepth,
         hoverModifierKey,
@@ -797,8 +825,21 @@ function ConfigPage(props) {
               />
               <span className='inlineCopySettingSwitch' aria-hidden='true' />
               <span className='inlineCopySettingCopy'>
-                <strong>Show copy buttons in Jira</strong>
-                <span>Add a copy action beside issue keys on Jira details, search results, boards, and backlogs.</span>
+                <strong>Show copy buttons beside Jira issues</strong>
+                <span data-testid='options-inline-copy-description'>Available in Jira and on allowed pages.</span>
+              </span>
+            </label>
+            <label className='inlineCopySetting'>
+              <input
+                type='checkbox'
+                data-testid='options-open-quickview-on-click'
+                checked={openQuickViewOnClick}
+                onChange={event => setOpenQuickViewOnClick(event.target.checked)}
+              />
+              <span className='inlineCopySettingSwitch' aria-hidden='true' />
+              <span className='inlineCopySettingCopy'>
+                <strong>Open Jira issue links in QuickView instead of navigating</strong>
+                <span data-testid='options-click-navigation-description'>Open plain-clicked Jira issue links without leaving the page.</span>
               </span>
             </label>
           </div>
@@ -823,7 +864,7 @@ function ConfigPage(props) {
           </svg>
           <span className='advToggleText'>
             <span className='advToggleTitle'>Show advanced settings</span>
-            <span className='advToggleDescription'>Hover trigger depth, modifier keys, field layout editor, custom fields, and settings sync.</span>
+            <span className='advToggleDescription'>Hover preview, field layout editor, custom fields, and settings sync.</span>
           </span>
           <span className='advToggleBtn' aria-hidden='true'>
             {showAdvanced ? 'Hide' : 'Show'}
@@ -833,41 +874,44 @@ function ConfigPage(props) {
         {showAdvanced && (
           <div className='advancedPanelBody' id='advanced-settings-panel'>
             <div className='settingsGrid advancedSettingsGrid'>
-          {/* ── Hover Behavior ───────────────────────────── */}
+          {/* ── Hover Preview ────────────────────────────── */}
           <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
               <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
-              <h2>Hover Behavior</h2>
-              <p>Control when the tooltip appears as you move the mouse over Jira issue keys.</p>
+              <h2>Hover Preview</h2>
+              <p>Choose when pointing at Jira IDs opens a preview.</p>
             </div>
             <div className='cardBody'>
               <div className='hoverRow'>
                 <label className='formField'>
-                  <span className='fieldLabel'>Trigger depth</span>
-                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)}>
+                  <span className='fieldLabel'>Hover preview</span>
+                  <select data-testid='options-hover-activation-mode' value={hoverActivationMode} onChange={event => setHoverActivationMode(event.target.value)}>
+                    <option value='off'>Off</option>
+                    <option value='automatic'>Automatic</option>
+                    <option value='modifier'>With modifier</option>
+                  </select>
+                  <span className='fieldHelp'>Controls whether pointing at a Jira key previews it before clicking.</span>
+                </label>
+
+                <label className='formField'>
+                  <span className='fieldLabel'>Depth</span>
+                  <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)} disabled={hoverActivationMode === 'off'}>
                     <option value='exact'>Exact — only the hovered element itself</option>
                     <option value='shallow'>Shallow — hovered element + immediate parent</option>
                     <option value='deep'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
                   </select>
-                  <span className='fieldHelp'>
-                    How aggressively the extension searches surrounding DOM elements for Jira keys.
-                    Use &ldquo;Exact&rdquo; if the tooltip triggers too often on pages with dense text.
-                  </span>
+                  <span className='fieldHelp'>How far hover activation searches surrounding page elements for Jira keys.</span>
                 </label>
 
                 <label className='formField'>
                   <span className='fieldLabel'>Modifier key</span>
-                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)}>
-                    <option value='none'>None — hover alone triggers the tooltip</option>
+                  <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)} disabled={hoverActivationMode !== 'modifier'}>
                     <option value='alt'>Alt — press Alt after hovering</option>
                     <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
                     <option value='shift'>Shift — press Shift after hovering</option>
                     <option value='any'>Any — press Alt, Ctrl, or Shift after hovering</option>
                   </select>
-                  <span className='fieldHelp'>
-                    When set, hover over a Jira key and then press the chosen key to reveal the tooltip.
-                    Useful for on-demand activation instead of automatic popups.
-                  </span>
+                  <span className='fieldHelp'>Used only when Hover preview is set to With modifier.</span>
                 </label>
               </div>
             </div>

@@ -261,6 +261,24 @@ test('shows a composer error when pasted image upload fails', async ({extensionA
 
   await expect(page.locator('._JX_comment_error')).toContainText(/HTTP 500|Could not upload pasted image/);
   await expect(page.locator('._JX_comment_upload_status')).toContainText(/HTTP 500|Could not upload pasted image/);
+  await expect(page.locator('._JX_comment_upload_retry')).toBeVisible();
 
+  await page.close();
+});
+
+test('rolls back an optimistic comment reaction when Jira rejects the write', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Reaction rollback coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('reaction-update-fails');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const firstComment = page.locator('._JX_comment').first();
+  await firstComment.locator('._JX_comment_reaction_more').click();
+  await firstComment.locator('._JX_comment_reaction_button[data-emoji-id="1f44d"]').click();
+
+  await expect(firstComment.locator('._JX_comment_reaction_error')).toContainText(/HTTP 500|Could not update reaction/);
+  await expect(firstComment.locator('._JX_comment_reaction_pill[data-emoji-id="1f44d"]')).toHaveCount(0);
   await page.close();
 });

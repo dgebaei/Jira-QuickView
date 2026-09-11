@@ -62,26 +62,57 @@ export function createContentAttachmentHelpers(options) {
     }));
   }
 
-  function buildPreviewAttachments(attachments) {
-    return (attachments || [])
-      .filter(attachment => {
-        return !!attachment &&
-          typeof attachment.mimeType === 'string' &&
-          attachment.mimeType.toLowerCase().startsWith('image') &&
-          !!(attachment.inlineDataUrl || attachment.displayContent);
-      })
-      .map(attachment => ({
+  function attachmentTypeLabel(attachment) {
+    const mimeType = String(attachment?.mimeType || '').toLowerCase();
+    if (mimeType === 'application/pdf') return 'PDF';
+    const extension = String(attachment?.filename || '').split('.').pop();
+    if (extension && extension !== attachment?.filename && extension.length <= 5) return extension.toUpperCase();
+    if (mimeType.startsWith('text/')) return 'TXT';
+    return 'FILE';
+  }
+
+  function attachmentSizeLabel(size) {
+    const bytes = Number(size);
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  }
+
+  function buildSectionAttachments(attachments) {
+    const images = [];
+    const files = [];
+    (attachments || []).filter(Boolean).forEach(attachment => {
+      const view = buildHistoryAttachmentView(attachment);
+      const common = {
         ...attachment,
-        thumbnail: attachment.inlineDataUrl || attachment.displayContent,
-        previewDisplaySrc: attachment.previewDataUrl || attachment.previewDisplaySrc || attachment.inlineDataUrl || attachment.displayContent,
-        linkTitle: buildLinkHoverTitle('Open attachment', attachment.filename || 'Attachment', attachment.content)
-      }));
+        id: String(attachment.id || attachment.filename || ''),
+        content: view.url,
+        filename: view.filename || 'Attachment',
+        linkTitle: view.linkTitle,
+        mimeType: view.mimeType,
+      };
+      if (view.isPreviewable) {
+        images.push({
+          ...common,
+          previewDisplaySrc: view.previewDisplaySrc,
+          thumbnail: view.thumbnail,
+        });
+      } else {
+        files.push({
+          ...common,
+          fileTypeLabel: attachmentTypeLabel(attachment),
+          sizeLabel: attachmentSizeLabel(attachment.size),
+        });
+      }
+    });
+    return {files, images};
   }
 
   return {
     buildHistoryAttachmentLookup,
     buildHistoryAttachmentView,
-    buildPreviewAttachments,
+    buildSectionAttachments,
     collectReferencedHistoryAttachmentNames,
     dedupeHistoryAttachments,
     normalizeHistoryAttachmentName,

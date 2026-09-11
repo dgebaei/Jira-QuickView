@@ -1,39 +1,47 @@
-export function createContentDisplayHelpers(options) {
-  const buildActivityIndicatorsDefault = options?.buildActivityIndicatorsDefault;
-  const buildHistoryAttachmentLookup = options?.buildHistoryAttachmentLookup;
-  const buildCommentsForDisplay = options?.buildCommentsForDisplay;
+import {buildLinkedIssuesPanelView} from 'src/content-linked-issues-helpers';
+
+export function createPopupProjectView(options) {
+  const configuration = options?.configuration || {};
+  const customFields = configuration.customFields || [];
+  const displayFields = configuration.displayFields || {};
+  const instanceUrl = configuration.instanceUrl || '';
+  const layoutContentBlocks = configuration.layoutContentBlocks || [];
+  const loaderGifUrl = configuration.loaderGifUrl || '';
+  const showPullRequests = !!configuration.showPullRequests;
+  const tooltipLayout = configuration.tooltipLayout || {};
+  const attachmentPresentation = options?.attachments;
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
   const buildFilterChip = options?.buildFilterChip;
   const buildLabelsChip = options?.buildLabelsChip;
   const buildLinkHoverTitle = options?.buildLinkHoverTitle;
-  const buildLinkedIssuesPanelView = options?.buildLinkedIssuesPanelView;
-  const buildQuickActionViewData = options?.buildQuickActionViewData;
   const buildTimeTrackingSectionPresentation = options?.buildTimeTrackingSectionPresentation;
-  const buildUserView = options?.buildUserView;
+  const people = options?.people;
   const buildActiveEditPresentation = options?.buildActiveEditPresentation;
-  const displayFields = options?.displayFields || {};
   const encodeJqlValue = options?.encodeJqlValue;
-  const formatFixVersionText = options?.formatFixVersionText;
-  const formatPullRequestAuthor = options?.formatPullRequestAuthor;
-  const formatPullRequestBranch = options?.formatPullRequestBranch;
-  const formatPullRequestTitle = options?.formatPullRequestTitle;
-  const formatSprintText = options?.formatSprintText;
-  const getEditableFieldCapability = options?.getEditableFieldCapability;
-  const getTransitionOptions = options?.getTransitionOptions;
-  const getVisibleSprintsForDisplay = options?.getVisibleSprintsForDisplay;
-  const hasLabelSuggestionSupport = options?.hasLabelSuggestionSupport;
-  const instanceUrl = options?.instanceUrl || '';
-  const layoutContentBlocks = options?.layoutContentBlocks || [];
-  const loaderGifUrl = options?.loaderGifUrl || '';
-  const normalizeIssueTypeOptions = options?.normalizeIssueTypeOptions;
-  const normalizeCommentSortOrder = options?.normalizeCommentSortOrder || (value => value === 'newest' ? 'newest' : 'oldest');
+  const fieldEditing = options?.fieldEditing;
+  const comments = options?.comments;
+  const issueDataModule = options?.issueData;
+  const history = options?.history;
   const normalizeRichHtml = options?.normalizeRichHtml;
   const readSprintsFromIssue = options?.readSprintsFromIssue;
-  const resolveIssueLinkage = options?.resolveIssueLinkage;
   const scopeJqlToProject = options?.scopeJqlToProject;
-  const showPullRequests = !!options?.showPullRequests;
-  const tooltipLayout = options?.tooltipLayout || {};
+
+  function normalizeCommentSortOrder(value) {
+    return value === 'newest' ? 'newest' : 'oldest';
+  }
+
+  function emptyWatchersState() {
+    return {
+      open: false,
+      loading: false,
+      errorMessage: '',
+      watchers: [],
+      searchResults: [],
+      pendingAddIds: [],
+      pendingRemoveIds: [],
+    };
+  }
 
   function normalizeSecondaryStatusChip(chip) {
     if (!chip) {
@@ -85,15 +93,81 @@ export function createContentDisplayHelpers(options) {
   }
 
   function buildActivityIndicators() {
-    if (typeof buildActivityIndicatorsDefault === 'function') {
-      return buildActivityIndicatorsDefault();
-    }
-    return [];
+    return [{
+      iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
+      label: 'History',
+      isHistory: true,
+      clickable: true,
+      title: 'View change history',
+      ariaLabel: 'View change history'
+    }];
+  }
+
+  async function hasLabelSuggestionSupport() {
+    const outcome = await issueDataModule.search({purpose: 'label', query: ''});
+    return outcome.kind === 'loaded';
+  }
+
+  async function describeField(fieldId) {
+    const outcome = await fieldEditing.dispatch({type: 'describeField', fieldId});
+    return outcome.field || {allowedValues: [], editable: false, fieldId, operations: [], transitions: []};
+  }
+
+  function hasMultipleIssueTypeOptions(allowedIssueTypes, currentIssueType) {
+    const currentIsSubtask = currentIssueType?.subtask === true;
+    return (Array.isArray(allowedIssueTypes) ? allowedIssueTypes : [])
+      .filter(issueType => issueType?.id && issueType?.name)
+      .filter(issueType => {
+        if (typeof issueType?.subtask !== 'boolean' || typeof currentIssueType?.subtask !== 'boolean') return true;
+        return issueType.subtask === currentIsSubtask;
+      }).length > 1;
+  }
+
+  function formatPullRequestTitle(pullRequest) {
+    const id = pullRequest?.id || pullRequest?.number || pullRequest?.key || '';
+    const title = pullRequest?.name || pullRequest?.title || 'Untitled pull request';
+    return id ? `[${id}] ${title}` : title;
+  }
+
+  function formatPullRequestAuthor(pullRequest) {
+    return pullRequest?.author?.name || pullRequest?.author?.displayName || pullRequest?.author?.username || pullRequest?.author?.email || '--';
+  }
+
+  function formatPullRequestBranch(pullRequest) {
+    const source = pullRequest?.source?.branch || pullRequest?.sourceBranch || pullRequest?.fromRef?.displayId || pullRequest?.fromRef?.id || pullRequest?.source?.displayId || '';
+    const target = pullRequest?.destination?.branch || pullRequest?.targetBranch || pullRequest?.toRef?.displayId || pullRequest?.toRef?.id || pullRequest?.destination?.displayId || '';
+    if (source && target) return `${source} --> ${target}`;
+    return source || target || '--';
+  }
+
+  function formatFixVersionText(versions) {
+    return (versions || []).map(version => version.name).filter(Boolean).join(', ');
+  }
+
+  function formatEnvironmentDisplayText(environment) {
+    const text = String(environment || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return '--';
+    return text.length > 120 ? `${text.slice(0, 117).trimEnd()}...` : text;
+  }
+
+  function getVisibleSprintsForDisplay(sprints) {
+    const sprintList = Array.isArray(sprints) ? sprints : [];
+    const activeSprints = sprintList.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
+    if (activeSprints.length) return activeSprints;
+    return sprintList.every(sprint => String(sprint?.state || '').toLowerCase() === 'closed')
+      ? sprintList.slice(-1)
+      : sprintList;
+  }
+
+  function formatSprintText(sprints) {
+    return getVisibleSprintsForDisplay(sprints)
+      .map(sprint => sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name)
+      .filter(Boolean)
+      .join(', ');
   }
 
   function buildWatchersPanelView(state) {
-    const emptyWatchersState = options?.emptyWatchersState;
-    const watcherState = state?.watchersState || emptyWatchersState();
+    const watcherState = state?.watcherView || emptyWatchersState();
     const watchers = Array.isArray(watcherState.watchers) ? watcherState.watchers : [];
     const pendingAddIds = new Set(watcherState.pendingAddIds || []);
     const pendingRemoveIds = new Set(watcherState.pendingRemoveIds || []);
@@ -140,7 +214,7 @@ export function createContentDisplayHelpers(options) {
   }
 
   function buildUserAvatarView(user, titlePrefix, fallbackInitials = '--') {
-    const view = buildUserView(user);
+    const view = people.buildUserView(user);
     return {
       avatarUrl: view.avatarUrl,
       initials: view.displayName ? view.initials : fallbackInitials,
@@ -312,35 +386,31 @@ export function createContentDisplayHelpers(options) {
       commentSortOrder,
       pullRequests,
       pullRequestsSort,
-      actionLoadingKey,
-      actionError,
       lastActionSuccess,
       actionsOpen,
-      quickActions,
+      quickActionView = {},
       historyOpen,
-      changelogData,
-      changelogLoading,
+      historyView = {},
     } = state;
-    const descriptionAttachmentLookup = buildHistoryAttachmentLookup(issueData.fields.attachment || []);
+    const descriptionAttachmentLookup = attachmentPresentation.buildHistoryAttachmentLookup(issueData.fields.attachment || []);
     const normalizedDescription = await normalizeRichHtml(issueData.renderedFields.description, {
       attachmentLookup: descriptionAttachmentLookup,
       imageMaxHeight: 180
     });
     const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
-    const commentsForDisplay = await buildCommentsForDisplay(
-      issueData,
-      state.commentSession,
-      state.commentReactionState,
-      normalizedCommentSortOrder
-    );
+    const commentsForDisplay = [...(comments.view()?.comments || [])].sort((left, right) => {
+      const comparison = Number(left?.createdTimestamp || 0) - Number(right?.createdTimestamp || 0);
+      return normalizedCommentSortOrder === 'newest' ? comparison * -1 : comparison;
+    });
     const fixVersions = issueData.fields.fixVersions || [];
     const affectsVersions = issueData.fields.versions || [];
     const sprints = readSprintsFromIssue(issueData);
     const commentsTotal = commentsForDisplay.length;
     const attachments = issueData.fields.attachment || [];
-    const previewAttachments = options?.buildPreviewAttachments(attachments);
+    const attachmentViews = attachmentPresentation.buildSectionAttachments(attachments);
     const labels = issueData.fields.labels || [];
-    const linkageData = await resolveIssueLinkage(issueData);
+    const linkageOutcome = await fieldEditing.dispatch({type: 'describeLinkage'});
+    const linkageData = linkageOutcome.linkage || {mode: '', label: 'Parent', editable: false, fieldId: '', currentLink: null};
     const issueTypeName = issueData.fields.issuetype?.name;
     const statusName = issueData.fields.status?.name;
     const priorityName = issueData.fields.priority?.name;
@@ -349,7 +419,7 @@ export function createContentDisplayHelpers(options) {
       issueTypeCapability,
       priorityCapability,
       assigneeCapability,
-      transitionOptions,
+      statusCapability,
       sprintCapability,
       affectsCapability,
       fixVersionsCapability,
@@ -361,23 +431,24 @@ export function createContentDisplayHelpers(options) {
       timeTrackingCapability,
       customFieldChips,
     ] = await Promise.all([
-      displayFields.issueType ? getEditableFieldCapability(issueData, 'issuetype') : Promise.resolve({editable: false, allowedValues: []}),
-      displayFields.priority ? getEditableFieldCapability(issueData, 'priority') : Promise.resolve({editable: false}),
-      displayFields.assignee ? getEditableFieldCapability(issueData, 'assignee') : Promise.resolve({editable: false}),
-      displayFields.status ? getTransitionOptions(issueData.key).catch(() => []) : Promise.resolve([]),
-      displayFields.sprint ? getEditableFieldCapability(issueData, 'sprint') : Promise.resolve({editable: false}),
-      displayFields.affects ? getEditableFieldCapability(issueData, 'versions') : Promise.resolve({editable: false}),
-      displayFields.fixVersions ? getEditableFieldCapability(issueData, 'fixVersions') : Promise.resolve({editable: false}),
-      displayFields.labels ? getEditableFieldCapability(issueData, 'labels') : Promise.resolve({editable: false}),
-      displayFields.environment ? getEditableFieldCapability(issueData, 'environment') : Promise.resolve({editable: false, operations: []}),
+      displayFields.issueType ? describeField('issuetype') : Promise.resolve({editable: false, allowedValues: []}),
+      displayFields.priority ? describeField('priority') : Promise.resolve({editable: false}),
+      displayFields.assignee ? describeField('assignee') : Promise.resolve({editable: false}),
+      displayFields.status ? describeField('status') : Promise.resolve({transitions: []}),
+      displayFields.sprint ? describeField('sprint') : Promise.resolve({editable: false}),
+      displayFields.affects ? describeField('versions') : Promise.resolve({editable: false}),
+      displayFields.fixVersions ? describeField('fixVersions') : Promise.resolve({editable: false}),
+      displayFields.labels ? describeField('labels') : Promise.resolve({editable: false}),
+      displayFields.environment ? describeField('environment') : Promise.resolve({editable: false, operations: []}),
       displayFields.labels ? hasLabelSuggestionSupport() : Promise.resolve(false),
-      getEditableFieldCapability(issueData, 'summary').catch(() => ({editable: false, operations: []})),
-      getEditableFieldCapability(issueData, 'description').catch(() => ({editable: false, operations: []})),
-      getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false})),
-      buildCustomFieldChips(issueData, options?.customFields || [], state)
+      describeField('summary').catch(() => ({editable: false, operations: []})),
+      describeField('description').catch(() => ({editable: false, operations: []})),
+      describeField('timetracking').catch(() => ({editable: false})),
+      buildCustomFieldChips(issueData, customFields, state)
     ]);
+    const transitionOptions = statusCapability.transitions || [];
     const statusEditable = Array.isArray(transitionOptions) && transitionOptions.length > 0;
-    const issueTypeEditable = !!issueTypeCapability?.editable && normalizeIssueTypeOptions(issueTypeCapability.allowedValues || [], issueData.fields.issuetype).length > 1;
+    const issueTypeEditable = !!issueTypeCapability?.editable && hasMultipleIssueTypeOptions(issueTypeCapability.allowedValues, issueData.fields.issuetype);
     const priorityEditable = !!priorityCapability?.editable;
     const assigneeEditable = !!assigneeCapability?.editable;
     const labelsEditable = !!labelsCapability?.editable && !!labelSuggestionSupport;
@@ -487,7 +558,7 @@ export function createContentDisplayHelpers(options) {
       }
     };
 
-    const environmentText = options?.formatEnvironmentDisplayText(issueData.fields.environment);
+    const environmentText = formatEnvironmentDisplayText(issueData.fields.environment);
     const environmentTooltip = String(issueData.fields.environment || '')
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
@@ -539,7 +610,9 @@ export function createContentDisplayHelpers(options) {
     const showComments = layoutContentBlocks.includes('comments');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');
     const visibleCommentsTotal = showComments ? commentsTotal : 0;
-    const visibleAttachments = showAttachments ? previewAttachments : [];
+    const visibleAttachmentImages = showAttachments ? attachmentViews.images : [];
+    const visibleAttachmentFiles = showAttachments ? attachmentViews.files : [];
+    const visibleAttachmentsTotal = visibleAttachmentImages.length + visibleAttachmentFiles.length;
     const normalizedChildrenSort = normalizeChildrenSortState(childrenSort);
     const normalizedPullRequestsSort = normalizePullRequestsSortState(pullRequestsSort);
     const childIssues = Array.isArray(children) ? children.filter(Boolean) : [];
@@ -582,7 +655,11 @@ export function createContentDisplayHelpers(options) {
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'branch', 'Branch'),
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'status', 'Status')
     ];
-    const quickActionData = buildQuickActionViewData(actionsOpen, actionLoadingKey, quickActions);
+    const quickActionData = {
+      actionsOpen: !!actionsOpen && !!quickActionView.hasQuickActions,
+      hasQuickActions: !!quickActionView.hasQuickActions,
+      quickActions: quickActionView.actions || [],
+    };
     const reporterView = displayFields.reporter && issueData.fields.reporter
       ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
       : null;
@@ -594,9 +671,11 @@ export function createContentDisplayHelpers(options) {
     const watches = issueData.fields.watches || {};
     const watcherCount = Number.isFinite(Number(watches.watchCount)) ? Number(watches.watchCount) : 0;
     const watchersPanel = buildWatchersPanelView(state);
-    const linkedIssuesPanel = typeof buildLinkedIssuesPanelView === 'function'
-      ? buildLinkedIssuesPanelView(state, issueData)
-      : {isOpen: false, count: 0, groups: []};
+    const linkedIssuesPanel = buildLinkedIssuesPanelView(state, issueData, {
+      buildLinkHoverTitle,
+      buildUserView: people.buildUserView,
+      instanceUrl,
+    });
     const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
     const rawDescription = typeof issueData?.fields?.description === 'string' ? issueData.fields.description : '';
     const descriptionState = state.descriptionEditState || null;
@@ -665,11 +744,13 @@ export function createContentDisplayHelpers(options) {
       description: showDescription ? normalizedDescription : '',
       descriptionSection,
       hasBodyContent: true,
-      emptyBodyText: (!normalizedDescription && visibleAttachments.length === 0 && visibleCommentsTotal === 0)
+      emptyBodyText: (!normalizedDescription && visibleAttachmentsTotal === 0 && visibleCommentsTotal === 0)
         ? 'No description, attachments or comments.'
         : '',
       attachments,
-      previewAttachments: visibleAttachments,
+      fileAttachments: visibleAttachmentFiles,
+      previewAttachments: visibleAttachmentImages,
+      showAttachmentsSection: visibleAttachmentsTotal > 0,
       commentSortToggleAriaPressed: normalizedCommentSortOrder === 'newest' ? 'true' : 'false',
       commentSortToggleLabel: normalizedCommentSortOrder === 'newest' ? 'Newest first' : 'Oldest first',
       commentSortToggleIsNewest: normalizedCommentSortOrder === 'newest',
@@ -721,11 +802,11 @@ export function createContentDisplayHelpers(options) {
       hasFieldSummary: row1Chips.length > 0 || row2Chips.length > 0 || row3Chips.length > 0,
       activityIndicators: [],
       loaderGifUrl,
-      actionNoticeText: titleStatusText || actionError || lastActionSuccess,
+      actionNoticeText: titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess,
       actionNoticeClass: titleStatusText
         ? '_JX_action_notice_info'
-        : (actionError ? '_JX_action_notice_error' : '_JX_action_notice_success'),
-      hasActionNotice: !!(titleStatusText || actionError || lastActionSuccess),
+        : (quickActionView.errorMessage ? '_JX_action_notice_error' : '_JX_action_notice_success'),
+      hasActionNotice: !!(titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess),
       ...quickActionData
     };
     if (issueData.fields.comment?.comments?.[0]?.id) {
@@ -755,10 +836,10 @@ export function createContentDisplayHelpers(options) {
     displayData.hasRow1Meta = !!displayData.watchersTrigger || !!displayData.linkedIssuesTrigger || displayData.activityIndicators.length > 0;
     displayData.hasPrimaryStatusRow = row1Chips.length > 0 || displayData.hasRow1Meta;
     displayData.historyOpen = !!historyOpen;
-    displayData.changelogLoading = !!changelogLoading;
-    displayData.changelogEntries = historyOpen ? await options?.formatChangelogForDisplay(changelogData, issueData) : [];
+    displayData.changelogLoading = !!historyView.loading;
+    displayData.changelogEntries = historyOpen ? await history.formatChangelogForDisplay(historyView.data, issueData) : [];
     displayData.hasChangelogEntries = historyOpen && displayData.changelogEntries.length > 0;
-    displayData.showChangelogEmpty = historyOpen && !changelogLoading && displayData.changelogEntries.length === 0;
+    displayData.showChangelogEmpty = historyOpen && !historyView.loading && displayData.changelogEntries.length === 0;
     return displayData;
   }
 

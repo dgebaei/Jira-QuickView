@@ -2,39 +2,35 @@
 import size from 'lodash/size';
 import debounce from 'lodash/debounce';
 import regexEscape from 'escape-string-regexp';
-import Mustache from 'mustache';
 import {waitForDocument} from 'src/utils';
 import {sendMessage, storageGet, storageSet, storageLocalGet, storageLocalSet} from 'src/chrome';
 import {snackBar} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
-import {createContentFieldCapabilityHelpers} from 'src/content-field-capability-helpers';
 import {createContentHistoryHelpers} from 'src/content-history-helpers';
-import {createContentIssueDataHelpers} from 'src/content-issue-data-helpers';
-import {createContentIssueLinkageHelpers} from 'src/content-issue-linkage-helpers';
-import {
-  buildIssueLinkCreatePayload,
-  buildLinkedIssuesPanelView,
-  buildRelationshipOptions,
-  createContentLinkedIssuesHelpers,
-  createEmptyLinkedIssuesState,
-  getLinkedIssueKeys,
-  parseLinkedIssueKeys,
-} from 'src/content-linked-issues-helpers';
-import {createContentDisplayHelpers} from 'src/content-display-helpers';
+import {createPopupProjectView} from 'src/popup-session/project-view';
 import {createContentPeopleHelpers} from 'src/content-people-helpers';
-import {createContentPopupStateHelpers} from 'src/content-popup-state-helpers';
-import {createContentShellHelpers} from 'src/content-shell-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
-import {createPopupEditing} from 'src/popup-editing';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
-import {createPopupCommentComposer} from 'src/popup-comment-composer';
-import {buildJiraSearchRequestUrls, isEpicLinkField, isParentLinkField, isSprintField} from 'src/jira-issue-helpers';
-import config, {buildTooltipLayoutFromDisplayFields} from 'options/config.js';
+import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
+import {createBrowserAttachmentMediaAdapter} from 'src/browser-attachment-media-adapter';
+import {createBrowserPopupSurface} from 'src/browser-popup-surface';
+import {createCommentLifecycle} from 'src/comment-lifecycle';
+import {createJiraFieldEditing} from 'src/jira-field-editing';
+import {createLinkedIssueLifecycle} from 'src/linked-issue-lifecycle';
+import {createPopupSession} from 'src/popup-session';
+import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
+import {createBrowserCommentPresentation} from 'src/popup-session/browser-comment-presentation';
+import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
+import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
+import {createBrowserPopupModel} from 'src/popup-session/browser-popup-model';
+import {createQuickViewIssueData} from 'src/quickview-issue-data';
+import {createWatcherLifecycle} from 'src/watcher-lifecycle';
 const {
   buildDescriptionEditorState,
   buildMediaSingleNodeFromAttachment,
@@ -52,126 +48,20 @@ const getInstanceUrl = async () => (await storageGet({
 })).instanceUrl;
 
 const getConfig = async () => {
-  const [resolvedConfig, storedTooltipLayout] = await Promise.all([
-    storageGet(config),
-    storageGet('tooltipLayout')
-  ]);
+  const storedConfig = await storageGet(null);
+  const resolvedConfig = {
+    ...config,
+    ...storedConfig,
+    ...resolveQuickViewActivation(storedConfig),
+  };
   return {
     resolvedConfig,
-    hasStoredTooltipLayout: !!storedTooltipLayout?.tooltipLayout
+    hasStoredTooltipLayout: !!storedConfig?.tooltipLayout
   };
 };
 
-// ── Field ID Resolution ─────────────────────────────────────────
-
-let allFieldsPromise;
-
-function getAllFields(instanceUrl) {
-  if (!allFieldsPromise) {
-    allFieldsPromise = get(instanceUrl + 'rest/api/2/field')
-      .then(fields => {
-        const normalizedFields = Array.isArray(fields) ? fields : [];
-        if (!normalizedFields.length) {
-          allFieldsPromise = null;
-        }
-        return normalizedFields;
-      })
-      .catch(() => {
-        allFieldsPromise = null;
-        return [];
-      });
-  }
-  return allFieldsPromise;
-}
-
-function getFieldIdsByFilter(instanceUrl, filterFn) {
-  return getAllFields(instanceUrl).then(fields => fields.filter(filterFn).map(field => field.id));
-}
-
-function getSprintFieldIds(instanceUrl) {
-  return getFieldIdsByFilter(instanceUrl, isSprintField);
-}
-
-function getEpicLinkFieldIds(instanceUrl) {
-  return getFieldIdsByFilter(instanceUrl, isEpicLinkField);
-}
-
-function getParentLinkFieldIds(instanceUrl) {
-  return getFieldIdsByFilter(instanceUrl, isParentLinkField);
-}
-
-const DEFAULT_CHILDREN_SORT = Object.freeze({
-  column: 'key',
-  direction: 'asc'
-});
-
-const DEFAULT_PULL_REQUESTS_SORT = Object.freeze({
-  column: 'title',
-  direction: 'asc'
-});
-
 const DEFAULT_COMMENT_SORT_ORDER = 'oldest';
 const COMMENT_SORT_ORDER_STORAGE_KEY = 'jqv.commentSortOrder';
-
-function normalizeChildrenSort(sort) {
-  const column = ['type', 'key', 'status', 'assignee'].includes(sort?.column)
-    ? sort.column
-    : DEFAULT_CHILDREN_SORT.column;
-  const direction = sort?.direction === 'desc'
-    ? 'desc'
-    : DEFAULT_CHILDREN_SORT.direction;
-  return {column, direction};
-}
-
-function toggleChildrenSort(sort, column) {
-  const currentSort = normalizeChildrenSort(sort);
-  if (currentSort.column === column) {
-    return {
-      column,
-      direction: currentSort.direction === 'asc' ? 'desc' : 'asc'
-    };
-  }
-  return {
-    column,
-    direction: 'asc'
-  };
-}
-
-function normalizePullRequestsSort(sort) {
-  const column = ['title', 'author', 'branch', 'status'].includes(sort?.column)
-    ? sort.column
-    : DEFAULT_PULL_REQUESTS_SORT.column;
-  const direction = sort?.direction === 'desc'
-    ? 'desc'
-    : DEFAULT_PULL_REQUESTS_SORT.direction;
-  return {column, direction};
-}
-
-function togglePullRequestsSort(sort, column) {
-  const currentSort = normalizePullRequestsSort(sort);
-  if (currentSort.column === column) {
-    return {
-      column,
-      direction: currentSort.direction === 'asc' ? 'desc' : 'asc'
-    };
-  }
-  return {
-    column,
-    direction: 'asc'
-  };
-}
-
-function normalizeCommentSortOrder(sortOrder) {
-  return sortOrder === 'newest'
-    ? 'newest'
-    : DEFAULT_COMMENT_SORT_ORDER;
-}
-
-function toggleCommentSortOrder(sortOrder) {
-  return normalizeCommentSortOrder(sortOrder) === 'newest'
-    ? 'oldest'
-    : 'newest';
-}
 
 // ── Jira Key Matching ───────────────────────────────────────────
 
@@ -235,22 +125,6 @@ if (!window.__JX_runtimeMessageListenerInstalled) {
 
 let ui_tips_shown_local = [];
 const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
-  const COMMENT_REACTION_OPTIONS = [
-  {emoji: '👍', emojiId: '1f44d', label: 'thumbs up'},
-  {emoji: '👎', emojiId: '1f44e', label: 'thumbs down'},
-  {emoji: '🔥', emojiId: '1f525', label: 'fire'},
-  {emoji: '😍', emojiId: '1f60d', label: 'heart eyes'},
-  {emoji: '😂', emojiId: '1f602', label: 'joy'},
-  {emoji: '😢', emojiId: '1f622', label: 'cry'}
-];
-
-function emptyCommentReactionState() {
-  return {
-    byCommentId: {},
-    supported: true
-  };
-}
-
 async function showTip(tipName, tipMessage) {
   if (ui_tips_shown_local.indexOf(tipName) !== -1) {
     return;
@@ -268,24 +142,16 @@ storageGet({'ui_tips_shown': []}).then(function ({ui_tips_shown}) {
   ui_tips_shown_local = ui_tips_shown;
 });
 
-// ── Network / API ───────────────────────────────────────────────
+// ── Jira transport ─────────────────────────────────────────────
 
-function unwrapResponse(response, defaultError = 'Request failed') {
-  if (Object.prototype.hasOwnProperty.call(response, 'result')) {
-    return response.result;
-  }
-  const err = new Error(response.error || defaultError);
-  err.inner = response.error;
-  throw err;
-}
-
+const jira = createBrowserMessageJiraAdapter({sendMessage});
 async function get(url) {
-  return unwrapResponse(await sendMessage({action: 'get', url: url}));
+  return jira.read({path: url});
 }
 
-  async function getImageDataUrl(url, mimeType = '') {
-    return unwrapResponse(await sendMessage({action: 'getImageDataUrl', url, mimeType}));
-  }
+async function getImageDataUrl(url, mimeType = '') {
+  return jira.image({url, mimeType});
+}
 
   async function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
@@ -297,18 +163,10 @@ async function get(url) {
   }
 
 async function requestJson(method, url, body, headers) {
-  return unwrapResponse(await sendMessage({action: 'requestJson', method, url, body, headers}));
+  return jira.write({method, path: url, body, headers});
 }
 async function uploadAttachment(url, file) {
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-  const response = await sendMessage({
-    action: 'uploadAttachment',
-    bytes,
-    contentType: file.type,
-    fileName: file.name,
-    url
-  });
-  return unwrapResponse(response, 'Attachment upload failed');
+  return jira.upload({path: url, file});
 }
 
 
@@ -378,9 +236,9 @@ async function mainAsyncLocal() {
   }).catch(() => ({
     [COMMENT_SORT_ORDER_STORAGE_KEY]: DEFAULT_COMMENT_SORT_ORDER
   }));
-  let commentSortOrderPreference = normalizeCommentSortOrder(
-    storedCommentSortState[COMMENT_SORT_ORDER_STORAGE_KEY]
-  );
+  let commentSortOrderPreference = storedCommentSortState[COMMENT_SORT_ORDER_STORAGE_KEY] === 'newest'
+    ? 'newest'
+    : DEFAULT_COMMENT_SORT_ORDER;
   if (window.top === window && !window.__JX_pageDiagnosticsLogged) {
     window.__JX_pageDiagnosticsLogged = true;
     const extensionVersion = chrome.runtime?.getManifest?.()?.version || '';
@@ -417,7 +275,7 @@ async function mainAsyncLocal() {
     environment: true,
     labels: true,
     epicParent: true,
-    attachments: false,
+    attachments: true,
     comments: true,
     description: true,
     children: true,
@@ -430,7 +288,7 @@ async function mainAsyncLocal() {
   const tooltipLayout = hasStoredTooltipLayout
     ? config.tooltipLayout
     : buildTooltipLayoutFromDisplayFields(displayFields);
-  const defaultContentBlocks = ['description', 'timeTracking', 'children', 'pullRequests', 'comments'];
+  const defaultContentBlocks = ['description', 'timeTracking', 'children', 'pullRequests', 'attachments', 'comments'];
   const layoutContentBlocks = [...(tooltipLayout.contentBlocks || defaultContentBlocks)];
   if (displayFields.description !== false && !layoutContentBlocks.includes('description')) {
     layoutContentBlocks.unshift('description');
@@ -438,15 +296,10 @@ async function mainAsyncLocal() {
   const showChildren = layoutContentBlocks.includes('children');
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
-  const hoverModifierKey = config.hoverModifierKey || 'any';
+  const activation = resolveQuickViewActivation(config);
+  const hoverModifierKey = activation.hoverModifierKey;
+  const {openQuickViewOnClick, hoverActivationMode} = activation;
   const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
-  installJiraInlineCopyButtons({
-    document,
-    instanceUrl: INSTANCE_URL,
-    enabled: config.inlineCopyButtons !== false,
-    copy: reference => copyIssueReferenceWithFeedback(reference)
-      .catch(() => snackBar('There was an error!')),
-  });
   let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
   let getJiraKeys = buildFallbackJiraKeyMatcher();
@@ -474,25 +327,6 @@ async function mainAsyncLocal() {
 
   const annotationTemplate = await fetch(chrome.runtime.getURL('resources/annotation.html')).then(response => response.text());
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
-  const imageProxyCache = {};
-  const cacheTtlMs = 60 * 1000;
-  const issueCache = new Map();
-  const childIssueCache = new Map();
-  const pullRequestCache = new Map();
-  const changelogCache = new Map();
-  const fieldOptionsCache = new Map();
-  const emptyCommentMentionState = () => ({
-    error: '',
-    loading: false,
-    query: '',
-    range: null,
-    selectedIndex: 0,
-    suggestions: [],
-    visible: false
-  });
-  const emptyCommentUploadState = () => ({
-    items: []
-  });
   const emptyDescriptionEditState = () => ({
     errorMessage: '',
     hadFocus: false,
@@ -509,44 +343,11 @@ async function mainAsyncLocal() {
     uploadSequence: 0,
     uploads: [],
   });
-  const emptyWatchersState = () => ({
-    open: false,
-    loading: false,
-    errorMessage: '',
-    searchValue: '',
-    searchLoading: false,
-    searchRequestId: 0,
-    watchers: [],
-    searchResults: [],
-    pendingAddIds: [],
-    pendingRemoveIds: [],
-    addFeedback: null,
-    removeFeedback: null,
-    focusSearch: false,
+  let commentPresentation = null;
+  let popupShell = null;
+  const attachmentPresentation = createContentAttachmentHelpers({
+    buildLinkHoverTitle,
   });
-  const emptyLinkedIssuesState = () => createEmptyLinkedIssuesState();
-  const projectSprintOptionsPromises = new Map();
-  const editMetaCache = new Map();
-  const transitionOptionsCache = new Map();
-  const assigneeSearchCache = new Map();
-  const genericUserSearchCache = new Map();
-  const assigneeLocalOptionsCache = new Map();
-  const watcherListCache = new Map();
-  const watcherSearchCache = new Map();
-  const issueSearchCache = new Map();
-  const issueSearchRecentCache = new Map();
-  const labelSuggestionCache = new Map();
-  const labelLocalOptionsCache = new Map();
-  const tempoAccountSearchCache = new Map();
-  const userPickerSearchCache = new Map();
-  const userPickerLocalOptionsCache = new Map();
-  const jiraUserDisplayNameCache = new Map();
-  const userSearchStrategyState = {
-    assignable: '',
-    people: '',
-  };
-  const sharedAvatarUrls = new Set();
-  let contentShellHelpers = null;
   const {
     buildHistoryAttachmentLookup,
     buildHistoryAttachmentView,
@@ -554,43 +355,74 @@ async function mainAsyncLocal() {
     collectReferencedHistoryAttachmentNames,
     dedupeHistoryAttachments,
     normalizeHistoryAttachmentName,
-  } = createContentAttachmentHelpers({
-    buildLinkHoverTitle,
-  });
+  } = attachmentPresentation;
   const {
     buildAttachmentImagesByName,
-    buildDraftMentionMapping,
-    buildEditableCommentDraft,
     buildHistoryPreviewText,
-    formatRelativeDate,
     getMentionDisplayText,
     normalizeCommentImageReference,
     replaceMentionMarkupWithDisplayText,
-    restoreEditableCommentMentions,
     textToLinkedHtml,
   } = createContentCommentHelpers({
     mentionContextWindow: MENTION_CONTEXT_WINDOW,
-    jiraUserDisplayNameCache,
+    resolveMentionDisplayName: identity => resolveKnownJiraUserDisplayName(identity),
     escapeHtml,
     normalizeHistoryAttachmentName,
   });
-  const {
-    getCachedValue,
-    getIssueChangelog,
-    getIssueMetaData,
-    getIssueSummary,
-    setCachedValue,
-  } = createContentIssueDataHelpers({
-    cacheTtlMs,
-    changelogCache,
+  const quickViewIssueData = createQuickViewIssueData({
     customFields,
-    get,
-    getEpicLinkFieldIds,
-    getSprintFieldIds,
     instanceUrl: INSTANCE_URL,
-    issueCache,
+    jira,
   });
-  const {formatChangelogForDisplay} = createContentHistoryHelpers({
+  installJiraInlineCopyButtons({
+    document,
+    instanceUrl: INSTANCE_URL,
+    enabled: config.inlineCopyButtons !== false,
+    copy: async reference => {
+      try {
+        let summary = reference.summary;
+        const displayedIssue = currentPopupState()?.issueData;
+        if (!summary && displayedIssue?.key === reference.key) summary = displayedIssue.fields?.summary;
+        if (!summary) {
+          const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
+          summary = outcome.snapshot?.core?.summary;
+          if (!summary) throw new Error('Could not load issue title');
+        }
+        await copyIssueReferenceWithFeedback({...reference, summary});
+      } catch (error) {
+        snackBar('Could not copy issue. Please try again.');
+        throw error;
+      }
+    },
+  });
+  const jiraFieldEditing = createJiraFieldEditing({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+  });
+  const commentLifecycle = createCommentLifecycle({
+    attachmentMedia: createBrowserAttachmentMediaAdapter(),
+    formatting: {
+      normalizeHtml(html, options = {}) {
+        return normalizeRichHtml(html, {
+          attachmentLookup: buildHistoryAttachmentLookup(options.attachments || []),
+          imageMaxHeight: options.imageMaxHeight,
+        });
+      },
+    },
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+  });
+
+  function issueDataError(failure, fallbackMessage) {
+    const message = failure?.message || fallbackMessage;
+    const error = new Error(message);
+    error.inner = message;
+    return error;
+  }
+
+  const historyPresentation = createContentHistoryHelpers({
     areSameJiraUser,
     buildAttachmentImagesByName,
     buildHistoryAttachmentLookup,
@@ -607,239 +439,150 @@ async function mainAsyncLocal() {
     normalizeRichHtml,
     textToLinkedHtml,
   });
-  const {
-    getEditableFieldCapability,
-    getIssueEditMeta,
-    getTransitionOptions,
-    pickSprintFieldId,
-  } = createContentFieldCapabilityHelpers({
-    editMetaCache,
-    get,
-    getBuildEditOption: () => buildEditOption,
-    getAllFields,
-    getCachedValue,
-    getSprintFieldIds,
-    instanceUrl: INSTANCE_URL,
-    transitionOptionsCache,
-  });
-  const {
-    getRecentIssueSearchOptions,
-    resolveIssueLinkage,
-    searchParentCandidates,
-  } = createContentIssueLinkageHelpers({
-    encodeJqlValue,
-    get,
-    getBuildEditOption: () => buildEditOption,
-    getCachedValue,
-    getIssueEditMeta: () => getIssueEditMeta,
-    getIssueSummary,
-    instanceUrl: INSTANCE_URL,
-    issueSearchCache,
-    issueSearchRecentCache,
-  });
-  const {
-    getIssueLinkTypes,
-    getLinkedIssueDetails,
-    searchIssueLinkCandidates,
-  } = createContentLinkedIssuesHelpers({
-    encodeJqlValue,
-    get,
-    getCachedValue,
-    instanceUrl: INSTANCE_URL,
-    issueSearchCache,
-  });
-  let labelSuggestionSupportPromise = null;
-  let editSearchRequestCounter = 0;
-  let labelSearchTimeoutId = null;
-  let watchersFeedbackTimeoutId = null;
-  let linkedIssuesSearchTimeoutId = null;
-  let actionNoticeTimeoutId = null;
   let descriptionStatusTimeoutId = null;
-  let popupState = null;
-  let activeCommentContext = null;
-  let commentMentionState = emptyCommentMentionState();
-  let commentComposerMentionMappings = [];
-  let commentMentionRequestId = 0;
-  let commentEditMentionState = {...emptyCommentMentionState(), commentId: ''};
-  let commentEditMentionRequestId = 0;
-  let commentUploadState = emptyCommentUploadState();
-  let commentUploadSessionId = 0;
-  let commentUploadSequence = 0;
-  let commentComposerDraftValue = '';
-  let commentComposerErrorMessage = '';
-  let commentComposerHadFocus = false;
-  let commentComposerSelectionStart = 0;
-  let commentComposerSelectionEnd = 0;
+  const currentPopupState = () => popupModel.view();
+
+  async function refreshPopupIssueState(successMessage = '', refreshOptions = {}) {
+    const currentPopup = currentPopupState();
+    if (!currentPopup?.key) return;
+    const {
+      showSnackBar = false,
+      nextTimeTrackingEditState,
+      preserveHistory = false,
+    } = refreshOptions;
+    const popupKey = currentPopup.key;
+    const priorSnapshot = currentPopup.issueSnapshot;
+    const shouldKeepHistoryOpen = !!(preserveHistory && currentPopup.historyOpen);
+    const issueOutcome = await quickViewIssueData.refreshAfterMutation({
+      issueKey: popupKey,
+      priorSnapshot,
+      mutation: refreshOptions.mutation || {kind: 'issueChanged'},
+      requirements: {
+        history: shouldKeepHistoryOpen,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
+        pullRequests: showPullRequests,
+      },
+    });
+    if (!issueOutcome.snapshot?.core) {
+      const message = issueOutcome.failures?.core?.message || 'Could not refresh issue';
+      const error = new Error(message);
+      error.inner = message;
+      throw error;
+    }
+    if (currentPopupState()?.key !== popupKey) return;
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: nextTimeTrackingEditState || createTimeTrackingEditState(issueOutcome.snapshot.core),
+    });
+    await popupSession.dispatch({
+      type: 'render',
+      reason: 'issue-refreshed',
+      issueSnapshot: issueOutcome.snapshot,
+      notice: showSnackBar ? '' : successMessage,
+    });
+    if (showSnackBar && successMessage) snackBar(successMessage);
+  }
+
+  async function handleDraftAttachmentUploaded(uploadedAttachment) {
+    const attachmentPopupState = currentPopupState();
+    const popupKey = attachmentPopupState?.key;
+    const currentIssueData = attachmentPopupState?.issueData;
+    if (!popupKey || !currentIssueData?.fields || !uploadedAttachment) return;
+    const normalizedAttachment = await normalizeIssueAttachmentImage({...uploadedAttachment});
+    const issueOutcome = await quickViewIssueData.refreshAfterMutation({
+      issueKey: popupKey,
+      priorSnapshot: attachmentPopupState.issueSnapshot,
+      mutation: {kind: 'attachmentChanged'},
+      requirements: {history: !!attachmentPopupState.historyOpen},
+    });
+    if (currentPopupState()?.key !== popupKey) return;
+    if (issueOutcome.snapshot?.core) {
+      await popupSession.dispatch({type: 'render', reason: 'attachment-refreshed', issueSnapshot: issueOutcome.snapshot});
+    }
+    popupModel.dispatch({type: 'attachmentUploaded', attachment: normalizedAttachment});
+    await renderCurrentPopup('attachment-normalized');
+  }
+  const people = createContentPeopleHelpers({
+    areSameJiraUser,
+  });
   const {
-    buildQuickActionError,
-    buildQuickActionViewData,
-    executeQuickAction,
-    getCurrentUserInfo,
-    resolveQuickActions,
-  } = createPopupQuickActions({
+    buildUserView,
+    normalizeAssignableUsers,
+    normalizeWatcherUsers,
+  } = people;
+  const popupQuickActions = createPopupQuickActions({
     INSTANCE_URL,
     formatSprintActionLabel,
-    get,
     getProjectSprintOptions,
-    getSprintFieldIds,
-    pickSprintFieldId,
+    issueData: quickViewIssueData,
+    jira,
+    loadFieldContext: request => quickViewIssueData.loadFieldContext(request),
+    loadViewer: getCurrentUserInfo,
     readSprintsFromIssue,
-    requestJson,
   });
-
-  const {
-    buildNextWatchersState,
-    buildPopupInteractionReset,
-    handleDraftAttachmentUploaded,
-    invalidatePopupCaches,
-    refreshPopupIssueState,
-    renderUpdatedPopupState,
-  } = createContentPopupStateHelpers({
-    assigneeLocalOptionsCache,
-    assigneeSearchCache,
-    changelogCache,
-    clearActionNoticeTimer,
-    createTimeTrackingEditState,
-    editMetaCache,
-    emptyWatchersState,
-    getIssueChangelog,
-    getIssueMetaData,
-    getIssueWatchers,
-    getPopupState: () => popupState,
-    getPullRequestDataCached,
-    issueCache,
-    issueSearchCache,
-    labelLocalOptionsCache,
-    normalizeHistoryAttachmentName,
-    normalizeIssueAttachmentImage,
-    normalizeIssueImages,
-    normalizePullRequests,
-    normalizePullRequestImages,
-    pullRequestCache,
-    renderIssuePopup,
-    resolveQuickActions,
-    scheduleActionNoticeClear,
-    setPopupState: nextState => {
-      popupState = nextState;
-    },
-    sharedAvatarUrls,
-    showPullRequests,
-    snackBar,
-    tempoAccountSearchCache,
-    transitionOptionsCache,
-    userPickerLocalOptionsCache,
-    userPickerSearchCache,
-    watcherListCache,
-    watcherSearchCache,
+  const watcherLifecycle = createWatcherLifecycle({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+    loadViewer: getCurrentUserInfo,
+    normalizeUsers: normalizeWatcherUsers,
   });
-
-  const {
-    buildEditOption,
-    buildNextMultiSelectState,
-    buildNextTextEditState,
-    filterEditOptions,
-    getEditableFieldDefinition,
-    mergeEditOptions,
-    normalizeMultiSelectOptionIds,
-    resolveSelectedEditOptions,
-    submitFieldEdit,
-    toggleMultiSelectOptionFromInput,
-  } = createPopupEditing({
-    INSTANCE_URL,
-    assigneeLocalOptionsCache,
-    buildEditFieldError,
-    compareSprintState,
-    fieldOptionsCache,
-    formatSprintOptionLabel,
-    formatSprintText,
-    formatVersionText,
-    get,
-    getCachedValue,
-    getCustomFieldEditorDefinition,
-    getEditableFieldCapability,
-    getLabelSuggestions,
-    getPopupState: () => popupState,
-    getRecentIssueSearchOptions,
-    getSprintFieldIds,
-    getTransitionOptions,
-    hasLabelSuggestionSupport,
-    labelLocalOptionsCache,
-    normalizeIssueTypeOptions,
-    pickSprintFieldId,
-    readSprintBoardRefsFromIssue,
-    readSprintsFromIssue,
-    refreshPopupIssueState,
-    renderIssuePopup,
-    requestJson,
-    resolveIssueLinkage,
-    searchAssignableUsers,
-    searchUserPicker,
-    searchParentCandidates,
-    setPopupState: nextState => {
-      popupState = nextState;
+  const linkedIssueLifecycle = createLinkedIssueLifecycle({
+    instanceUrl: INSTANCE_URL,
+    issueData: quickViewIssueData,
+    jira,
+  });
+  const popupModel = createBrowserPopupModel({
+    createDescriptionState: createDescriptionEditState,
+    createTimeTrackingState: createTimeTrackingEditState,
+    renderProjection(state, context) {
+      return popupRenderer.render(state, context);
     },
   });
 
-  const {
-    applyCommentMentionSelection,
-    captureCommentComposerDraft,
-    clearCommentUploads,
-    discardCommentComposerDraft,
-    getClipboardImageFiles,
-    getCommentComposerElements,
-    hasCommentUploadInFlight,
-    moveCommentMentionSelection,
-    renderCommentMentionSuggestions,
-    renderCommentUploads,
-    resetCommentMentionState,
-    restoreCommentComposerDraft,
-    restoreCommentComposerState,
-    setCommentComposerError,
-    syncCommentComposerState,
-    syncCommentMentionSuggestions,
-    uploadPastedImage,
-  } = createPopupCommentComposer({
-    INSTANCE_URL,
-    emptyCommentMentionState,
-    emptyCommentUploadState,
-    escapeHtml,
-    get,
-    getActiveCommentContext: () => activeCommentContext,
-    getCommentComposerErrorMessage: () => commentComposerErrorMessage,
-    getCommentComposerHadFocus: () => commentComposerHadFocus,
-    getCommentComposerMentionMappings: () => commentComposerMentionMappings,
-    getCommentComposerSelectionEnd: () => commentComposerSelectionEnd,
-    getCommentComposerSelectionStart: () => commentComposerSelectionStart,
-    getCommentComposerDraftValue: () => commentComposerDraftValue,
-    getCommentMentionRequestId: () => commentMentionRequestId,
-    getCommentMentionState: () => commentMentionState,
-    getCommentUploadSequence: () => commentUploadSequence,
-    getCommentUploadSessionId: () => commentUploadSessionId,
-    getCommentUploadState: () => commentUploadState,
-    getContainer: () => container,
-    getDisplayImageUrl,
-    rememberDisplayImageUrl,
-    onAttachmentUploaded: handleDraftAttachmentUploaded,
-    keepContainerVisible,
-    requestJson,
-    restoreEditableCommentMentions,
-    setActiveCommentContext: nextValue => { activeCommentContext = nextValue; },
-    setCommentComposerErrorMessage: nextValue => { commentComposerErrorMessage = nextValue; },
-    setCommentComposerHadFocus: nextValue => { commentComposerHadFocus = nextValue; },
-    setCommentComposerMentionMappings: nextValue => { commentComposerMentionMappings = nextValue; },
-    setCommentComposerSelectionEnd: nextValue => { commentComposerSelectionEnd = nextValue; },
-    setCommentComposerSelectionStart: nextValue => { commentComposerSelectionStart = nextValue; },
-    setCommentComposerDraftValue: nextValue => { commentComposerDraftValue = nextValue; },
-    setCommentMentionRequestId: nextValue => { commentMentionRequestId = nextValue; },
-    setCommentMentionState: nextValue => { commentMentionState = nextValue; },
-    setCommentUploadSequence: nextValue => { commentUploadSequence = nextValue; },
-    setCommentUploadSessionId: nextValue => { commentUploadSessionId = nextValue; },
-    setCommentUploadState: nextValue => { commentUploadState = nextValue; },
-    setPopupState: nextValue => { popupState = nextValue; },
-    textToLinkedHtml,
-    toAbsoluteJiraUrl,
-    uploadAttachment,
+  const popupSurface = createBrowserPopupSurface({
+    commitCurrent(frame, context) {
+      return popupModel.commit(frame, context);
+    },
+    commitLoading(frame, context) {
+      return popupRenderer.renderLoading(frame, context);
+    },
+    commitVisible(frame, context) {
+      return popupModel.commit(frame, context, {opening: true});
+    },
+    async hidePopup() {
+      await clearPopupSurface();
+    },
+    reportFailure(failure) {
+      notifyJiraConnectionFailure(INSTANCE_URL, issueDataError(failure, 'Could not load issue'));
+      lastHoveredKey = '';
+    },
   });
+  const popupSession = createPopupSession({
+    issueData: quickViewIssueData,
+    fieldEditing: jiraFieldEditing,
+    comments: commentLifecycle,
+    quickActions: popupQuickActions,
+    watchers: watcherLifecycle,
+    linkedIssues: linkedIssueLifecycle,
+    surface: popupSurface,
+  });
+
+  function currentPopupSessionId() {
+    return popupSession.view().sessionId;
+  }
+
+  function renderCurrentPopup(reason = 'feature-changed', details = {}) {
+    return popupSession.dispatch({type: 'render', reason, issueSnapshot: currentPopupState()?.issueSnapshot, ...details});
+  }
+
+  function renderIssuePopup(_state, renderOptions = {}) {
+    const details = {...renderOptions};
+    const reason = details.reason || 'popup-state-changed';
+    delete details.isCurrent;
+    delete details.reason;
+    return renderCurrentPopup(reason, details);
+  }
 
 
   // ── URL & Image Handling ───────────────────────────────────
@@ -879,37 +622,6 @@ async function mainAsyncLocal() {
     }
   }
 
-  function buildDisplayImageCacheKeys(url) {
-    const absoluteUrl = toAbsoluteJiraUrl(url);
-    if (!absoluteUrl) {
-      return [];
-    }
-    const proxyUrl = buildAttachmentProxyUrl(absoluteUrl);
-    return [...new Set([absoluteUrl, proxyUrl].filter(Boolean))];
-  }
-
-  function getCachedDisplayImageUrl(url) {
-    const cacheKeys = buildDisplayImageCacheKeys(url);
-    for (const cacheKey of cacheKeys) {
-      const cachedUrl = imageProxyCache[cacheKey];
-      if (isImageDataUrl(cachedUrl)) {
-        return cachedUrl;
-      }
-    }
-    return '';
-  }
-
-  function cacheDisplayImageUrl(dataUrl, ...urls) {
-    if (!isImageDataUrl(dataUrl)) {
-      return;
-    }
-    urls.forEach(url => {
-      buildDisplayImageCacheKeys(url).forEach(cacheKey => {
-        imageProxyCache[cacheKey] = dataUrl;
-      });
-    });
-  }
-
   async function getDisplayImageUrl(url, mimeType = '') {
     const absoluteUrl = toAbsoluteJiraUrl(url);
     if (!absoluteUrl) {
@@ -929,15 +641,9 @@ async function mainAsyncLocal() {
         return absoluteUrl;
       }
     }
-    const cachedDataUrl = getCachedDisplayImageUrl(absoluteUrl);
-    if (cachedDataUrl) {
-      return cachedDataUrl;
-    }
     const fetchUrl = buildAttachmentProxyUrl(absoluteUrl);
     try {
-      const dataUrl = await getImageDataUrl(fetchUrl, mimeType);
-      cacheDisplayImageUrl(dataUrl, absoluteUrl, fetchUrl);
-      return dataUrl;
+      return await getImageDataUrl(fetchUrl, mimeType);
     } catch (ex) {
       try {
         const response = await fetch(fetchUrl, {credentials: 'include'});
@@ -948,9 +654,7 @@ async function mainAsyncLocal() {
             const normalizedBlob = responseBlob.type === effectiveMimeType
               ? responseBlob
               : new Blob([await responseBlob.arrayBuffer()], {type: effectiveMimeType});
-            const dataUrl = await blobToDataUrl(normalizedBlob);
-            cacheDisplayImageUrl(dataUrl, absoluteUrl, fetchUrl);
-            return dataUrl;
+            return blobToDataUrl(normalizedBlob);
           }
         }
       } catch (fallbackError) {
@@ -961,7 +665,7 @@ async function mainAsyncLocal() {
   }
 
   function rememberDisplayImageUrl(url, dataUrl) {
-    cacheDisplayImageUrl(dataUrl, url);
+    return isImageDataUrl(dataUrl) ? dataUrl : url;
   }
 
   async function resolveAttachmentDisplayImageUrl(mimeType, ...candidateUrls) {
@@ -1010,90 +714,6 @@ async function mainAsyncLocal() {
     return attachment;
   }
 
-  function queueAvatarNormalization(imageLoads, field) {
-    const avatarUrl = field?.avatarUrls?.['48x48'] || field?.avatarUrl || '';
-    if (!avatarUrl) {
-      return;
-    }
-    imageLoads.push(
-      getDisplayImageUrl(avatarUrl).then(src => {
-        if (!field || typeof field !== 'object') {
-          return;
-        }
-        field.avatarUrls = field.avatarUrls || {};
-        field.avatarUrls['48x48'] = src;
-        field.avatarUrl = src;
-      })
-    );
-  }
-
-  function queueIconNormalization(imageLoads, field) {
-    if (!field?.iconUrl) {
-      return;
-    }
-    imageLoads.push(
-      getDisplayImageUrl(field.iconUrl).then(src => {
-        field.iconUrl = src;
-      })
-    );
-  }
-
-  async function normalizeIssueImages(issueData) {
-    const imageLoads = [];
-
-    queueAvatarNormalization(imageLoads, issueData.fields.reporter);
-    queueAvatarNormalization(imageLoads, issueData.fields.assignee);
-    queueIconNormalization(imageLoads, issueData.fields.issuetype);
-    queueIconNormalization(imageLoads, issueData.fields.status);
-    queueIconNormalization(imageLoads, issueData.fields.priority);
-
-    // Normalize comment author avatars
-    (issueData.fields.comment?.comments || []).forEach(comment => {
-      queueAvatarNormalization(imageLoads, comment.author);
-    });
-
-    // Normalize custom field user avatars
-    Object.keys(issueData.fields || {}).forEach(fieldKey => {
-      if (!fieldKey.startsWith('customfield_')) {
-        return;
-      }
-      const fieldValue = issueData.fields[fieldKey];
-      if (fieldValue && typeof fieldValue === 'object' && fieldValue.avatarUrls) {
-        queueAvatarNormalization(imageLoads, fieldValue);
-      }
-      if (Array.isArray(fieldValue)) {
-        fieldValue.forEach(entry => {
-          if (entry && typeof entry === 'object' && entry.avatarUrls) {
-            queueAvatarNormalization(imageLoads, entry);
-          }
-        });
-      }
-    });
-
-    (issueData.fields.attachment || []).forEach(attachment => {
-      imageLoads.push(normalizeIssueAttachmentImage(attachment));
-    });
-
-    await Promise.all(imageLoads);
-  }
-
-  async function normalizeChildIssueImages(childIssues) {
-    const imageLoads = [];
-    (Array.isArray(childIssues) ? childIssues : []).forEach(issue => {
-      queueIconNormalization(imageLoads, issue?.fields?.issuetype);
-      queueAvatarNormalization(imageLoads, issue?.fields?.assignee);
-    });
-    await Promise.all(imageLoads);
-  }
-
-  async function normalizePullRequestImages(pullRequests) {
-    const imageLoads = [];
-    (Array.isArray(pullRequests) ? pullRequests : []).forEach(pr => {
-      queueAvatarNormalization(imageLoads, pr?.author);
-    });
-    await Promise.all(imageLoads);
-  }
-
   // ── Text & HTML Formatting ─────────────────────────────────
 
   function escapeHtml(input) {
@@ -1106,24 +726,25 @@ async function mainAsyncLocal() {
     return String(issueKey || '').trim().replace(/\s+/g, '-').toUpperCase();
   }
 
-  function cacheKnownJiraUser(user) {
-    if (!user || typeof user !== 'object') {
-      return;
-    }
-    const displayName = String(user.displayName || user.name || user.username || user.key || user.emailAddress || '').trim();
-    if (!displayName) {
-      return;
-    }
-    [user.accountId, user.name, user.username, user.key]
-      .map(value => String(value || '').trim())
-      .filter(Boolean)
-      .forEach(identity => {
-        jiraUserDisplayNameCache.set(identity, displayName);
-      });
-  }
-
-  function cacheKnownJiraUsers(users) {
-    (Array.isArray(users) ? users : []).forEach(cacheKnownJiraUser);
+  function resolveKnownJiraUserDisplayName(identity) {
+    const normalizedIdentity = String(identity || '').replace(/^accountid:/i, '').trim();
+    if (!normalizedIdentity) return '';
+    const fields = currentPopupState()?.issueData?.fields || {};
+    const users = [
+      fields.reporter,
+      fields.assignee,
+      ...(fields.comment?.comments || []).map(comment => comment?.author),
+      ...(watcherLifecycle.view().watchers || []),
+      ...(watcherLifecycle.view().searchResults || []),
+      ...(commentLifecycle.view().compose?.mention?.suggestions || []),
+      ...(commentLifecycle.view().rowAction?.mention?.suggestions || []),
+    ];
+    Object.keys(fields).filter(key => key.startsWith('customfield_')).forEach(key => {
+      users.push(...(Array.isArray(fields[key]) ? fields[key] : [fields[key]]));
+    });
+    const user = users.find(candidate => [candidate?.accountId, candidate?.name, candidate?.username, candidate?.key]
+      .some(value => String(value || '').trim() === normalizedIdentity));
+    return String(user?.displayName || user?.name || user?.username || user?.key || '').trim();
   }
 
   function replaceMentionTextNodes(rootNode) {
@@ -1358,17 +979,14 @@ async function mainAsyncLocal() {
   }
 
   function getDescriptionEditState() {
-    return popupState?.descriptionEditState || createDescriptionEditState(popupState?.issueData);
+    return currentPopupState()?.descriptionEditState || createDescriptionEditState(currentPopupState()?.issueData);
   }
 
   function setDescriptionEditState(nextState) {
-    if (!popupState) {
+    if (!currentPopupState()) {
       return;
     }
-    popupState = {
-      ...popupState,
-      descriptionEditState: nextState
-    };
+    popupModel.dispatch({type: 'descriptionChanged', state: nextState});
   }
 
   function clearDescriptionStatusTimer() {
@@ -1385,7 +1003,7 @@ async function mainAsyncLocal() {
     }
     descriptionStatusTimeoutId = setTimeout(() => {
       descriptionStatusTimeoutId = null;
-      const currentState = popupState?.descriptionEditState;
+      const currentState = currentPopupState()?.descriptionEditState;
       if (!currentState || currentState.open || currentState.statusMessage !== statusMessage) {
         return;
       }
@@ -1394,7 +1012,7 @@ async function mainAsyncLocal() {
         statusKind: '',
         statusMessage: ''
       });
-      renderIssuePopup(popupState).catch(() => {});
+      renderIssuePopup(currentPopupState()).catch(() => {});
     }, 5000);
   }
 
@@ -1498,7 +1116,7 @@ async function mainAsyncLocal() {
   }
 
   function updateDescriptionDraft(nextValue, selectionStart, selectionEnd) {
-    if (!popupState?.descriptionEditState?.open) {
+    if (!currentPopupState()?.descriptionEditState?.open) {
       return;
     }
     setDescriptionEditState({
@@ -1509,7 +1127,7 @@ async function mainAsyncLocal() {
       selectionStart: typeof selectionStart === 'number' ? selectionStart : String(nextValue || '').length,
       selectionEnd: typeof selectionEnd === 'number' ? selectionEnd : String(nextValue || '').length,
     });
-    renderIssuePopup(popupState).catch(() => {});
+    renderIssuePopup(currentPopupState()).catch(() => {});
   }
 
   function replaceDescriptionSelection(replacer) {
@@ -1537,7 +1155,7 @@ async function mainAsyncLocal() {
       selectionStart: Number.isInteger(nextSelection.selectionStart) ? nextSelection.selectionStart : selectionStart,
       selectionEnd: Number.isInteger(nextSelection.selectionEnd) ? nextSelection.selectionEnd : selectionEnd,
     });
-    renderIssuePopup(popupState).catch(() => {});
+    renderIssuePopup(currentPopupState()).catch(() => {});
   }
 
   function wrapDescriptionSelectionLineByLine(text, prefix, suffix) {
@@ -1658,17 +1276,19 @@ async function mainAsyncLocal() {
   }
 
   function startDescriptionEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
-    pinContainer({showNotice: false});
+    popupShell?.dispatch({type: 'pin', announce: false}).catch(() => {});
     clearDescriptionStatusTimer();
-    setDescriptionEditState(createDescriptionEditState(popupState.issueData, {open: true}));
-    renderIssuePopup(popupState).catch(() => {});
+    setDescriptionEditState(createDescriptionEditState(popupView.issueData, {open: true}));
+    renderIssuePopup(popupView).catch(() => {});
   }
 
   async function cancelDescriptionEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
     const currentState = getDescriptionEditState();
@@ -1683,24 +1303,29 @@ async function mainAsyncLocal() {
     });
     await discardDescriptionEditStateSnapshot(currentState, {deleteUploaded: true});
     if (hadDraftUploads) {
-      await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
+      await refreshPopupIssueState('', {
+        mutation: {kind: 'attachmentChanged'},
+        preserveHistory: !!currentPopupState()?.historyOpen,
+      });
     }
-    if (!popupState?.issueData) {
+    const refreshedPopupView = currentPopupState();
+    if (!refreshedPopupView?.issueData) {
       return;
     }
-    setDescriptionEditState(createDescriptionEditState(popupState.issueData));
-    renderIssuePopup(popupState).catch(() => {});
+    setDescriptionEditState(createDescriptionEditState(refreshedPopupView.issueData));
+    renderIssuePopup(refreshedPopupView).catch(() => {});
   }
 
   async function uploadDescriptionImage(file) {
-    if (!popupState?.issueData?.key) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData?.key) {
       return;
     }
     const currentState = getDescriptionEditState();
     if (!currentState.open) {
       return;
     }
-    const issueKey = popupState.issueData.key;
+    const issueKey = popupView.issueData.key;
     const {fileName, uploadSequence} = buildDescriptionUploadFileName(file, currentState);
     const localId = `description-upload-${Date.now()}-${uploadSequence}`;
     const markup = buildDescriptionImageMarkup(fileName);
@@ -1744,7 +1369,7 @@ async function mainAsyncLocal() {
       uploadSequence,
       uploads: nextUploads,
     });
-    await renderIssuePopup(popupState);
+    await renderIssuePopup(currentPopupState());
 
     try {
       const uploadResult = await uploadAttachment(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/attachments`, new File([file], fileName, {type: file.type || 'image/png'}));
@@ -1753,7 +1378,7 @@ async function mainAsyncLocal() {
         throw new Error('Attachment upload failed');
       }
       const latestState = getDescriptionEditState();
-      if (!popupState?.issueData || popupState.issueData.key !== issueKey || !latestState.open) {
+      if (currentPopupState()?.issueData?.key !== issueKey || !latestState.open) {
         await deleteDescriptionDraftAttachment(uploadedAttachment.id);
         return;
       }
@@ -1790,7 +1415,7 @@ async function mainAsyncLocal() {
         displayContent: displayUrl,
         thumbnail: displayUrl || toAbsoluteJiraUrl(uploadedAttachment.thumbnail || uploadedAttachment.content),
       });
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(currentPopupState());
     } catch (error) {
       const latestState = getDescriptionEditState();
       if (!latestState.open) {
@@ -1811,12 +1436,13 @@ async function mainAsyncLocal() {
           };
         }),
       });
-      renderIssuePopup(popupState).catch(() => {});
+      renderIssuePopup(currentPopupState()).catch(() => {});
     }
   }
 
   async function saveDescriptionEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
     const currentState = getDescriptionEditState();
@@ -1828,7 +1454,7 @@ async function mainAsyncLocal() {
       return;
     }
     const attachmentByMarkup = {};
-    const issueAttachments = Array.isArray(popupState?.issueData?.fields?.attachment) ? popupState.issueData.fields.attachment : [];
+    const issueAttachments = Array.isArray(popupView.issueData?.fields?.attachment) ? popupView.issueData.fields.attachment : [];
     issueAttachments.forEach(attachment => {
       const fileName = String(attachment?.filename || '').trim();
       if (!fileName) {
@@ -1861,7 +1487,7 @@ async function mainAsyncLocal() {
         statusKind: 'error',
         statusMessage: saveValueResult.error,
       });
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(currentPopupState());
       return;
     }
 
@@ -1873,24 +1499,28 @@ async function mainAsyncLocal() {
       statusKind: 'info',
       statusMessage: 'Saving description...',
     });
-    await renderIssuePopup(popupState);
+    await renderIssuePopup(currentPopupState());
 
     try {
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}`, {
+      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupView.key}`, {
         fields: {
           description: saveValueResult.value,
         }
       });
-      await refreshPopupIssueState('', {preserveHistory: !!popupState?.historyOpen});
-      if (!popupState?.issueData) {
+      await refreshPopupIssueState('', {
+        mutation: {kind: 'descriptionChanged'},
+        preserveHistory: !!currentPopupState()?.historyOpen,
+      });
+      const refreshedPopupView = currentPopupState();
+      if (!refreshedPopupView?.issueData) {
         return;
       }
       const successMessage = nextDescription.trim() ? 'Description updated' : 'Description cleared';
-      setDescriptionEditState(createDescriptionEditState(popupState.issueData, {
+      setDescriptionEditState(createDescriptionEditState(refreshedPopupView.issueData, {
         statusKind: 'success',
         statusMessage: successMessage,
       }));
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(refreshedPopupView);
       scheduleDescriptionStatusClear(successMessage);
     } catch (error) {
       const latestState = getDescriptionEditState();
@@ -1903,605 +1533,150 @@ async function mainAsyncLocal() {
         statusKind: 'error',
         statusMessage: displayError,
       });
-      await renderIssuePopup(popupState);
+      await renderIssuePopup(currentPopupState());
     }
   }
 
   // ── Comments ──────────────────────────────────────────────
 
-  async function buildCommentsForDisplay(
-    issueData,
-    commentSession = null,
-    reactionState = popupState?.commentReactionState,
-    commentSortOrder = popupState?.commentSortOrder
-  ) {
-    const issueKey = issueData?.key || '';
-    const normalizedCommentSortOrder = normalizeCommentSortOrder(commentSortOrder);
-    const comments = [...(issueData.fields.comment?.comments || [])].sort((a, b) => {
-      const leftTimestamp = new Date(a.created).getTime();
-      const rightTimestamp = new Date(b.created).getTime();
-      return normalizedCommentSortOrder === 'newest'
-        ? rightTimestamp - leftTimestamp
-        : leftTimestamp - rightTimestamp;
-    });
-    const renderedById = {};
-    const attachmentLookup = buildHistoryAttachmentLookup(issueData?.fields?.attachment || []);
-    const attachmentImagesByName = buildAttachmentImagesByName(attachmentLookup, 100);
-    const currentUser = await getCurrentUserInfo().catch(() => null);
-    cacheKnownJiraUser(currentUser);
-    cacheKnownJiraUser(issueData?.fields?.reporter);
-    cacheKnownJiraUser(issueData?.fields?.assignee);
-    cacheKnownJiraUsers(comments.map(comment => comment?.author).filter(Boolean));
-    ((issueData.renderedFields?.comment?.comments) || []).forEach(comment => {
-      if (comment && comment.id) {
-        renderedById[comment.id] = comment.body;
-      }
-    });
-
-    return Promise.all(comments.map(async comment => {
-      const rendered = renderedById[comment.id];
-      const baseHtml = rendered || textToLinkedHtml(comment.body || '', {attachmentImagesByName});
-      const bodyHtml = await normalizeRichHtml(baseHtml, {imageMaxHeight: 100, attachmentLookup});
-      const commentId = String(comment.id || '');
-      const isOwnedByCurrentUser = areSameJiraUser(comment.author, currentUser);
-      const isEditing = commentSession?.commentId === commentId && commentSession.mode === 'edit';
-      const isDeleteConfirming = commentSession?.commentId === commentId && commentSession.mode === 'delete';
-      const sessionError = commentSession?.commentId === commentId ? (commentSession.error || '') : '';
-      const editDraft = commentSession?.commentId === commentId
-        ? String(commentSession.draft ?? comment.body ?? '')
-        : String(comment.body || '');
-      const hasEditDraft = !!editDraft.trim();
-      const commentPermalink = buildCommentPermalink(issueKey, commentId);
-      const commentLinkTitleText = `[${issueKey}] ${issueData?.fields?.summary || ''}`.trim();
-      const reactionUi = buildCommentReactionUi(commentId, reactionState);
-      const authorView = buildUserView(comment.author);
-      return {
-        id: commentId,
-        author: authorView.displayName || 'Unknown',
-        authorAvatarUrl: authorView.avatarUrl,
-        authorInitials: authorView.initials,
-        authorIdentity: {
-          accountId: comment.author?.accountId || '',
-          key: comment.author?.key || '',
-          name: comment.author?.name || comment.author?.username || '',
-          username: comment.author?.username || comment.author?.name || ''
-        },
-        created: formatRelativeDate(comment.created),
-        commentPermalink,
-        commentLinkTitle: buildLinkHoverTitle('Open comment in Jira', commentLinkTitleText, commentPermalink),
-        commentCopyTitle: buildLinkHoverTitle('Copy comment link', commentLinkTitleText, commentPermalink),
-        commentCopyLabel: commentLinkTitleText,
-        bodyHtml,
-        bodyRaw: String(comment.body || ''),
-        isOwnedByCurrentUser,
-        showCommentActions: isOwnedByCurrentUser,
-        isEditing,
-        isDeleteConfirming,
-        commentActionBusy: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentActionError: sessionError,
-        showCommentDefaultActions: isOwnedByCurrentUser && !isEditing && !isDeleteConfirming,
-        showCommentEditHeaderActions: isOwnedByCurrentUser && isEditing,
-        showCommentDeleteHeaderActions: isOwnedByCurrentUser && isDeleteConfirming,
-        commentEditDraft: editDraft,
-        commentEditSaveDisabled: !hasEditDraft || (!!commentSession?.saving && commentSession?.commentId === commentId),
-        commentEditCancelDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentDeleteCancelDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentDeleteConfirmDisabled: !!commentSession?.saving && commentSession?.commentId === commentId,
-        commentEditSaveText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Saving...' : 'Save',
-        commentDeleteConfirmText: !!commentSession?.saving && commentSession?.commentId === commentId ? 'Deleting...' : 'Yes',
-        commentDeleteCancelText: 'No',
-        reactionError: getCommentReactionError(commentId, reactionState),
-        ...reactionUi
-      };
-    }));
-  }
-
-  function normalizeCommentReactionState(state) {
-    if (state && typeof state === 'object') {
-      return {
-        byCommentId: state.byCommentId || {},
-        supported: state.supported !== false
-      };
-    }
-    return emptyCommentReactionState();
-  }
-
-  function getCommentReactionEntry(commentId, emojiId, reactionState = popupState?.commentReactionState) {
-    const normalizedState = normalizeCommentReactionState(reactionState);
-    return normalizedState.byCommentId?.[String(commentId)]?.[emojiId] || {};
-  }
-
-  function getCommentReactionError(commentId, reactionState = popupState?.commentReactionState) {
-    const reactionEntry = getCommentReactionEntry(commentId, '__comment__', reactionState);
-    return reactionEntry.error || '';
-  }
-
-  function buildCommentReactionOptions(commentId, reactionState = popupState?.commentReactionState) {
-    const normalizedState = normalizeCommentReactionState(reactionState);
-    if (!normalizedState.supported || !commentId) {
-      return {pills: [], menuOptions: []};
-    }
-    const pills = [];
-    const menuOptions = [];
-    for (const option of COMMENT_REACTION_OPTIONS) {
-      const entry = getCommentReactionEntry(commentId, option.emojiId, normalizedState);
-      const count = Number(entry.count) || 0;
-      const reacted = !!entry.reacted;
-      const pending = !!entry.pending;
-      menuOptions.push({
-        commentId,
-        emoji: option.emoji,
-        emojiId: option.emojiId,
-        label: option.label,
-        title: pending ? `${option.label}...` : option.label,
-        isReacted: reacted,
-        isPending: pending,
-        disabledAttr: pending ? 'disabled' : ''
-      });
-      if (count > 0) {
-        pills.push({
-          commentId,
-          emoji: option.emoji,
-          emojiId: option.emojiId,
-          count,
-          reacted,
-          pending,
-          title: pending ? `${option.label}...` : `${option.label} (${count})`,
-          disabledAttr: pending ? 'disabled' : ''
-        });
-      }
-    }
-    return {pills, menuOptions};
-  }
-
-  function buildCommentReactionUi(commentId, reactionState = popupState?.commentReactionState) {
-    const {pills, menuOptions} = buildCommentReactionOptions(commentId, reactionState);
-    return {
-      hasReactionOptions: menuOptions.length > 0,
-      reactionPills: pills,
-      hasReactionPills: pills.length > 0,
-      menuReactionOptions: menuOptions
-    };
-  }
-
-
-  function getCommentMentionMarkup(candidate) {
-    const username = candidate?.name || candidate?.username || '';
-    if (username) {
-      return `[~${username}]`;
-    }
-    const accountId = candidate?.accountId || '';
-    if (accountId) {
-      return `[~accountid:${accountId}]`;
-    }
-    return '';
-  }
-
-  async function searchCommentMentionCandidates(query) {
-    const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(query)}`);
-    const rawCandidates = Array.isArray(response)
-      ? response
-      : response?.users || response?.items || [];
-    cacheKnownJiraUsers(rawCandidates);
-    const seen = new Set();
-    return rawCandidates
-      .map(candidate => {
-        const mentionMarkup = getCommentMentionMarkup(candidate);
-        if (!mentionMarkup || seen.has(mentionMarkup)) {
-          return null;
-        }
-        seen.add(mentionMarkup);
-        const displayName = candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || 'Unknown user';
-        const username = candidate?.name || candidate?.username || '';
-        const secondaryText = (username && username !== displayName)
-          ? `@${username}`
-          : ((candidate?.emailAddress && candidate.emailAddress !== displayName) ? candidate.emailAddress : '');
-        return {
-          displayName,
-          mentionMarkup,
-          secondaryText
-        };
-      })
-      .filter(Boolean)
-      .slice(0, 6);
-  }
-
-  function getActiveTextMentionRange(inputElement) {
-    if (!inputElement) {
-      return null;
-    }
-    const value = inputElement.value || '';
-    const caretStart = typeof inputElement.selectionStart === 'number' ? inputElement.selectionStart : value.length;
-    const caretEnd = typeof inputElement.selectionEnd === 'number' ? inputElement.selectionEnd : caretStart;
-    if (caretStart !== caretEnd) {
-      return null;
-    }
-    const beforeCaret = value.slice(0, caretStart);
-    const mentionMatch = beforeCaret.match(/(^|[\s(])@([^\s@]{1,50})$/);
-    if (!mentionMatch) {
-      return null;
-    }
-    let end = caretEnd;
-    while (end < value.length && !/\s/.test(value.charAt(end))) {
-      end += 1;
-    }
-    return {end, query: mentionMatch[2], start: caretStart - mentionMatch[2].length - 1};
-  }
-
-
-  function setCommentReactionEntry(commentId, emojiId, changes) {
-    if (!popupState) {
-      return;
-    }
-    const normalizedCommentId = String(commentId || '');
-    const normalizedEmojiId = String(emojiId || '');
-    const currentState = normalizeCommentReactionState(popupState.commentReactionState);
-    const currentCommentState = currentState.byCommentId[normalizedCommentId] || {};
-    const currentEntry = currentCommentState[normalizedEmojiId] || {};
-    popupState = {
-      ...popupState,
-      commentReactionState: {
-        ...currentState,
-        byCommentId: {
-          ...currentState.byCommentId,
-          [normalizedCommentId]: {
-            ...currentCommentState,
-            [normalizedEmojiId]: {
-              ...currentEntry,
-              ...changes
-            }
-          }
-        }
-      }
-    };
-  }
-
-  function disableCommentReactions() {
-    if (!popupState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      commentReactionState: {
-        ...normalizeCommentReactionState(popupState.commentReactionState),
-        supported: false
-      }
-    };
-  }
-
-  function isCommentReactionUnsupportedError(error) {
-    const message = String(error?.message || error?.inner || error || '');
-    return /http\s+(401|403|404|405)\b/i.test(message) || /forbidden|not found|method not allowed/i.test(message);
-  }
-
-  async function fetchCommentReactions(commentIds) {
-    return requestJson('POST', `${INSTANCE_URL}rest/internal/2/reactions/view`, {
-      commentIds: commentIds.map(id => Number(id))
-    }, {
-      'X-Atlassian-Token': 'no-check'
-    });
-  }
-
-  async function addCommentReaction(commentId, emojiId) {
-    return requestJson('POST', `${INSTANCE_URL}rest/internal/2/reactions`, {
-      commentId: String(commentId),
-      emojiId
-    }, {
-      'X-Atlassian-Token': 'no-check'
-    });
-  }
-
-  async function deleteCommentReaction(commentId, emojiId) {
-    return requestJson('DELETE', `${INSTANCE_URL}rest/internal/2/reactions?commentId=${encodeURIComponent(commentId)}&emojiId=${encodeURIComponent(emojiId)}`, undefined, {
-      'X-Atlassian-Token': 'no-check'
-    });
-  }
-
-  function buildInitialReactionState(serverReactions) {
-    const byCommentId = {};
-    if (Array.isArray(serverReactions)) {
-      for (const entry of serverReactions) {
-        const commentId = String(entry.commentId || '');
-        const emojiId = entry.emojiId || '';
-        if (!commentId || !emojiId) continue;
-        if (!byCommentId[commentId]) {
-          byCommentId[commentId] = {};
-        }
-        byCommentId[commentId][emojiId] = {
-          count: Number(entry.count) || 0,
-          reacted: !!entry.reacted,
-          pending: false
-        };
-      }
-    }
-    return {byCommentId, supported: true};
-  }
-
   async function handleCommentReactionClick(commentId, emojiId) {
-    if (!popupState?.issueData || !commentId || !emojiId) {
+    if (!currentPopupState()?.issueData || !commentId || !emojiId) {
       return;
     }
-    const currentEntry = getCommentReactionEntry(commentId, emojiId);
-    if (currentEntry.pending) {
+    const sessionId = currentPopupSessionId();
+    const pending = commentLifecycle.dispatch({type: 'toggleReaction', commentId, emojiId});
+    await renderCurrentPopup('comment-reaction-pending');
+    const outcome = await pending;
+    if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
       return;
     }
-
-    const wasReacted = !!currentEntry.reacted;
-    const oldCount = Number(currentEntry.count) || 0;
-
-    setCommentReactionEntry(commentId, '__comment__', {error: ''});
-    setCommentReactionEntry(commentId, emojiId, {
-      count: wasReacted ? Math.max(0, oldCount - 1) : oldCount + 1,
-      reacted: !wasReacted,
-      pending: true
+    await popupSession.dispatch({
+      type: 'render',
+      reason: 'comment-reaction-complete',
+      issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
     });
-    await renderIssuePopup(popupState);
-
-    try {
-      if (wasReacted) {
-        await deleteCommentReaction(commentId, emojiId);
-      } else {
-        await addCommentReaction(commentId, emojiId);
-      }
-      setCommentReactionEntry(commentId, emojiId, {pending: false});
-      await renderIssuePopup(popupState);
-    } catch (error) {
-      if (!wasReacted && isCommentReactionUnsupportedError(error)) {
-        disableCommentReactions();
-        await renderIssuePopup(popupState);
-        snackBar('Comment reactions are not available in this Jira context');
-        return;
-      }
-      setCommentReactionEntry(commentId, emojiId, {
-        count: oldCount,
-        reacted: wasReacted,
-        pending: false
-      });
-      if (!wasReacted) {
-        setCommentReactionEntry(commentId, '__comment__', {
-          error: error?.message || error?.inner || 'Could not update reaction'
-        });
-      }
-      await renderIssuePopup(popupState);
+    if (outcome.kind === 'unsupported') {
+      snackBar(outcome.notice);
     }
-  }
-
-  function addSavedCommentToPopupState(savedComment, commentText, fallbackAuthor = null) {
-    if (!popupState?.issueData?.fields) {
-      return;
-    }
-    const nextComment = {
-      ...savedComment,
-      id: String(savedComment?.id || ''),
-      body: commentText || savedComment?.body || '',
-      author: savedComment?.author || fallbackAuthor || null,
-      created: savedComment?.created || new Date().toISOString(),
-    };
-    const existingComments = Array.isArray(popupState.issueData.fields.comment?.comments)
-      ? popupState.issueData.fields.comment.comments
-      : [];
-    const nextComments = [
-      ...existingComments.filter(comment => String(comment?.id || '') !== nextComment.id),
-      nextComment,
-    ];
-    popupState = {
-      ...popupState,
-      issueData: {
-        ...popupState.issueData,
-        fields: {
-          ...popupState.issueData.fields,
-          comment: {
-            ...(popupState.issueData.fields.comment || {}),
-            comments: nextComments,
-          }
-        }
-      }
-    };
   }
 
   async function handleCommentSave() {
-    const commentIssueKey = activeCommentContext?.issueKey || '';
+    const commentIssueKey = commentLifecycle.view().issueKey;
     if (!commentIssueKey) {
       return;
     }
 
-    resetCommentMentionState();
-    const elements = getCommentComposerElements();
-    const commentDraftText = String(elements.input.val() || '');
+    const capturedCompose = commentPresentation.capture();
+    const commentDraftText = capturedCompose.value;
     const commentText = commentDraftText.trim();
-    commentComposerDraftValue = commentText;
     if (!commentText) {
-      syncCommentComposerState();
+      commentPresentation.render();
       return;
     }
-    if (hasCommentUploadInFlight()) {
-      setCommentComposerError('Wait for image uploads to finish.');
-      syncCommentComposerState();
+    if (commentLifecycle.view().compose?.uploads?.some(item => item.status === 'uploading')) {
+      commentPresentation.showError('Wait for image uploads to finish.');
       return;
     }
 
-    elements.root.attr('data-saving', 'true');
-    setCommentComposerError('');
-    syncCommentComposerState();
+    commentLifecycle.dispatch({
+      type: 'composeChanged',
+      value: commentDraftText,
+      selection: capturedCompose.selection,
+    }).catch(() => {});
+    const pendingSave = commentLifecycle.dispatch({
+      type: 'saveNewComment',
+      requirements: {history: !!currentPopupState()?.historyOpen},
+    });
+    commentPresentation.render();
 
-    try {
-      const currentUser = await getCurrentUserInfo().catch(() => ({displayName: 'You'}));
-      const requestBody = restoreEditableCommentMentions(commentText, commentComposerMentionMappings);
-      const savedComment = await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${commentIssueKey}/comment`, {
-        body: requestBody
+    const outcome = await pendingSave;
+    const isSameIssueStillVisible = currentPopupState()?.issueData?.key === commentIssueKey &&
+      outcome.sessionId === currentPopupSessionId();
+    if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
+      await popupSession.dispatch({
+        type: 'render',
+        reason: 'comment-save-complete',
+        issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
+        notice: outcome.notice,
       });
-      const isSameIssueStillVisible = popupState?.issueData?.key === commentIssueKey;
-      changelogCache.delete(commentIssueKey);
-      if (isSameIssueStillVisible) {
-        addSavedCommentToPopupState(savedComment, requestBody, currentUser);
-        setCachedValue(issueCache, commentIssueKey, popupState?.issueData);
-        elements.input.val('');
-        elements.root.attr('data-saving', 'false');
-        commentComposerDraftValue = '';
-        commentComposerMentionMappings = [];
-        commentComposerHadFocus = false;
-        commentComposerSelectionStart = 0;
-        commentComposerSelectionEnd = 0;
-        await clearCommentUploads({deleteUploaded: false});
-        setCommentComposerError('');
-        await renderIssuePopup(popupState);
-      } else {
-        issueCache.delete(commentIssueKey);
+      if (outcome.failure) {
+        snackBar(outcome.notice);
       }
-      if (isSameIssueStillVisible && popupState?.historyOpen) {
-        await refreshPopupIssueState('Comment added', {preserveHistory: true});
-      }
-    } catch (error) {
-      elements.root.attr('data-saving', 'false');
-      setCommentComposerError(error?.message || error?.inner || 'Could not save comment');
-      syncCommentComposerState();
+      return;
+    }
+    if (outcome.kind === 'failed' && isSameIssueStillVisible) {
+      commentPresentation.render({applyValue: true, restoreFocus: true});
     }
   }
 
   async function handleCommentDiscard() {
-    const elements = getCommentComposerElements();
-    if (!elements.root.length || elements.root.attr('data-saving') === 'true') {
+    const capturedCompose = commentPresentation.capture();
+    if (!capturedCompose.present || capturedCompose.saving) {
       return;
     }
-    await discardCommentComposerDraft();
+    await commentLifecycle.dispatch({type: 'discardCompose', deleteUploaded: true});
+    commentPresentation.render({applyValue: true});
   }
 
 
   function getActiveCommentSession() {
-    return popupState?.commentSession || null;
+    return commentLifecycle.view().rowAction || null;
   }
 
   function resetCommentEditMentionState() {
-    commentEditMentionRequestId += 1;
-    debouncedLoadCommentEditMentionSuggestions.cancel();
-    commentEditMentionState = {...emptyCommentMentionState(), commentId: ''};
+    commentLifecycle.dispatch({type: 'dismissMention', lane: 'edit'}).catch(() => {});
   }
 
-  function setCommentSession(nextSession) {
-    if (!popupState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      commentSession: nextSession
-    };
+  async function applyCommentRowActionOutcome(outcome) {
+    const isCurrent = currentPopupState()?.key === outcome.issueKey && outcome.sessionId === currentPopupSessionId();
+    if (!isCurrent) return;
+    await popupSession.dispatch({
+      type: 'render',
+      reason: 'comment-row-action-complete',
+      issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
+      ...(outcome.kind === 'mutationCommitted' ? {notice: outcome.notice} : {}),
+    });
+    if (outcome.kind === 'failed') snackBar(outcome.failure?.message || 'Comment operation failed');
+    else if (outcome.failure) snackBar(outcome.notice);
   }
 
   function cancelCommentSession() {
-    if (!popupState?.commentSession) {
+    if (!commentLifecycle.view().rowAction) {
       return;
     }
     resetCommentEditMentionState();
-    setCommentSession(null);
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'cancelRowAction'}).then(() => {
+      return renderCurrentPopup('comment-row-action-cancelled');
+    }).catch(() => {});
   }
 
-  function getIssueCommentById(commentId) {
-    const normalizedCommentId = String(commentId || '');
-    return (popupState?.issueData?.fields?.comment?.comments || []).find(comment => String(comment?.id || '') === normalizedCommentId) || null;
-  }
-
-  function startCommentEdit(commentId, commentBody) {
-    if (!popupState?.issueData || !commentId) {
+  function startCommentEdit(commentId) {
+    if (!currentPopupState()?.issueData || !commentId) {
       return;
     }
-    pinContainer({showNotice: false});
+    popupShell?.dispatch({type: 'pin', announce: false}).catch(() => {});
     resetCommentEditMentionState();
-    const {draft, mentionMappings} = buildEditableCommentDraft(commentBody);
-    setCommentSession({
-      commentId: String(commentId),
-      draft,
-      error: '',
-      mentionMappings,
-      mode: 'edit',
-      selectionEnd: draft.length,
-      selectionStart: draft.length,
-      saving: false
-    });
-    renderIssuePopup(popupState).catch(() => {});
-  }
-
-  async function loadCommentEditMentionSuggestions(commentId, mention) {
-    const requestId = ++commentEditMentionRequestId;
-    try {
-      const suggestions = await searchCommentMentionCandidates(mention.query);
-      if (requestId !== commentEditMentionRequestId) {
-        return;
-      }
-      commentEditMentionState = {
-        commentId: String(commentId || ''),
-        error: '',
-        loading: false,
-        query: mention.query,
-        range: mention,
-        selectedIndex: 0,
-        suggestions,
-        visible: true,
-      };
-    } catch (error) {
-      if (requestId !== commentEditMentionRequestId) {
-        return;
-      }
-      commentEditMentionState = {
-        commentId: String(commentId || ''),
-        error: 'Could not load people.',
-        loading: false,
-        query: mention.query,
-        range: mention,
-        selectedIndex: 0,
-        suggestions: [],
-        visible: true,
-      };
-    }
-    renderIssuePopup(popupState).catch(() => {});
-  }
-
-  const debouncedLoadCommentEditMentionSuggestions = debounce((commentId, mention) => {
-    loadCommentEditMentionSuggestions(commentId, mention).catch(() => {});
-  }, 150);
-
-  function syncCommentEditMentionSuggestions(inputElement, commentId) {
-    const mention = getActiveTextMentionRange(inputElement);
-    if (!mention || !commentId) {
-      if (commentEditMentionState.visible) {
-        resetCommentEditMentionState();
-        renderIssuePopup(popupState).catch(() => {});
-      }
-      return;
-    }
-    commentEditMentionState = {
-      commentId: String(commentId),
-      error: '',
-      loading: true,
-      query: mention.query,
-      range: mention,
-      selectedIndex: 0,
-      suggestions: [],
-      visible: true,
-    };
-    renderIssuePopup(popupState).catch(() => {});
-    debouncedLoadCommentEditMentionSuggestions(commentId, mention);
+    commentLifecycle.dispatch({type: 'startEdit', commentId}).then(() => {
+      return renderCurrentPopup('comment-edit-started');
+    }).catch(() => {});
   }
 
   function moveCommentEditMentionSelection(delta) {
-    if (!commentEditMentionState.visible || !commentEditMentionState.suggestions.length) {
-      return;
-    }
-    const suggestionsTotal = commentEditMentionState.suggestions.length;
-    commentEditMentionState = {
-      ...commentEditMentionState,
-      selectedIndex: (commentEditMentionState.selectedIndex + delta + suggestionsTotal) % suggestionsTotal,
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'moveMention', lane: 'edit', delta}).then(() => {
+      return renderCurrentPopup('comment-edit-mention-moved');
+    }).catch(() => {});
   }
 
   function renderCommentEditMentionSuggestions() {
     container.find('._JX_comment_edit_mentions').attr('hidden', 'hidden').empty();
-    if (!commentEditMentionState.visible || !commentEditMentionState.commentId) {
+    const rowAction = commentLifecycle.view().rowAction;
+    const commentEditMentionState = rowAction?.mention;
+    const commentId = rowAction?.commentId || '';
+    if (!commentEditMentionState?.visible || !commentId) {
       return;
     }
-    const mentions = container.find(`._JX_comment_edit_mentions[data-comment-id="${commentEditMentionState.commentId}"]`);
-    const input = container.find(`._JX_comment_edit_input[data-comment-id="${commentEditMentionState.commentId}"]`);
+    const mentions = container.find(`._JX_comment_edit_mentions[data-comment-id="${commentId}"]`);
+    const input = container.find(`._JX_comment_edit_input[data-comment-id="${commentId}"]`);
     const mentionsElement = mentions.get(0);
     const inputElement = input.get(0);
     if (!mentions.length) {
@@ -2524,8 +1699,8 @@ async function mainAsyncLocal() {
       positionSuggestions('<div class="_JX_comment_mentions_status">Searching people...</div>');
       return;
     }
-    if (commentEditMentionState.error) {
-      positionSuggestions(`<div class="_JX_comment_mentions_status">${escapeHtml(commentEditMentionState.error)}</div>`);
+    if (commentEditMentionState.errorMessage) {
+      positionSuggestions(`<div class="_JX_comment_mentions_status">${escapeHtml(commentEditMentionState.errorMessage)}</div>`);
       return;
     }
     if (!commentEditMentionState.suggestions.length) {
@@ -2536,7 +1711,7 @@ async function mainAsyncLocal() {
       const selectedClass = index === commentEditMentionState.selectedIndex ? ' is-selected' : '';
       const secondary = candidate.secondaryText ? `<span class="_JX_comment_mention_secondary">${escapeHtml(candidate.secondaryText)}</span>` : '';
       return `
-        <button class="_JX_comment_mention_option${selectedClass} _JX_comment_edit_mention_option" type="button" data-comment-id="${escapeHtml(commentEditMentionState.commentId)}" data-mention-index="${index}">
+        <button class="_JX_comment_mention_option${selectedClass} _JX_comment_edit_mention_option" type="button" data-comment-id="${escapeHtml(commentId)}" data-mention-index="${index}">
           <span>
             <span class="_JX_comment_mention_primary">${escapeHtml(candidate.displayName)}</span>
             ${secondary}
@@ -2548,42 +1723,26 @@ async function mainAsyncLocal() {
 
   function applyCommentEditMentionSelection(index) {
     const activeSession = getActiveCommentSession();
-    const suggestionState = commentEditMentionState;
-    const candidate = suggestionState.suggestions[index];
-    const mentionRange = suggestionState.range;
-    if (!activeSession || activeSession.mode !== 'edit' || !candidate || !mentionRange) {
+    if (!activeSession || activeSession.mode !== 'edit') {
       return;
     }
-    const displayText = `@${candidate.displayName || candidate.name || candidate.username || 'mention'}`;
-    const nextDraft = String(activeSession.draft || '').slice(0, mentionRange.start) + `${displayText} ` + String(activeSession.draft || '').slice(mentionRange.end);
-    setCommentSession({
-      ...activeSession,
-      draft: nextDraft,
-      error: '',
-      mentionMappings: [
-        ...(Array.isArray(activeSession.mentionMappings) ? activeSession.mentionMappings : []),
-        buildDraftMentionMapping(nextDraft, mentionRange.start, displayText, candidate.mentionMarkup),
-      ],
-      selectionStart: mentionRange.start + displayText.length + 1,
-      selectionEnd: mentionRange.start + displayText.length + 1,
-    });
-    resetCommentEditMentionState();
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({
+      type: 'chooseMention',
+      lane: 'edit',
+      index,
+    }).then(() => {
+      return renderCurrentPopup('comment-edit-mention-chosen');
+    }).catch(() => {});
   }
 
   function startCommentDeleteConfirm(commentId) {
-    if (!popupState?.issueData || !commentId) {
+    if (!currentPopupState()?.issueData || !commentId) {
       return;
     }
     resetCommentEditMentionState();
-    setCommentSession({
-      commentId: String(commentId),
-      draft: '',
-      error: '',
-      mode: 'delete',
-      saving: false
-    });
-    renderIssuePopup(popupState).catch(() => {});
+    commentLifecycle.dispatch({type: 'startDelete', commentId}).then(() => {
+      return renderCurrentPopup('comment-delete-started');
+    }).catch(() => {});
   }
 
   function updateCommentEditDraft(commentId, draft, selectionStart, selectionEnd) {
@@ -2591,72 +1750,46 @@ async function mainAsyncLocal() {
     if (!activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit') {
       return;
     }
-    setCommentSession({
-      ...activeSession,
-      draft: String(draft || ''),
-      error: '',
-      selectionEnd,
-      selectionStart
+    const pending = commentLifecycle.dispatch({
+      type: 'editChanged',
+      commentId,
+      value: draft,
+      selection: {start: selectionStart, end: selectionEnd},
     });
-    renderIssuePopup(popupState).catch(() => {});
+    renderCurrentPopup('comment-edit-changed').catch(() => {});
+    pending.then(() => {
+      return renderCurrentPopup('comment-edit-mention-updated');
+    }).catch(() => {});
   }
 
   async function saveCommentEdit(commentId) {
     const activeSession = getActiveCommentSession();
-    if (!popupState?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit' || activeSession.saving) {
+    if (!currentPopupState()?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'edit' || activeSession.saving) {
       return;
     }
     resetCommentEditMentionState();
-    const nextDraft = String(activeSession.draft || '');
-    if (!nextDraft.trim()) {
-      setCommentSession({...activeSession, error: 'Comment cannot be empty.'});
-      await renderIssuePopup(popupState);
-      return;
-    }
-
-    setCommentSession({...activeSession, draft: nextDraft, error: '', saving: true});
-    await renderIssuePopup(popupState);
-
-    try {
-      const requestBody = restoreEditableCommentMentions(nextDraft, activeSession.mentionMappings);
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`, {
-        body: requestBody
-      });
-      await refreshPopupIssueState('Comment updated', {preserveHistory: !!popupState?.historyOpen});
-    } catch (error) {
-      const errorMessage = error?.message || error?.inner || 'Could not update comment';
-      const latestSession = getActiveCommentSession();
-      if (!latestSession || latestSession.commentId !== String(commentId) || latestSession.mode !== 'edit') {
-        return;
-      }
-      setCommentSession({...latestSession, error: errorMessage, saving: false});
-      await renderIssuePopup(popupState);
-      snackBar(errorMessage);
-    }
+    const pending = commentLifecycle.dispatch({
+      type: 'saveEdit',
+      commentId,
+      requirements: {history: !!currentPopupState()?.historyOpen},
+    });
+    await renderCurrentPopup('comment-edit-saving');
+    await applyCommentRowActionOutcome(await pending);
   }
 
   async function confirmCommentDelete(commentId) {
     const activeSession = getActiveCommentSession();
-    if (!popupState?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'delete' || activeSession.saving) {
+    if (!currentPopupState()?.key || !activeSession || activeSession.commentId !== String(commentId) || activeSession.mode !== 'delete' || activeSession.saving) {
       return;
     }
 
-    setCommentSession({...activeSession, error: '', saving: true});
-    await renderIssuePopup(popupState);
-
-    try {
-      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${popupState.key}/comment/${commentId}`);
-      await refreshPopupIssueState('Comment deleted', {preserveHistory: !!popupState?.historyOpen});
-    } catch (error) {
-      const errorMessage = error?.message || error?.inner || 'Could not delete comment';
-      const latestSession = getActiveCommentSession();
-      if (!latestSession || latestSession.commentId !== String(commentId) || latestSession.mode !== 'delete') {
-        return;
-      }
-      setCommentSession({...latestSession, error: errorMessage, saving: false});
-      await renderIssuePopup(popupState);
-      snackBar(errorMessage);
-    }
+    const pending = commentLifecycle.dispatch({
+      type: 'confirmDelete',
+      commentId,
+      requirements: {history: !!currentPopupState()?.historyOpen},
+    });
+    await renderCurrentPopup('comment-delete-saving');
+    await applyCommentRowActionOutcome(await pending);
   }
 
   // ── Pull Requests & Dev Status ─────────────────────────────
@@ -2754,1264 +1887,22 @@ async function mainAsyncLocal() {
     return [];
   }
 
-  function getPullRequestData(issueId, applicationType) {
-    return get(INSTANCE_URL + 'rest/dev-status/1.0/issue/detail?issueId=' + issueId + '&applicationType=gitlabselfmanaged&dataType=pullrequest');
-  }
-
-  function getPullRequestSummaryData(issueId) {
-    return get(`${INSTANCE_URL}rest/dev-status/1.0/issue/summary?issueId=${issueId}`);
-  }
-
-  function encodeChildIssueJqlValue(value) {
-    return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
-
-  function buildCustomFieldIssueSearchClause(fieldId, issueKey) {
-    const match = String(fieldId || '').match(/^customfield_(\d+)$/i);
-    if (!match?.[1]) {
-      return '';
-    }
-    return `cf[${match[1]}] = ${encodeChildIssueJqlValue(issueKey)}`;
-  }
-
-  async function searchIssuesByJql(jql, fields = []) {
-    let response = null;
-    let lastError = null;
-    const requestUrls = buildJiraSearchRequestUrls(INSTANCE_URL, {
-      maxResults: 100,
-      fields,
-      jql,
-    });
-
-    for (const requestUrl of requestUrls) {
-      try {
-        response = await get(requestUrl);
-        break;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    if (!response) {
-      throw lastError || new Error('Issue search failed');
-    }
-
-    return Array.isArray(response?.issues)
-      ? response.issues.filter(Boolean)
-      : [];
-  }
-
-  function dedupeIssuesByKey(issues) {
-    const seenKeys = new Set();
-    return (Array.isArray(issues) ? issues : []).filter(issue => {
-      const issueKey = String(issue?.key || '').trim();
-      if (!issueKey || seenKeys.has(issueKey)) {
-        return false;
-      }
-      seenKeys.add(issueKey);
-      return true;
-    });
-  }
-
-  async function getChildIssues(issueData) {
-    const issueKey = String(issueData?.key || '').trim();
-    if (!issueKey) {
-      return {issues: [], jql: ''};
-    }
-
-    return getCachedValue(childIssueCache, issueKey, async () => {
-      const searchFields = ['summary', 'issuetype', 'status', 'assignee'];
-      const directJql = `parent = ${encodeChildIssueJqlValue(issueKey)}`;
-      let directSearchError = null;
-      let directChildren = [];
-
-      try {
-        directChildren = await searchIssuesByJql(directJql, searchFields);
-      } catch (error) {
-        directSearchError = error;
-      }
-
-      if (directChildren.length) {
-        return {
-          issues: dedupeIssuesByKey(directChildren),
-          jql: directJql,
-        };
-      }
-
-      const [epicLinkFieldIds, parentLinkFieldIds] = await Promise.all([
-        getEpicLinkFieldIds(INSTANCE_URL).catch(() => []),
-        getParentLinkFieldIds(INSTANCE_URL).catch(() => []),
-      ]);
-      const fallbackJqls = [...epicLinkFieldIds, ...parentLinkFieldIds]
-        .map(fieldId => buildCustomFieldIssueSearchClause(fieldId, issueKey))
-        .filter(Boolean);
-
-      if (!fallbackJqls.length) {
-        if (directSearchError) {
-          throw directSearchError;
-        }
-        return {issues: [], jql: directJql};
-      }
-
-      const fallbackChildren = [];
-      const successfulFallbackJqls = [];
-      let fallbackSearchError = null;
-      let fallbackSucceeded = false;
-      for (const jql of fallbackJqls) {
-        try {
-          fallbackChildren.push(...(await searchIssuesByJql(jql, searchFields)));
-          successfulFallbackJqls.push(jql);
-          fallbackSucceeded = true;
-        } catch (error) {
-          fallbackSearchError = error;
-        }
-      }
-
-      if (!fallbackSucceeded && directSearchError) {
-        throw directSearchError;
-      }
-      if (!fallbackSucceeded && fallbackSearchError) {
-        throw fallbackSearchError;
-      }
-
-      return {
-        issues: dedupeIssuesByKey(fallbackChildren),
-        jql: successfulFallbackJqls.join(' OR '),
-      };
-    });
-  }
-
-  async function probeDevStatusEndpoints(issueId) {
-    const probes = [
-      {label: '1.0 summary', url: `${INSTANCE_URL}rest/dev-status/1.0/issue/summary?issueId=${issueId}`},
-      {label: 'latest summary', url: `${INSTANCE_URL}rest/dev-status/latest/issue/summary?issueId=${issueId}`},
-      {label: '1.0 details none', url: `${INSTANCE_URL}rest/dev-status/1.0/issue/detail?issueId=${issueId}&dataType=pullrequest`},
-      {label: 'latest details none', url: `${INSTANCE_URL}rest/dev-status/latest/issue/detail?issueId=${issueId}&dataType=pullrequest`},
-      {label: '1.0 details gitlabselfmanaged', url: `${INSTANCE_URL}rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=gitlabselfmanaged&dataType=pullrequest`},
-      {label: 'latest details gitlabselfmanaged', url: `${INSTANCE_URL}rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=gitlabselfmanaged&dataType=pullrequest`}
-    ];
-
-    const settled = await Promise.allSettled(probes.map(async probe => {
-      const response = await get(probe.url);
-      return {
-        label: probe.label,
-        url: probe.url,
-        ok: true,
-        topLevelKeys: Object.keys(response || {}),
-        hasSummary: Array.isArray(response?.summary),
-        hasDetail: Array.isArray(response?.detail),
-        summaryCount: Array.isArray(response?.summary) ? response.summary.length : null,
-        detailCount: Array.isArray(response?.detail) ? response.detail.length : null
-      };
-    }));
-    return settled.map((result, i) => {
-      if (result.status === 'fulfilled') {
-        return result.value;
-      }
-      return {
-        label: probes[i].label,
-        url: probes[i].url,
-        ok: false,
-        error: result.reason?.message || String(result.reason)
-      };
-    });
-  }
-
   // ── Issue Data & Metadata ──────────────────────────────────
 
-  // ── Assignee Search ────────────────────────────────────────
-
-  function extractArrayUserResults(response) {
-    return Array.isArray(response) ? response : null;
-  }
-
-  function normalizeJiraUserRecord(user) {
-    if (!user || typeof user !== 'object') {
-      return null;
-    }
-    const candidate = user.user && typeof user.user === 'object'
-      ? user.user
-      : user;
-    const avatarUrl48 = candidate?.avatarUrls?.['48x48'] || candidate?.avatarUrl || '';
-    return {
-      ...candidate,
-      accountId: candidate?.accountId || candidate?.id || '',
-      name: candidate?.name || candidate?.username || candidate?.userName || '',
-      key: candidate?.key || candidate?.userKey || '',
-      displayName: candidate?.displayName || candidate?.name || candidate?.username || candidate?.emailAddress || '',
-      emailAddress: candidate?.emailAddress || candidate?.email || '',
-      avatarUrls: candidate?.avatarUrls || (avatarUrl48 ? {'48x48': avatarUrl48} : {}),
-    };
-  }
-
-  function normalizeJiraUserRecords(users) {
-    return (Array.isArray(users) ? users : [])
-      .map(normalizeJiraUserRecord)
-      .filter(Boolean);
-  }
-
-  function extractPickerUserResults(response) {
-    if (Array.isArray(response)) {
-      return response;
-    }
-    if (Array.isArray(response?.users)) {
-      return response.users;
-    }
-    if (Array.isArray(response?.items)) {
-      return response.items;
-    }
-    return null;
-  }
-
-  function extractInternalAssigneeUsers(response) {
-    if (Array.isArray(response)) {
-      return response;
-    }
-    if (Array.isArray(response?.users)) {
-      return response.users;
-    }
-    if (Array.isArray(response?.items)) {
-      return response.items;
-    }
-    if (Array.isArray(response?.results)) {
-      return response.results;
-    }
-    if (Array.isArray(response?.values)) {
-      return response.values;
-    }
-    return null;
-  }
-
-  function buildOrderedUserSearchStrategies(strategyType, strategies) {
-    const preferredKey = String(userSearchStrategyState[strategyType] || '').trim();
-    const strategyList = Array.isArray(strategies) ? strategies.filter(Boolean) : [];
-    if (!preferredKey) {
-      return strategyList;
-    }
-    const preferredStrategy = strategyList.find(strategy => strategy?.key === preferredKey);
-    if (!preferredStrategy) {
-      return strategyList;
-    }
-    return [
-      preferredStrategy,
-      ...strategyList.filter(strategy => strategy?.key !== preferredKey),
-    ];
-  }
-
-  async function fetchUsersBySearchStrategy(strategyType, strategies) {
-    const orderedStrategies = buildOrderedUserSearchStrategies(strategyType, strategies);
-    let lastError;
-    for (const strategy of orderedStrategies) {
-      try {
-        const response = await get(strategy.url);
-        const users = strategy.extractUsers(response);
-        if (!Array.isArray(users)) {
-          throw new Error(`Unexpected response for ${strategy.key}`);
-        }
-        userSearchStrategyState[strategyType] = strategy.key;
-        return users;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    userSearchStrategyState[strategyType] = '';
-    if (lastError) {
-      throw lastError;
-    }
-    return [];
-  }
-
-  async function fetchAssignableUsers(query, issueData) {
-    const issueKey = issueData?.key || '';
-    const projectKey = String(issueKey).split('-')[0];
-    const normalizedQuery = String(query || '').trim();
-    const encodedQuery = encodeURIComponent(normalizedQuery);
-    const encodedIssueKey = encodeURIComponent(issueKey);
-    const encodedProjectKey = encodeURIComponent(projectKey);
-    const strategies = [
-      issueKey
-        ? {
-            key: 'internal-assignee',
-            url: `${INSTANCE_URL}rest/internal/2/users/assignee?issueKey=${encodedIssueKey}&maxResults=100&query=${encodedQuery}`,
-            extractUsers: extractInternalAssigneeUsers,
-          }
-        : null,
-      issueKey
-        ? {
-            key: 'issue-query',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&query=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-      projectKey
-        ? {
-            key: 'project-query',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&query=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-      issueKey
-        ? {
-            key: 'issue-username',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?issueKey=${encodedIssueKey}&maxResults=20&username=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-      projectKey
-        ? {
-            key: 'project-username',
-            url: `${INSTANCE_URL}rest/api/2/user/assignable/search?project=${encodedProjectKey}&maxResults=20&username=${encodedQuery}`,
-            extractUsers: extractArrayUserResults,
-          }
-        : null,
-    ].filter(Boolean);
-    const users = normalizeJiraUserRecords(await fetchUsersBySearchStrategy('assignable', strategies));
-    detectSharedAvatarUrls(users);
-    return proxyUserAvatars(users);
-  }
-
-  async function searchAssignableUsers(query, issueData) {
-    const issueKey = issueData?.key || '';
-    if (!issueKey) {
-      return [];
-    }
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    const cacheKey = `${issueKey}__${normalizedQuery}`;
-    return getCachedValue(assigneeSearchCache, cacheKey, async () => {
-      const users = await fetchAssignableUsers(normalizedQuery, issueData);
-      return normalizeAssignableUsers(users);
+  async function getCurrentUserInfo(issueKey = '') {
+    const activeIssueKey = issueKey || currentPopupState()?.issueData?.key || '';
+    if (!activeIssueKey) throw new Error('Issue key is required to load the Jira viewer');
+    const outcome = await quickViewIssueData.openIssue({
+      issueKey: activeIssueKey,
+      requirements: {viewer: true},
     });
-  }
-
-  async function fetchUserPickerResults(query) {
-    const encodedQuery = encodeURIComponent(query);
-    const users = normalizeJiraUserRecords(await fetchUsersBySearchStrategy('people', [
-      {
-        key: 'picker-query',
-        url: `${INSTANCE_URL}rest/api/2/user/picker?query=${encodedQuery}`,
-        extractUsers: extractPickerUserResults,
-      },
-      {
-        key: 'search-query',
-        url: `${INSTANCE_URL}rest/api/2/user/search?query=${encodedQuery}&maxResults=20`,
-        extractUsers: extractArrayUserResults,
-      },
-      {
-        key: 'search-username',
-        url: `${INSTANCE_URL}rest/api/2/user/search?username=${encodedQuery}&maxResults=20`,
-        extractUsers: extractArrayUserResults,
-      }
-    ]));
-    detectSharedAvatarUrls(users);
-    await proxyUserAvatars(users);
-    return normalizeAssignableUsers(users);
-  }
-
-  async function searchUserPicker(query) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    return getCachedValue(userPickerSearchCache, normalizedQuery, () => fetchUserPickerResults(normalizedQuery));
-  }
-
-  function buildClearFieldOption(label = 'Clear value') {
-    return buildEditOption('__clear__', label, {
-      metaText: 'Remove the current value',
-      rawValue: null,
-    });
-  }
-
-
-  async function getIssueWatchers(issueKey) {
-    if (!issueKey) {
-      return {
-        isWatching: false,
-        watchCount: 0,
-        watchers: []
-      };
+    if (!outcome.snapshot?.viewer?.user) {
+      throw new Error(outcome.snapshot?.viewer?.failure?.message || 'Could not load the Jira viewer');
     }
-    return getCachedValue(watcherListCache, issueKey, async () => {
-      const [response, currentUser] = await Promise.all([
-        get(`${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers`),
-        getCurrentUserInfo().catch(() => null)
-      ]);
-      const rawWatchers = response?.watchers || [];
-      detectSharedAvatarUrls(rawWatchers);
-      await proxyUserAvatars(rawWatchers);
-      const normalizedWatchers = normalizeWatcherUsers(rawWatchers, currentUser);
-      const responseWatchCount = Number(response?.watchCount);
-      return {
-        isWatching: typeof response?.isWatching === 'boolean'
-          ? response.isWatching
-          : normalizedWatchers.some(watcher => watcher.isCurrentUser),
-        watchCount: Number.isFinite(responseWatchCount) ? responseWatchCount : normalizedWatchers.length,
-        watchers: normalizedWatchers
-      };
-    });
-  }
-
-  async function searchWatcherCandidates(query) {
-    const normalizedQuery = String(query || '').trim();
-    const cacheKey = normalizedQuery.toLowerCase();
-    return getCachedValue(watcherSearchCache, cacheKey, async () => {
-      const [response, currentUser] = await Promise.all([
-        get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(normalizedQuery)}`),
-        getCurrentUserInfo().catch(() => null)
-      ]);
-      const rawUsers = Array.isArray(response)
-        ? response
-        : response?.users || response?.items || [];
-      return normalizeWatcherUsers(rawUsers, currentUser);
-    });
-  }
-
-  function getWatcherIdentifierCandidates(user) {
-    const candidates = [
-      {type: 'accountId', value: user?.accountId || user?.rawValue?.accountId || ''},
-      {type: 'name', value: user?.name || user?.rawValue?.name || ''},
-      {type: 'key', value: user?.key || user?.rawValue?.key || ''}
-    ];
-    return candidates.filter((candidate, index, array) => {
-      return candidate.value && array.findIndex(other => other.type === candidate.type && other.value === candidate.value) === index;
-    });
-  }
-
-  async function addWatcher(issueKey, user) {
-    const candidates = getWatcherIdentifierCandidates(user);
-    let lastError;
-    for (const candidate of candidates) {
-      try {
-        await requestJson('POST', `${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers`, candidate.value);
-        return candidate;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not add watcher');
-  }
-
-  async function removeWatcher(issueKey, user) {
-    const candidates = getWatcherIdentifierCandidates(user);
-    let lastError;
-    for (const candidate of candidates) {
-      const queryKey = candidate.type === 'accountId'
-        ? 'accountId'
-        : (candidate.type === 'key' ? 'key' : 'username');
-      try {
-        await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issue/${issueKey}/watchers?${queryKey}=${encodeURIComponent(candidate.value)}`);
-        return candidate;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not remove watcher');
-  }
-
-  function clearWatchersFeedbackTimer() {
-    if (watchersFeedbackTimeoutId) {
-      clearTimeout(watchersFeedbackTimeoutId);
-      watchersFeedbackTimeoutId = null;
-    }
-  }
-
-  function scheduleWatchersFeedbackClear() {
-    clearWatchersFeedbackTimer();
-    watchersFeedbackTimeoutId = setTimeout(() => {
-      watchersFeedbackTimeoutId = null;
-      if (!popupState?.watchersState) {
-        return;
-      }
-      renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          addFeedback: null,
-          removeFeedback: null,
-        })
-      })).catch(() => {});
-    }, 5000);
-  }
-
-  function clearActionNoticeTimer() {
-    if (actionNoticeTimeoutId) {
-      clearTimeout(actionNoticeTimeoutId);
-      actionNoticeTimeoutId = null;
-    }
-  }
-
-  function scheduleActionNoticeClear(noticeText) {
-    clearActionNoticeTimer();
-    if (!noticeText) {
-      return;
-    }
-    actionNoticeTimeoutId = setTimeout(() => {
-      actionNoticeTimeoutId = null;
-      if (!popupState?.lastActionSuccess || popupState.lastActionSuccess !== noticeText) {
-        return;
-      }
-      renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        lastActionSuccess: ''
-      })).catch(() => {});
-    }, 5000);
-  }
-
-  async function searchGenericUsers(query) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
-    const cacheKey = `picker__${normalizedQuery}`;
-    return getCachedValue(genericUserSearchCache, cacheKey, async () => {
-      const response = await get(`${INSTANCE_URL}rest/api/2/user/picker?query=${encodeURIComponent(normalizedQuery)}`);
-      const users = Array.isArray(response)
-        ? response
-        : response?.users || response?.items || [];
-      return normalizeAssignableUsers(users);
-    });
-  }
-
-  async function loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query = '') {
-    const normalizedQuery = String(query || '').trim();
-    const [assignableResults, pickerResults] = await Promise.all([
-      searchAssignableUsers(normalizedQuery, issueData).catch(() => []),
-      searchGenericUsers(normalizedQuery).catch(() => [])
-    ]);
-    const baseline = userPickerLocalOptionsCache.get(fieldId) || currentSelections;
-    const merged = mergeEditOptions(
-      currentSelections,
-      mergeEditOptions(assignableResults, mergeEditOptions(pickerResults, baseline))
-    );
-    userPickerLocalOptionsCache.set(fieldId, merged);
-    return merged;
-  }
-  function getPullRequestDataCached(issueId, applicationType) {
-    const cacheKey = `${issueId}__${applicationType}`;
-    return getCachedValue(pullRequestCache, cacheKey, () => {
-      return getPullRequestData(issueId, applicationType);
-    });
-  }
-
-  function getPullRequestSummaryDataCached(issueId) {
-    return getCachedValue(pullRequestCache, `summary__${issueId}`, () => {
-      return getPullRequestSummaryData(issueId);
-    });
-  }
-
-  function normalizePullRequests(response) {
-    if (Array.isArray(response)) {
-      return response.filter(Boolean);
-    }
-
-    const detailEntries = Array.isArray(response?.detail)
-      ? response.detail
-      : Array.isArray(response?.details)
-        ? response.details
-        : response ? [response] : [];
-
-    return detailEntries
-      .flatMap(entry => {
-        if (Array.isArray(entry?.pullRequests)) {
-          return entry.pullRequests;
-        }
-        if (Array.isArray(entry?.pullrequests)) {
-          return entry.pullrequests;
-        }
-        if (Array.isArray(entry?.pullRequest)) {
-          return entry.pullRequest;
-        }
-        return [];
-      })
-      .filter(Boolean);
-  }
-
-  function summarizePullRequestDebugResponse(response) {
-    const detail = Array.isArray(response?.detail) ? response.detail : [];
-    return {
-      detailCount: detail.length,
-      details: detail.map(entry => ({
-        applicationType: entry?.applicationType || '',
-        objectName: entry?.objectName || '',
-        repoCount: Array.isArray(entry?.repositories) ? entry.repositories.length : 0,
-        pullRequestCount: Array.isArray(entry?.pullRequests) ? entry.pullRequests.length : 0,
-        pullRequests: (entry?.pullRequests || []).map(pr => ({
-          id: pr?.id,
-          name: pr?.name,
-          url: pr?.url,
-          status: pr?.status
-        }))
-      }))
-    };
-  }
-
-  function summarizePullRequestSummaryResponse(response) {
-    const summary = Array.isArray(response?.summary) ? response.summary : [];
-    return {
-      summaryCount: summary.length,
-      summary: summary.map(entry => ({
-        applicationType: entry?.applicationType || '',
-        dataType: entry?.dataType || '',
-        branchCount: entry?.branch?.overall?.count ?? entry?.branches?.overall?.count ?? null,
-        repositoryCount: entry?.repository?.overall?.count ?? entry?.repositories?.overall?.count ?? null,
-        commitCount: entry?.commit?.overall?.count ?? entry?.commits?.overall?.count ?? null,
-        pullRequestCount: entry?.pullrequest?.overall?.count ?? entry?.pullRequest?.overall?.count ?? entry?.pullrequests?.overall?.count ?? null,
-        reviewCount: entry?.review?.overall?.count ?? entry?.reviews?.overall?.count ?? null,
-        buildCount: entry?.build?.overall?.count ?? entry?.builds?.overall?.count ?? null,
-        deploymentCount: entry?.deployment?.overall?.count ?? entry?.deployments?.overall?.count ?? null,
-        overall: entry?.overall || null,
-        rawKeys: Object.keys(entry || {})
-      }))
-    };
+    return outcome.snapshot.viewer.user;
   }
 
   // ── Labels ────────────────────────────────────────────────
-
-  function stripSimpleHtml(value) {
-    return String(value || '').replace(/<[^>]+>/g, '');
-  }
-
-  function buildLabelOption(label, extra = {}) {
-    const normalizedLabel = String(label || '').trim();
-    const normalizedMetaText = String(extra.metaText || '').trim();
-    return buildEditOption(normalizedLabel, normalizedLabel, {
-      ...extra,
-      metaText: normalizedMetaText && normalizedMetaText !== normalizedLabel ? normalizedMetaText : '',
-      rawValue: normalizedLabel,
-    });
-  }
-
-  function normalizeLabelSuggestionPayload(payload) {
-    if (Array.isArray(payload)) {
-      return payload
-        .map(entry => {
-          if (typeof entry === 'string') {
-            return buildLabelOption(entry);
-          }
-          return buildLabelOption(entry?.label || entry?.value || entry?.name || stripSimpleHtml(entry?.html || entry?.displayName || ''), {
-            metaText: stripSimpleHtml(entry?.html || entry?.displayName || '')
-          });
-        })
-        .filter(option => option.id);
-    }
-    if (Array.isArray(payload?.results)) {
-      return payload.results
-        .map(entry => buildLabelOption(entry?.value || stripSimpleHtml(entry?.displayName || ''), {
-          metaText: stripSimpleHtml(entry?.displayName || '')
-        }))
-        .filter(option => option.id);
-    }
-    if (Array.isArray(payload?.suggestions)) {
-      return payload.suggestions
-        .map(entry => buildLabelOption(entry?.label || stripSimpleHtml(entry?.html || ''), {
-          metaText: stripSimpleHtml(entry?.html || '')
-        }))
-        .filter(option => option.id);
-    }
-    return [];
-  }
-
-  async function fetchLabelSuggestions(queryText) {
-    const normalizedQuery = String(queryText || '').trim();
-    const response = await get(`${INSTANCE_URL}rest/api/2/jql/autocompletedata/suggestions?fieldName=labels&fieldValue=${encodeURIComponent(normalizedQuery)}`);
-    return normalizeLabelSuggestionPayload(response);
-  }
-
-  async function getLabelSuggestions(queryText = '') {
-    const rawQuery = String(queryText || '').trim();
-    const cacheKey = rawQuery.toLowerCase();
-    return getCachedValue(labelSuggestionCache, cacheKey, async () => {
-      return fetchLabelSuggestions(rawQuery);
-    });
-  }
-
-  async function hasLabelSuggestionSupport() {
-    if (!labelSuggestionSupportPromise) {
-      labelSuggestionSupportPromise = getLabelSuggestions('')
-        .then(() => true)
-        .catch(() => false);
-    }
-    return labelSuggestionSupportPromise;
-  }
-
-  // ── Custom Fields ──────────────────────────────────────────
-
-  function getCustomFieldPrimitive(entry) {
-    if (entry === undefined || entry === null) {
-      return '';
-    }
-    if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
-      return String(entry);
-    }
-    if (entry.accountId || entry.avatarUrls || entry.emailAddress) {
-      return String(entry.displayName || entry.name || entry.value || entry.key || entry.id || '');
-    }
-    return String(entry.name || entry.value || entry.displayName || entry.key || entry.id || '');
-  }
-
-  function buildCustomFieldOption(fieldName, entry) {
-    const label = getCustomFieldPrimitive(entry);
-    if (!label) {
-      return null;
-    }
-    if (entry && typeof entry === 'object' && (entry.accountId || entry.avatarUrls || entry.emailAddress)) {
-      const view = buildUserView(entry);
-      const id = view.accountId || view.name || view.key;
-      if (!id) {
-        return null;
-      }
-      return buildEditOption(id, label, {
-        avatarUrl: view.avatarUrl,
-        initials: view.initials,
-        metaText: view.emailAddress || view.name || view.key || '',
-        rawValue: entry
-      });
-    }
-    const optionId = String(entry?.id || entry?.value || entry?.name || entry?.key || label).trim();
-    if (!optionId) {
-      return null;
-    }
-    const metaText = entry?.description || entry?.child?.value || '';
-    return buildEditOption(optionId, label, {
-      iconUrl: entry?.iconUrl || '',
-      metaText,
-      rawValue: entry
-    });
-  }
-
-  function buildCustomFieldValueText(fieldName, value) {
-    if (Array.isArray(value)) {
-      const parts = value.map(entry => getCustomFieldPrimitive(entry)).filter(Boolean);
-      return `${fieldName}: ${parts.join(', ') || '--'}`;
-    }
-    const primitive = getCustomFieldPrimitive(value);
-    return `${fieldName}: ${primitive || '--'}`;
-  }
-
-  function buildUserFieldOption(user) {
-    const optionId = String(user?.accountId || user?.name || user?.key || '').trim();
-    const label = String(user?.displayName || user?.name || user?.key || '').trim();
-    if (!optionId || !label) {
-      return null;
-    }
-    return buildEditOption(optionId, label, {
-      avatarUrl: user?.avatarUrls?.['48x48'] || '',
-      metaText: user?.emailAddress || user?.name || user?.key || '',
-      rawValue: {
-        accountId: user?.accountId || '',
-        displayName: user?.displayName || label,
-        name: user?.name || '',
-        key: user?.key || '',
-      }
-    });
-  }
-
-  function buildUserFieldPayloadCandidates(rawUser) {
-    if (!rawUser) {
-      return [];
-    }
-    const candidates = [];
-    const accountId = String(rawUser.accountId || '').trim();
-    const name = String(rawUser.name || '').trim();
-    const key = String(rawUser.key || '').trim();
-    if (accountId) {
-      candidates.push({accountId});
-    }
-    if (name) {
-      candidates.push({name});
-    }
-    if (key) {
-      candidates.push({key});
-    }
-    return candidates;
-  }
-
-  async function saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue) {
-    if (!issueData?.key || !fieldId) {
-      throw new Error('Missing issue key or field id');
-    }
-
-    if (isMultiValue) {
-      const fieldValue = selectedOptions
-        .map(option => buildUserFieldPayloadCandidates(option?.rawValue || option)[0])
-        .filter(Boolean);
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-        fields: {
-          [fieldId]: fieldValue
-        }
-      });
-      return;
-    }
-
-    const selectedOption = selectedOptions[0];
-    if (!selectedOption || selectedOption.id === '__clear__' || selectedOption.rawValue === null) {
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-        fields: {
-          [fieldId]: null
-        }
-      });
-      return;
-    }
-
-    const payloadCandidates = buildUserFieldPayloadCandidates(selectedOption.rawValue || selectedOption);
-    let lastError = null;
-    for (const payload of payloadCandidates) {
-      try {
-        await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-          fields: {
-            [fieldId]: payload
-          }
-        });
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not update user field');
-  }
-
-  function buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta) {
-    if (value === undefined || value === null || value === '') {
-      return '';
-    }
-    if (isTempoAccountField(fieldMeta)) {
-      const accountId = value?.id || value;
-      return String(accountId || '').trim();
-    }
-    if (supportDescriptor?.valueKind === 'user') {
-      return String(value?.accountId || value?.key || value?.name || value?.displayName || '').trim();
-    }
-    if (supportDescriptor?.valueKind === 'primitive') {
-      return encodeJqlValue(String(value));
-    }
-    const comparableValue = value?.value || value?.name || value?.displayName || value?.key || value?.id;
-    return comparableValue ? encodeJqlValue(String(comparableValue)) : '';
-  }
-
-  function buildCustomFieldChipData(fieldId, fieldName, rawValue, fieldMeta, supportDescriptor) {
-    const currentValues = Array.isArray(rawValue) ? rawValue.filter(value => value !== undefined && value !== null && value !== '') : [rawValue].filter(value => value !== undefined && value !== null && value !== '');
-    const jqlValues = currentValues
-      .map(value => buildCustomFieldJqlOperand(value, supportDescriptor, fieldMeta))
-      .filter(Boolean);
-    const jqlClause = !jqlValues.length
-      ? ''
-      : jqlValues.length === 1
-        ? `${fieldName} = ${jqlValues[0]}`
-        : `${fieldName} in (${jqlValues.join(', ')})`;
-    const linkLabel = Array.isArray(rawValue)
-      ? currentValues.map(entry => getCustomFieldPrimitive(entry)).filter(Boolean).join(', ')
-      : getCustomFieldPrimitive(rawValue);
-    return buildFilterChip(buildCustomFieldValueText(fieldName, rawValue), jqlClause, {
-      linkLabel
-    });
-  }
-
-  function isTempoAccountField(fieldMeta) {
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
-    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
-    return schemaType === 'account' || schemaCustom.includes('tempo-accounts');
-  }
-
-  function buildTempoAccountOption(account) {
-    const id = account?.id;
-    const key = String(account?.key || '').trim();
-    const name = String(account?.name || key || '').trim();
-    if (!id || !name) {
-      return null;
-    }
-    const customerName = String(account?.customer?.name || '').trim();
-    const categoryName = String(account?.category?.name || '').trim();
-    const metaText = [key, customerName, categoryName].filter(Boolean).join(' | ');
-    return buildEditOption(String(id), name, {
-      metaText,
-      searchText: `${name} ${key} ${customerName} ${categoryName}`,
-      rawValue: account
-    });
-  }
-
-  async function searchTempoAccounts(queryText, issueData) {
-    const projectId = String(issueData?.fields?.project?.id || '').trim();
-    if (!projectId) {
-      return [];
-    }
-    const normalizedQuery = String(queryText || '').trim();
-    const cacheKey = `${projectId}__${normalizedQuery.toLowerCase()}`;
-    return getCachedValue(tempoAccountSearchCache, cacheKey, async () => {
-      const tqlQuery = `status=OPEN AND (project=${projectId} OR project=GLOBAL)`;
-      const url = `${INSTANCE_URL}rest/tempo-accounts/1/account/search?tqlQuery=${encodeURIComponent(tqlQuery)}&query=${encodeURIComponent(normalizedQuery)}&limit=15&offset=0`;
-      const response = await get(url);
-      const accounts = Array.isArray(response?.accounts) ? response.accounts : [];
-      return accounts
-        .map(buildTempoAccountOption)
-        .filter(Boolean);
-    });
-  }
-
-  async function saveTempoAccountSelection(issueData, fieldId, selectedOptions) {
-    const selectedOption = selectedOptions[0];
-    if (selectedOption?.id === '__clear__' || selectedOption?.rawValue === null) {
-      await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-        fields: {
-          [fieldId]: null
-        }
-      });
-      return;
-    }
-    if (!selectedOption?.id) {
-      throw new Error('Pick an account before saving');
-    }
-    const accountId = Number(selectedOption.id);
-    const accountKey = String(selectedOption?.rawValue?.key || '').trim();
-    const payloadCandidates = [
-      {fields: {[fieldId]: {id: accountId}}},
-      {fields: {[fieldId]: accountId}},
-      {fields: {[fieldId]: {id: String(selectedOption.id)}}},
-      ...(accountKey ? [{fields: {[fieldId]: {key: accountKey}}}] : [])
-    ];
-
-    let lastError;
-    for (const payload of payloadCandidates) {
-      try {
-        await requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, payload);
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Could not update account');
-  }
-
-  function getCustomFieldSupportDescriptor(fieldMeta) {
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
-    const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
-    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
-
-    if (schemaCustom.includes('cascadingselect')) {
-      return null;
-    }
-
-    if (schemaType === 'option') {
-      return {
-        selectionMode: 'single',
-        valueKind: 'option'
-      };
-    }
-
-    if (schemaType === 'string') {
-      return {
-        selectionMode: 'single',
-        valueKind: 'primitive'
-      };
-    }
-
-    if (schemaType === 'user') {
-      return {
-        selectionMode: 'single',
-        valueKind: 'user'
-      };
-    }
-
-    if (schemaType === 'array' && itemType === 'option') {
-      return {
-        selectionMode: 'multi',
-        valueKind: 'option'
-      };
-    }
-
-    if (schemaType === 'array' && itemType === 'string') {
-      return {
-        selectionMode: 'multi',
-        valueKind: 'primitive'
-      };
-    }
-
-    if (schemaType === 'array' && itemType === 'user') {
-      return {
-        selectionMode: 'multi',
-        valueKind: 'user'
-      };
-    }
-
-    return null;
-  }
-
-  function getPrimitiveCustomFieldEditorType(fieldMeta) {
-    const schemaCustom = String(fieldMeta?.schema?.custom || '').toLowerCase();
-    return schemaCustom.includes('textarea') ? 'textarea' : 'text';
-  }
-
-  function isSupportedCustomFieldAllowedValue(entry, supportDescriptor) {
-    if (!supportDescriptor) {
-      return false;
-    }
-    if (supportDescriptor.valueKind === 'primitive') {
-      return typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean';
-    }
-    if (!entry || typeof entry !== 'object') {
-      return false;
-    }
-    if (supportDescriptor.valueKind === 'user') {
-      return !!(entry.accountId || entry.name || entry.key || entry.displayName);
-    }
-    return !!(entry.id || entry.value || entry.name);
-  }
-
-  function buildCustomFieldSaveValue(rawValue, supportDescriptor) {
-    if (rawValue === undefined || rawValue === null) {
-      return rawValue;
-    }
-    if (supportDescriptor?.valueKind === 'primitive') {
-      return rawValue;
-    }
-    if (supportDescriptor?.valueKind === 'user' && rawValue && typeof rawValue === 'object') {
-      if (rawValue.accountId) {
-        return {accountId: String(rawValue.accountId)};
-      }
-      if (rawValue.name) {
-        return {name: String(rawValue.name)};
-      }
-      if (rawValue.key) {
-        return {key: String(rawValue.key)};
-      }
-    }
-    if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
-      return rawValue;
-    }
-    if (rawValue.id) {
-      return {id: String(rawValue.id)};
-    }
-    if (rawValue.value) {
-      return {value: rawValue.value};
-    }
-    if (rawValue.name) {
-      return {name: rawValue.name};
-    }
-    if (rawValue.key) {
-      return {key: rawValue.key};
-    }
-    return rawValue;
-  }
-
-  function normalizeIssueTypeOptions(allowedIssueTypes, currentIssueType) {
-    const currentIsSubtask = currentIssueType?.subtask === true;
-    return (Array.isArray(allowedIssueTypes) ? allowedIssueTypes : [])
-      .filter(issueType => issueType?.id && issueType?.name)
-      .filter(issueType => {
-        if (typeof issueType?.subtask !== 'boolean' || typeof currentIssueType?.subtask !== 'boolean') {
-          return true;
-        }
-        return issueType.subtask === currentIsSubtask;
-      })
-      .map(issueType => buildEditOption(issueType.id, issueType.name, {
-        iconUrl: issueType.iconUrl || '',
-        metaText: issueType.description || '',
-        rawValue: issueType
-      }));
-  }
-
-  async function getCustomFieldEditorDefinition(fieldId, issueData) {
-    const capability = await getEditableFieldCapability(issueData, fieldId);
-    const fieldMeta = capability.fieldMeta;
-    const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    const schemaType = String(fieldMeta?.schema?.type || '').toLowerCase();
-    const itemType = String(fieldMeta?.schema?.items || '').toLowerCase();
-
-    if (capability.editable && fieldMeta && isTempoAccountField(fieldMeta)) {
-      const currentAccount = issueData?.fields?.[fieldId];
-      const currentOption = currentAccount
-        ? buildTempoAccountOption(currentAccount)
-        : null;
-      const clearOption = buildClearFieldOption(`Clear ${fieldName}`);
-      return {
-        fieldKey: fieldId,
-        editorType: 'tempo-account-search',
-        label: fieldName,
-        fieldMeta,
-        supportDescriptor: {selectionMode: 'single', valueKind: 'tempo-account'},
-        selectionMode: 'single',
-        currentText: currentAccount ? buildCustomFieldValueText(fieldName, currentAccount) : `${fieldName}: --`,
-        currentOptionId: currentOption?.id || null,
-        currentSelections: currentOption ? [currentOption] : [],
-        initialInputValue: '',
-        inputPlaceholder: 'Search accounts',
-        loadOptions: async () => mergeEditOptions([clearOption], mergeEditOptions(currentOption ? [currentOption] : [], await searchTempoAccounts('', issueData))),
-        searchOptions: async query => mergeEditOptions([clearOption], await searchTempoAccounts(query, issueData)),
-        save: selectedOptions => saveTempoAccountSelection(issueData, fieldId, selectedOptions),
-        successMessage: selectedOptions => {
-          const selectedOption = selectedOptions[0];
-          if (selectedOption?.id === '__clear__') {
-            return `${fieldName} cleared`;
-          }
-          return selectedOption?.label
-            ? `${fieldName} set to ${selectedOption.label}`
-            : `${fieldName} updated`;
-        }
-      };
-    }
-
-    if (capability.editable && fieldMeta && (schemaType === 'user' || (schemaType === 'array' && itemType === 'user'))) {
-      const operations = capability.operations || [];
-      if (!operations.includes('set')) {
-        return null;
-      }
-
-      const isMultiValue = schemaType === 'array' && itemType === 'user';
-      const currentValue = issueData?.fields?.[fieldId];
-      const currentEntries = isMultiValue
-        ? (Array.isArray(currentValue) ? currentValue : [])
-        : (currentValue ? [currentValue] : []);
-      const currentSelections = currentEntries
-        .map(buildUserFieldOption)
-        .filter(Boolean);
-      const clearOption = isMultiValue ? null : buildClearFieldOption(`Clear ${fieldName}`);
-      return {
-        fieldKey: fieldId,
-        editorType: 'user-search',
-        label: fieldName,
-        fieldMeta,
-        supportDescriptor: {selectionMode: isMultiValue ? 'multi' : 'single', valueKind: 'user'},
-        selectionMode: isMultiValue ? 'multi' : 'single',
-        currentText: buildCustomFieldValueText(fieldName, currentValue),
-        currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
-        currentSelections,
-        initialInputValue: '',
-        inputPlaceholder: 'Search users',
-        loadOptions: async () => clearOption
-          ? mergeEditOptions([clearOption], await loadCustomUserFieldOptions(fieldId, issueData, currentSelections))
-          : loadCustomUserFieldOptions(fieldId, issueData, currentSelections),
-        searchOptions: async query => clearOption
-          ? mergeEditOptions([clearOption], await loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query))
-          : loadCustomUserFieldOptions(fieldId, issueData, currentSelections, query),
-        save: selectedOptions => saveUserCustomFieldSelection(issueData, fieldId, selectedOptions, isMultiValue),
-        successMessage: selectedOptions => {
-          if (!selectedOptions.length || selectedOptions[0]?.id === '__clear__') {
-            return `${fieldName} cleared`;
-          }
-          return isMultiValue
-            ? `${fieldName} updated`
-            : `${fieldName} set to ${selectedOptions[0].label}`;
-        }
-      };
-    }
-
-    return getSupportedCustomFieldDefinition(fieldId, issueData);
-  }
-
-  async function getSupportedCustomFieldDefinition(fieldId, issueData) {
-    const capability = await getEditableFieldCapability(issueData, fieldId);
-    const fieldMeta = capability.fieldMeta;
-    const fieldName = String(issueData?.names?.[fieldId] || fieldMeta?.name || fieldId);
-    if (!capability.editable || !fieldMeta) {
-      return null;
-    }
-
-    const supportDescriptor = getCustomFieldSupportDescriptor(fieldMeta);
-    if (!supportDescriptor) {
-      return null;
-    }
-
-    const operations = capability.operations || [];
-    const isMultiValue = supportDescriptor.selectionMode === 'multi';
-    const currentValue = issueData?.fields?.[fieldId];
-    const currentEntries = isMultiValue
-      ? (Array.isArray(currentValue) ? currentValue : [])
-      : (currentValue ? [currentValue] : []);
-    const currentSelections = currentEntries
-      .map(entry => buildCustomFieldOption(fieldName, entry))
-      .filter(Boolean);
-    const allowedOptions = (Array.isArray(capability.allowedValues) ? capability.allowedValues : [])
-      .filter(entry => isSupportedCustomFieldAllowedValue(entry, supportDescriptor))
-      .map(entry => buildCustomFieldOption(fieldName, entry))
-      .filter(Boolean);
-    const allOptions = mergeEditOptions(currentSelections, allowedOptions);
-
-    if (!allOptions.length && supportDescriptor.valueKind !== 'user') {
-      return null;
-    }
-
-    if (isMultiValue && !operations.includes('set')) {
-      return null;
-    }
-    if (!isMultiValue && !operations.includes('set')) {
-      return null;
-    }
-
-    const isUserField = supportDescriptor.valueKind === 'user';
-    const isPrimitiveField = supportDescriptor.valueKind === 'primitive';
-    const clearOption = isMultiValue ? null : buildClearFieldOption(`Clear ${fieldName}`);
-
-    if (isPrimitiveField && !isMultiValue) {
-      const currentInputValue = currentValue === undefined || currentValue === null
-        ? ''
-        : String(currentValue);
-      const editorType = getPrimitiveCustomFieldEditorType(fieldMeta);
-      return {
-        fieldKey: fieldId,
-        editorType,
-        label: fieldName,
-        fieldMeta,
-        supportDescriptor,
-        selectionMode: 'text',
-        currentText: buildCustomFieldValueText(fieldName, currentValue),
-        currentOptionId: null,
-        currentSelections,
-        initialInputValue: currentInputValue,
-        inputPlaceholder: editorType === 'textarea' ? `Enter ${fieldName.toLowerCase()}` : `Type ${fieldName.toLowerCase()}`,
-        showActionButtons: true,
-        loadOptions: async () => [],
-        save: (selectedOptions, editState) => {
-          const nextValue = String(editState?.inputValue || '');
-          const hasValue = nextValue.trim().length > 0;
-          return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-            fields: {
-              [fieldId]: hasValue ? nextValue : null
-            }
-          });
-        },
-        successMessage: (selectedOptions, editState) => {
-          const nextValue = String(editState?.inputValue || '').trim();
-          return nextValue ? `${fieldName} updated` : `${fieldName} cleared`;
-        }
-      };
-    }
-
-    if (isPrimitiveField && isMultiValue) {
-      return null;
-    }
-
-    return {
-      fieldKey: fieldId,
-      editorType: isUserField ? 'user-search' : (isMultiValue ? 'multi-select' : 'single-select'),
-      label: fieldName,
-      fieldMeta,
-      supportDescriptor,
-      selectionMode: isMultiValue ? 'multi' : 'single',
-      currentText: buildCustomFieldValueText(fieldName, currentValue),
-      currentOptionId: !isMultiValue && currentSelections[0] ? currentSelections[0].id : null,
-      currentSelections,
-      initialInputValue: isMultiValue ? '' : '',
-      inputPlaceholder: isUserField ? 'Search users' : undefined,
-      loadOptions: async () => isUserField
-        ? mergeEditOptions([clearOption], currentSelections)
-        : mergeEditOptions([clearOption], allOptions),
-      searchOptions: isUserField ? (async query => {
-        const [pickerResults, assignableResults] = await Promise.all([
-          searchUserPicker(query),
-          searchAssignableUsers(query, issueData).catch(() => [])
-        ]);
-        const baseline = userPickerLocalOptionsCache.get(fieldId) || currentSelections;
-        const merged = mergeEditOptions(pickerResults, mergeEditOptions(assignableResults, baseline));
-        userPickerLocalOptionsCache.set(fieldId, merged);
-        return mergeEditOptions([clearOption], merged);
-      }) : undefined,
-      save: selectedOptions => {
-        const fieldValue = isMultiValue
-          ? selectedOptions.map(option => buildCustomFieldSaveValue(option.rawValue, supportDescriptor))
-          : buildCustomFieldSaveValue(selectedOptions[0]?.rawValue, supportDescriptor);
-        return requestJson('PUT', `${INSTANCE_URL}rest/api/2/issue/${issueData.key}`, {
-          fields: {
-            [fieldId]: isMultiValue ? fieldValue : (fieldValue ?? null)
-          }
-        });
-      },
-      successMessage: selectedOptions => !selectedOptions.length || selectedOptions[0]?.id === '__clear__'
-        ? `${fieldName} cleared`
-        : `${fieldName} updated`
-    };
-  }
 
   function getCustomFieldRowFromLayout(fieldId, tooltipLayout) {
     const layoutKey = fieldId ? `custom_${fieldId}` : '';
@@ -4079,30 +1970,24 @@ async function mainAsyncLocal() {
     for (const {fieldId, row} of customFields) {
       const rawValue = fields[fieldId];
       const fieldName = String(names[fieldId] || fieldId);
-      const supportedDefinition = await getCustomFieldEditorDefinition(fieldId, issueData).catch(() => null);
       const hasDisplayValue = Array.isArray(rawValue)
         ? rawValue.some(value => value !== undefined && value !== null && value !== '')
         : !(rawValue === undefined || rawValue === null || rawValue === '');
-      if (supportedDefinition) {
-        const baseChip = hasDisplayValue
-          ? buildCustomFieldChipData(fieldId, fieldName, rawValue, supportedDefinition.fieldMeta, supportedDefinition.supportDescriptor)
-          : buildFilterChip(`${fieldName}: --`, '');
+      const fieldOutcome = await jiraFieldEditing.dispatch({
+        type: 'describeField',
+        fieldId,
+        configured: true,
+      }).catch(() => null);
+      const field = fieldOutcome?.field;
+      if (field?.supported && (hasDisplayValue || field.visibleWhenEmpty)) {
+        const baseChip = buildFilterChip(field.text, field.jqlClause, {linkLabel: field.linkLabel});
         chipsByRow[row].push(buildEditableFieldChip(fieldId, baseChip, state, {
-          canEdit: true,
+          canEdit: field.editable,
           editTitle: `Edit ${fieldName}`
         }));
         continue;
       }
       if (!hasDisplayValue) {
-        const capability = await getEditableFieldCapability(issueData, fieldId).catch(() => null);
-        const supportDescriptor = capability?.fieldMeta
-          ? getCustomFieldSupportDescriptor(capability.fieldMeta)
-          : null;
-        if (supportDescriptor?.valueKind === 'user') {
-          chipsByRow[row].push(buildEditableFieldChip(fieldId, buildFilterChip(`${fieldName}: --`, ''), state, {
-            canEdit: false
-          }));
-        }
         continue;
       }
       const entries = Array.isArray(rawValue) ? rawValue : [rawValue];
@@ -4182,89 +2067,6 @@ async function mainAsyncLocal() {
     return sprints;
   }
 
-  function readSprintBoardRefsFromIssue(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    const seen = new Set();
-    const boardRefs = [];
-
-    getIssueSprintEntries(issueData).forEach(entry => {
-      const candidateBoardIds = [];
-      if (typeof entry === 'string') {
-        ['rapidViewId', 'boardId', 'originBoardId'].forEach(fieldName => {
-          const match = entry.match(new RegExp(`${fieldName}=([^,\\]]+)`, 'i'));
-          if (match && match[1]) {
-            candidateBoardIds.push(match[1]);
-          }
-        });
-      } else {
-        candidateBoardIds.push(
-          entry.rapidViewId,
-          entry.boardId,
-          entry.originBoardId,
-          entry.board?.id,
-          entry.rapidView?.id
-        );
-      }
-
-      candidateBoardIds.forEach(candidateId => {
-        const boardId = String(candidateId || '').trim();
-        if (!boardId || seen.has(boardId)) {
-          return;
-        }
-        seen.add(boardId);
-        boardRefs.push({
-          id: boardId,
-          name: String(entry?.board?.name || entry?.rapidView?.name || ''),
-          projectKey
-        });
-      });
-    });
-
-    return boardRefs;
-  }
-
-  function formatFixVersionText(fixVersions) {
-    return (fixVersions || [])
-      .map(version => version.name)
-      .filter(Boolean)
-      .join(', ');
-  }
-
-  function formatVersionText(versions) {
-    return formatFixVersionText(versions);
-  }
-
-  function formatEnvironmentDisplayText(environment) {
-    const normalizedText = String(environment || '')
-      .replace(/[\r\n]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!normalizedText) {
-      return '--';
-    }
-    return normalizedText.length > 120
-      ? `${normalizedText.slice(0, 117).trimEnd()}...`
-      : normalizedText;
-  }
-
-  function getVisibleSprintsForDisplay(sprints) {
-    const sprintList = Array.isArray(sprints) ? sprints : [];
-    const activeSprints = sprintList.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
-    return activeSprints.length
-      ? activeSprints
-      : (sprintList.every(sprint => String(sprint?.state || '').toLowerCase() === 'closed')
-          ? sprintList.slice(-1)
-          : sprintList);
-  }
-
-  function formatSprintText(sprints) {
-    const visibleSprints = getVisibleSprintsForDisplay(sprints);
-    return visibleSprints
-      .map(sprint => sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name)
-      .filter(Boolean)
-      .join(', ');
-  }
-
   // ── JQL & Display Utilities ────────────────────────────────
 
   function encodeJqlValue(value) {
@@ -4297,13 +2099,6 @@ async function mainAsyncLocal() {
       .map(part => ensureTooltipSentence(part))
       .filter(Boolean)
       .join('\n');
-  }
-
-  function buildCommentPermalink(issueKey, commentId) {
-    if (!issueKey || !commentId) {
-      return '';
-    }
-    return `${INSTANCE_URL}browse/${issueKey}?focusedCommentId=${commentId}&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-${commentId}`;
   }
 
   function appendTooltipText(baseText, extraText) {
@@ -4401,27 +2196,6 @@ async function mainAsyncLocal() {
         }))
       }
     };
-  }
-
-  // ── Pull Request Display ───────────────────────────────────
-
-  function formatPullRequestTitle(pr) {
-    const id = pr?.id || pr?.number || pr?.key || '';
-    const title = pr?.name || pr?.title || 'Untitled pull request';
-    return id ? '[' + id + '] ' + title : title;
-  }
-
-  function formatPullRequestAuthor(pr) {
-    return pr?.author?.name || pr?.author?.displayName || pr?.author?.username || pr?.author?.email || '--';
-  }
-
-  function formatPullRequestBranch(pr) {
-    const source = pr?.source?.branch || pr?.sourceBranch || pr?.fromRef?.displayId || pr?.fromRef?.id || pr?.source?.displayId || '';
-    const target = pr?.destination?.branch || pr?.targetBranch || pr?.toRef?.displayId || pr?.toRef?.id || pr?.destination?.displayId || '';
-    if (source && target) {
-      return source + ' --> ' + target;
-    }
-    return source || target || '--';
   }
 
   function areSameJiraUser(left, right) {
@@ -4596,19 +2370,14 @@ async function mainAsyncLocal() {
 
   // ── Edit Options & Multi-Select ────────────────────────────
 
-  function formatSprintOptionLabel(sprint) {
-    if (!sprint) {
-      return '';
-    }
-    return sprint.state ? `${sprint.name} (${String(sprint.state).toUpperCase()})` : sprint.name;
-  }
-
-
   // ── Edit UI Presentation ───────────────────────────────────
 
+  function getActiveFieldEditState() {
+    return jiraFieldEditing.view().edit || null;
+  }
 
   function buildActiveEditPresentation(fieldKey, state, options = {}) {
-    const editState = state?.editState;
+    const editState = getActiveFieldEditState(state);
     if (editState?.fieldKey !== fieldKey) {
       return null;
     }
@@ -4616,11 +2385,11 @@ async function mainAsyncLocal() {
     const isMultiSelect = editState.selectionMode === 'multi';
     const isTextEditor = editState.selectionMode === 'text';
     const selectedOptionIds = new Set(isMultiSelect
-      ? normalizeMultiSelectOptionIds(editState.selectedOptionIds)
+      ? editState.selectedOptionIds || []
       : (editState.selectedOptionId === null || typeof editState.selectedOptionId === 'undefined'
           ? []
           : [String(editState.selectedOptionId)]));
-    const visibleOptions = isTextEditor ? [] : filterEditOptions(editState.options, editState.inputValue);
+    const visibleOptions = isTextEditor ? [] : (editState.visibleOptions || []);
     const selectableOptions = visibleOptions.filter(option => !option.isGroupLabel);
     const highlightedOption = selectableOptions.find(option => option.id === editState.highlightedOptionId) || selectableOptions[0];
     const filteredOptions = visibleOptions.map((option, optionIndex) => ({
@@ -4726,237 +2495,63 @@ async function mainAsyncLocal() {
     return `Move to Sprint ${sprintName}${stateSuffix}`.trim();
   }
 
-  async function getProjectSprintBoards(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
-      return [];
-    }
-    const boardResponse = await get(`${INSTANCE_URL}rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`).catch(() => null);
-    const projectBoards = Array.isArray(boardResponse?.values) ? boardResponse.values : [];
-    return projectBoards
-      .map(board => ({
-        ...board,
-        id: String(board?.id || '').trim(),
-        name: String(board?.name || '').trim(),
-        projectKey: String(board?.projectKey || projectKey),
-      }))
-      .filter(board => !!board.id);
-  }
-
-  function mergeSprintBoards(projectKey, ...boardLists) {
-    const boardsById = new Map();
-    boardLists.flat().forEach(board => {
-      const boardId = String(board?.id || '').trim();
-      if (!boardId) {
-        return;
-      }
-      const existingBoard = boardsById.get(boardId) || {};
-      boardsById.set(boardId, {
-        ...existingBoard,
-        ...board,
-        id: boardId,
-        name: String(board?.name || existingBoard.name || '').trim(),
-        projectKey: String(board?.projectKey || existingBoard.projectKey || projectKey),
-      });
-    });
-    return [...boardsById.values()];
-  }
-
-  async function getCandidateSprintBoards(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    return mergeSprintBoards(projectKey, await getProjectSprintBoards(issueData), readSprintBoardRefsFromIssue(issueData));
-  }
-
   async function getProjectSprintOptions(issueData) {
-    const projectKey = String(issueData?.key || '').split('-')[0];
-    if (!projectKey) {
+    if (!issueData?.key) {
       return {
         activeSprints: [],
         upcomingSprint: null
       };
     }
-    const issueBoardIdsKey = readSprintBoardRefsFromIssue(issueData)
-      .map(board => String(board.id || ''))
-      .filter(Boolean)
-      .sort()
-      .join(',');
-    const cacheKey = `${projectKey}__${issueBoardIdsKey}`;
-    if (projectSprintOptionsPromises.has(cacheKey)) {
-      return projectSprintOptionsPromises.get(cacheKey);
-    }
-
-    const sprintPromise = (async () => {
-      const sprintFieldIds = await getSprintFieldIds(INSTANCE_URL);
-      if (!sprintFieldIds.length) {
-        return {
-          activeSprints: [],
-          upcomingSprint: null
-        };
-      }
-
-      const boards = await getCandidateSprintBoards(issueData);
-      if (!boards.length) {
-        return {
-          activeSprints: [],
-          upcomingSprint: null
-        };
-      }
-
-      const sprintMap = new Map();
-      const sprintResponses = await Promise.allSettled(boards.map(board => {
-        return get(`${INSTANCE_URL}rest/agile/1.0/board/${board.id}/sprint?state=active,future&maxResults=50`)
-          .then(response => ({board, response}));
-      }));
-
-      sprintResponses.forEach(result => {
-        if (result.status !== 'fulfilled') {
-          return;
-        }
-        const board = result.value?.board || {};
-        const sprints = Array.isArray(result.value?.response?.values) ? result.value.response.values : [];
-        sprints.forEach(sprint => {
-          if (!sprint?.id || !sprint?.name) {
-            return;
-          }
-          const sprintId = String(sprint.id);
-          const existingSprint = sprintMap.get(sprintId);
-          const boardRefs = Array.isArray(existingSprint?.boardRefs) ? existingSprint.boardRefs.slice() : [];
-          const boardRefKey = String(board.id || '');
-          if (boardRefKey && !boardRefs.some(ref => String(ref.id) === boardRefKey)) {
-            boardRefs.push({
-              id: board.id,
-              name: board.name || '',
-              projectKey: board.projectKey || projectKey
-            });
-          }
-          sprintMap.set(sprintId, {
-            ...(existingSprint || {}),
-            ...sprint,
-            boardRefs
-          });
-        });
+    try {
+      const sprintContext = await quickViewIssueData.loadFieldContext({
+        issueKey: issueData.key,
+        fieldId: 'sprint',
+        includeOptions: true,
       });
-
-      readSprintsFromIssue(issueData).forEach(sprint => {
-        if (!sprint?.id || !sprint?.name) {
-          return;
-        }
-        const sprintId = String(sprint.id);
-        if (sprintMap.has(sprintId)) {
-          return;
-        }
-        sprintMap.set(sprintId, {
-          ...sprint,
-          boardRefs: []
-        });
-      });
-
-      const sortedSprints = [...sprintMap.values()].sort((left, right) => {
-        const stateOrder = compareSprintState(left?.state, right?.state);
-        if (stateOrder !== 0) {
-          return stateOrder;
-        }
-        return String(left?.name || '').localeCompare(String(right?.name || ''));
-      });
-
+      const sortedSprints = sprintContext.context?.options || [];
       const activeSprints = sortedSprints.filter(sprint => String(sprint?.state || '').toLowerCase() === 'active');
       const upcomingSprint = sortedSprints.find(sprint => String(sprint?.state || '').toLowerCase() === 'future') || null;
-
       return {
         activeSprints,
         upcomingSprint
       };
-    })().catch(error => {
-      projectSprintOptionsPromises.delete(cacheKey);
+    } catch (error) {
       return {
         activeSprints: [],
         upcomingSprint: null
       };
-    });
-
-    projectSprintOptionsPromises.set(cacheKey, sprintPromise);
-    return sprintPromise;
-  }
-
-  function buildDefaultActivityIndicators() {
-    return [
-      {
-        iconHtml: '<span class="_JX_history_toggle_icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"></circle><path d="M12 7.75v4.6l3.1 1.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>',
-        label: 'History',
-        isHistory: true,
-        clickable: true,
-        title: 'View change history',
-        ariaLabel: 'View change history'
-      }
-    ].map(item => ({
-      ...item,
-      title: item.title || (item.hasCount ? item.count + ' ' + item.label.toLowerCase() : item.label),
-      ariaLabel: item.ariaLabel || item.title || item.label
-    }));
+    }
   }
 
   // ── Quick Actions ──────────────────────────────────────────
 
-  const {
-    buildUserView,
-    detectSharedAvatarUrls,
-    normalizeAssignableUsers,
-    normalizeWatcherUsers,
-    proxyUserAvatars,
-  } = createContentPeopleHelpers({
-    areSameJiraUser,
-    buildEditOption,
-    cacheKnownJiraUser,
-    cacheKnownJiraUsers,
-    getDisplayImageUrl,
-    sharedAvatarUrls,
-  });
-
-  const {buildPopupDisplayData} = createContentDisplayHelpers({
-    buildActivityIndicatorsDefault: buildDefaultActivityIndicators,
+  const {buildPopupDisplayData} = createPopupProjectView({
+    attachments: attachmentPresentation,
     buildActiveEditPresentation,
-    buildHistoryAttachmentLookup,
-    buildCommentsForDisplay,
     buildCustomFieldChips,
     buildEditableFieldChip,
     buildFilterChip,
     buildLabelsChip,
     buildLinkHoverTitle,
-    buildLinkedIssuesPanelView: (state, issueData) => buildLinkedIssuesPanelView(state, issueData, {
-      buildLinkHoverTitle,
-      buildUserView,
-      instanceUrl: INSTANCE_URL,
-    }),
-    buildQuickActionViewData,
     buildTimeTrackingSectionPresentation,
-    buildUserView,
-    customFields,
-    displayFields,
-    emptyWatchersState,
+    comments: commentLifecycle,
+    configuration: {
+      customFields,
+      displayFields,
+      instanceUrl: INSTANCE_URL,
+      layoutContentBlocks,
+      loaderGifUrl,
+      showPullRequests,
+      tooltipLayout,
+    },
     encodeJqlValue,
-    formatChangelogForDisplay,
-    formatEnvironmentDisplayText,
-    formatFixVersionText,
-    formatPullRequestAuthor,
-    formatPullRequestBranch,
-    formatPullRequestTitle,
-    formatSprintText,
-    getEditableFieldCapability,
-    getTransitionOptions,
-    getVisibleSprintsForDisplay,
-    hasLabelSuggestionSupport,
-    instanceUrl: INSTANCE_URL,
-    layoutContentBlocks,
-    loaderGifUrl,
-    normalizeCommentSortOrder,
-    normalizeIssueTypeOptions,
+    fieldEditing: jiraFieldEditing,
+    issueData: quickViewIssueData,
+    history: historyPresentation,
     normalizeRichHtml,
+    people,
     readSprintsFromIssue,
-    resolveIssueLinkage,
     scopeJqlToProject,
-    showPullRequests,
-    tooltipLayout,
-    buildPreviewAttachments,
   });
 
 
@@ -4970,31 +2565,8 @@ async function mainAsyncLocal() {
     return href;
   }
 
-  function clampContainerPosition(left, top) {
-    if (!contentShellHelpers) {
-      return {left, top};
-    }
-    return contentShellHelpers.clampContainerPosition(left, top);
-  }
-
-  function keepContainerVisible() {
-    if (!contentShellHelpers) {
-      return;
-    }
-    contentShellHelpers.keepContainerVisible();
-  }
-
-  function computeVisibleContainerPosition(pointerX, pointerY) {
-    if (!contentShellHelpers) {
-      return {left: pointerX, top: pointerY};
-    }
-    return contentShellHelpers.computeVisibleContainerPosition(pointerX, pointerY);
-  }
-
   // ── Popup Rendering & State ────────────────────────────────
-  let hideTimeOut;
   let hoverDelayTimeout;
-  let containerPinned = false;
   let lastHoveredKey = '';
   const container = $('<div class="_JX_container" data-testid="jira-popup-root">');
   const previewOverlay = $(`
@@ -5004,1170 +2576,122 @@ async function mainAsyncLocal() {
   `);
   $(document.body).append(container);
   $(document.body).append(previewOverlay);
-  contentShellHelpers = createContentShellHelpers({
+  popupShell = createBrowserPopupShell({
+    announce: snackBar,
+    close: ({reason}) => hideContainer(reason),
     container,
+    media: {displayUrl: getDisplayImageUrl},
     previewOverlay,
-    getDisplayImageUrl,
-    isContainerPinned: () => containerPinned,
-    clearHideTimeout: () => clearTimeout(hideTimeOut),
-    pinContainer,
   });
-  async function renderIssuePopup(state) {
-    if (!state?.issueData) {
-      return;
-    }
-    const commentComposerDraft = state.key === activeCommentContext?.issueKey
-      ? captureCommentComposerDraft()
-      : null;
-    const displayData = await buildPopupDisplayData(state);
-    if (state !== popupState) {
-      return;
-    }
-    if (activeCommentContext?.issueKey && activeCommentContext.issueKey !== state.key) {
-      discardCommentComposerDraft().catch(() => {});
-    }
-    const existingCommentInput = container.find('._JX_comment_input');
-    if (existingCommentInput.length) {
-      commentComposerDraftValue = existingCommentInput.val() || '';
-      const existingCommentInputElement = existingCommentInput.get(0);
-      if (existingCommentInputElement) {
-        commentComposerHadFocus = document.activeElement === existingCommentInputElement;
-        commentComposerSelectionStart = typeof existingCommentInputElement.selectionStart === 'number' ? existingCommentInputElement.selectionStart : commentComposerDraftValue.length;
-        commentComposerSelectionEnd = typeof existingCommentInputElement.selectionEnd === 'number' ? existingCommentInputElement.selectionEnd : commentComposerDraftValue.length;
-      }
-    }
-    const existingContentBlocks = container.find('._JX_content_blocks');
-    const savedScrollLeft = existingContentBlocks.length ? existingContentBlocks.scrollLeft() : 0;
-    const savedScrollTop = existingContentBlocks.length ? existingContentBlocks.scrollTop() : 0;
-    container.html(Mustache.render(annotationTemplate, displayData));
-    const contentBlocksContainer = container.find('._JX_content_blocks');
-    if (contentBlocksContainer.length) {
-      const blocks = contentBlocksContainer.children('[data-content-block]');
-      const order = layoutContentBlocks;
-      blocks.sort((a, b) => {
-        const ai = order.indexOf(a.getAttribute('data-content-block'));
-        const bi = order.indexOf(b.getAttribute('data-content-block'));
-        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-      });
-      contentBlocksContainer.prepend(blocks);
-    }
-    activeCommentContext = displayFields.comments ? {issueKey: state.key, issueId: state.issueData.id} : null;
-    const nextContentBlocks = container.find('._JX_content_blocks');
-    if (nextContentBlocks.length) {
-      nextContentBlocks.scrollLeft(savedScrollLeft);
-      nextContentBlocks.scrollTop(savedScrollTop);
-    }
-    restoreCommentComposerDraft(commentComposerDraft);
-    restoreCommentComposerState();
-    renderCommentUploads();
-    renderCommentMentionSuggestions();
-    syncCommentComposerState();
-    if (!containerPinned) {
-      container.css(computeVisibleContainerPosition(state.pointerX, state.pointerY));
-    }
-    if (state.editState?.fieldKey) {
-      const input = container.find('._JX_edit_input')[0];
-      if (input) {
-        input.focus();
-        const maxIndex = input.value.length;
-        const selectionStart = Math.min(maxIndex, Number.isInteger(state.editState.selectionStart) ? state.editState.selectionStart : maxIndex);
-        const selectionEnd = Math.min(maxIndex, Number.isInteger(state.editState.selectionEnd) ? state.editState.selectionEnd : maxIndex);
-        input.setSelectionRange(selectionStart, selectionEnd);
-      }
-      const highlightedOption = container.find('._JX_edit_option.is-highlighted')[0];
-      if (highlightedOption) {
-        highlightedOption.scrollIntoView({block: 'nearest'});
-      }
-      } else if (state.timeTrackingEditState?.activeInputField) {
-        const input = container.find(`._JX_time_tracking_input[data-time-tracking-field="${state.timeTrackingEditState.activeInputField}"]`)[0];
-        if (input) {
-          input.focus();
-        if (typeof input.setSelectionRange === 'function' && input.type !== 'date') {
-          const maxIndex = input.value.length;
-          const selectionStart = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionStart) ? state.timeTrackingEditState.selectionStart : maxIndex);
-          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.timeTrackingEditState.selectionEnd) ? state.timeTrackingEditState.selectionEnd : maxIndex);
-          input.setSelectionRange(selectionStart, selectionEnd);
-          }
-        }
-      } else if (state.descriptionEditState?.open) {
-        const input = container.find('._JX_description_input')[0];
-        if (input) {
-          const nextValue = String(state.descriptionEditState.inputValue || '');
-          if (input.value !== nextValue) {
-            input.value = nextValue;
-          }
-          input.focus();
-          const maxIndex = input.value.length;
-          const selectionStart = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionStart) ? state.descriptionEditState.selectionStart : maxIndex);
-          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.descriptionEditState.selectionEnd) ? state.descriptionEditState.selectionEnd : maxIndex);
-          input.setSelectionRange(selectionStart, selectionEnd);
-        }
-      } else if (state.linkedIssuesState?.open && state.linkedIssuesState.focusSearch) {
-        const input = container.find('._JX_linked_issues_search_input')[0];
-        if (input) {
-          input.focus();
-          const maxIndex = input.value.length;
-          const selectionStart = Math.min(maxIndex, Number.isInteger(state.linkedIssuesState.searchSelectionStart)
-            ? state.linkedIssuesState.searchSelectionStart
-            : maxIndex);
-          const selectionEnd = Math.min(maxIndex, Number.isInteger(state.linkedIssuesState.searchSelectionEnd)
-            ? state.linkedIssuesState.searchSelectionEnd
-            : selectionStart);
-          input.setSelectionRange(selectionStart, selectionEnd);
-        }
-      } else if (state.watchersState?.open && state.watchersState.focusSearch) {
-        const input = container.find('._JX_watchers_search_input')[0];
-        if (input) {
-          input.focus();
-          const maxIndex = input.value.length;
-          input.setSelectionRange(maxIndex, maxIndex);
-        }
-      }
-    if (state.commentSession?.mode === 'edit' && state.commentSession.commentId) {
-      const commentInput = container.find(`._JX_comment_edit_input[data-comment-id="${state.commentSession.commentId}"]`)[0];
-      if (commentInput) {
-        commentInput.focus();
-        const maxIndex = commentInput.value.length;
-        const selectionStart = Math.min(maxIndex, Number.isInteger(state.commentSession.selectionStart) ? state.commentSession.selectionStart : maxIndex);
-        const selectionEnd = Math.min(maxIndex, Number.isInteger(state.commentSession.selectionEnd) ? state.commentSession.selectionEnd : maxIndex);
-        commentInput.setSelectionRange(selectionStart, selectionEnd);
-      }
-    }
-    renderCommentEditMentionSuggestions();
-    constrainEditPopoversToViewport();
-  }
-  async function runWatcherSearch(queryText, requestId) {
-    const normalizedQuery = String(queryText || '').trim();
-    try {
-      const results = normalizedQuery ? await searchWatcherCandidates(normalizedQuery) : [];
-      if (!popupState?.watchersState?.open || popupState.watchersState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          searchLoading: false,
-          searchResults: results,
-        })
-      }));
-    } catch (error) {
-      if (!popupState?.watchersState?.open || popupState.watchersState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          searchLoading: false,
-          errorMessage: buildEditFieldError(error),
-        })
-      }));
-    }
-  }
-
-  async function openWatchersPanel() {
-    if (!popupState?.issueData?.key) {
-      return;
-    }
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        open: true,
-        loading: true,
-        errorMessage: '',
-        addFeedback: null,
-        removeFeedback: null,
-        focusSearch: true,
-      })
-    }));
-
-    try {
-      const watcherData = await getIssueWatchers(popupState.issueData.key);
-      if (!popupState?.watchersState?.open) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          loading: false,
-          errorMessage: '',
-          watchers: watcherData.watchers,
-        })
-      }));
-    } catch (error) {
-      if (!popupState?.watchersState?.open) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          loading: false,
-          errorMessage: buildEditFieldError(error),
-        })
-      }));
-    }
-  }
-
-  function closeWatchersPanel() {
-    if (!popupState?.watchersState?.open) {
-      return;
-    }
-    clearWatchersFeedbackTimer();
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        open: false,
-        loading: false,
-        errorMessage: '',
-        searchValue: '',
-        searchLoading: false,
-        searchRequestId: 0,
-        searchResults: [],
-        pendingAddIds: [],
-        pendingRemoveIds: [],
-        addFeedback: null,
-        removeFeedback: null,
-        focusSearch: false,
-      })
-    })).catch(() => {});
-  }
-
-  function closeHistoryFlyout() {
-    if (!popupState?.historyOpen) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      historyOpen: false
-    };
-    renderIssuePopup(popupState).catch(() => {});
-  }
-
-  function updateWatchersSearch(nextValue) {
-    if (!popupState?.watchersState?.open) {
-      return;
-    }
-    const searchValue = String(nextValue || '');
-    if (!searchValue.trim()) {
-      renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          searchValue,
-          searchLoading: false,
-          searchRequestId: 0,
-          searchResults: [],
-          errorMessage: '',
-          focusSearch: true,
-        })
-      })).catch(() => {});
-      return;
-    }
-    const searchRequestId = popupState.watchersState.searchRequestId + 1;
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        searchValue,
-        searchLoading: true,
-        searchRequestId,
-        errorMessage: '',
-        focusSearch: true,
-      })
-    })).then(() => {
-      runWatcherSearch(searchValue, searchRequestId).catch(() => {});
-    }).catch(() => {});
-  }
-
-  async function addWatcherFromPanel(watcherId) {
-    const watcherState = popupState?.watchersState;
-    if (!popupState?.issueData?.key || !watcherState) {
-      return;
-    }
-    const user = (watcherState.searchResults || []).find(candidate => candidate.id === watcherId);
-    if (!user || watcherState.pendingAddIds.includes(watcherId)) {
-      return;
-    }
-
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        pendingAddIds: [...new Set([...(currentState.watchersState?.pendingAddIds || []), watcherId])],
-        errorMessage: '',
-        addFeedback: null,
-      })
-    }));
-
-    try {
-      await addWatcher(popupState.issueData.key, user);
-      await refreshPopupIssueState('', {
-        refreshWatchersPanel: true,
-        scheduleWatchersFeedbackReset: true,
-        scheduleWatchersFeedbackClear,
-        nextWatchersStateChanges: {
-          addFeedback: {
-            id: watcherId,
-            message: `${user.displayName} added to watchers`,
-            toneClass: '_JX_watchers_feedback_row_success'
-          },
-        }
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          pendingAddIds: (currentState.watchersState?.pendingAddIds || []).filter(id => id !== watcherId),
-          errorMessage: '',
-          addFeedback: {
-            id: watcherId,
-            message: buildEditFieldError(error),
-            toneClass: '_JX_watchers_feedback_row_error'
-          },
-          focusSearch: true,
-        })
-      }));
-      scheduleWatchersFeedbackClear();
-    }
-  }
-
-  async function removeWatcherFromPanel(watcherId) {
-    const watcherState = popupState?.watchersState;
-    if (!popupState?.issueData?.key || !watcherState) {
-      return;
-    }
-    const user = (watcherState.watchers || []).find(candidate => candidate.id === watcherId);
-    if (!user || watcherState.pendingRemoveIds.includes(watcherId)) {
-      return;
-    }
-
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      watchersState: buildNextWatchersState(currentState.watchersState, {
-        pendingRemoveIds: [...new Set([...(currentState.watchersState?.pendingRemoveIds || []), watcherId])],
-        errorMessage: '',
-        removeFeedback: null,
-      })
-    }));
-
-    try {
-      await removeWatcher(popupState.issueData.key, user);
-      await refreshPopupIssueState('', {
-        refreshWatchersPanel: true,
-        scheduleWatchersFeedbackReset: true,
-        scheduleWatchersFeedbackClear,
-        nextWatchersStateChanges: {
-          removeFeedback: {
-            id: watcherId,
-            message: `${user.displayName} removed from watchers`,
-            toneClass: '_JX_watchers_feedback_row_neutral'
-          },
-        }
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        watchersState: buildNextWatchersState(currentState.watchersState, {
-          pendingRemoveIds: (currentState.watchersState?.pendingRemoveIds || []).filter(id => id !== watcherId),
-          errorMessage: '',
-          removeFeedback: {
-            id: watcherId,
-            message: buildEditFieldError(error),
-            toneClass: '_JX_watchers_feedback_row_error'
-          },
-        })
-      }));
-      scheduleWatchersFeedbackClear();
-    }
-  }
-
-  function buildNextLinkedIssuesState(currentState = emptyLinkedIssuesState(), changes = {}) {
-    return {
-      ...emptyLinkedIssuesState(),
-      ...currentState,
-      ...changes,
-    };
-  }
-
-  async function openLinkedIssuesPanel() {
-    if (!popupState?.issueData?.key) {
-      return;
-    }
-    const issueKey = popupState.issueData.key;
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      historyOpen: false,
-      watchersState: buildNextWatchersState(currentState.watchersState, {open: false, focusSearch: false}),
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        open: true,
-        loading: true,
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    }));
-
-    const [linkTypesResult, detailsResult] = await Promise.allSettled([
-      getIssueLinkTypes(),
-      getLinkedIssueDetails(popupState.issueData),
-    ]);
-    if (!popupState?.linkedIssuesState?.open || popupState.issueData?.key !== issueKey) {
-      return;
-    }
-    const linkTypes = linkTypesResult.status === 'fulfilled' ? linkTypesResult.value : [];
-    const relationshipOptions = buildRelationshipOptions(linkTypes);
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        loading: false,
-        linkTypes,
-        relationshipId: currentState.linkedIssuesState?.relationshipId || relationshipOptions[0]?.id || '',
-        issueDetailsByKey: detailsResult.status === 'fulfilled' ? detailsResult.value : {},
-        errorMessage: linkTypesResult.status === 'rejected' ? buildEditFieldError(linkTypesResult.reason) : '',
-        focusSearch: true,
-      }),
-    }));
-  }
-
-  function closeLinkedIssuesPanel() {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    if (linkedIssuesSearchTimeoutId) {
-      clearTimeout(linkedIssuesSearchTimeoutId);
-      linkedIssuesSearchTimeoutId = null;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        open: false,
-        loading: false,
-        errorMessage: '',
-        feedbackMessage: '',
-        searchValue: '',
-        searchLoading: false,
-        searchRequestId: (currentState.linkedIssuesState?.searchRequestId || 0) + 1,
-        searchResults: [],
-        selectedIssues: [],
-        pendingAddKeys: [],
-        pendingRemoveIds: [],
-        confirmingRemoveId: '',
-        focusSearch: false,
-      }),
-    })).catch(() => {});
-  }
-
-  async function runLinkedIssuesSearch(query, requestId) {
-    try {
-      const excludedKeys = [
-        ...getLinkedIssueKeys(popupState?.issueData),
-        ...(popupState?.linkedIssuesState?.selectedIssues || []).map(issue => issue.key),
-      ];
-      const results = await searchIssueLinkCandidates(query, popupState.issueData, excludedKeys);
-      if (!popupState?.linkedIssuesState?.open || popupState.linkedIssuesState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-          searchLoading: false,
-          searchResults: results,
-          errorMessage: '',
-          focusSearch: true,
-        }),
-      }));
-    } catch (error) {
-      if (!popupState?.linkedIssuesState?.open || popupState.linkedIssuesState.searchRequestId !== requestId) {
-        return;
-      }
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-          searchLoading: false,
-          searchResults: [],
-          errorMessage: buildEditFieldError(error),
-          focusSearch: true,
-        }),
-      }));
-    }
-  }
-
-  function updateLinkedIssuesSearch(nextValue, selectionStart, selectionEnd) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    if (linkedIssuesSearchTimeoutId) {
-      clearTimeout(linkedIssuesSearchTimeoutId);
-      linkedIssuesSearchTimeoutId = null;
-    }
-    const searchValue = String(nextValue || '');
-    const shouldSearch = searchValue.trim().length >= 2;
-    const searchRequestId = popupState.linkedIssuesState.searchRequestId + 1;
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        searchValue,
-        searchSelectionStart: Number.isInteger(selectionStart) ? selectionStart : searchValue.length,
-        searchSelectionEnd: Number.isInteger(selectionEnd) ? selectionEnd : searchValue.length,
-        searchLoading: shouldSearch,
-        searchRequestId,
-        searchResults: [],
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    })).then(() => {
-      if (!shouldSearch) {
-        return;
-      }
-      linkedIssuesSearchTimeoutId = setTimeout(() => {
-        linkedIssuesSearchTimeoutId = null;
-        runLinkedIssuesSearch(searchValue, searchRequestId).catch(() => {});
-      }, 180);
-    }).catch(() => {});
-  }
-
-  function selectLinkedIssueCandidate(issueKey) {
-    const linkedState = popupState?.linkedIssuesState;
-    if (!linkedState?.open) {
-      return;
-    }
-    const issue = (linkedState.searchResults || []).find(candidate => candidate.key === issueKey);
-    if (!issue || (linkedState.selectedIssues || []).some(candidate => candidate.key === issue.key)) {
-      return;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        selectedIssues: [...(currentState.linkedIssuesState?.selectedIssues || []), issue],
-        searchValue: '',
-        searchLoading: false,
-        searchResults: [],
-        errorMessage: '',
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-  }
-
-  function selectLinkedIssueKeys(issueKeys) {
-    const linkedState = popupState?.linkedIssuesState;
-    if (!linkedState?.open) {
-      return false;
-    }
-    const excludedKeys = new Set([
-      String(popupState.issueData?.key || '').toUpperCase(),
-      ...getLinkedIssueKeys(popupState.issueData),
-      ...(linkedState.selectedIssues || []).map(issue => issue.key),
-    ]);
-    const nextIssues = (issueKeys || [])
-      .filter(issueKey => !excludedKeys.has(issueKey))
-      .map(issueKey => ({key: issueKey, summary: issueKey}));
-    if (!nextIssues.length) {
-      return false;
-    }
-    if (linkedIssuesSearchTimeoutId) {
-      clearTimeout(linkedIssuesSearchTimeoutId);
-      linkedIssuesSearchTimeoutId = null;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        selectedIssues: [...(currentState.linkedIssuesState?.selectedIssues || []), ...nextIssues],
-        searchValue: '',
-        searchLoading: false,
-        searchRequestId: (currentState.linkedIssuesState?.searchRequestId || 0) + 1,
-        searchResults: [],
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    })).catch(() => {});
+  commentPresentation = createBrowserCommentPresentation({
+    comments: commentLifecycle,
+    container,
+    shell: popupShell,
+  });
+  const popupRenderer = createBrowserPopupRenderer({
+    comments: commentLifecycle,
+    commentPresentation,
+    container,
+    contentBlockOrder: layoutContentBlocks,
+    continuity: {
+      constrainPopovers: constrainEditPopoversToViewport,
+      renderEditMentions: renderCommentEditMentionSuggestions,
+    },
+    fieldEditing: {view: getActiveFieldEditState},
+    shell: popupShell,
+    projectState: buildPopupDisplayData,
+    template: annotationTemplate,
+  });
+  // ── Field Editing ─────────────────────────────────────────
+  function attachJiraFieldEditingToPopup() {
+    const popupView = currentPopupState();
+    if (!popupView?.issueSnapshot?.core) return false;
+    const sessionId = currentPopupSessionId();
+    if (!sessionId) return false;
+    jiraFieldEditing.attach({
+      sessionId,
+      issueSnapshot: popupView.issueSnapshot,
+      requirements: {
+        children: showChildren,
+        history: !!popupView.historyOpen,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
+        pullRequests: showPullRequests,
+        reactions: true,
+        watchers: !!watcherLifecycle.view().open,
+      },
+    });
     return true;
   }
 
-  function commitLinkedIssueInput(value, force = false) {
-    const issueKeys = parseLinkedIssueKeys(value);
-    const hasKeyDelimiter = /[,;\n]/.test(String(value || ''));
-    if (!issueKeys.length || (!force && issueKeys.length < 2 && !hasKeyDelimiter)) {
-      return false;
-    }
-    return selectLinkedIssueKeys(issueKeys);
-  }
-
-  function removeLinkedIssueToken(issueKey) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        selectedIssues: (currentState.linkedIssuesState?.selectedIssues || []).filter(issue => issue.key !== issueKey),
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-  }
-
-  async function refreshLinkedIssuesAfterMutation(stateChanges = {}) {
-    const issueKey = popupState?.issueData?.key;
-    if (!issueKey) {
-      return;
-    }
-    await refreshPopupIssueState('');
-    if (!popupState?.issueData || popupState.issueData.key !== issueKey) {
-      return;
-    }
-    const issueDetailsByKey = await getLinkedIssueDetails(popupState.issueData).catch(() => ({}));
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        open: true,
-        loading: false,
-        issueDetailsByKey,
-        pendingAddKeys: [],
-        pendingRemoveIds: [],
-        confirmingRemoveId: '',
-        focusSearch: false,
-        ...stateChanges,
-      }),
-    }));
-  }
-
-  async function addSelectedLinkedIssues() {
-    const linkedState = popupState?.linkedIssuesState;
-    const issueKey = popupState?.issueData?.key;
-    if (!issueKey || !linkedState?.open || !(linkedState.selectedIssues || []).length || linkedState.pendingAddKeys?.length) {
-      return;
-    }
-    const relationship = buildRelationshipOptions(linkedState.linkTypes)
-      .find(option => option.id === linkedState.relationshipId);
-    if (!relationship) {
-      return;
-    }
-    const selectedIssues = linkedState.selectedIssues.slice();
-    const pendingAddKeys = selectedIssues.map(issue => issue.key);
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        pendingAddKeys,
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: false,
-      }),
-    }));
-
-    const settled = await Promise.allSettled(selectedIssues.map(issue => {
-      const payload = buildIssueLinkCreatePayload(issueKey, relationship, issue.key);
-      return requestJson('POST', `${INSTANCE_URL}rest/api/2/issueLink`, payload);
-    }));
-    const succeeded = selectedIssues.filter((issue, index) => settled[index].status === 'fulfilled');
-    const failed = selectedIssues.filter((issue, index) => settled[index].status === 'rejected');
-    const firstFailure = settled.find(result => result.status === 'rejected');
-    const feedbackMessage = succeeded.length
-      ? `${succeeded.length} linked issue${succeeded.length === 1 ? '' : 's'} added.`
-      : '';
-    const errorMessage = failed.length
-      ? `Could not link ${failed.map(issue => issue.key).join(', ')}. ${buildEditFieldError(firstFailure.reason)}`
-      : '';
-    if (succeeded.length) {
-      await refreshLinkedIssuesAfterMutation({
-        selectedIssues: failed,
-        errorMessage,
-        feedbackMessage,
+  async function dispatchJiraFieldEditing(intent) {
+    const popupKey = currentPopupState()?.key || '';
+    const pendingOutcome = jiraFieldEditing.dispatch(intent);
+    if (currentPopupState()?.key === popupKey) await renderCurrentPopup('field-edit-pending');
+    const fieldOutcome = await pendingOutcome;
+    if (currentPopupState()?.key !== popupKey || fieldOutcome.sessionId !== currentPopupSessionId()) return fieldOutcome;
+    if (fieldOutcome.refreshedSnapshot?.core) {
+      await popupSession.dispatch({
+        type: 'render',
+        reason: 'field-edit-complete',
+        issueSnapshot: fieldOutcome.refreshedSnapshot,
+        notice: fieldOutcome.notice || '',
       });
-      return;
+      return fieldOutcome;
     }
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        pendingAddKeys: [],
-        errorMessage,
-        feedbackMessage: '',
-        focusSearch: true,
-      }),
-    }));
+    await renderCurrentPopup('field-edit-updated');
+    return fieldOutcome;
   }
 
-  function setLinkedIssueRemoveConfirmation(linkId) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        confirmingRemoveId: linkId,
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: false,
-      }),
-    })).catch(() => {});
-  }
-
-  async function confirmLinkedIssueRemoval(linkId) {
-    const linkedState = popupState?.linkedIssuesState;
-    if (!linkedState?.open || linkedState.pendingRemoveIds?.includes(linkId)) {
-      return;
-    }
-    const link = (popupState.issueData?.fields?.issuelinks || []).find(candidate => String(candidate?.id || '') === linkId);
-    const linkedIssueKey = String((link?.outwardIssue || link?.inwardIssue)?.key || 'linked issue');
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        pendingRemoveIds: [...new Set([...(currentState.linkedIssuesState?.pendingRemoveIds || []), linkId])],
-        confirmingRemoveId: '',
-        errorMessage: '',
-        feedbackMessage: '',
-        focusSearch: false,
-      }),
-    }));
-    try {
-      await requestJson('DELETE', `${INSTANCE_URL}rest/api/2/issueLink/${encodeURIComponent(linkId)}`);
-      await refreshLinkedIssuesAfterMutation({
-        feedbackMessage: `Link to ${linkedIssueKey} removed.`,
-        errorMessage: '',
-      });
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-          pendingRemoveIds: (currentState.linkedIssuesState?.pendingRemoveIds || []).filter(id => id !== linkId),
-          errorMessage: buildEditFieldError(error),
-          feedbackMessage: '',
-          focusSearch: false,
-        }),
-      }));
-    }
-  }
-  // ── Field Editing ─────────────────────────────────────────
-  async function handleQuickAction(actionKey) {
-    if (!popupState?.issueData || popupState.actionLoadingKey) {
-      return;
-    }
-    const action = (popupState.quickActions || []).find(candidate => candidate.key === actionKey);
-    if (!action) {
-      return;
-    }
-
-    await renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      actionsOpen: false,
-      actionLoadingKey: action.key,
-      actionError: '',
-      lastActionSuccess: '',
-    }));
-
-    try {
-      const successMessage = await executeQuickAction(action, popupState.issueData);
-      await refreshPopupIssueState(successMessage);
-    } catch (error) {
-      await renderUpdatedPopupState(currentState => ({
-        ...currentState,
-        actionLoadingKey: '',
-        actionError: buildQuickActionError(error),
-        lastActionSuccess: '',
-      }));
-    }
-  }
-  async function runSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
-    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
-      return;
-    }
-    try {
-      const definition = await getEditableFieldDefinition(fieldKey, popupState.issueData);
-      if (!definition?.searchOptions) {
-        return;
-      }
-      const options = await definition.searchOptions(queryText);
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.searchRequestId !== requestId) {
-        return;
-      }
-      const mergedOptions = popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search'
-        ? mergeEditOptions(options, popupState.editState.options)
-        : options;
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          options: mergedOptions,
-          highlightedOptionId: null,
-          loadingOptions: false,
-          errorMessage: ''
-        }
-      };
-      await renderIssuePopup(popupState);
-    } catch (error) {
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.searchRequestId !== requestId) {
-        return;
-      }
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          loadingOptions: false,
-          errorMessage: buildEditFieldError(error)
-        }
-      };
-      await renderIssuePopup(popupState);
-    }
-  }
-
-  const triggerSearchOptionsForActiveEdit = debounce((fieldKey, queryText, requestId) => {
-    runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
-  }, 220);
-
-  function scheduleLabelSearchOptionsForActiveEdit(fieldKey, queryText, requestId) {
-    if (labelSearchTimeoutId) {
-      clearTimeout(labelSearchTimeoutId);
-    }
-    labelSearchTimeoutId = setTimeout(() => {
-      labelSearchTimeoutId = null;
-      runSearchOptionsForActiveEdit(fieldKey, queryText, requestId).catch(() => {});
-    }, 180);
-  }
   async function startFieldEdit(fieldKey) {
-    if (!popupState?.issueData) {
-      return;
-    }
-    if (popupState.editState?.fieldKey === fieldKey) {
-      return;
-    }
-    const definition = await getEditableFieldDefinition(fieldKey, popupState.issueData);
-    if (!definition) {
-      return;
-    }
-    const isMultiSelect = definition.selectionMode === 'multi';
-    const initialValue = isMultiSelect
-      ? (definition.initialInputValue ?? definition.currentText ?? '')
-      : (definition.initialInputValue ?? '');
-    const currentSelections = Array.isArray(definition.currentSelections) ? definition.currentSelections : [];
-    popupState = {
-      ...popupState,
-      editState: {
-        fieldKey,
-        label: definition.label,
-        editorType: definition.editorType || (isMultiSelect ? 'multi-select' : 'single-select'),
-        selectionMode: definition.selectionMode || 'single',
-        inputValue: initialValue,
-        originalInputValue: initialValue,
-        inputPlaceholder: definition.inputPlaceholder || `Type to filter ${definition.label.toLowerCase()} values`,
-        options: [],
-        selectedOptionId: isMultiSelect ? null : definition.currentOptionId,
-        selectedOptionIds: isMultiSelect ? normalizeMultiSelectOptionIds(currentSelections.map(option => option.id)) : [],
-        selectedOptions: isMultiSelect ? currentSelections : [],
-        originalOptionIds: isMultiSelect ? normalizeMultiSelectOptionIds(currentSelections.map(option => option.id)) : [],
-        hasChanges: false,
-        loadingOptions: true,
-        saving: false,
-        errorMessage: '',
-        showActionButtons: !!definition.showActionButtons,
-        searchRequestId: 0,
-        highlightedOptionId: null,
-        selectionStart: initialValue.length,
-        selectionEnd: initialValue.length
-      }
-    };
-    await renderIssuePopup(popupState);
-
-    try {
-      const options = await definition.loadOptions();
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
-        return;
-      }
-      if (popupState.editState.selectionMode === 'multi') {
-        popupState = {
-          ...popupState,
-          editState: buildNextMultiSelectState(popupState.editState, {
-            options,
-            loadingOptions: false
-          })
-        };
-      } else if (popupState.editState.selectionMode === 'text') {
-        popupState = {
-          ...popupState,
-          editState: buildNextTextEditState(popupState.editState, {
-            options,
-            loadingOptions: false,
-            selectionStart: popupState.editState.inputValue.length,
-            selectionEnd: popupState.editState.inputValue.length
-          })
-        };
-      } else {
-        const nextInputValue = popupState.editState.inputValue || '';
-        popupState = {
-          ...popupState,
-          editState: {
-            ...popupState.editState,
-            inputValue: nextInputValue,
-            options,
-            loadingOptions: false,
-            selectionStart: nextInputValue.length,
-            selectionEnd: nextInputValue.length
-          }
-        };
-      }
-      await renderIssuePopup(popupState);
-
-      const shouldTriggerInitialSearch = popupState?.editState?.fieldKey === fieldKey &&
-        (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'tempo-account-search') &&
-        !(definition.skipInitialEmptySearch && !String(popupState.editState.inputValue || '').trim());
-      if (shouldTriggerInitialSearch) {
-        const searchRequestId = ++editSearchRequestCounter;
-        popupState = {
-          ...popupState,
-          editState: {
-            ...popupState.editState,
-            loadingOptions: true,
-            searchRequestId
-          }
-        };
-        await renderIssuePopup(popupState);
-        triggerSearchOptionsForActiveEdit(fieldKey, popupState.editState.inputValue, searchRequestId);
-      }
-    } catch (error) {
-      const errorMessage = buildEditFieldError(error);
-      if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey) {
-        return;
-      }
-      popupState = {
-        ...popupState,
-        editState: popupState.editState.selectionMode === 'multi'
-          ? buildNextMultiSelectState(popupState.editState, {
-              loadingOptions: false,
-              errorMessage
-            })
-          : popupState.editState.selectionMode === 'text'
-            ? buildNextTextEditState(popupState.editState, {
-                loadingOptions: false,
-                errorMessage
-              })
-          : {
-              ...popupState.editState,
-              loadingOptions: false,
-              errorMessage
-            }
-      };
-      await renderIssuePopup(popupState);
-      snackBar(errorMessage);
-    }
+    if (!currentPopupState()?.issueData || !attachJiraFieldEditingToPopup()) return;
+    await dispatchJiraFieldEditing({
+      type: 'begin',
+      fieldId: fieldKey,
+      configured: customFields.some(field => field.fieldId === fieldKey),
+    });
   }
 
   function cancelFieldEdit() {
-    if (!popupState?.editState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      editState: null
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    if (jiraFieldEditing.view().edit) dispatchJiraFieldEditing({type: 'cancel'}).catch(() => {});
   }
 
-  function updateFieldEditInput(nextValue, selectionStart, selectionEnd) {
-    if (!popupState?.editState) {
-      return;
-    }
-    const normalizedValue = String(nextValue || '');
-    if (popupState.editState.selectionMode === 'multi') {
-      popupState = {
-        ...popupState,
-        editState: buildNextMultiSelectState(popupState.editState, {
-          inputValue: normalizedValue,
-          highlightedOptionId: null,
-          errorMessage: '',
-          selectionStart,
-          selectionEnd
-        })
-      };
-      renderIssuePopup(popupState).catch(() => {});
-
-      if (popupState.editState.editorType === 'label-search') {
-        const searchRequestId = ++editSearchRequestCounter;
-        popupState = {
-          ...popupState,
-          editState: {
-            ...popupState.editState,
-            loadingOptions: true,
-            searchRequestId
-          }
-        };
-        renderIssuePopup(popupState).catch(() => {});
-        scheduleLabelSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-      }
-      return;
-    }
-    if (popupState.editState.selectionMode === 'text') {
-      popupState = {
-        ...popupState,
-        editState: buildNextTextEditState(popupState.editState, {
-          inputValue: normalizedValue,
-          errorMessage: '',
-          selectionStart,
-          selectionEnd
-        })
-      };
-      renderIssuePopup(popupState).catch(() => {});
-      return;
-    }
-    const exactOption = (popupState.editState.options || []).find(option => {
-      return option.label.toLowerCase() === normalizedValue.trim().toLowerCase();
-    });
-    let nextInputValue = normalizedValue;
-    let nextSelectionStart = selectionStart;
-    let nextSelectionEnd = selectionEnd;
-    let nextSelectedOptionId = exactOption ? exactOption.id : null;
-
-    const canAutoComplete = popupState.editState.editorType !== 'user-search' &&
-      popupState.editState.editorType !== 'issue-search' &&
-      popupState.editState.editorType !== 'label-search' &&
-      popupState.editState.editorType !== 'tempo-account-search' &&
-      popupState.editState.editorType !== 'multi-select' &&
-      typeof selectionStart === 'number' &&
-      typeof selectionEnd === 'number' &&
-      selectionStart === selectionEnd &&
-      selectionEnd === normalizedValue.length &&
-      normalizedValue.length > 0;
-
-    if (canAutoComplete && !exactOption) {
-      const prefixOption = (popupState.editState.options || []).find(option => {
-        return option.label.toLowerCase().startsWith(normalizedValue.toLowerCase());
-      });
-      if (prefixOption) {
-        nextInputValue = prefixOption.label;
-        nextSelectedOptionId = prefixOption.id;
-        nextSelectionStart = normalizedValue.length;
-        nextSelectionEnd = prefixOption.label.length;
-      }
-    }
-
-    popupState = {
-      ...popupState,
-      editState: {
-        ...popupState.editState,
-        inputValue: nextInputValue,
-        selectedOptionId: nextSelectedOptionId,
-        highlightedOptionId: null,
-        errorMessage: '',
-        selectionStart: nextSelectionStart,
-        selectionEnd: nextSelectionEnd
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
-
-    if (popupState.editState.editorType === 'user-search' || popupState.editState.editorType === 'issue-search' || popupState.editState.editorType === 'label-search' || popupState.editState.editorType === 'tempo-account-search') {
-      const searchRequestId = ++editSearchRequestCounter;
-      popupState = {
-        ...popupState,
-        editState: {
-          ...popupState.editState,
-          loadingOptions: true,
-          searchRequestId
-        }
-      };
-      renderIssuePopup(popupState).catch(() => {});
-      if (popupState.editState.editorType === 'label-search') {
-        scheduleLabelSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-      } else {
-        triggerSearchOptionsForActiveEdit(popupState.editState.fieldKey, normalizedValue, searchRequestId);
-      }
-    }
-  }
-
-  function getHighlightedFieldEditOption(editState) {
-    if (!editState || editState.selectionMode === 'text') {
-      return null;
-    }
-    const selectableOptions = filterEditOptions(editState.options, editState.inputValue)
-      .filter(option => !option?.isGroupLabel);
-    return selectableOptions.find(option => option.id === editState.highlightedOptionId) || selectableOptions[0] || null;
-  }
-
-  function moveFieldEditHighlight(fieldKey, direction) {
-    if (!popupState?.editState || popupState.editState.fieldKey !== fieldKey || popupState.editState.selectionMode === 'text') {
-      return false;
-    }
-    const selectableOptions = filterEditOptions(popupState.editState.options, popupState.editState.inputValue)
-      .filter(option => !option?.isGroupLabel);
-    if (!selectableOptions.length) {
-      return false;
-    }
-    const currentOption = getHighlightedFieldEditOption(popupState.editState);
-    const currentIndex = selectableOptions.findIndex(option => option.id === currentOption?.id);
-    const nextIndex = currentIndex === -1
-      ? (direction > 0 ? 0 : selectableOptions.length - 1)
-      : Math.max(0, Math.min(selectableOptions.length - 1, currentIndex + direction));
-    popupState = {
-      ...popupState,
-      editState: {
-        ...popupState.editState,
-        highlightedOptionId: selectableOptions[nextIndex].id,
-        errorMessage: ''
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
-    return true;
+  function commitFieldEditOnOutsideInteraction() {
+    const fieldView = jiraFieldEditing.view().edit;
+    if (!fieldView) return;
+    dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
   }
 
   function selectFieldEditOption(optionId) {
-    if (!popupState?.editState) {
-      return;
-    }
-    const option = (popupState.editState.options || []).find(candidate => candidate.id === optionId);
-    if (!option) {
-      return;
-    }
-    if (popupState.editState.selectionMode === 'multi') {
-      const selectedOptionIds = normalizeMultiSelectOptionIds(popupState.editState.selectedOptionIds);
-      const nextSelectedOptionIds = selectedOptionIds.includes(option.id)
-        ? selectedOptionIds.filter(candidateId => candidateId !== option.id)
-        : [...selectedOptionIds, option.id];
-      popupState = {
-        ...popupState,
-        editState: buildNextMultiSelectState(popupState.editState, {
-          selectedOptionIds: nextSelectedOptionIds,
-          highlightedOptionId: option.id,
-          errorMessage: ''
-        })
-      };
-      renderIssuePopup(popupState).catch(() => {});
-      return;
-    }
-    popupState = {
-      ...popupState,
-      editState: {
-        ...popupState.editState,
-        inputValue: option.label,
-        selectedOptionId: option.id,
-        highlightedOptionId: option.id,
-        errorMessage: '',
-        selectionStart: option.label.length,
-        selectionEnd: option.label.length
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
-    if (popupState.editState.editorType === 'transition-select') {
-      submitFieldEdit(popupState.editState.fieldKey).catch(() => {});
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldView && fieldView.options?.some(option => option.id === String(optionId || ''))) {
+      dispatchJiraFieldEditing({type: 'selectOption', editId: fieldView.editId, optionId}).catch(() => {});
     }
   }
 
 
   function updateTimeTrackingEditState(changes = {}) {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
-    const currentState = popupState.timeTrackingEditState || createTimeTrackingEditState(popupState.issueData);
-    popupState = {
-      ...popupState,
-      timeTrackingEditState: {
-        ...currentState,
-        ...changes
-      }
-    };
-    renderIssuePopup(popupState).catch(() => {});
+    const currentState = popupView.timeTrackingEditState || createTimeTrackingEditState(popupView.issueData);
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: {...currentState, ...changes},
+    });
+    renderIssuePopup(currentPopupState()).catch(() => {});
   }
 
   async function saveTimeTrackingEdit() {
-    if (!popupState?.issueData) {
+    const popupView = currentPopupState();
+    if (!popupView?.issueData) {
       return;
     }
-    const issueData = popupState.issueData;
+    const issueData = popupView.issueData;
     const issueKey = issueData.key;
-    const timeTrackingCapability = await getEditableFieldCapability(issueData, 'timetracking').catch(() => ({editable: false}));
-    const currentState = popupState.timeTrackingEditState || createTimeTrackingEditState(issueData);
+    const timeTrackingOutcome = await jiraFieldEditing.dispatch({type: 'describeField', fieldId: 'timetracking'});
+    const timeTrackingCapability = timeTrackingOutcome.field || {editable: false};
+    const currentState = popupView.timeTrackingEditState || createTimeTrackingEditState(issueData);
     const savePlan = buildTimeTrackingSavePlan(currentState, {
       canEditEstimates: !!timeTrackingCapability?.editable
     });
@@ -6175,15 +2699,11 @@ async function mainAsyncLocal() {
       return;
     }
 
-    popupState = {
-      ...popupState,
-      timeTrackingEditState: {
-        ...currentState,
-        saving: true,
-        errorMessage: ''
-      }
-    };
-    await renderIssuePopup(popupState);
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: {...currentState, saving: true, errorMessage: ''},
+    });
+    await renderIssuePopup(currentPopupState());
 
     const requestPlans = [];
     if (savePlan.hasEstimateChanges) {
@@ -6219,29 +2739,17 @@ async function mainAsyncLocal() {
 
     if (result.estimateSaved || result.worklogSaved) {
       try {
-        invalidatePopupCaches();
-        const refreshedIssueData = await getIssueMetaData(issueKey);
-        await normalizeIssueImages(refreshedIssueData);
-
-        let refreshedPullRequests = [];
-        if (showPullRequests) {
-          try {
-            const pullRequestResponse = await getPullRequestDataCached(refreshedIssueData.id);
-            refreshedPullRequests = normalizePullRequests(pullRequestResponse);
-            await normalizePullRequestImages(refreshedPullRequests).catch(() => {});
-          } catch (ex) {
-            refreshedPullRequests = [];
-          }
+        const issueOutcome = await quickViewIssueData.refreshAfterMutation({
+          issueKey,
+          priorSnapshot: currentPopupState()?.issueSnapshot,
+          mutation: {kind: 'timeChanged'},
+          requirements: {pullRequests: showPullRequests},
+        });
+        if (!issueOutcome.snapshot?.core) {
+          throw issueDataError(issueOutcome.failures?.core, 'Could not refresh issue');
         }
-
-        let quickActions = [];
-        try {
-          quickActions = await resolveQuickActions(refreshedIssueData);
-        } catch (ex) {
-          quickActions = [];
-        }
-
-        if (!popupState || popupState.key !== issueKey) {
+        const refreshedIssueData = issueOutcome.snapshot.core;
+        if (currentPopupState()?.key !== issueKey) {
           return;
         }
 
@@ -6256,43 +2764,41 @@ async function mainAsyncLocal() {
           errorMessage
         });
 
-        await renderUpdatedPopupState(currentPopupState => ({
-          ...currentPopupState,
-          issueData: refreshedIssueData,
-          pullRequests: refreshedPullRequests,
-          quickActions,
-          ...buildPopupInteractionReset(),
-          timeTrackingEditState: refreshedTimeTrackingState,
-        }));
+        popupModel.dispatch({type: 'timeTrackingChanged', state: refreshedTimeTrackingState});
+        await popupSession.dispatch({
+          type: 'render',
+          reason: 'time-tracking-save-complete',
+          issueSnapshot: issueOutcome.snapshot,
+        });
 
         if (successMessage) {
           snackBar(errorMessage ? `${successMessage}. ${errorMessage}` : successMessage);
         }
         return;
       } catch (refreshError) {
-        popupState = {
-          ...popupState,
-          timeTrackingEditState: {
+        popupModel.dispatch({
+          type: 'timeTrackingChanged',
+          state: {
             ...currentState,
             saving: false,
             errorMessage: errorMessage || 'Saved changes but failed to refresh the popup'
-          }
-        };
-        await renderIssuePopup(popupState);
+          },
+        });
+        await renderIssuePopup(currentPopupState());
         snackBar(successMessage ? `${successMessage}. Refresh failed.` : 'Saved changes but failed to refresh the popup');
         return;
       }
     }
 
-    popupState = {
-      ...popupState,
-      timeTrackingEditState: {
+    popupModel.dispatch({
+      type: 'timeTrackingChanged',
+      state: {
         ...currentState,
         saving: false,
         errorMessage: errorMessage || 'Time tracking update failed'
-      }
-    };
-    await renderIssuePopup(popupState);
+      },
+    });
+    await renderIssuePopup(currentPopupState());
     snackBar(errorMessage || 'Time tracking update failed');
   }
   new draggable({
@@ -6322,373 +2828,92 @@ async function mainAsyncLocal() {
     }).catch(() => snackBar('There was an error!'));
   });
 
-  $(document.body).on('click', '._JX_close_button', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    hideContainer();
-    passiveCancel(200);
-  });
-
-  function pinContainer(options = {}) {
-    const {showNotice = true} = options;
-    if (containerPinned || !container.html()) {
-      clearTimeout(hideTimeOut);
-      return false;
+  async function handlePopupPresentationIntent(intent) {
+    if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
+      return popupSession.dispatch(intent);
     }
-    const scrollingElement = document.scrollingElement || document.documentElement;
-    if (showNotice) {
-      snackBar('Ticket Pinned! Hit esc to close !');
+    if (intent.type === 'execute-quick-action') {
+      return popupSession.dispatch({
+        ...intent,
+        requirements: {
+          history: !!currentPopupState()?.historyOpen,
+          linkedIssues: !!linkedIssueLifecycle.view().open,
+          pullRequests: showPullRequests,
+          watchers: !!watcherLifecycle.view().open,
+        },
+      });
     }
-    container.addClass('container-pinned');
-    const position = container.position();
-    container.css({
-      left: position.left - scrollingElement.scrollLeft,
-      top: position.top - scrollingElement.scrollTop,
-    });
-    containerPinned = true;
-    clearTimeout(hideTimeOut);
-    return true;
+    if (intent.type === 'toggle-comment-sort') {
+      const outcome = await popupSession.dispatch(intent);
+      const nextCommentSortOrder = outcome.presentation?.commentSortOrder;
+      if (!nextCommentSortOrder) return outcome;
+      commentSortOrderPreference = nextCommentSortOrder;
+      storageLocalSet({[COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder}).catch(() => {});
+      return outcome;
+    }
+    if (['toggle-watchers', 'close-watchers', 'dismiss-watchers', 'search-watchers'].includes(intent.type)) {
+      return popupSession.dispatch(intent);
+    }
+    if (intent.type === 'add-watcher' || intent.type === 'remove-watcher') {
+      return popupSession.dispatch({
+        ...intent,
+        requirements: {
+          history: !!currentPopupState()?.historyOpen,
+          linkedIssues: !!linkedIssueLifecycle.view().open,
+          pullRequests: showPullRequests,
+          watchers: true,
+        },
+      });
+    }
+    if (['toggle-linkedIssues', 'close-linkedIssues', 'dismiss-linkedIssues'].includes(intent.type)) {
+      return popupSession.dispatch(intent);
+    }
+    if (intent.type.startsWith('linked-')) {
+      return popupSession.dispatch({
+        ...intent,
+        requirements: {
+          history: !!currentPopupState()?.historyOpen,
+          linkedIssues: true,
+          pullRequests: showPullRequests,
+          watchers: !!watcherLifecycle.view().open,
+        },
+      });
+    }
+    if (['toggle-history', 'close-history', 'dismiss-history'].includes(intent.type)) {
+      return popupSession.dispatch(intent);
+    }
+    if (intent.type === 'dismiss-actions') return popupSession.dispatch({type: 'close-actions'});
+    if (intent.type === 'pin') return popupShell.dispatch({type: 'pin', announce: true});
+    if (intent.type === 'pin-after-drag') return popupShell.dispatch({type: 'pin', announce: true});
+    if (intent.type === 'open-preview' || intent.type === 'close-preview') return popupShell.dispatch(intent);
+    if (intent.type === 'close-popup') {
+      return hideContainer();
+    }
+    if (intent.type === 'dismiss-popup') {
+      if (!container.html() || popupShell.view().pinned) return {kind: 'ignored', reason: 'popup-not-dismissible'};
+      return hideContainer();
+    }
+    if (intent.type === 'escape') {
+      if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
+      if (currentPopupState()?.historyOpen) return popupSession.dispatch({type: 'close-history'});
+      if (linkedIssueLifecycle.view().open) return popupSession.dispatch({type: 'close-linkedIssues'});
+      if (currentPopupState()?.descriptionEditState?.open) return cancelDescriptionEdit();
+      return hideContainer();
+    }
+    return {kind: 'ignored', reason: 'unsupported-presentation-intent'};
   }
 
-  $(document.body).on('click', '._JX_pin_button', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    pinContainer();
+  const popupEvents = createBrowserPopupEvents({
+    root: $(document.body),
+    emit: handlePopupPresentationIntent,
   });
-
-  $(document.body).on('click', '._JX_actions_toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      actionsOpen: !popupState.actionsOpen
-    };
-    renderIssuePopup(popupState).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_children_sort', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    const column = e.currentTarget.getAttribute('data-sort-column') || '';
-    popupState = {
-      ...popupState,
-      childrenSort: toggleChildrenSort(popupState.childrenSort, column)
-    };
-    renderIssuePopup(popupState).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_pr_sort', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    const column = e.currentTarget.getAttribute('data-sort-column') || '';
-    popupState = {
-      ...popupState,
-      pullRequestsSort: togglePullRequestsSort(popupState.pullRequestsSort, column)
-    };
-    renderIssuePopup(popupState).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_comment_sort_toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const nextCommentSortOrder = toggleCommentSortOrder(popupState?.commentSortOrder);
-    commentSortOrderPreference = nextCommentSortOrder;
-    if (popupState) {
-      popupState = {
-        ...popupState,
-        commentSortOrder: nextCommentSortOrder
-      };
-      renderIssuePopup(popupState).catch(() => {});
-    }
-    storageLocalSet({
-      [COMMENT_SORT_ORDER_STORAGE_KEY]: nextCommentSortOrder
-    }).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_watchers_trigger', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (popupState?.historyOpen) {
-      popupState = {
-        ...popupState,
-        historyOpen: false
-      };
-    }
-    if (popupState?.linkedIssuesState?.open) {
-      popupState = {
-        ...popupState,
-        linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
-          open: false,
-          focusSearch: false,
-        }),
-      };
-    }
-    if (popupState?.watchersState?.open) {
-      closeWatchersPanel();
-      return;
-    }
-    openWatchersPanel().catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_watchers_close', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    closeWatchersPanel();
-  });
-
-  $(document.body).on('click', '._JX_watchers_search_result', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    addWatcherFromPanel(e.currentTarget.getAttribute('data-watcher-id') || '').catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_watchers_remove', function (e) {
-    if ($(e.currentTarget).closest('._JX_linked_issues_panel').length) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    removeWatcherFromPanel(e.currentTarget.getAttribute('data-watcher-id') || '').catch(() => {});
-  });
-
-  $(document.body).on('input', '._JX_watchers_search_input', function (e) {
-    e.stopPropagation();
-    updateWatchersSearch(e.currentTarget.value);
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_trigger', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (popupState?.linkedIssuesState?.open) {
-      closeLinkedIssuesPanel();
-      return;
-    }
-    openLinkedIssuesPanel().catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_close', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    closeLinkedIssuesPanel();
-  });
-
-  $(document.body).on('change', '._JX_linked_issues_type_select', function (e) {
-    e.stopPropagation();
-    renderUpdatedPopupState(currentState => ({
-      ...currentState,
-      linkedIssuesState: buildNextLinkedIssuesState(currentState.linkedIssuesState, {
-        relationshipId: e.currentTarget.value,
-        feedbackMessage: '',
-        errorMessage: '',
-        focusSearch: true,
-      }),
-    })).catch(() => {});
-  });
-
-  $(document.body).on('input', '._JX_linked_issues_search_input', function (e) {
-    e.stopImmediatePropagation();
-    if (commitLinkedIssueInput(e.currentTarget.value)) {
-      return;
-    }
-    updateLinkedIssuesSearch(
-      e.currentTarget.value,
-      e.currentTarget.selectionStart,
-      e.currentTarget.selectionEnd
-    );
-  });
-
-  $(document.body).on('keydown', '._JX_linked_issues_search_input', function (e) {
-    e.stopImmediatePropagation();
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      closeLinkedIssuesPanel();
-      return;
-    }
-    if (e.key === 'Enter' && popupState?.linkedIssuesState?.searchResults?.length) {
-      e.preventDefault();
-      if (commitLinkedIssueInput(e.currentTarget.value, true)) {
-        return;
-      }
-      selectLinkedIssueCandidate(popupState.linkedIssuesState.searchResults[0].key);
-      return;
-    }
-    if (e.key === 'Enter' && commitLinkedIssueInput(e.currentTarget.value, true)) {
-      e.preventDefault();
-    }
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_search_result', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    selectLinkedIssueCandidate(e.currentTarget.getAttribute('data-issue-key') || '');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_token_remove', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    removeLinkedIssueToken(e.currentTarget.getAttribute('data-issue-key') || '');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_add', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    addSelectedLinkedIssues().catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_remove', function (e) {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    setLinkedIssueRemoveConfirmation(e.currentTarget.getAttribute('data-link-id') || '');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_remove_cancel', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setLinkedIssueRemoveConfirmation('');
-  });
-
-  $(document.body).on('click', '._JX_linked_issues_remove_confirm', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    confirmLinkedIssueRemoval(e.currentTarget.getAttribute('data-link-id') || '').catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_action_item', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const actionKey = e.currentTarget.getAttribute('data-action-key');
-    handleQuickAction(actionKey).catch(() => {});
-  });
-
-  $(document.body).on('click', function (e) {
-    if (!popupState?.actionsOpen) {
-      return;
-    }
-    if ($(e.target).closest('._JX_actions').length) {
-      return;
-    }
-    popupState = {
-      ...popupState,
-      actionsOpen: false
-    };
-    renderIssuePopup(popupState).catch(() => {});
-  });
-
-    $(document.body).on('mousedown', function (e) {
-      if (!popupState?.watchersState?.open) {
-        return;
-      }
-      if ($(e.target).closest('._JX_watchers_group, ._JX_history_toggle, ._JX_linked_issues_group').length) {
-        return;
-      }
-      closeWatchersPanel();
-  });
-
-  $(document.body).on('mousedown', function (e) {
-    if (!popupState?.linkedIssuesState?.open) {
-      return;
-    }
-    if ($(e.target).closest('._JX_linked_issues_group, ._JX_history_toggle, ._JX_watchers_group').length) {
-      return;
-    }
-    closeLinkedIssuesPanel();
-  });
-
-  $(document.body).on('click', '._JX_history_toggle', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!popupState) {
-      return;
-    }
-    if (popupState.watchersState?.open) {
-      closeWatchersPanel();
-    }
-    if (popupState.linkedIssuesState?.open) {
-      popupState = {
-        ...popupState,
-        linkedIssuesState: buildNextLinkedIssuesState(popupState.linkedIssuesState, {
-          open: false,
-          focusSearch: false,
-        }),
-      };
-    }
-    const nextOpen = !popupState.historyOpen;
-    popupState = {
-      ...popupState,
-      historyOpen: nextOpen
-    };
-    if (nextOpen && !popupState.changelogData && !popupState.changelogLoading) {
-      popupState.changelogLoading = true;
-      renderIssuePopup(popupState).catch(() => {});
-      const issueKey = popupState.key;
-      getIssueChangelog(issueKey).then(changelog => {
-        if (!popupState || popupState.key !== issueKey) {
-          return;
-        }
-        popupState = {
-          ...popupState,
-          changelogData: changelog,
-          changelogLoading: false
-        };
-        if (popupState.historyOpen) {
-          renderIssuePopup(popupState).catch(() => {});
-        }
-      }).catch(() => {
-        if (!popupState || popupState.key !== issueKey) {
-          return;
-        }
-        popupState = {
-          ...popupState,
-          changelogData: {histories: []},
-          changelogLoading: false
-        };
-        renderIssuePopup(popupState).catch(() => {});
-      });
-    } else {
-      renderIssuePopup(popupState).catch(() => {});
-    }
-  });
-
-  $(document.body).on('click', '._JX_history_close', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    closeHistoryFlyout();
-  });
-
-  $(document.body).on('click', function (e) {
-    if (!popupState?.historyOpen) {
-      return;
-    }
-    if ($(e.target).closest('._JX_history_flyout').length || $(e.target).closest('._JX_history_toggle').length) {
-      return;
-    }
-    closeHistoryFlyout();
-  });
-
-  $(document.body).on('click', function (e) {
-    if (!container.html() || containerPinned) {
-      return;
-    }
-    if ($(e.target).closest('._JX_container').length) {
-      return;
-    }
-    hideContainer();
-  });
+  popupEvents.install();
 
   $(document.body).on('click', '._JX_field_chip_edit', function (e) {
     e.preventDefault();
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
-    if (popupState?.editState?.fieldKey === fieldKey) {
+    if (getActiveFieldEditState()?.fieldKey === fieldKey) {
       cancelFieldEdit();
       return;
     }
@@ -6711,7 +2936,10 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
-    submitFieldEdit(fieldKey).catch(() => {});
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldView?.fieldKey === fieldKey) {
+      dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
+    }
   });
 
   $(document.body).on('click', '._JX_edit_option', function (e) {
@@ -6729,9 +2957,6 @@ async function mainAsyncLocal() {
     }
     e.preventDefault();
     e.stopPropagation();
-    if (popupState?.editState?.saving) {
-      return;
-    }
     selectFieldEditOption(e.currentTarget.getAttribute('data-option-id'));
   });
 
@@ -6740,7 +2965,16 @@ async function mainAsyncLocal() {
       return;
     }
     e.stopPropagation();
-    updateFieldEditInput(e.currentTarget.value, e.currentTarget.selectionStart, e.currentTarget.selectionEnd);
+    const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldView?.fieldKey === fieldKey) {
+      dispatchJiraFieldEditing({
+        type: 'inputChanged',
+        editId: fieldView.editId,
+        value: e.currentTarget.value,
+        selection: {start: e.currentTarget.selectionStart, end: e.currentTarget.selectionEnd},
+      }).catch(() => {});
+    }
   });
 
   $(document.body).on('keydown', '._JX_edit_input', function (e) {
@@ -6749,88 +2983,85 @@ async function mainAsyncLocal() {
     }
     e.stopPropagation();
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
-    const editState = popupState?.editState;
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editState?.fieldKey === fieldKey && editState.selectionMode !== 'text') {
-      e.preventDefault();
-      moveFieldEditHighlight(fieldKey, e.key === 'ArrowDown' ? 1 : -1);
-      return;
-    }
-    if (e.key === 'Enter') {
-      if (editState?.fieldKey === fieldKey && editState.selectionMode === 'text' && editState.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) {
-        return;
-      }
-      e.preventDefault();
-      if (editState?.fieldKey === fieldKey && editState.selectionMode === 'multi') {
-        if (e.ctrlKey || e.metaKey) {
-          submitFieldEdit(fieldKey).catch(() => {});
-        } else {
-          toggleMultiSelectOptionFromInput(fieldKey, getHighlightedFieldEditOption(editState)?.id);
-        }
-      } else if (editState?.fieldKey === fieldKey && editState.selectionMode !== 'text') {
-        const highlightedOption = getHighlightedFieldEditOption(editState);
-        if (!highlightedOption) {
-          submitFieldEdit(fieldKey).catch(() => {});
-          return;
-        }
-        selectFieldEditOption(highlightedOption.id);
-        if (editState.editorType !== 'transition-select') {
-          submitFieldEdit(fieldKey).catch(() => {});
-        }
-      } else {
-        submitFieldEdit(fieldKey).catch(() => {});
-      }
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelFieldEdit();
-    }
+    const fieldView = jiraFieldEditing.view().edit;
+    if (fieldView?.fieldKey !== fieldKey || !['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) return;
+    if (e.key === 'Enter' && fieldView.selectionMode === 'text' && fieldView.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    dispatchJiraFieldEditing({
+      type: 'key',
+      editId: fieldView.editId,
+      key: e.key,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+    }).catch(() => {});
   });
 
-  $(document.body).on('mousedown', function (e) {
-    if (!popupState?.editState) {
+  $(document.body).on('click', function (e) {
+    if (!getActiveFieldEditState()) {
       return;
     }
     if ($(e.target).closest('._JX_edit_popover, ._JX_field_chip_edit').length) {
       return;
     }
     if ($(e.target).closest('._JX_container').length === 0) {
-      cancelFieldEdit();
+      commitFieldEditOnOutsideInteraction();
       return;
     }
     if ($(e.target).closest('._JX_field_chip_editable_group').length === 0 && $(e.target).closest('._JX_edit_popover').length === 0 && $(e.target).closest('._JX_title_summary_slot').length === 0) {
-      cancelFieldEdit();
+      commitFieldEditOnOutsideInteraction();
     }
   });
 
+  function renderCommentComposeLifecycleView({applyValue = false} = {}) {
+    commentPresentation.render({applyValue, restoreFocus: applyValue});
+  }
+
+  function syncCommentComposeLifecycle(inputElement) {
+    const value = inputElement?.value || '';
+    const selectionStart = typeof inputElement?.selectionStart === 'number' ? inputElement.selectionStart : value.length;
+    const selectionEnd = typeof inputElement?.selectionEnd === 'number' ? inputElement.selectionEnd : value.length;
+    const sessionId = currentPopupSessionId();
+    const pending = commentLifecycle.dispatch({
+      type: 'composeChanged',
+      value,
+      selection: {start: selectionStart, end: selectionEnd},
+    });
+    renderCommentComposeLifecycleView();
+    pending.then(outcome => {
+      if (outcome.sessionId === sessionId && sessionId === currentPopupSessionId()) {
+        renderCommentComposeLifecycleView();
+      }
+    }).catch(() => {});
+  }
+
   $(document.body).on('input', '._JX_comment_input', function () {
-    commentComposerDraftValue = this.value || '';
-    commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : commentComposerDraftValue.length;
-    commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : commentComposerDraftValue.length;
-    syncCommentComposerState();
-    syncCommentMentionSuggestions(this);
+    syncCommentComposeLifecycle(this);
   });
 
   $(document.body).on('focusin', '._JX_comment_input', function () {
-    commentComposerHadFocus = true;
-    pinContainer({showNotice: false});
+    commentLifecycle.dispatch({type: 'composeFocusChanged', focused: true}).catch(() => {});
+    popupShell.dispatch({type: 'pin', announce: false}).catch(() => {});
   });
 
-  $(document.body).on('click keyup select', '._JX_comment_input', function () {
-    commentComposerSelectionStart = typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length;
-    commentComposerSelectionEnd = typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length;
+  $(document.body).on('click select', '._JX_comment_input', function () {
+    syncCommentComposeLifecycle(this);
+  });
+
+  $(document.body).on('keyup', '._JX_comment_input', function (e) {
+    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) === -1) {
+      syncCommentComposeLifecycle(this);
+    }
   });
 
   $(document.body).on('scroll', '._JX_comment_input', function () {
-    if (commentMentionState.visible) {
-      renderCommentMentionSuggestions();
+    if (commentLifecycle.view().compose?.mention?.visible) {
+      commentPresentation.render();
     }
   });
 
   $(document.body).on('input', '._JX_comment_edit_input', function (e) {
     e.stopPropagation();
     const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
-    syncCommentEditMentionSuggestions(e.currentTarget, commentId);
     updateCommentEditDraft(
       commentId,
       e.currentTarget.value,
@@ -6840,53 +3071,76 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('paste', '._JX_comment_input', function (e) {
-    const imageFiles = getClipboardImageFiles(e);
-    if (!imageFiles.length || !activeCommentContext?.issueKey) {
+    const imageFiles = commentPresentation.clipboardImages(e);
+    if (!imageFiles.length || !commentLifecycle.view().issueKey) {
       return;
     }
     e.preventDefault();
     imageFiles.forEach(file => {
-      uploadPastedImage(file).catch(() => {});
+      const sessionId = currentPopupSessionId();
+      const pending = commentLifecycle.dispatch({type: 'imagePasted', file});
+      renderCommentComposeLifecycleView({applyValue: true});
+      pending.then(async outcome => {
+        if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
+          return;
+        }
+        if (outcome.kind === 'attachmentUploaded' && outcome.uploadedAttachment) {
+          await handleDraftAttachmentUploaded(outcome.uploadedAttachment);
+        }
+        renderCommentComposeLifecycleView({applyValue: true});
+      }).catch(() => {});
     });
   });
 
-  $(document.body).on('click', '._JX_comment_input', function () {
-    syncCommentMentionSuggestions(this);
-  });
-
-  $(document.body).on('keyup', '._JX_comment_input', function (e) {
-    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
-      return;
-    }
-    syncCommentMentionSuggestions(this);
+  $(document.body).on('click', '._JX_comment_upload_retry', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const localId = e.currentTarget.getAttribute('data-upload-id') || '';
+    const sessionId = currentPopupSessionId();
+    const pending = commentLifecycle.dispatch({type: 'retryUpload', localId});
+    renderCommentComposeLifecycleView({applyValue: true});
+    pending.then(async outcome => {
+      if (outcome.sessionId !== sessionId || sessionId !== currentPopupSessionId()) {
+        return;
+      }
+      if (outcome.kind === 'attachmentUploaded' && outcome.uploadedAttachment) {
+        await handleDraftAttachmentUploaded(outcome.uploadedAttachment);
+      }
+      renderCommentComposeLifecycleView({applyValue: true});
+    }).catch(() => {});
   });
 
   $(document.body).on('keydown', '._JX_comment_input', function (e) {
-    if (e.key === 'Escape' && commentMentionState.visible) {
+    const mentionView = commentLifecycle.view().compose?.mention;
+    if (e.key === 'Escape' && mentionView?.visible) {
       e.preventDefault();
-      resetCommentMentionState();
+      commentLifecycle.dispatch({type: 'dismissMention', lane: 'compose'}).catch(() => {});
+      renderCommentComposeLifecycleView();
       return;
     }
 
-    if (!commentMentionState.visible || !commentMentionState.suggestions.length) {
+    if (!mentionView?.visible || !mentionView.suggestions.length) {
       return;
     }
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      moveCommentMentionSelection(1);
+      commentLifecycle.dispatch({type: 'moveMention', lane: 'compose', delta: 1}).catch(() => {});
+      renderCommentComposeLifecycleView();
       return;
     }
 
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      moveCommentMentionSelection(-1);
+      commentLifecycle.dispatch({type: 'moveMention', lane: 'compose', delta: -1}).catch(() => {});
+      renderCommentComposeLifecycleView();
       return;
     }
 
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      applyCommentMentionSelection(commentMentionState.selectedIndex);
+      commentLifecycle.dispatch({type: 'chooseMention', lane: 'compose', index: mentionView.selectedIndex}).catch(() => {});
+      renderCommentComposeLifecycleView({applyValue: true});
     }
   });
 
@@ -6897,7 +3151,8 @@ async function mainAsyncLocal() {
     if (Number.isNaN(index)) {
       return;
     }
-    applyCommentMentionSelection(index);
+    commentLifecycle.dispatch({type: 'chooseMention', lane: 'compose', index}).catch(() => {});
+    renderCommentComposeLifecycleView({applyValue: true});
   });
 
   $(document.body).on('mousedown', '._JX_comment_edit_mention_option', function (e) {
@@ -6914,22 +3169,29 @@ async function mainAsyncLocal() {
     if ($(e.target).closest('._JX_comment_compose').length) {
       return;
     }
-    resetCommentMentionState();
+    if (commentLifecycle.view().compose?.mention?.visible) {
+      commentLifecycle.dispatch({type: 'dismissMention', lane: 'compose'}).catch(() => {});
+      renderCommentComposeLifecycleView();
+    }
   });
 
   $(document.body).on('mousedown', function (e) {
     if ($(e.target).closest('._JX_comment_editor').length) {
       return;
     }
-    if (!commentEditMentionState.visible) {
+    if (!commentLifecycle.view().rowAction?.mention?.visible) {
       return;
     }
     resetCommentEditMentionState();
-    renderIssuePopup(popupState).catch(() => {});
+    renderCurrentPopup('comment-edit-mention-dismissed').catch(() => {});
   });
 
   $(document.body).on('click', '._JX_comment_save', function (e) {
     e.preventDefault();
+    // Treat modifier-click as an explicit save gesture too. Stopping propagation
+    // keeps the popup's document-level click handler from closing the session
+    // before the asynchronous comment mutation starts.
+    e.stopPropagation();
     handleCommentSave().catch(() => {});
   });
 
@@ -6960,7 +3222,7 @@ async function mainAsyncLocal() {
     e.preventDefault();
     e.stopPropagation();
     const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
-    startCommentEdit(commentId, getIssueCommentById(commentId)?.body || '');
+    startCommentEdit(commentId);
   });
 
   $(document.body).on('click', '._JX_comment_delete_button', function (e) {
@@ -6990,11 +3252,12 @@ async function mainAsyncLocal() {
   $(document.body).on('keydown', '._JX_comment_edit_input', function (e) {
     e.stopPropagation();
     const commentId = e.currentTarget.getAttribute('data-comment-id') || '';
-    if (commentEditMentionState.visible && commentEditMentionState.commentId === commentId) {
+    const commentEditMentionState = commentLifecycle.view().rowAction?.mention;
+    if (commentEditMentionState?.visible && commentLifecycle.view().rowAction?.commentId === commentId) {
       if (e.key === 'Escape') {
         e.preventDefault();
         resetCommentEditMentionState();
-        renderIssuePopup(popupState).catch(() => {});
+        renderCurrentPopup('comment-edit-mention-dismissed').catch(() => {});
         return;
       }
       if (e.key === 'ArrowDown') {
@@ -7024,32 +3287,25 @@ async function mainAsyncLocal() {
     }
   });
 
-  $(document.body).on('click', '._JX_comment_edit_input', function () {
-    syncCommentEditMentionSuggestions(this, this.getAttribute('data-comment-id') || '');
-  });
-
-  $(document.body).on('keyup', '._JX_comment_edit_input', function (e) {
-    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
-      return;
-    }
-    syncCommentEditMentionSuggestions(this, this.getAttribute('data-comment-id') || '');
-  });
-
   $(document.body).on('click keyup select', '._JX_comment_edit_input', function () {
     const commentId = this.getAttribute('data-comment-id') || '';
     const activeSession = getActiveCommentSession();
     if (!activeSession || activeSession.commentId !== commentId || activeSession.mode !== 'edit') {
       return;
     }
-    setCommentSession({
-      ...activeSession,
-      selectionStart: typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length,
-      selectionEnd: typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length,
-    });
+    commentLifecycle.dispatch({
+      type: 'editChanged',
+      commentId,
+      value: this.value || '',
+      selection: {
+        start: typeof this.selectionStart === 'number' ? this.selectionStart : (this.value || '').length,
+        end: typeof this.selectionEnd === 'number' ? this.selectionEnd : (this.value || '').length,
+      },
+    }).then(renderCommentEditMentionSuggestions).catch(() => {});
   });
 
   $(document.body).on('scroll', '._JX_comment_edit_input', function () {
-    if (commentEditMentionState.visible) {
+    if (commentLifecycle.view().rowAction?.mention?.visible) {
       renderCommentEditMentionSuggestions();
     }
   });
@@ -7108,8 +3364,8 @@ async function mainAsyncLocal() {
   });
 
   $(document.body).on('paste', '._JX_description_input', function (e) {
-    const imageFiles = getClipboardImageFiles(e);
-    if (!imageFiles.length || !popupState?.issueData?.key || !popupState?.descriptionEditState?.open) {
+    const imageFiles = commentPresentation.clipboardImages(e);
+    if (!imageFiles.length || !currentPopupState()?.issueData?.key || !currentPopupState()?.descriptionEditState?.open) {
       return;
     }
     e.preventDefault();
@@ -7145,117 +3401,27 @@ async function mainAsyncLocal() {
     saveTimeTrackingEdit().catch(() => {});
   });
 
-  // ── Image Preview ─────────────────────────────────────────
-  function closePreviewOverlay() {
-    if (!contentShellHelpers) {
-      return;
-    }
-    contentShellHelpers.closePreviewOverlay();
-  }
-
-  async function openPreviewOverlay(imageUrl) {
-    if (!contentShellHelpers) {
-      return;
-    }
-    await contentShellHelpers.openPreviewOverlay(imageUrl);
-  }
-
-  previewOverlay.on('click', function (e) {
-    e.stopPropagation();
-    if (e.target === previewOverlay[0]) {
-      e.preventDefault();
-      closePreviewOverlay();
-    }
-  });
-
-  $(document.body).on('click', '._JX_previewable', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const source = e.currentTarget.getAttribute('data-jx-preview-src') || e.currentTarget.getAttribute('src');
-    openPreviewOverlay(source).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_thumb', function (e) {
-    if ($(e.target).closest('img._JX_previewable').length) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    const source = e.currentTarget.getAttribute('data-preview-src') || e.currentTarget.getAttribute('data-url');
-    openPreviewOverlay(source).catch(() => {});
-  });
-
-  $(document.body).on('click', '._JX_history_attachment_preview', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const source = e.currentTarget.getAttribute('data-jx-preview-src');
-    openPreviewOverlay(source).catch(() => {});
-  });
-
   // ── Container Lifecycle ────────────────────────────────────
-  function hideContainer() {
+  async function clearPopupSurface() {
     lastHoveredKey = '';
-    clearWatchersFeedbackTimer();
     clearDescriptionStatusTimer();
-    closePreviewOverlay();
-    const descriptionStateSnapshot = popupState?.descriptionEditState;
-    if (popupState?.key) {
-      editMetaCache.delete(popupState.key);
-    }
-    popupState = null;
-    discardCommentComposerDraft().catch(() => {});
+    const descriptionStateSnapshot = currentPopupState()?.descriptionEditState;
+    popupModel.close();
     discardDescriptionEditStateSnapshot(descriptionStateSnapshot, {deleteUploaded: true}).catch(() => {});
-    activeCommentContext = null;
-    resetCommentMentionState();
-    containerPinned = false;
-    container.html('').css({
-      left: -5000,
-      top: -5000,
-      position: 'absolute',
-    }).removeClass('container-pinned');
+    await popupShell.dispatch({type: 'clear'});
 
     passiveCancel(0);
   }
 
-  $(document.body).on('keydown', function (e) {
-    // TODO: escape not captured in google docs
-    const ESCAPE_KEY_CODE = 27;
-    if (e.keyCode === ESCAPE_KEY_CODE) {
-      if (previewOverlay.hasClass('is-open')) {
-        closePreviewOverlay();
-        return;
-      }
-      if (popupState?.historyOpen) {
-        popupState = {
-          ...popupState,
-          historyOpen: false
-        };
-        renderIssuePopup(popupState).catch(() => {});
-        return;
-      }
-      if (popupState?.descriptionEditState?.open) {
-        cancelDescriptionEdit().catch(() => {});
-        return;
-      }
-      hideContainer();
-      passiveCancel(200);
-    }
-  });
-
-  // ── Hover Detection & Script Bootstrap ─────────────────────
-  let cancelToken = {};
-
-  function passiveCancel(cooldown) {
-    // does not actually cancel xhr calls
-    cancelToken.cancel = true;
-    setTimeout(function () {
-      cancelToken = {};
-    }, cooldown);
+  function hideContainer(reason = 'explicit') {
+    return popupSession.close({reason}).catch(() => clearPopupSurface());
   }
 
-  container.on('dragstop', () => {
-    pinContainer();
-  });
+  // ── Hover Detection & Script Bootstrap ─────────────────────
+  function passiveCancel(cooldown) {
+    popupShell.dispatch({type: 'begin-cooldown', delay: cooldown}).catch(() => {});
+  }
+
   function extractKeysFromNode(node) {
     let keys = getJiraKeysFromTexts(getNodeSearchTexts(node));
     if (!size(keys) && node.children.length < 10) {
@@ -7539,110 +3705,96 @@ async function mainAsyncLocal() {
     return hoveredElement === activeElement || activeElement.contains(hoveredElement);
   }
 
-  function fetchAndShowPopup(key, pointerX, pointerY) {
-    if (popupState?.key && popupState.key !== key && popupState.descriptionEditState?.open) {
+  function fetchAndShowPopup(key, pointerX, pointerY, activation = '') {
+    const popupView = currentPopupState();
+    if (popupView?.key && popupView.key !== key && popupView.descriptionEditState?.open) {
       clearDescriptionStatusTimer();
-      discardDescriptionEditStateSnapshot(popupState.descriptionEditState, {deleteUploaded: true}).catch(() => {});
+      discardDescriptionEditStateSnapshot(popupView.descriptionEditState, {deleteUploaded: true}).catch(() => {});
     }
-    (async function (cancelToken) {
-      const issueData = await getIssueMetaData(key);
-      await normalizeIssueImages(issueData);
-      let children = [];
-      let childrenJql = '';
-      let childrenError = '';
-      if (showChildren) {
-        try {
-          const childSearch = await getChildIssues(issueData);
-          children = childSearch.issues;
-          childrenJql = childSearch.jql;
-          await normalizeChildIssueImages(children).catch(() => {});
-        } catch (ex) {
-          console.log('[Jira QuickView] Child issue fetch failed', {
-            issueKey: key,
-            error: ex?.message || String(ex)
-          });
-          childrenError = buildEditFieldError(ex);
-        }
-      }
-      let pullRequests = [];
-      if (showPullRequests) {
-        try {
-          const pullRequestResponse = await getPullRequestDataCached(issueData.id);
-          pullRequests = normalizePullRequests(pullRequestResponse);
-          await normalizePullRequestImages(pullRequests).catch(() => {});
-        } catch (ex) {
-          console.log('[Jira QuickView] Pull request fetch failed', {
-            issueKey: key,
-            issueId: issueData.id,
-            error: ex?.message || String(ex)
-          });
-        }
-      }
-
-      if (cancelToken.cancel) {
-        return;
-      }
-      let quickActions = [];
-      try {
-        quickActions = await resolveQuickActions(issueData);
-      } catch (ex) {
-        quickActions = [];
-      }
-
-      let commentReactionState = emptyCommentReactionState();
-      const commentIds = (issueData.fields.comment?.comments || [])
-        .map(c => c.id)
-        .filter(Boolean);
-      if (commentIds.length > 0) {
-        try {
-          const serverReactions = await fetchCommentReactions(commentIds);
-          commentReactionState = buildInitialReactionState(serverReactions);
-        } catch (ex) {
-          // Reactions may not be supported; fall back to empty state
-        }
-      }
-
-      await renderUpdatedPopupState({
-        key,
-        issueData,
-        children,
-        childrenJql,
-        childrenError,
-        childrenSort: DEFAULT_CHILDREN_SORT,
-        commentSortOrder: commentSortOrderPreference,
-        pullRequestsSort: DEFAULT_PULL_REQUESTS_SORT,
-        pullRequests,
-        pointerX,
-        pointerY,
-        quickActions,
-        commentReactionState,
-        ...buildPopupInteractionReset(),
-        descriptionEditState: createDescriptionEditState(issueData),
-        watchersState: emptyWatchersState(),
-        linkedIssuesState: emptyLinkedIssuesState(),
-        timeTrackingEditState: createTimeTrackingEditState(issueData),
-      });
-    })(cancelToken).catch((error) => {
+    return popupSession.activate({
+      issueKey: key,
+      anchor: {x: pointerX, y: pointerY},
+      activation: activation || (hoverActivationMode === 'modifier' ? 'modifier' : 'hover'),
+      preferences: {commentSortOrder: commentSortOrderPreference},
+      requirements: {
+        children: showChildren,
+        pullRequests: showPullRequests,
+        reactions: true,
+        viewer: true,
+      },
+    }).catch(error => {
       notifyJiraConnectionFailure(INSTANCE_URL, error);
       lastHoveredKey = '';
     });
   }
 
-  function triggerPopupForKey(key, pointerX, pointerY, immediate) {
+  function triggerPopupForKey(key, pointerX, pointerY, immediate, activation = '') {
     clearTimeout(hoverDelayTimeout);
     lastHoveredKey = key;
     if (immediate) {
-      fetchAndShowPopup(key, pointerX, pointerY);
+      fetchAndShowPopup(key, pointerX, pointerY, activation);
     } else {
       hoverDelayTimeout = setTimeout(function () {
-        fetchAndShowPopup(key, pointerX, pointerY);
+        fetchAndShowPopup(key, pointerX, pointerY, activation);
       }, 250);
     }
   }
 
-  if (hoverModifierKey !== 'none') {
+  function getClickedIssueLink(target) {
+    if (!openQuickViewOnClick || !target?.closest) return null;
+    const link = target.closest('a[href]');
+    if (!link || link.closest('._JX_container') || link.hasAttribute('download')
+      || link.closest('button, input, textarea, select, option, summary, [role="button"], [role="menuitem"], [contenteditable]')) return null;
+    const declaredHref = String(link.getAttribute('href') || '').trim();
+    if (!declaredHref || declaredHref.startsWith('#')) return null;
+    let linkUrl;
+    let jiraOrigin;
+    let currentUrl;
+    try {
+      linkUrl = new URL(declaredHref, document.location.href);
+      jiraOrigin = new URL(INSTANCE_URL).origin;
+      currentUrl = new URL(document.location.href);
+    } catch (error) {
+      return null;
+    }
+    if (!['http:', 'https:'].includes(linkUrl.protocol) || linkUrl.origin !== jiraOrigin) return null;
+    const keyMatch = linkUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i);
+    if (!keyMatch) return null;
+    const key = keyMatch[1].toUpperCase();
+    const linkText = String(link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (/^(view issue|add comment|comment|cancel|edit|assign)$/.test(linkText)) return null;
+    const currentKeyMatch = currentUrl.origin === jiraOrigin
+      ? currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)
+      : null;
+    if (currentKeyMatch?.[1]?.toUpperCase() === key) return null;
+    // Jira's project issue navigator uses these links to open its native
+    // side-by-side issue panel. Preserve that interaction when QuickView
+    // click interception is enabled globally.
+    if (/\/projects\/[^/]+\/issues(?:\/|$)/i.test(currentUrl.pathname)) return null;
+    return {key, link};
+  }
+
+  if (openQuickViewOnClick) {
+    document.addEventListener('click', function (e) {
+      if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const clickedIssue = getClickedIssueLink(e.target);
+      if (!clickedIssue) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = clickedIssue.link.getBoundingClientRect();
+      const pointerX = Number.isFinite(e.pageX) && e.pageX > 0
+        ? e.pageX
+        : rect.left + window.scrollX + (rect.width / 2);
+      const pointerY = Number.isFinite(e.pageY) && e.pageY > 0
+        ? e.pageY
+        : rect.top + window.scrollY + rect.height;
+      triggerPopupForKey(clickedIssue.key, pointerX, pointerY, true, 'click');
+    }, true);
+  }
+
+  if (hoverActivationMode === 'modifier') {
     document.addEventListener('keydown', function (e) {
-      if (containerPinned || isTypingTargetBlockingModifierTrigger(currentPointer.clientX, currentPointer.clientY)) {
+      if (popupShell.view().pinned || isTypingTargetBlockingModifierTrigger(currentPointer.clientX, currentPointer.clientY)) {
         return;
       }
       if (isModifierSatisfied(e)) {
@@ -7657,7 +3809,7 @@ async function mainAsyncLocal() {
   }
 
   $(document.body).on('mousemove', debounce(function (e) {
-    if (e.buttons || cancelToken.cancel) {
+    if (e.buttons || popupShell.view().cooldownActive) {
       return;
     }
     currentPointer = {
@@ -7666,8 +3818,8 @@ async function mainAsyncLocal() {
       pageX: e.pageX,
       pageY: e.pageY,
     };
-    if (previewOverlay.hasClass('is-open')) {
-      clearTimeout(hideTimeOut);
+    if (popupShell.view().previewOpen) {
+      popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
       return;
     }
     const element = document.elementFromPoint(e.clientX, e.clientY);
@@ -7684,26 +3836,29 @@ async function mainAsyncLocal() {
       return;
     }
     if (isInPaddedZone) {
-      clearTimeout(hideTimeOut);
+      popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
       return;
     }
-    if (!containerPinned && container.html()) {
+    if (!popupShell.view().pinned && container.html()) {
       clearTimeout(hoverDelayTimeout);
       lastHoveredKey = '';
-      hideTimeOut = setTimeout(hideContainer, 250);
+      popupShell.dispatch({type: 'schedule-hide', delay: 250, reason: 'pointer-exit'}).catch(() => {});
       return;
     }
     if (element) {
-      if (hoverModifierKey !== 'none') {
+      if (hoverActivationMode === 'off') {
+        return;
+      }
+      if (hoverActivationMode === 'modifier') {
         const resolvedKey = resolveModifierKeyAtClientPoint(e.clientX, e.clientY);
         if (!resolvedKey) {
           return;
         }
         if (!isModifierSatisfied(e)) {
-          clearTimeout(hideTimeOut);
+          popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
           return;
         }
-        clearTimeout(hideTimeOut);
+        popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
         triggerPopupForKey(resolvedKey, e.pageX, e.pageY, true);
         return;
       }
@@ -7715,7 +3870,7 @@ async function mainAsyncLocal() {
 
       if (size(keys)) {
         const key = keys[0].replace(' ', '-');
-        clearTimeout(hideTimeOut);
+        popupShell.dispatch({type: 'cancel-hide'}).catch(() => {});
         triggerPopupForKey(key, e.pageX, e.pageY, false);
       }
     }

@@ -24,9 +24,45 @@
     outline: none;
   }
 
+  &:disabled {
+    cursor: progress;
+    opacity: 0.5;
+  }
+
   svg {
     height: 16px;
     width: 16px;
+  }
+}
+
+._JX_global_copy_reference {
+  white-space: nowrap;
+}
+
+._JX_inline_copy_button_global {
+  color: inherit;
+  height: 16px;
+  padding: 0;
+  transform: translateY(-1px);
+  width: 16px;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 42%, transparent);
+    color: inherit;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  ._JX_inline_copy_button_global {
+    color: #d8deef;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.42);
+    }
   }
 }
 
@@ -37,7 +73,36 @@
 
 ._JX_inline_copy_scope ._JX_inline_copy_anchor {
   display: inline-flex;
+  flex: 0 0 auto;
+  white-space: nowrap;
   vertical-align: middle;
+}
+
+._JX_inline_copy_dropdown_pair {
+  align-items: center;
+  display: flex;
+  white-space: nowrap;
+
+  > ._JX_inline_copy_anchor {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+._JX_inline_copy_button_result {
+  flex: 0 0 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  width: 16px;
+}
+
+._JX_inline_copy_button_comment {
+  flex: 0 0 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  width: 16px;
 }
 
 ._JX_inline_copy_scope:hover ._JX_inline_copy_button_result,

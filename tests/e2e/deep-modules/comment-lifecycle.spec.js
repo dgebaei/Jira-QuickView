@@ -1,0 +1,888 @@
+const path = require('path');
+const {test, expect} = require('@playwright/test');
+
+const harnessPath = path.resolve(__dirname, '../../output/playwright/deep-modules/harness.js');
+
+test.beforeEach(async ({page}) => {
+  await page.setContent('<!doctype html><html><body></body></html>');
+  await page.addScriptTag({path: harnessPath});
+});
+
+test('comment view owns formatting, attachment fallback, ownership, row actions, and reactions', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createMockJiraAdapter, createCommentLifecycle} = window.JiraQuickViewDeepModules;
+    const normalized = [];
+    const lifecycle = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      clock: () => new Date('2026-08-23T12:00:00.000Z'),
+      formatting: {
+        async normalizeHtml(html, options) {
+          normalized.push({html, attachmentCount: options.attachments.length, imageMaxHeight: options.imageMaxHeight});
+          return `normalized:${html}`;
+        },
+      },
+    });
+    await lifecycle.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        viewer: {status: 'ready', user: {accountId: 'viewer-1', displayName: 'Ada Lovelace'}},
+        core: {
+          key: 'ABC-1',
+          fields: {
+            summary: 'Own comment display',
+            attachment: [{
+              filename: 'diagram.png',
+              inlineDataUrl: 'data:image/png;base64,inline',
+              previewDataUrl: 'data:image/png;base64,preview',
+            }],
+            comment: {comments: [
+              {id: '11', author: {accountId: 'viewer-1', displayName: 'Ada Lovelace'}, body: 'raw rendered', created: '2026-08-23T11:30:00.000Z'},
+              {id: '12', author: {accountId: 'other-1', displayName: 'Grace Hopper'}, body: 'Hi [~accountid:viewer-1]\n!diagram.png!', created: '2026-08-20T10:00:00.000Z'},
+            ]},
+          },
+          renderedFields: {comment: {comments: [{id: '11', body: '<p>Rendered body</p>'}]}},
+        },
+        sections: {reactions: {status: 'ready', supported: true, byCommentId: {'11': {'1f44d': {count: 1, reacted: true}}}}},
+      },
+    });
+    const initial = lifecycle.view().comments;
+    await lifecycle.dispatch({type: 'startEdit', commentId: '11'});
+    const editing = lifecycle.view().comments;
+    return {initial, editing, normalized};
+  });
+
+  expect(result.normalized).toEqual([
+    {html: '<p>Rendered body</p>', attachmentCount: 1, imageMaxHeight: 100},
+    {
+      html: 'Hi <span class="_JX_mention">@Ada Lovelace</span><br/><img class="_JX_previewable" src="data:image/png;base64,inline" data-jx-preview-src="data:image/png;base64,preview" alt="diagram.png" style="max-height: 100px;" />',
+      attachmentCount: 1,
+      imageMaxHeight: 100,
+    },
+  ]);
+  expect(result.initial[0]).toMatchObject({
+    id: '11',
+    bodyHtml: 'normalized:<p>Rendered body</p>',
+    author: 'Ada Lovelace',
+    authorInitials: 'AL',
+    created: '30m ago',
+    isOwnedByCurrentUser: true,
+    showCommentActions: true,
+    commentPermalink: 'https://jira.example/browse/ABC-1?focusedCommentId=11&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-11',
+    hasReactionPills: true,
+  });
+  expect(result.initial[1]).toMatchObject({
+    id: '12',
+    author: 'Grace Hopper',
+    created: 'Aug 20, 2026, 12:00 PM',
+    isOwnedByCurrentUser: false,
+    showCommentActions: false,
+  });
+  expect(result.editing[0]).toMatchObject({
+    isEditing: true,
+    showCommentDefaultActions: false,
+    showCommentEditHeaderActions: true,
+    commentEditDraft: 'raw rendered',
+  });
+});
+
+test('a late formatted view cannot replace comments from a newer attached issue', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createMockJiraAdapter, createCommentLifecycle} = window.JiraQuickViewDeepModules;
+    const oldFormatting = createDeferred();
+    const newFormatting = createDeferred();
+    const calls = [];
+    const lifecycle = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      formatting: {
+        normalizeHtml(html) {
+          calls.push(html);
+          return html === 'old body' ? oldFormatting.promise : newFormatting.promise;
+        },
+      },
+    });
+    const snapshot = (issueKey, commentId, body) => ({
+      issueKey,
+      core: {key: issueKey, fields: {comment: {comments: [{id: commentId, body}]}}},
+      sections: {},
+    });
+    const oldAttach = lifecycle.attach({sessionId: 'popup-1', issueSnapshot: snapshot('OLD-1', '11', 'old body')});
+    while (calls.length < 1) await Promise.resolve();
+    const newAttach = lifecycle.attach({sessionId: 'popup-2', issueSnapshot: snapshot('NEW-2', '22', 'new body')});
+    while (calls.length < 2) await Promise.resolve();
+    newFormatting.resolve('formatted new body');
+    const newOutcome = await newAttach;
+    oldFormatting.resolve('formatted old body');
+    const oldOutcome = await oldAttach;
+    return {newOutcome: newOutcome.kind, oldOutcome: oldOutcome.kind, view: lifecycle.view()};
+  });
+
+  expect(result).toMatchObject({
+    newOutcome: 'attached',
+    oldOutcome: 'ignored',
+    view: {issueKey: 'NEW-2', sessionId: 'popup-2', comments: [{id: '22', bodyHtml: 'formatted new body'}]},
+  });
+});
+
+test('a local formatting failure falls back to safe lifecycle HTML', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createMockJiraAdapter, createCommentLifecycle} = window.JiraQuickViewDeepModules;
+    const lifecycle = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      formatting: {async normalizeHtml() { throw new Error('Local formatter unavailable'); }},
+    });
+    const outcome = await lifecycle.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11', body: '<unsafe> & text'}]}}},
+        sections: {},
+      },
+    });
+    return {outcome: outcome.kind, comment: lifecycle.view().comments[0]};
+  });
+
+  expect(result).toMatchObject({
+    outcome: 'attached',
+    comment: {id: '11', bodyHtml: '&lt;unsafe&gt; &amp; text'},
+  });
+});
+
+test('new-comment lifecycle owns draft, write, refresh, and observable outcome', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {
+        operation: 'write',
+        method: 'POST',
+        match: request => request.path.endsWith('/rest/api/2/issue/ABC-1/comment'),
+        result: {id: '101', body: 'Ready for [~accountid:abc]'},
+      },
+    ]});
+    const refreshes = [];
+    const issueData = {
+      async refreshAfterMutation(request) {
+        refreshes.push(request);
+        return {
+          kind: 'loaded',
+          snapshot: {
+            issueKey: request.issueKey,
+            core: {key: request.issueKey, fields: {comment: {comments: [{id: '101'}]}}},
+            sections: {},
+          },
+        };
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {}}, sections: {}},
+    });
+    await comments.dispatch({
+      type: 'composeChanged',
+      value: 'Ready for review',
+      selection: {start: 16, end: 16},
+    });
+    const beforeSave = comments.view();
+    const saved = await comments.dispatch({type: 'saveNewComment', requirements: {history: true}});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      beforeSave,
+      saved: {
+        kind: saved.kind,
+        mutation: saved.mutation,
+        notice: saved.notice,
+        refreshedIssueKey: saved.refreshedSnapshot.issueKey,
+      },
+      finalView: comments.view(),
+      write: {method: write.method, path: write.path, body: write.body},
+      refreshes,
+    };
+  });
+
+  expect(result.beforeSave).toMatchObject({
+    sessionId: 'popup-1',
+    issueKey: 'ABC-1',
+    compose: {
+      value: 'Ready for review',
+      selection: {start: 16, end: 16},
+      saving: false,
+      errorMessage: '',
+      canSave: true,
+    },
+    protectFromAutoHide: true,
+  });
+  expect(result.saved).toEqual({
+    kind: 'mutationCommitted',
+    mutation: {kind: 'commentChanged'},
+    notice: 'Comment added',
+    refreshedIssueKey: 'ABC-1',
+  });
+  expect(result.finalView).toMatchObject({
+    compose: {value: '', saving: false, errorMessage: '', canSave: false},
+    protectFromAutoHide: false,
+  });
+  expect(result.write).toEqual({
+    method: 'POST',
+    path: 'https://jira.example/rest/api/2/issue/ABC-1/comment',
+    body: {body: 'Ready for review'},
+  });
+  expect(result.refreshes).toEqual([{
+    issueKey: 'ABC-1',
+    mutation: {kind: 'commentChanged'},
+    priorSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {}}, sections: {}},
+    requirements: {history: true, reactions: true, viewer: true},
+    signal: {},
+  }]);
+});
+
+test('failed new-comment save preserves a retryable draft and visible feedback', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'write', method: 'POST', error: 'Save unavailable'},
+      {operation: 'write', method: 'POST', result: {id: '102', body: 'Retry me'}},
+    ]});
+    const issueData = {
+      async refreshAfterMutation(request) {
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey}, sections: {}}};
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'composeChanged', value: 'Retry me', selection: {start: 8, end: 8}});
+    const failed = await comments.dispatch({type: 'saveNewComment'});
+    const failedView = comments.view();
+    const retried = await comments.dispatch({type: 'saveNewComment'});
+    return {
+      failed: {kind: failed.kind, failure: failed.failure},
+      failedView,
+      retried: {kind: retried.kind},
+      writeCount: jira.getRequests().filter(request => request.operation === 'write').length,
+    };
+  });
+
+  expect(result.failed).toEqual({kind: 'failed', failure: {name: 'Error', message: 'Save unavailable'}});
+  expect(result.failedView).toMatchObject({
+    compose: {
+      value: 'Retry me',
+      selection: {start: 8, end: 8},
+      saving: false,
+      errorMessage: 'Save unavailable',
+      canSave: true,
+    },
+    protectFromAutoHide: true,
+  });
+  expect(result.retried).toEqual({kind: 'mutationCommitted'});
+  expect(result.writeCount).toBe(2);
+});
+
+test('a committed write followed by a failed refresh cannot invite a duplicate save', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'write', method: 'POST', result: {id: '103', body: 'Refresh me'}},
+    ]});
+    const issueData = {
+      async refreshAfterMutation() {
+        return {kind: 'failed', snapshot: null, failures: {core: {name: 'Error', message: 'Refresh unavailable'}}};
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'composeChanged', value: 'Refresh me', selection: {start: 10, end: 10}});
+    const outcome = await comments.dispatch({type: 'saveNewComment'});
+    return {outcome, view: comments.view()};
+  });
+
+  expect(result.outcome).toMatchObject({
+    kind: 'mutationCommitted',
+    failure: {name: 'Error', message: 'Refresh unavailable'},
+    mutation: {kind: 'commentChanged'},
+    notice: 'Comment added; refresh unavailable',
+    writeCommitted: true,
+  });
+  expect(result.view).toMatchObject({
+    compose: {
+      value: '',
+      selection: {start: 0, end: 0},
+      saving: false,
+      errorMessage: '',
+      canSave: false,
+    },
+    protectFromAutoHide: false,
+  });
+});
+
+test('a save completed for an old popup issue cannot refresh or clear the current draft', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const write = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'write', method: 'POST', deferred: write},
+    ]});
+    const refreshes = [];
+    const issueData = {
+      async refreshAfterMutation(request) {
+        refreshes.push(request.issueKey);
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey}, sections: {}}};
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'composeChanged', value: 'Old issue'});
+    const pending = comments.dispatch({type: 'saveNewComment'});
+    for (let attempt = 0; attempt < 20 && !jira.getRequests().length; attempt += 1) await Promise.resolve();
+    comments.detach({sessionId: 'popup-1', reason: 'switch'});
+    comments.attach({sessionId: 'popup-2', issueSnapshot: {issueKey: 'XYZ-2', core: {key: 'XYZ-2'}, sections: {}}});
+    await comments.dispatch({type: 'composeChanged', value: 'New issue'});
+    write.resolve({id: '103', body: 'Old issue'});
+    const outcome = await pending;
+    return {outcome, refreshes, view: comments.view()};
+  });
+
+  expect(result.outcome).toMatchObject({kind: 'ignored', sessionId: 'popup-1', issueKey: 'ABC-1'});
+  expect(result.refreshes).toEqual([]);
+  expect(result.view).toMatchObject({
+    sessionId: 'popup-2',
+    issueKey: 'XYZ-2',
+    compose: {value: 'New issue', saving: false},
+  });
+});
+
+test('comment edit owns mention-safe draft, write, refresh, and lane completion', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'write', method: 'PUT', result: {id: '11'}},
+    ]});
+    const issueData = {
+      async refreshAfterMutation(request) {
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey}, sections: {}}};
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {
+          assignee: {accountId: 'ada-1', displayName: 'Ada Lovelace'},
+          comment: {comments: [{id: '11', body: 'Hello [~accountid:ada-1]'}]},
+        }},
+        sections: {},
+      },
+    });
+    const begun = await comments.dispatch({type: 'startEdit', commentId: '11'});
+    await comments.dispatch({
+      type: 'editChanged',
+      commentId: '11',
+      value: 'Hello @Ada Lovelace, reviewed',
+      selection: {start: 28, end: 28},
+    });
+    const saved = await comments.dispatch({type: 'saveEdit', commentId: '11', requirements: {history: true}});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {begun, saved, finalView: comments.view(), write};
+  });
+
+  expect(result.begun).toMatchObject({
+    kind: 'changed',
+    view: {rowAction: {mode: 'edit', commentId: '11', draft: 'Hello @Ada Lovelace', saving: false, canSave: true}},
+  });
+  expect(result.saved).toMatchObject({kind: 'mutationCommitted', mutation: {kind: 'commentChanged'}, notice: 'Comment updated'});
+  expect(result.finalView.rowAction).toBeNull();
+  expect(result.write).toMatchObject({
+    method: 'PUT',
+    path: 'https://jira.example/rest/api/2/issue/ABC-1/comment/11',
+    body: {body: 'Hello [~accountid:ada-1], reviewed'},
+  });
+});
+
+test('failed comment edit preserves its lane while compose remains independent', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'write', method: 'PUT', error: 'Edit unavailable'},
+    ]});
+    const issueData = {refreshAfterMutation() { throw new Error('must not refresh'); }};
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11', body: 'Before'}]}}}, sections: {}},
+    });
+    await comments.dispatch({type: 'composeChanged', value: 'Independent compose'});
+    await comments.dispatch({type: 'startEdit', commentId: '11'});
+    await comments.dispatch({type: 'editChanged', commentId: '11', value: 'After'});
+    const failed = await comments.dispatch({type: 'saveEdit', commentId: '11'});
+    return {failed, view: comments.view()};
+  });
+
+  expect(result.failed).toMatchObject({kind: 'failed', failure: {message: 'Edit unavailable'}});
+  expect(result.view).toMatchObject({
+    compose: {value: 'Independent compose'},
+    rowAction: {mode: 'edit', commentId: '11', draft: 'After', saving: false, errorMessage: 'Edit unavailable'},
+    protectFromAutoHide: true,
+  });
+});
+
+test('comment delete confirmation owns success and recoverable failure', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'write', method: 'DELETE', error: 'Delete unavailable'},
+      {operation: 'write', method: 'DELETE', result: {}},
+    ]});
+    const issueData = {
+      async refreshAfterMutation(request) {
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey}, sections: {}}};
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11', body: 'Remove me'}]}}}, sections: {}},
+    });
+    const confirming = await comments.dispatch({type: 'startDelete', commentId: '11'});
+    const failed = await comments.dispatch({type: 'confirmDelete', commentId: '11'});
+    const failedView = comments.view();
+    const retried = await comments.dispatch({type: 'confirmDelete', commentId: '11'});
+    return {confirming, failed, failedView, retried, finalView: comments.view(), requests: jira.getRequests()};
+  });
+
+  expect(result.confirming).toMatchObject({kind: 'changed', view: {rowAction: {mode: 'delete', commentId: '11'}}});
+  expect(result.failed).toMatchObject({kind: 'failed', failure: {message: 'Delete unavailable'}});
+  expect(result.failedView.rowAction).toMatchObject({mode: 'delete', commentId: '11', saving: false, errorMessage: 'Delete unavailable'});
+  expect(result.retried).toMatchObject({kind: 'mutationCommitted', notice: 'Comment deleted'});
+  expect(result.finalView.rowAction).toBeNull();
+  expect(result.requests.map(request => ({method: request.method, path: request.path}))).toEqual([
+    {method: 'DELETE', path: 'https://jira.example/rest/api/2/issue/ABC-1/comment/11'},
+    {method: 'DELETE', path: 'https://jira.example/rest/api/2/issue/ABC-1/comment/11'},
+  ]);
+});
+
+test('compose mention lookup, keyboard selection, and save share lifecycle state', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', result: {id: '12'}}]});
+    const issueData = {
+      async search(request) {
+        return {kind: 'loaded', items: [
+          {accountId: 'user-me', displayName: 'Morgan Agent', emailAddress: 'morgan@example.com'},
+          {name: 'alex', displayName: 'Alex Reviewer'},
+        ], query: request.query};
+      },
+      async refreshAfterMutation(request) {
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey}, sections: {}}};
+      },
+    };
+    const comments = createCommentLifecycle({
+      jira,
+      issueData,
+      instanceUrl: 'https://jira.example/',
+      scheduler: {wait: async () => {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const loaded = await comments.dispatch({type: 'composeChanged', value: 'Hi @mo', selection: {start: 6, end: 6}});
+    await comments.dispatch({type: 'moveMention', lane: 'compose', delta: 1});
+    const selected = await comments.dispatch({type: 'chooseMention', lane: 'compose', index: 0});
+    await comments.dispatch({type: 'saveNewComment'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {loaded, selected, write};
+  });
+
+  expect(result.loaded).toMatchObject({
+    kind: 'changed',
+    view: {compose: {mention: {
+      visible: true,
+      loading: false,
+      errorMessage: '',
+      selectedIndex: 0,
+      suggestions: [
+        {displayName: 'Morgan Agent', displayText: '@Morgan Agent', mentionMarkup: '[~accountid:user-me]'},
+        {displayName: 'Alex Reviewer', displayText: '@Alex Reviewer', mentionMarkup: '[~alex]'},
+      ],
+    }}},
+  });
+  expect(result.selected).toMatchObject({
+    view: {compose: {value: 'Hi @Morgan Agent ', selection: {start: 17, end: 17}, mention: {visible: false}}},
+  });
+  expect(result.write.body).toEqual({body: 'Hi [~accountid:user-me]'});
+});
+
+test('stale mention results cannot replace a newer compose query', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const oldSearch = createDeferred();
+    const newSearch = createDeferred();
+    const issueData = {
+      search(request) { return request.query === 'old' ? oldSearch.promise : newSearch.promise; },
+      refreshAfterMutation() { throw new Error('not used'); },
+    };
+    const comments = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData,
+      instanceUrl: 'https://jira.example/',
+      scheduler: {wait: async () => {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const first = comments.dispatch({type: 'composeChanged', value: '@old', selection: {start: 4, end: 4}});
+    const second = comments.dispatch({type: 'composeChanged', value: '@new', selection: {start: 4, end: 4}});
+    newSearch.resolve({kind: 'loaded', items: [{name: 'new-user', displayName: 'New User'}]});
+    await second;
+    oldSearch.resolve({kind: 'loaded', items: [{name: 'old-user', displayName: 'Old User'}]});
+    const stale = await first;
+    return {stale, view: comments.view()};
+  });
+
+  expect(result.stale.kind).toBe('ignored');
+  expect(result.view.compose.mention).toMatchObject({
+    query: 'new',
+    loading: false,
+    suggestions: [{displayName: 'New User', mentionMarkup: '[~new-user]'}],
+  });
+});
+
+test('compose and edit mention failures remain isolated by lane', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const issueData = {
+      async search(request) {
+        if (request.query === 'bad') return {kind: 'failed', items: [], failure: {message: 'Lookup unavailable'}};
+        return {kind: 'loaded', items: []};
+      },
+      refreshAfterMutation() { throw new Error('not used'); },
+    };
+    const comments = createCommentLifecycle({
+      jira: createMockJiraAdapter(),
+      issueData,
+      instanceUrl: 'https://jira.example/',
+      scheduler: {wait: async () => {}},
+    });
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11', body: 'Before'}]}}}, sections: {}},
+    });
+    await comments.dispatch({type: 'composeChanged', value: '@bad', selection: {start: 4, end: 4}});
+    await comments.dispatch({type: 'startEdit', commentId: '11'});
+    await comments.dispatch({type: 'editChanged', commentId: '11', value: 'Before @none', selection: {start: 12, end: 12}});
+    return comments.view();
+  });
+
+  expect(result.compose.mention).toMatchObject({visible: true, errorMessage: 'Could not load people.', suggestions: []});
+  expect(result.rowAction.mention).toMatchObject({visible: true, errorMessage: '', suggestions: []});
+});
+
+test('pasted image upload owns draft markup, progress, Jira identity, and observable completion', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [{operation: 'upload', deferred}]});
+    const revoked = [];
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      clock: () => new Date('2026-08-23T10:15:30Z'),
+      attachmentMedia: {
+        createPreview: () => 'blob:preview-1',
+        revokePreview: url => revoked.push(url),
+      },
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'composeChanged', value: 'Evidence:', selection: {start: 9, end: 9}});
+    const pending = comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    const uploading = comments.view();
+    deferred.resolve([{
+      id: 'attachment-1',
+      filename: 'jira-renamed.png',
+      content: '/rest/api/2/attachment/content/attachment-1',
+      thumbnail: '/rest/api/2/attachment/thumbnail/attachment-1',
+    }]);
+    const completed = await pending;
+    return {
+      uploading,
+      completed: {
+        kind: completed.kind,
+        uploadedAttachment: completed.uploadedAttachment,
+      },
+      finalView: comments.view(),
+      requests: jira.getRequests(),
+      revoked,
+    };
+  });
+
+  expect(result.uploading.compose).toMatchObject({
+    value: 'Evidence:\n!pasted-image-20260823101530-1.png!\n',
+    canSave: false,
+    uploads: [{
+      localId: 'upload-1',
+      fileName: 'pasted-image-20260823101530-1.png',
+      previewUrl: 'blob:preview-1',
+      status: 'uploading',
+    }],
+  });
+  expect(result.completed).toMatchObject({
+    kind: 'attachmentUploaded',
+    uploadedAttachment: {
+      id: 'attachment-1',
+      filename: 'jira-renamed.png',
+      content: 'https://jira.example/rest/api/2/attachment/content/attachment-1',
+      thumbnail: 'https://jira.example/rest/api/2/attachment/thumbnail/attachment-1',
+      displayContent: 'blob:preview-1',
+    },
+  });
+  expect(result.finalView.compose).toMatchObject({
+    value: 'Evidence:\n!jira-renamed.png!\n',
+    canSave: true,
+    uploads: [{attachmentId: 'attachment-1', fileName: 'jira-renamed.png', status: 'uploaded'}],
+  });
+  expect(result.requests[0]).toMatchObject({
+    operation: 'upload',
+    path: 'https://jira.example/rest/api/2/issue/ABC-1/attachments',
+    fileName: 'pasted-image-20260823101530-1.png',
+    contentType: 'image/png',
+    size: 3,
+  });
+  expect(result.revoked).toEqual([]);
+});
+
+test('failed pasted image upload remains retryable through the lifecycle interface', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'upload', error: 'Upload unavailable'},
+      {operation: 'upload', result: [{id: 'attachment-2', filename: 'retry.png'}]},
+    ]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      clock: () => new Date('2026-08-23T10:15:30Z'),
+      attachmentMedia: {createPreview: () => 'blob:retry', revokePreview() {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const failed = await comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    const failedView = comments.view();
+    const retried = await comments.dispatch({type: 'retryUpload', localId: failedView.compose.uploads[0].localId});
+    return {failed, failedView, retried, finalView: comments.view(), requests: jira.getRequests()};
+  });
+
+  expect(result.failed).toMatchObject({kind: 'failed', failure: {message: 'Upload unavailable'}});
+  expect(result.failedView.compose).toMatchObject({
+    value: '',
+    errorMessage: 'Upload unavailable',
+    uploads: [{status: 'error', canRetry: true, errorMessage: 'Upload unavailable'}],
+  });
+  expect(result.retried).toMatchObject({kind: 'attachmentUploaded', uploadedAttachment: {id: 'attachment-2'}});
+  expect(result.finalView.compose).toMatchObject({
+    value: '!retry.png!\n',
+    errorMessage: '',
+    uploads: [{status: 'uploaded', canRetry: false, attachmentId: 'attachment-2'}],
+  });
+  expect(result.requests).toHaveLength(2);
+});
+
+test('discard deletes uploaded draft attachments and revokes local previews', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'upload', result: [{id: 'attachment-3', filename: 'draft.png'}]},
+      {operation: 'write', method: 'DELETE', result: null},
+    ]});
+    const revoked = [];
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      attachmentMedia: {createPreview: () => 'blob:draft', revokePreview: url => revoked.push(url)},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    await comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    const discarded = await comments.dispatch({type: 'discardCompose', deleteUploaded: true});
+    return {discarded, view: comments.view(), requests: jira.getRequests(), revoked};
+  });
+
+  expect(result.discarded).toMatchObject({kind: 'changed', cleanupFailures: []});
+  expect(result.view.compose).toMatchObject({value: '', uploads: [], errorMessage: '', canSave: false});
+  expect(result.requests.map(request => ({operation: request.operation, method: request.method, path: request.path}))).toEqual([
+    {operation: 'upload', method: undefined, path: 'https://jira.example/rest/api/2/issue/ABC-1/attachments'},
+    {operation: 'write', method: 'DELETE', path: 'https://jira.example/rest/api/2/attachment/attachment-3'},
+  ]);
+  expect(result.revoked).toEqual(['blob:draft']);
+});
+
+test('an upload completed for a detached popup is deleted instead of leaking into the next issue', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'upload', deferred},
+      {operation: 'write', method: 'DELETE', result: null},
+    ]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+      attachmentMedia: {createPreview: () => 'blob:stale', revokePreview() {}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1'}, sections: {}}});
+    const pending = comments.dispatch({type: 'imagePasted', file: new File(['png'], 'clipboard.png', {type: 'image/png'})});
+    comments.attach({sessionId: 'popup-2', issueSnapshot: {issueKey: 'XYZ-2', core: {key: 'XYZ-2'}, sections: {}}});
+    deferred.resolve([{id: 'attachment-stale', filename: 'stale.png'}]);
+    const completion = await pending;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return {completion, view: comments.view(), requests: jira.getRequests()};
+  });
+
+  expect(result.completion).toMatchObject({kind: 'ignored', issueKey: 'ABC-1', sessionId: 'popup-1'});
+  expect(result.view).toMatchObject({issueKey: 'XYZ-2', sessionId: 'popup-2', compose: {value: '', uploads: []}});
+  expect(result.requests.map(request => ({operation: request.operation, method: request.method, path: request.path}))).toEqual([
+    {operation: 'upload', method: undefined, path: 'https://jira.example/rest/api/2/issue/ABC-1/attachments'},
+    {operation: 'write', method: 'DELETE', path: 'https://jira.example/rest/api/2/attachment/attachment-stale'},
+  ]);
+});
+
+test('reaction toggle owns optimistic projection, Jira write, authoritative refresh, and completion', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', deferred}]});
+    const refreshes = [];
+    const issueData = {
+      async refreshAfterMutation(request) {
+        refreshes.push(request);
+        return {
+          kind: 'loaded',
+          snapshot: {
+            ...request.priorSnapshot,
+            sections: {
+              ...request.priorSnapshot.sections,
+              reactions: {status: 'ready', supported: true, byCommentId: {'11': {'1f44d': {count: 2, reacted: true, pending: false}}}},
+            },
+          },
+        };
+      },
+    };
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11'}]}}},
+        sections: {reactions: {status: 'empty', supported: true, byCommentId: {}}},
+      },
+    });
+    const pending = comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    const optimistic = comments.view();
+    deferred.resolve({ok: true});
+    const completed = await pending;
+    return {optimistic, completed, finalView: comments.view(), requests: jira.getRequests(), refreshes};
+  });
+
+  expect(result.optimistic.reactions.byCommentId['11']).toMatchObject({
+    errorMessage: '',
+    pills: [{emoji: '👍', emojiId: '1f44d', count: 1, reacted: true, pending: true}],
+  });
+  expect(result.optimistic.reactions.byCommentId['11'].menuOptions).toEqual(expect.arrayContaining([
+    expect.objectContaining({emojiId: '1f44d', isReacted: true, isPending: true}),
+  ]));
+  expect(result.completed).toMatchObject({kind: 'mutationCommitted', mutation: {kind: 'reactionChanged', commentIds: ['11']}});
+  expect(result.finalView.reactions.byCommentId['11']).toMatchObject({
+    pills: [{emojiId: '1f44d', count: 2, reacted: true, pending: false}],
+  });
+  expect(result.requests[0]).toMatchObject({
+    operation: 'write',
+    method: 'POST',
+    path: 'https://jira.example/rest/internal/2/reactions',
+    body: {commentId: '11', emojiId: '1f44d'},
+    headers: {'X-Atlassian-Token': 'no-check'},
+  });
+  expect(result.refreshes[0]).toMatchObject({
+    issueKey: 'ABC-1',
+    mutation: {kind: 'reactionChanged', commentIds: ['11']},
+    requirements: {reactions: true},
+  });
+});
+
+test('failed reaction toggle rolls back the optimistic change and exposes recoverable feedback', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'DELETE', error: 'Reaction unavailable'}]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+    });
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11'}]}}},
+        sections: {reactions: {status: 'ready', supported: true, byCommentId: {'11': {'1f44d': {count: 2, reacted: true, pending: false}}}}},
+      },
+    });
+    const failed = await comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    return {failed, view: comments.view()};
+  });
+
+  expect(result.failed).toMatchObject({kind: 'failed', failure: {message: 'Reaction unavailable'}});
+  expect(result.view.reactions.byCommentId['11']).toMatchObject({
+    errorMessage: 'Reaction unavailable',
+    pills: [{emojiId: '1f44d', count: 2, reacted: true, pending: false}],
+  });
+});
+
+test('unsupported reaction write hides reaction controls for the attached Jira session', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', error: 'HTTP 404 - Not Found'}]});
+    const comments = createCommentLifecycle({
+      jira,
+      issueData: {async refreshAfterMutation() { throw new Error('Not expected'); }},
+      instanceUrl: 'https://jira.example/',
+    });
+    comments.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {
+        issueKey: 'ABC-1',
+        core: {key: 'ABC-1', fields: {comment: {comments: [{id: '11'}]}}},
+        sections: {reactions: {status: 'empty', supported: true, byCommentId: {}}},
+      },
+    });
+    const unsupported = await comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    return {unsupported, view: comments.view()};
+  });
+
+  expect(result.unsupported).toMatchObject({kind: 'unsupported', notice: 'Comment reactions are not available in this Jira context'});
+  expect(result.view.reactions).toMatchObject({supported: false, byCommentId: {'11': {pills: [], menuOptions: []}}});
+});
+
+test('reaction response for an old issue cannot update the current lifecycle session', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createCommentLifecycle, createDeferred, createMockJiraAdapter} = window.JiraQuickViewDeepModules;
+    const deferred = createDeferred();
+    const jira = createMockJiraAdapter({scripts: [{operation: 'write', method: 'POST', deferred}]});
+    const issueData = {async refreshAfterMutation() { throw new Error('A stale reaction must not refresh'); }};
+    const comments = createCommentLifecycle({jira, issueData, instanceUrl: 'https://jira.example/'});
+    const snapshot = issueKey => ({
+      issueKey,
+      core: {key: issueKey, fields: {comment: {comments: [{id: issueKey === 'ABC-1' ? '11' : '22'}]}}},
+      sections: {reactions: {status: 'empty', supported: true, byCommentId: {}}},
+    });
+    comments.attach({sessionId: 'popup-1', issueSnapshot: snapshot('ABC-1')});
+    const pending = comments.dispatch({type: 'toggleReaction', commentId: '11', emojiId: '1f44d'});
+    comments.attach({sessionId: 'popup-2', issueSnapshot: snapshot('XYZ-2')});
+    deferred.resolve({ok: true});
+    const completion = await pending;
+    return {completion, view: comments.view()};
+  });
+
+  expect(result.completion).toMatchObject({kind: 'ignored', issueKey: 'ABC-1', sessionId: 'popup-1'});
+  expect(result.view).toMatchObject({issueKey: 'XYZ-2', sessionId: 'popup-2', reactions: {supported: true}});
+  expect(result.view.reactions.byCommentId['22'].pills).toEqual([]);
+});

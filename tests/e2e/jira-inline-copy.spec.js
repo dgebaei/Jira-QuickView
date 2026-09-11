@@ -5,6 +5,67 @@ const {optionsPageModel} = require('./helpers/options-page');
 
 const screenshotDir = String(process.env.JHL_CAPTURE_INLINE_COPY_SCREENSHOTS || '').trim();
 
+test('copies linked and plain Jira IDs on allowed pages without eager issue reads @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    hoverActivationMode: 'off', openQuickViewOnClick: true,
+  }, target));
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.allowedPage.origin});
+  let issueReads = 0;
+  page.context().on('request', request => {
+    if (request.url().includes(`/issue/${target.primaryIssueKey}?`)) issueReads += 1;
+  });
+  await page.goto(servers.allowedPage.origin);
+  await page.locator('#issue-link a').evaluate((link, href) => { link.href = href; }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await page.locator('main').evaluate((main, key) => {
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    editor.id = 'editor';
+    editor.textContent = key;
+    const action = document.createElement('button');
+    action.id = 'action';
+    action.textContent = key;
+    const actionLink = document.createElement('a');
+    actionLink.href = `${location.origin}/browse/${key}`;
+    actionLink.textContent = 'View issue';
+    main.append(editor, action, actionLink);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  const buttons = page.getByTestId(`jira-inline-copy-${target.primaryIssueKey}`);
+  await expect(buttons).toHaveCount(2);
+  await expect(buttons.first()).toHaveCSS('width', '16px');
+  await expect(buttons.first()).toHaveCSS('height', '16px');
+  await expect(buttons.first()).toHaveCSS('padding', '0px');
+  expect(issueReads).toBe(0);
+  await expect(page.locator('#editor button, #action button, a[href*="/browse/"] button')).toHaveCount(0);
+  await buttons.first().click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  const html = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return (await item.getType('text/html')).text();
+  });
+  expect(html).toContain(`[${target.primaryIssueKey}] Pressing END removes non-command text`);
+  expect(issueReads).toBe(1);
+  await buttons.last().click();
+  await expect(buttons.last()).toBeEnabled();
+  expect(issueReads).toBe(1);
+  await page.locator('main').evaluate((main, key) => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = `New email mentions ${key}`;
+    main.append(paragraph);
+  }, target.primaryIssueKey);
+  await expect(buttons).toHaveCount(3);
+  await page.locator('main').evaluate(main => {
+    main.style.background = '#24262b';
+    main.style.color = '#e5e7f0';
+  });
+  await buttons.last().hover();
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await captureInlineCopyScreenshot(page.locator('main'), 'global-inline-copy.png');
+  await page.close();
+});
+
 async function captureInlineCopyScreenshot(locator, fileName) {
   if (!screenshotDir) {
     return;
@@ -43,10 +104,17 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   const page = await extensionApp.context.newPage();
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.jira.origin});
   await page.goto(`${servers.jira.origin}/browse/${target.primaryIssueKey}`);
+  await page.locator('main').evaluate((main, key) => {
+    const commentLink = document.createElement('a');
+    commentLink.href = `/browse/${key}?focusedCommentId=123#comment-123`;
+    commentLink.textContent = '31 Aug 2026';
+    main.append(commentLink);
+  }, target.primaryIssueKey);
   await injectContentScript(extensionApp, page);
 
   const copyButton = page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`});
   await expect(copyButton).toBeVisible();
+  await expect(page.getByRole('button', {name: `Copy ${target.primaryIssueKey} comment link`})).toBeVisible();
   await copyButton.hover();
   await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-cloud-detail.png');
   await copyButton.click();
@@ -61,6 +129,100 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   expect(copiedHtml).toContain(`[${target.primaryIssueKey}] Pressing END removes non-command text`);
   await expect(page.locator('._JX_snack')).toContainText('Copied!');
 
+  await page.close();
+});
+
+test('keeps one copy button for an issue link inside a Jira comment @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira comment markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    document.body.innerHTML = `
+      <main>
+        <article data-testid="issue-comment">
+          <p>Tracked by <a data-issue-key="PLATFORM-101" href="/browse/PLATFORM-101">PLATFORM-101</a></p>
+        </article>
+      </main>`;
+  });
+
+  const comment = page.getByTestId('issue-comment');
+  const copyButton = comment.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
+  await expect(copyButton).toHaveCount(1);
+  await comment.evaluate(element => {
+    for (let index = 0; index < 20; index += 1) {
+      element.dataset.renderPass = String(index);
+      element.appendChild(document.createTextNode(' '));
+    }
+  });
+  await expect(copyButton).toHaveCount(1);
+  await comment.hover();
+  await captureInlineCopyScreenshot(comment, 'jira-inline-copy-comment-issue-link.png');
+  await page.close();
+});
+
+test('adds copy controls to an Active Sprint side panel and its issue links @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Side-by-side Jira markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+    hoverModifierKey: 'any',
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.jira.origin});
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(issueKey => {
+    document.body.innerHTML = `
+      <main style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+        <section class="ghx-swimlane" data-testid="active-sprint-board">
+          <article class="ghx-issue" data-issue-key="PLATFORM-101">
+            <div class="ghx-key"><a href="/browse/PLATFORM-101">PLATFORM-101</a></div>
+            <div class="ghx-summary">Board card summary</div>
+          </article>
+        </section>
+        <aside role="dialog" data-testid="active-sprint-issue-details-panel">
+          <a data-testid="issue-detail-key" href="/browse/${issueKey}">${issueKey}</a>
+          <section data-testid="development-summary">1 branch</section>
+          <h1 data-testid="issue-detail-summary">Correct Active Sprint side-panel title</h1>
+          <section id="issuelinks">
+            <h2>Issue Links</h2>
+            <ul>
+              <li><a data-issue-key="RELATED-202" href="/browse/RELATED-202">RELATED-202</a><span class="link-summary">Related issue summary</span></li>
+            </ul>
+          </section>
+        </aside>
+      </main>`;
+  }, target.primaryIssueKey);
+
+  const copyButton = page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`});
+  await expect(copyButton).toBeVisible();
+  await expect(copyButton).toHaveAttribute('data-jx-inline-copy-summary', 'Correct Active Sprint side-panel title');
+  const issueLinks = page.locator('#issuelinks');
+  const linkedIssueCopyButton = issueLinks.getByRole('button', {name: 'Copy RELATED-202 issue link'});
+  await expect(linkedIssueCopyButton).toHaveCount(1);
+  await issueLinks.evaluate(async element => {
+    for (let index = 0; index < 50; index += 1) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      element.appendChild(document.createTextNode(' '));
+    }
+  });
+  await expect(linkedIssueCopyButton).toHaveCount(1);
+  await page.locator('[data-testid="active-sprint-issue-details-panel"]').hover();
+  await expect(copyButton).toHaveCSS('opacity', '1');
+  await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-active-sprint-side-panel.png');
+  await copyButton.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `${servers.jira.origin}/browse/${target.primaryIssueKey}`
+  );
   await page.close();
 });
 
@@ -136,12 +298,12 @@ test('adds copy buttons beside issue keys in modern JQL result rows @mock-only',
     document.querySelector('#issue-results').innerHTML = `
       <table aria-label="Search results">
         <tbody>
-          <tr role="row" data-testid="issue-table.ui.issue-row">
+          <tr role="row" data-testid="issue-table.ui.issue-row" data-issue-key="PLATFORM-101">
             <td data-testid="issue-table.common.ui.issue-cells.issue-key">
-              <a href="/jira/software/c/projects/PLATFORM/issues/PLATFORM-101">PLATFORM-101</a>
+              <a href="/browse/PLATFORM-101">PLATFORM-101</a>
             </td>
             <td data-testid="issue-table.common.ui.issue-cells.summary">
-              <span>Cross-project platform initiative</span>
+              <a href="/browse/PLATFORM-101">Cross-project platform initiative</a>
             </td>
           </tr>
         </tbody>
@@ -150,12 +312,74 @@ test('adds copy buttons beside issue keys in modern JQL result rows @mock-only',
 
   const copyButton = page.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
   await expect(copyButton).toHaveCount(1);
+  await page.locator('[data-testid="issue-table.ui.issue-row"]').evaluate(row => {
+    for (let index = 0; index < 20; index += 1) {
+      row.dataset.renderPass = String(index);
+      row.appendChild(document.createTextNode(' '));
+    }
+  });
+  await expect(copyButton).toHaveCount(1);
   await page.getByRole('row').hover();
   await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-modern-jql.png');
   await copyButton.click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
     `${servers.jira.origin}/browse/PLATFORM-101`
   );
+  await page.close();
+});
+
+test('keeps the copy icon inline with an issue link in a narrow Jira Issues dropdown @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira Issues dropdown markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    document.body.innerHTML = `
+      <main style="padding:24px">
+        <ul id="issues-dropdown" aria-label="Issues" role="menu">
+          <li id="issue_lnk_322356" role="menuitem">
+            <a href="/browse/PLATFORM-101" data-issue-key="PLATFORM-101">
+              <img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'/%3E">
+              PLATFORM-101 Admin|E-mail: Nedo...
+            </a>
+          </li>
+        </ul>
+        <style>
+          #issues-dropdown { list-style: none; margin: 0; padding: 8px; width: 355px; }
+          #issues-dropdown li { width: 355px; }
+          #issues-dropdown li > a {
+            box-sizing: border-box;
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+          }
+          #issues-dropdown img { height: 16px; margin-right: 8px; width: 16px; }
+        </style>
+      </main>`;
+  });
+
+  const menuItem = page.getByRole('menuitem');
+  const issueLink = menuItem.getByRole('link', {name: /PLATFORM-101/});
+  const copyButton = menuItem.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
+  await expect(copyButton).toHaveCount(1);
+  await menuItem.hover();
+
+  const [linkBox, buttonBox] = await Promise.all([issueLink.boundingBox(), copyButton.boundingBox()]);
+  expect(linkBox).not.toBeNull();
+  expect(buttonBox).not.toBeNull();
+  const linkCenterY = linkBox.y + (linkBox.height / 2);
+  const buttonCenterY = buttonBox.y + (buttonBox.height / 2);
+  expect(Math.abs(buttonCenterY - linkCenterY)).toBeLessThan(4);
+  expect(buttonBox.x).toBeGreaterThanOrEqual(linkBox.x + linkBox.width);
+  await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-issues-dropdown.png');
+
   await page.close();
 });
 

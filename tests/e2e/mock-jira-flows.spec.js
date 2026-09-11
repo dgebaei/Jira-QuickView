@@ -1,3 +1,4 @@
+const path = require('path');
 const {test, expect, configureExtension, hoverIssueKey, injectContentScript} = require('./helpers/extension-fixtures');
 const {popupModel} = require('./helpers/popup');
 const {deleteIssueComment, getIssueComments, getLiveIssue, getMentionUsers, jiraApiPattern} = require('./helpers/live-jira-api');
@@ -9,10 +10,12 @@ const TEST_PNG_BYTES = Array.from(Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0wAAAABJRU5ErkJggg==',
   'base64'
 ));
+const betaScreenshotDir = String(process.env.JHL_CAPTURE_BETA_SCREENSHOTS || '').trim();
 
-function baseConfig(servers, target) {
+function baseConfig(servers, target, overrides = {}) {
   return buildExtensionConfig(servers, {
     customFields: target.mode === 'mock' ? [{fieldId: 'customfield_12345', row: 2}] : [],
+    ...overrides,
   }, target);
 }
 
@@ -28,7 +31,7 @@ async function openPopup(extensionApp, servers, target) {
   await injectContentScript(extensionApp, page);
   await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
   await hoverIssueKey(page, '#popup-key');
-  await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
+  await expect(page.locator('#_JX_title_link')).toContainText(resolvedTarget.primaryIssueKey);
   return {page, target: resolvedTarget};
 }
 
@@ -132,6 +135,209 @@ test('accepts paginated Jira project responses during popup startup @mock-only',
   await hoverIssueKey(page, '#popup-key');
   await expect(page.locator('._JX_container')).toContainText(resolvedTarget.primaryIssueKey);
   expect(pageErrors).toEqual([]);
+  await page.close();
+});
+
+test('shows issue-key loading feedback beside the pointer until Jira data is ready @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Initial loading feedback is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+
+  let releaseIssueRequest;
+  const issueRequestGate = new Promise(resolve => {
+    releaseIssueRequest = resolve;
+  });
+  await patchJsonResponse(
+    extensionApp.context,
+    target.instanceUrl,
+    `/rest/api/2/issue/${target.primaryIssueKey}\\?[^#]+$`,
+    async payload => {
+      await issueRequestGate;
+      return payload;
+    }
+  );
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/popup-actions`);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  const marker = page.locator('#popup-key');
+  await marker.hover();
+
+  const loading = page.getByTestId('jira-popup-loading');
+  try {
+    await expect(loading).toBeVisible();
+    await expect(loading).toContainText(`Loading ${target.primaryIssueKey}`);
+    await expect(loading.locator('._JX_loading_spinner')).toBeVisible();
+    await expect.poll(() => loading.locator('._JX_loading_spinner').evaluate(node => {
+      const style = getComputedStyle(node);
+      return {name: style.animationName, duration: style.animationDuration, playState: style.animationPlayState};
+    })).toEqual({name: '_JX_loading_spin', duration: '0.75s', playState: 'running'});
+    const [markerBox, loadingBox] = await Promise.all([marker.boundingBox(), loading.boundingBox()]);
+    expect(markerBox).not.toBeNull();
+    expect(loadingBox).not.toBeNull();
+    expect(loadingBox.x).toBeGreaterThan(markerBox.x);
+    expect(loadingBox.y).toBeGreaterThan(markerBox.y);
+    if (betaScreenshotDir) {
+      await page.screenshot({path: path.join(betaScreenshotDir, 'popup-loading-hover.png')});
+    }
+  } finally {
+    releaseIssueRequest();
+  }
+  await expect(page.getByTestId('jira-popup-loading')).toHaveCount(0);
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  await page.close();
+});
+
+test('opens and pins QuickView instead of navigating on a plain issue-link click when enabled @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Click interception is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+
+  let releaseIssueRequest;
+  const issueRequestGate = new Promise(resolve => {
+    releaseIssueRequest = resolve;
+  });
+  await patchJsonResponse(
+    extensionApp.context,
+    target.instanceUrl,
+    `/rest/api/2/issue/${target.primaryIssueKey}\\?[^#]+$`,
+    async payload => {
+      await issueRequestGate;
+      return payload;
+    }
+  );
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+    hoverModifierKey: 'any',
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/`);
+  await page.locator('#issue-link a').evaluate((link, href) => {
+    link.href = href;
+    link.style.position = 'fixed';
+    link.style.right = '0px';
+    link.style.bottom = '0px';
+  }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await injectContentScript(extensionApp, page);
+  const originalUrl = page.url();
+  await page.locator('#issue-link a').click();
+
+  const loading = page.getByTestId('jira-popup-loading');
+  try {
+    await expect(loading).toContainText(`Loading ${target.primaryIssueKey}`);
+    expect(page.url()).toBe(originalUrl);
+    if (betaScreenshotDir) {
+      await page.screenshot({path: path.join(betaScreenshotDir, 'popup-loading-click.png')});
+    }
+  } finally {
+    releaseIssueRequest();
+  }
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
+  const popupBox = await page.locator('._JX_container').boundingBox();
+  const viewport = page.viewportSize();
+  expect(popupBox).not.toBeNull();
+  expect(popupBox.x).toBeGreaterThanOrEqual(0);
+  expect(popupBox.y).toBeGreaterThanOrEqual(0);
+  expect(popupBox.x + popupBox.width).toBeLessThanOrEqual(viewport.width);
+  expect(popupBox.y + popupBox.height).toBeLessThanOrEqual(viewport.height);
+  expect(page.url()).toBe(originalUrl);
+  await page.close();
+});
+
+test('leaves Jira issue-link navigation native when click interception is disabled @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Click navigation is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: false,
+    hoverActivationMode: 'off',
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/`);
+  const targetUrl = `${target.instanceUrl}/browse/${target.primaryIssueKey}`;
+  await page.locator('#issue-link a').evaluate((link, href) => {
+    link.href = href;
+  }, targetUrl);
+  await injectContentScript(extensionApp, page);
+  await page.locator('#issue-link a').click();
+
+  await expect(page).toHaveURL(targetUrl);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.close();
+});
+
+test('leaves modifier-click native even when click interception is enabled @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Modifier-click handling is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/`);
+  await page.locator('#issue-link a').evaluate((link, href) => {
+    link.href = href;
+  }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await injectContentScript(extensionApp, page);
+
+  const wasPreventedBeforePageHandler = await page.locator('#issue-link a').evaluate(link => new Promise(resolve => {
+    link.addEventListener('click', event => {
+      resolve(event.defaultPrevented);
+      event.preventDefault();
+    }, {once: true});
+    link.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      ctrlKey: true,
+    }));
+  }));
+
+  expect(wasPreventedBeforePageHandler).toBe(false);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.close();
+});
+
+test('ignores Jira action links that resolve to the currently displayed issue @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira action-link interception is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+    domains: [target.instanceUrl],
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${target.instanceUrl}/browse/${target.primaryIssueKey}?jql=project%20%3D%20TEST`);
+  await page.evaluate(issueKey => {
+    const cancel = document.createElement('a');
+    cancel.id = 'fragment-action';
+    cancel.href = '#comment-editor';
+    cancel.textContent = 'Cancel';
+    document.body.appendChild(cancel);
+    const link = document.createElement('a');
+    link.id = 'same-issue-action';
+    link.href = `/browse/${issueKey}?jql=project%20%3D%20TEST&view=list`;
+    link.textContent = 'List View';
+    document.body.appendChild(link);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  await page.waitForTimeout(500);
+
+  await page.locator('#fragment-action').click();
+  await expect(page).toHaveURL(/#comment-editor$/);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.locator('#same-issue-action').click();
+  await expect(page).toHaveURL(/(?:\?|&)view=list(?:&|$)/);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
   await page.close();
 });
 
@@ -521,6 +727,60 @@ test('renders text custom fields with a plain prefilled input instead of select-
   await input.press('Enter');
   await expect(popup.root).toContainText('CustomTextField: Rain is coming');
 
+  await page.close();
+});
+
+test('edits multiline Environment text without treating bare Enter as save @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Environment editing coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  let currentEnvironment = 'Linux\nChrome';
+  await optionsPage.context().route(jiraApiPattern(target.instanceUrl, '/rest/api/2/issue/[^/]+(?:\\?.*)?$'), async route => {
+    const request = route.request();
+    if (request.method() === 'PUT') {
+      const payload = JSON.parse(request.postData() || '{}');
+      if (Object.prototype.hasOwnProperty.call(payload?.fields || {}, 'environment')) {
+        currentEnvironment = payload.fields.environment;
+      }
+      await route.fulfill({status: 204, headers: {'access-control-allow-origin': '*'}, body: ''});
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json();
+    await route.fulfill({
+      status: response.status(),
+      headers: {...response.headers(), 'content-type': 'application/json; charset=utf-8'},
+      body: JSON.stringify({
+        ...payload,
+        fields: {...payload.fields, environment: currentEnvironment},
+      }),
+    });
+  });
+  await patchJsonResponse(optionsPage.context(), target.instanceUrl, '/rest/api/2/issue/[^/]+/editmeta(?:\\?.*)?$', payload => ({
+    ...payload,
+    fields: {
+      ...payload.fields,
+      environment: {name: 'Environment', operations: ['set'], schema: {type: 'string'}},
+    },
+  }));
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  await expect(popup.root).toContainText('Environment: Linux Chrome');
+  await popup.editButton('environment').click();
+  const textarea = page.locator('textarea[data-field-key="environment"]');
+  await expect(textarea).toHaveValue('Linux\nChrome');
+  await textarea.press('End');
+  await textarea.press('Enter');
+  await expect(textarea).toHaveValue('Linux\nChrome\n');
+
+  await textarea.fill('Linux\nFirefox');
+  await page.locator('._JX_edit_save[data-field-key="environment"]').click();
+  await expect(popup.root).toContainText('Environment updated');
+  await expect(popup.root).toContainText('Environment: Linux Firefox');
+  expect(currentEnvironment).toBe('Linux\nFirefox');
   await page.close();
 });
 
@@ -1126,6 +1386,12 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
     await expect(popup).toContainText('Assigned to you');
     await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
 
+    await page.locator('._JX_field_chip_edit[data-field-key="issuetype"]').click();
+    await page.locator('._JX_edit_option[data-field-key="issuetype"][data-option-id="2"]').click();
+    await page.locator('._JX_edit_input[data-field-key="issuetype"]').press('Enter');
+    await expect(popup).toContainText('Issue type set to Task');
+    await expect(popup).toContainText('Task');
+
     await page.locator('._JX_field_chip_edit[data-field-key="priority"]').click();
     await page.locator('._JX_edit_option[data-field-key="priority"][data-option-id="1"]').click();
     await page.locator('._JX_edit_input[data-field-key="priority"]').press('Enter');
@@ -1171,8 +1437,11 @@ test('toggles the top filtered multi-select option with Enter in mocked mode @mo
   await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
   const labelInput = page.locator('._JX_edit_input[data-field-key="labels"]');
   await labelInput.fill('release-candidate');
+  await expect(page.locator('._JX_edit_option[data-field-key="labels"]').first()).toBeVisible();
   await labelInput.press('Enter');
-  await page.locator('._JX_edit_save[data-field-key="labels"]').click();
+  const saveLabels = page.locator('._JX_edit_save[data-field-key="labels"]');
+  await expect(saveLabels).toBeEnabled();
+  await saveLabels.click();
 
   await expect(popup.root).toContainText('Labels updated');
   await expect(popup.root).toContainText('release-candidate');
@@ -1245,10 +1514,11 @@ test('views, searches, adds, and removes linked issues in mocked mode @mock-only
   await expect(existingRow.locator('._JX_linked_issues_assignee')).toHaveAttribute('title', 'Assignee: Morgan Agent');
 
   const searchInput = panel.getByTestId('jira-popup-linked-issues-search');
+  const results = panel.locator('._JX_linked_issues_search_result');
   await searchInput.fill('PI');
+  await expect(results).toHaveCount(3);
   await searchInput.evaluate(input => input.setSelectionRange(0, 0));
   await searchInput.press('A');
-  const results = panel.locator('._JX_linked_issues_search_result');
   await expect(results).toHaveCount(3);
   await expect(searchInput).toHaveValue('API');
   await expect(searchInput).toHaveJSProperty('selectionStart', 1);
@@ -1418,7 +1688,7 @@ test('supports mentions and saving new comments in mocked mode', async ({extensi
     ? new Set((await getIssueComments(resolvedTarget.primaryIssueKey, resolvedTarget)).map(comment => String(comment.id)))
     : null;
 
-  await page.locator('._JX_comment_save').click();
+  await page.locator('._JX_comment_save').click({modifiers: target.mode === 'mock' ? ['Control'] : []});
 
   const newestComment = page.locator('._JX_comment').last();
   await expect(newestComment).toContainText('Investigated and reproduced locally.');
@@ -1468,6 +1738,27 @@ test('silently pins the popup when starting a new comment so pointer exit does n
   await page.close();
 });
 
+test('adds and removes a comment reaction through authoritative refresh in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Reaction mutation coverage is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const firstComment = page.locator('._JX_comment').first();
+  await firstComment.locator('._JX_comment_reaction_more').click();
+  await firstComment.locator('._JX_comment_reaction_button[data-emoji-id="1f44d"]').click();
+
+  const pill = firstComment.locator('._JX_comment_reaction_pill[data-emoji-id="1f44d"]');
+  await expect(pill).toBeVisible();
+  await expect(pill.locator('._JX_comment_reaction_count')).toHaveText('1');
+  await expect(pill).toHaveClass(/is-reacted/);
+
+  await pill.click();
+  await expect(firstComment.locator('._JX_comment_reaction_pill[data-emoji-id="1f44d"]')).toHaveCount(0);
+  await page.close();
+});
+
 test('supports user tagging while editing comments in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Edit mention coverage is deterministic in mocked mode only.');
@@ -1489,10 +1780,34 @@ test('supports user tagging while editing comments in mocked mode @mock-only', a
   await page.locator('._JX_comment_edit_mention_option', {hasText: 'Alex Reviewer'}).click();
   await expect(editInput).toHaveValue(/@Alex Reviewer/);
   await expect(editInput).not.toHaveValue(/\[~/);
-  await newestComment.locator('._JX_comment_edit_save').click();
+  await newestComment.locator('._JX_comment_edit_save').click({modifiers: ['Control']});
 
   await expect(page.locator('._JX_comment').last()).toContainText('Alex Reviewer');
   await expect(page.locator('._JX_comment').last().locator('._JX_mention')).toContainText('Alex Reviewer');
+
+  await page.close();
+});
+
+test('deletes an owned comment through confirmation in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Comment deletion coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const uniqueText = `Delete lifecycle ${Date.now()}`;
+  await page.locator('._JX_comment_input').fill(uniqueText);
+  await page.locator('._JX_comment_save').click();
+
+  const ownedComment = page.locator('._JX_comment', {hasText: uniqueText});
+  await expect(ownedComment).toBeVisible();
+  const commentId = await ownedComment.getAttribute('data-comment-id');
+  const comment = page.locator(`._JX_comment[data-comment-id="${commentId}"]`);
+  await ownedComment.locator('._JX_comment_delete_button').click();
+  await expect(comment.locator('._JX_comment_delete_confirm')).toBeVisible();
+  await comment.locator('._JX_comment_delete_confirm').click();
+  await expect(comment).toHaveCount(0);
 
   await page.close();
 });

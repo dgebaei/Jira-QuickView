@@ -1,0 +1,1178 @@
+const path = require('path');
+const {test, expect} = require('@playwright/test');
+
+const harnessPath = path.resolve(__dirname, '../../output/playwright/deep-modules/harness.js');
+
+test.beforeEach(async ({page}) => {
+  await page.setContent('<!doctype html><html><body></body></html>');
+  await page.addScriptTag({path: harnessPath});
+});
+
+test('a reversed older issue load cannot attach features or replace the newer popup session', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const oldIssue = createDeferred();
+    const newIssue = createDeferred();
+    const requests = [];
+    const featureCalls = [];
+    const issueData = {
+      openIssue(request) {
+        requests.push({issueKey: request.issueKey, aborted: () => request.signal.aborted});
+        return request.issueKey === 'OLD-1' ? oldIssue.promise : newIssue.promise;
+      },
+    };
+    const fieldEditing = {
+      attach(request) { featureCalls.push({feature: 'fields', operation: 'attach', issueKey: request.issueSnapshot.issueKey}); },
+      detach(request) { featureCalls.push({feature: 'fields', operation: 'detach', sessionId: request.sessionId}); },
+      view() { return {edit: null}; },
+    };
+    const comments = {
+      async attach(request) { featureCalls.push({feature: 'comments', operation: 'attach', issueKey: request.issueSnapshot.issueKey}); },
+      async detach(request) { featureCalls.push({feature: 'comments', operation: 'detach', sessionId: request.sessionId}); },
+      view() { return {comments: [], protectFromAutoHide: false}; },
+    };
+    const quickActions = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
+    const watchers = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
+    const linkedIssues = {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }};
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({issueData, fieldEditing, comments, quickActions, watchers, linkedIssues, surface});
+    const oldActivation = popup.activate({issueKey: 'OLD-1', anchor: {x: 10, y: 20}, activation: 'hover'});
+    while (requests.length < 1) await Promise.resolve();
+    const newActivation = popup.activate({issueKey: 'NEW-2', anchor: {x: 30, y: 40}, activation: 'modifier'});
+    while (requests.length < 2) await Promise.resolve();
+    newIssue.resolve({
+      kind: 'loaded',
+      snapshot: {issueKey: 'NEW-2', core: {key: 'NEW-2', fields: {}}, sections: {}},
+      failures: {},
+    });
+    const newOutcome = await newActivation;
+    oldIssue.resolve({
+      kind: 'loaded',
+      snapshot: {issueKey: 'OLD-1', core: {key: 'OLD-1', fields: {}}, sections: {}},
+      failures: {},
+    });
+    const oldOutcome = await oldActivation;
+    return {
+      oldOutcome: oldOutcome.kind,
+      newOutcome: newOutcome.kind,
+      oldAborted: requests[0].aborted(),
+      featureCalls,
+      frames: surface.getFrames().map(frame => ({kind: frame.kind, issueKey: frame.issueKey})),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    oldOutcome: 'ignored',
+    newOutcome: 'visible',
+    oldAborted: true,
+    featureCalls: [
+      {feature: 'fields', operation: 'detach', sessionId: 'popup-1'},
+      {feature: 'comments', operation: 'detach', sessionId: 'popup-1'},
+      {feature: 'fields', operation: 'attach', issueKey: 'NEW-2'},
+      {feature: 'comments', operation: 'attach', issueKey: 'NEW-2'},
+    ],
+    frames: [
+      {kind: 'loading', issueKey: 'OLD-1'},
+      {kind: 'loading', issueKey: 'NEW-2'},
+      {kind: 'visible', issueKey: 'NEW-2'},
+    ],
+    view: {status: 'visible', sessionId: 'popup-2', issueKey: 'NEW-2', stateRevision: 3},
+  });
+});
+
+test('a slow surface projection cannot commit after a newer popup session starts', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const oldRender = createDeferred();
+    let oldRenderStarted = false;
+    const surface = createFixturePopupSurface({
+      async beforeRender(frame) {
+        if (frame.kind === 'visible' && frame.issueKey === 'OLD-1') {
+          oldRenderStarted = true;
+          await oldRender.promise;
+        }
+      },
+    });
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    const oldActivation = popup.activate({issueKey: 'OLD-1'});
+    while (!oldRenderStarted) await Promise.resolve();
+    const newOutcome = await popup.activate({issueKey: 'NEW-2'});
+    oldRender.resolve();
+    const oldOutcome = await oldActivation;
+    return {
+      oldOutcome: oldOutcome.kind,
+      newOutcome: newOutcome.kind,
+      frames: surface.getFrames().map(frame => ({kind: frame.kind, issueKey: frame.issueKey})),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    oldOutcome: 'ignored',
+    newOutcome: 'visible',
+    frames: [
+      {kind: 'loading', issueKey: 'OLD-1'},
+      {kind: 'loading', issueKey: 'NEW-2'},
+      {kind: 'visible', issueKey: 'NEW-2'},
+    ],
+    view: {status: 'visible', sessionId: 'popup-2', issueKey: 'NEW-2', stateRevision: 4},
+  });
+});
+
+test('close while loading aborts acquisition and prevents a late popup commit', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const issue = createDeferred();
+    let signal;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {openIssue(request) { signal = request.signal; return issue.promise; }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    const activation = popup.activate({issueKey: 'ABC-1'});
+    while (!signal) await Promise.resolve();
+    const closed = await popup.close({reason: 'explicit'});
+    issue.resolve({kind: 'loaded', snapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {}}, sections: {}}});
+    const late = await activation;
+    return {
+      aborted: signal.aborted,
+      closed: closed.kind,
+      late: late.kind,
+      frames: surface.getFrames().map(frame => frame.kind),
+      hides: surface.getHides(),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    aborted: true,
+    closed: 'hidden',
+    late: 'ignored',
+    frames: ['loading'],
+    hides: [{reason: 'explicit', sessionId: 'popup-1'}],
+    view: {status: 'hidden', sessionId: '', issueKey: '', stateRevision: 2},
+  });
+});
+
+test('a core failure is observable and the same issue can retry in a fresh session', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    let attempts = 0;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        attempts += 1;
+        if (attempts === 1) return {kind: 'failed', snapshot: null, failures: {core: {message: 'Jira unavailable'}}};
+        return {kind: 'loaded', snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}}, failures: {}};
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {edit: null}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {comments: []}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    const failed = await popup.activate({issueKey: 'ABC-1'});
+    const retried = await popup.activate({issueKey: 'ABC-1'});
+    return {
+      failed: {kind: failed.kind, failure: failed.failure},
+      retried: retried.kind,
+      frames: surface.getFrames().map(frame => ({kind: frame.kind, issueKey: frame.issueKey, message: frame.failure?.message || ''})),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    failed: {kind: 'error', failure: {message: 'Jira unavailable'}},
+    retried: 'visible',
+    frames: [
+      {kind: 'loading', issueKey: 'ABC-1', message: ''},
+      {kind: 'error', issueKey: 'ABC-1', message: 'Jira unavailable'},
+      {kind: 'loading', issueKey: 'ABC-1', message: ''},
+      {kind: 'visible', issueKey: 'ABC-1', message: ''},
+    ],
+    view: {status: 'visible', sessionId: 'popup-2', issueKey: 'ABC-1', stateRevision: 4},
+  });
+});
+
+test('feature rerenders advance the session revision and publish current feature views', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    let fieldValue = 'idle';
+    let commentValue = 'draft-one';
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {value: fieldValue}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {value: commentValue}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    fieldValue = 'editing';
+    commentValue = 'draft-two';
+    const rendered = await popup.dispatch({type: 'render', reason: 'feature-changed'});
+    return {
+      rendered: rendered.kind,
+      frames: surface.getFrames().map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        fieldValue: frame.fieldEditing.value,
+        commentValue: frame.comments.value,
+      })),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    rendered: 'rendered',
+    frames: [
+      {kind: 'loading', reason: '', fieldValue: 'idle', commentValue: 'draft-one'},
+      {kind: 'visible', reason: '', fieldValue: 'idle', commentValue: 'draft-one'},
+      {kind: 'update', reason: 'feature-changed', fieldValue: 'editing', commentValue: 'draft-two'},
+    ],
+    view: {status: 'visible', sessionId: 'popup-1', issueKey: 'ABC-1', stateRevision: 3},
+  });
+});
+
+test('synchronous feature rerenders coalesce into one current surface commit', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    let featureRevision = 0;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {revision: featureRevision}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const pending = [];
+    for (let index = 1; index <= 10; index += 1) {
+      featureRevision = index;
+      pending.push(popup.dispatch({type: 'render', reason: `feature-${index}`}));
+    }
+    const outcomes = await Promise.all(pending);
+    return {
+      outcomes: [...new Set(outcomes.map(item => item.kind))],
+      updates: surface.getFrames().filter(frame => frame.kind === 'update').map(frame => ({
+        reason: frame.reason,
+        featureRevision: frame.fieldEditing.revision,
+      })),
+      view: popup.view(),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: ['rendered'],
+    updates: [{reason: 'feature-10', featureRevision: 10}],
+    view: {status: 'visible', sessionId: 'popup-1', issueKey: 'ABC-1', stateRevision: 3},
+  });
+});
+
+test('popup session owns sorting transitions and publishes their observable presentation', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({
+      issueKey: 'ABC-1',
+      preferences: {commentSortOrder: 'oldest'},
+    });
+    const children = await popup.dispatch({type: 'sort-children', column: 'status'});
+    const childrenReversed = await popup.dispatch({type: 'sort-children', column: 'status'});
+    const pullRequests = await popup.dispatch({type: 'sort-pull-requests', column: 'status'});
+    const comments = await popup.dispatch({type: 'toggle-comment-sort'});
+    const sorting = presentation => ({
+      childrenSort: presentation.childrenSort,
+      pullRequestsSort: presentation.pullRequestsSort,
+      commentSortOrder: presentation.commentSortOrder,
+    });
+    return {
+      outcomes: {
+        children: sorting(children.presentation),
+        childrenReversed: sorting(childrenReversed.presentation),
+        pullRequests: sorting(pullRequests.presentation),
+        comments: sorting(comments.presentation),
+      },
+      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        presentation: sorting(frame.presentation),
+      })),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: {
+      children: {
+        childrenSort: {column: 'status', direction: 'asc'},
+        pullRequestsSort: {column: 'title', direction: 'asc'},
+        commentSortOrder: 'oldest',
+      },
+      childrenReversed: {
+        childrenSort: {column: 'status', direction: 'desc'},
+        pullRequestsSort: {column: 'title', direction: 'asc'},
+        commentSortOrder: 'oldest',
+      },
+      pullRequests: {
+        childrenSort: {column: 'status', direction: 'desc'},
+        pullRequestsSort: {column: 'status', direction: 'asc'},
+        commentSortOrder: 'oldest',
+      },
+      comments: {
+        childrenSort: {column: 'status', direction: 'desc'},
+        pullRequestsSort: {column: 'status', direction: 'asc'},
+        commentSortOrder: 'newest',
+      },
+    },
+    frames: [
+      {
+        kind: 'visible',
+        reason: '',
+        presentation: {
+          childrenSort: {column: 'key', direction: 'asc'},
+          pullRequestsSort: {column: 'title', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'children-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'asc'},
+          pullRequestsSort: {column: 'title', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'children-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'desc'},
+          pullRequestsSort: {column: 'title', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'pull-request-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'desc'},
+          pullRequestsSort: {column: 'status', direction: 'asc'},
+          commentSortOrder: 'oldest',
+        },
+      },
+      {
+        kind: 'update',
+        reason: 'comment-sort-changed',
+        presentation: {
+          childrenSort: {column: 'status', direction: 'desc'},
+          pullRequestsSort: {column: 'status', direction: 'asc'},
+          commentSortOrder: 'newest',
+        },
+      },
+    ],
+  });
+});
+
+test('popup session owns mutually exclusive panel transitions', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const history = await popup.dispatch({type: 'open-panel', panel: 'history'});
+    const inactivePanelClose = await popup.dispatch({type: 'close-panel', panel: 'watchers'});
+    const watchers = await popup.dispatch({type: 'open-panel', panel: 'watchers'});
+    const watchersClosed = await popup.dispatch({type: 'toggle-panel', panel: 'watchers'});
+    const linkedIssues = await popup.dispatch({type: 'open-panel', panel: 'linkedIssues'});
+    const linkedIssuesClosed = await popup.dispatch({type: 'close-panel', panel: 'linkedIssues'});
+    const invalid = await popup.dispatch({type: 'open-panel', panel: 'unknown'});
+    return {
+      outcomes: [history, watchers, watchersClosed, linkedIssues, linkedIssuesClosed]
+        .map(item => item.presentation.activePanel),
+      inactivePanelClose: {kind: inactivePanelClose.kind, reason: inactivePanelClose.reason},
+      invalid: {kind: invalid.kind, reason: invalid.reason},
+      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        activePanel: frame.presentation.activePanel,
+      })),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: ['history', 'watchers', '', 'linkedIssues', ''],
+    inactivePanelClose: {kind: 'ignored', reason: 'panel-unchanged'},
+    invalid: {kind: 'ignored', reason: 'invalid-panel'},
+    frames: [
+      {kind: 'visible', reason: '', activePanel: ''},
+      {kind: 'update', reason: 'panel-opened', activePanel: 'history'},
+      {kind: 'update', reason: 'panel-opened', activePanel: 'watchers'},
+      {kind: 'update', reason: 'panel-closed', activePanel: ''},
+      {kind: 'update', reason: 'panel-opened', activePanel: 'linkedIssues'},
+      {kind: 'update', reason: 'panel-closed', activePanel: ''},
+    ],
+  });
+});
+
+test('popup session owns quick-action menu visibility', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {
+          kind: 'loaded',
+          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
+          failures: {},
+        };
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const opened = await popup.dispatch({type: 'toggle-actions'});
+    const closed = await popup.dispatch({type: 'close-actions'});
+    const unchanged = await popup.dispatch({type: 'close-actions'});
+    return {
+      outcomes: [opened.presentation.actionsOpen, closed.presentation.actionsOpen],
+      unchanged: {kind: unchanged.kind, reason: unchanged.reason},
+      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
+        kind: frame.kind,
+        reason: frame.reason || '',
+        actionsOpen: frame.presentation.actionsOpen,
+      })),
+    };
+  });
+
+  expect(result).toEqual({
+    outcomes: [true, false],
+    unchanged: {kind: 'ignored', reason: 'actions-unchanged'},
+    frames: [
+      {kind: 'visible', reason: '', actionsOpen: false},
+      {kind: 'update', reason: 'actions-opened', actionsOpen: true},
+      {kind: 'update', reason: 'actions-closed', actionsOpen: false},
+    ],
+  });
+});
+
+test('popup session owns watcher panel loading and feature render scheduling', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const loaded = createDeferred();
+    let watcherView = {open: false, loading: false, watchers: []};
+    const watchers = {
+      attach() {},
+      detach() {},
+      async dispatch(intent) {
+        if (intent.type === 'open') {
+          watcherView = {...watcherView, open: true, loading: true};
+          await loaded.promise;
+          watcherView = {...watcherView, loading: false, watchers: [{id: 'alex'}]};
+          return {kind: 'opened'};
+        }
+        if (intent.type === 'close') watcherView = {open: false, loading: false, watchers: []};
+        return {kind: 'changed'};
+      },
+      view() { return watcherView; },
+    };
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {async openIssue(request) {
+        return {snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}}};
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers,
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const pending = popup.dispatch({type: 'toggle-watchers'});
+    let loadingFrame;
+    for (let attempt = 0; attempt < 20 && !loadingFrame; attempt += 1) {
+      await Promise.resolve();
+      loadingFrame = surface.getFrames().find(frame => frame.reason === 'watchers-loading');
+    }
+    loaded.resolve();
+    const outcome = await pending;
+    const readyFrame = surface.getFrames().at(-1);
+    return {
+      loading: {activePanel: loadingFrame.presentation.activePanel, view: loadingFrame.watchers},
+      ready: {activePanel: readyFrame.presentation.activePanel, view: readyFrame.watchers},
+      outcome: {kind: outcome.kind, watcherKind: outcome.watcherOutcome.kind},
+    };
+  });
+
+  expect(result).toEqual({
+    loading: {activePanel: 'watchers', view: {open: true, loading: true, watchers: []}},
+    ready: {activePanel: 'watchers', view: {open: true, loading: false, watchers: [{id: 'alex'}]}},
+    outcome: {kind: 'rendered', watcherKind: 'opened'},
+  });
+});
+
+test('popup session owns history acquisition, loading, and snapshot projection', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const history = createDeferred();
+    let reads = 0;
+    const surface = createFixturePopupSurface();
+    const popup = createPopupSession({
+      issueData: {openIssue(request) {
+        reads += 1;
+        if (reads > 1) return history.promise;
+        return Promise.resolve({snapshot: {
+          issueKey: request.issueKey,
+          core: {key: request.issueKey, fields: {}},
+          sections: {history: {status: 'unavailable', data: null}},
+        }});
+      }},
+      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
+      comments: {async attach() {}, async detach() {}, view() { return {}; }},
+      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
+      surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    const pending = popup.dispatch({type: 'toggle-history'});
+    let loadingFrame;
+    for (let attempt = 0; attempt < 20 && !loadingFrame; attempt += 1) {
+      await Promise.resolve();
+      loadingFrame = surface.getFrames().find(frame => frame.reason === 'history-loading');
+    }
+    history.resolve({snapshot: {
+      issueKey: 'ABC-1',
+      core: {key: 'ABC-1', fields: {}},
+      sections: {history: {status: 'ready', data: {histories: [{id: 'h1'}]}}},
+    }});
+    const outcome = await pending;
+    const readyFrame = surface.getFrames().at(-1);
+    return {
+      loading: {activePanel: loadingFrame.presentation.activePanel, history: loadingFrame.history},
+      ready: {activePanel: readyFrame.presentation.activePanel, history: readyFrame.history},
+      outcome: outcome.kind,
+      reads,
+    };
+  });
+
+  expect(result).toEqual({
+    loading: {
+      activePanel: 'history',
+      history: {data: {histories: []}, failure: null, loading: true, status: 'unavailable'},
+    },
+    ready: {
+      activePanel: 'history',
+      history: {data: {histories: [{id: 'h1'}]}, failure: null, loading: false, status: 'ready'},
+    },
+    outcome: 'rendered',
+    reads: 2,
+  });
+});
+
+test('browser popup events translate presentation DOM interactions into semantic intents', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = `
+      <div class="_JX_container">
+      <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button><button class="_JX_action_item" data-action-key="assign-to-me">Assign</button></div>
+      <button class="_JX_pin_button">Pin</button>
+      <button class="_JX_close_button">Close popup</button>
+      <button class="_JX_children_sort" data-sort-column="status">Children</button>
+      <button class="_JX_pr_sort" data-sort-column="author">Pull requests</button>
+      <button class="_JX_comment_sort_toggle">Comments</button>
+      <div class="_JX_watchers_group">
+        <button class="_JX_watchers_trigger">Watchers</button>
+        <button class="_JX_watchers_close">Close watchers</button>
+        <input class="_JX_watchers_search_input">
+        <button class="_JX_watchers_search_result" data-watcher-id="user-me">Add watcher</button>
+        <button class="_JX_watchers_remove" data-watcher-id="user-alex">Remove watcher</button>
+      </div>
+      <div class="_JX_linked_issues_group">
+        <button class="_JX_linked_issues_trigger">Linked issues</button>
+        <button class="_JX_linked_issues_close">Close linked issues</button>
+        <div class="_JX_linked_issues_panel">
+          <select class="_JX_linked_issues_type_select"><option value="100:outward">blocks</option></select>
+          <input class="_JX_linked_issues_search_input">
+          <button class="_JX_linked_issues_search_result" data-issue-key="ABC-2">Select issue</button>
+          <button class="_JX_linked_issues_token_remove" data-issue-key="ABC-3">Remove token</button>
+          <button class="_JX_linked_issues_add">Link</button>
+          <button class="_JX_linked_issues_remove" data-link-id="10">Remove link</button>
+          <button class="_JX_linked_issues_remove_cancel">Cancel removal</button>
+          <button class="_JX_linked_issues_remove_confirm" data-link-id="10">Confirm removal</button>
+        </div>
+      </div>
+      <button class="_JX_history_toggle">History</button>
+      <div class="_JX_history_flyout"><button class="_JX_history_close">Close history</button></div>
+      <img class="_JX_previewable" data-jx-preview-src="image.png">
+      <button class="_JX_thumb" data-preview-src="thumb.png"><span>Thumb</span></button>
+      <button class="_JX_history_attachment_preview" data-jx-preview-src="history.png">History image</button>
+      </div>
+      <div class="_JX_preview_overlay"><img></div>
+      <button id="outside">Outside</button>
+    `;
+    const intents = [];
+    const events = createBrowserPopupEvents({
+      root: $(document.body),
+      emit(intent) { intents.push(intent); },
+    });
+    events.install();
+    $('._JX_actions_toggle').trigger('click');
+    $('._JX_action_item').trigger('click');
+    $('._JX_pin_button').trigger('click');
+    $('._JX_close_button').trigger('click');
+    $('._JX_children_sort').trigger('click');
+    $('._JX_pr_sort').trigger('click');
+    $('._JX_comment_sort_toggle').trigger('click');
+    $('._JX_watchers_trigger').trigger('click');
+    $('._JX_watchers_close').trigger('click');
+    $('._JX_watchers_search_input').val('mor').trigger('input');
+    $('._JX_watchers_search_result').trigger('click');
+    $('._JX_watchers_remove').trigger('click');
+    $('._JX_linked_issues_trigger').trigger('click');
+    $('._JX_linked_issues_close').trigger('click');
+    $('._JX_linked_issues_type_select').trigger('change');
+    $('._JX_linked_issues_search_input').val('ABC').trigger('input').trigger($.Event('keydown', {key: 'Enter'}));
+    $('._JX_linked_issues_search_result').trigger('click');
+    $('._JX_linked_issues_token_remove').trigger('click');
+    $('._JX_linked_issues_add').trigger('click');
+    $('._JX_linked_issues_remove').trigger('click');
+    $('._JX_linked_issues_remove_cancel').trigger('click');
+    $('._JX_linked_issues_remove_confirm').trigger('click');
+    $('._JX_history_toggle').trigger('click');
+    $('._JX_history_close').trigger('click');
+    $('._JX_previewable').trigger('click');
+    $('._JX_thumb span').trigger('click');
+    $('._JX_history_attachment_preview').trigger('click');
+    $('._JX_preview_overlay').trigger('click');
+    $('._JX_container').trigger('dragstop');
+    $(document.body).trigger($.Event('keydown', {key: 'Escape', keyCode: 27}));
+    const direct = intents.filter(intent => !intent.type.startsWith('dismiss-'));
+    const directPopupDismissals = intents.filter(intent => intent.type === 'dismiss-popup');
+    intents.length = 0;
+    $('#outside').trigger('mousedown').trigger('click');
+    const dismissals = intents.slice();
+    events.dispose();
+    $('#outside').trigger('mousedown').trigger('click');
+    return {direct, directPopupDismissals, dismissals, afterDispose: intents};
+  });
+
+  expect(result).toEqual({
+    direct: [
+      {type: 'toggle-actions'},
+      {type: 'execute-quick-action', actionKey: 'assign-to-me'},
+      {type: 'pin'},
+      {type: 'close-popup'},
+      {type: 'sort-children', column: 'status'},
+      {type: 'sort-pull-requests', column: 'author'},
+      {type: 'toggle-comment-sort'},
+      {type: 'toggle-watchers'},
+      {type: 'close-watchers'},
+      {type: 'search-watchers', query: 'mor'},
+      {type: 'add-watcher', watcherId: 'user-me'},
+      {type: 'remove-watcher', watcherId: 'user-alex'},
+      {type: 'toggle-linkedIssues'},
+      {type: 'close-linkedIssues'},
+      {type: 'linked-relationship-changed', relationshipId: '100:outward'},
+      {type: 'linked-input-changed', value: 'ABC', selectionStart: 3, selectionEnd: 3},
+      {type: 'linked-enter', value: 'ABC'},
+      {type: 'linked-select', issueKey: 'ABC-2'},
+      {type: 'linked-remove-token', issueKey: 'ABC-3'},
+      {type: 'linked-add'},
+      {type: 'linked-confirm-remove', linkId: '10'},
+      {type: 'linked-cancel-remove'},
+      {type: 'linked-remove-confirmed', linkId: '10'},
+      {type: 'toggle-history'},
+      {type: 'close-history'},
+      {type: 'open-preview', source: 'image.png'},
+      {type: 'open-preview', source: 'thumb.png'},
+      {type: 'open-preview', source: 'history.png'},
+      {type: 'close-preview'},
+      {type: 'pin-after-drag'},
+      {type: 'escape'},
+    ],
+    directPopupDismissals: [],
+    dismissals: [
+      {type: 'dismiss-watchers'},
+      {type: 'dismiss-linkedIssues'},
+      {type: 'dismiss-actions'},
+      {type: 'dismiss-history'},
+      {type: 'dismiss-popup'},
+    ],
+    afterDispose: [
+      {type: 'dismiss-watchers'},
+      {type: 'dismiss-linkedIssues'},
+      {type: 'dismiss-actions'},
+      {type: 'dismiss-history'},
+      {type: 'dismiss-popup'},
+    ],
+  });
+});
+
+test('browser popup shell owns pinning, preview identity, hide scheduling, and viewport position', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupShell, createDeferred, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = `
+      <div id="popup" style="position:absolute;left:100px;top:120px;width:200px;height:100px">Issue</div>
+      <div id="preview"><img></div>
+    `;
+    const oldPreview = createDeferred();
+    const closeCalls = [];
+    const announcements = [];
+    let scheduled = null;
+    const shell = createBrowserPopupShell({
+      announce(message) { announcements.push(message); },
+      close(details) { closeCalls.push(details); },
+      container: $('#popup'),
+      media: {displayUrl(source) {
+        return source === 'old.png' ? oldPreview.promise : Promise.resolve(`display:${source}`);
+      }},
+      previewOverlay: $('#preview'),
+      scheduler: {
+        clear(id) { if (scheduled?.id === id) scheduled = null; },
+        set(callback, delay) { scheduled = {callback, delay, id: 7}; return 7; },
+      },
+    });
+    const initial = shell.view();
+    const nearEdge = shell.position({x: -100, y: -100});
+    const farEdge = shell.position({x: 100000, y: 100000});
+    await shell.dispatch({type: 'schedule-hide', delay: 250, reason: 'pointer-exit'});
+    const scheduledDelay = scheduled?.delay;
+    scheduled.callback();
+    await Promise.resolve();
+    await shell.dispatch({type: 'begin-cooldown', delay: 200});
+    const cooldown = {delay: scheduled?.delay, activeBefore: shell.view().cooldownActive};
+    scheduled.callback();
+    cooldown.activeAfter = shell.view().cooldownActive;
+    const pinned = await shell.dispatch({type: 'pin', announce: true});
+    const pinnedState = {
+      outcome: pinned.kind,
+      className: $('#popup').attr('class') || '',
+      announcements: announcements.slice(),
+    };
+    const oldPending = shell.dispatch({type: 'open-preview', source: 'old.png'});
+    const currentPreview = await shell.dispatch({type: 'open-preview', source: 'new.png'});
+    oldPreview.resolve('display:old.png');
+    const oldOutcome = await oldPending;
+    const preview = {
+      outcome: currentPreview.kind,
+      oldOutcome: oldOutcome.kind,
+      className: $('#preview').attr('class') || '',
+      src: $('#preview img').attr('src'),
+      view: shell.view(),
+    };
+    const cleared = await shell.dispatch({type: 'clear'});
+    return {
+      initial,
+      nearEdge,
+      farEdgeInsideViewport: farEdge.left >= 8 && farEdge.top >= 8 &&
+        farEdge.left + 200 <= window.innerWidth - 8 && farEdge.top + 100 <= window.innerHeight - 8,
+      pinned: pinnedState,
+      preview,
+      scheduledDelay,
+      cooldown,
+      closeCalls,
+      cleared: {
+        outcome: cleared.kind,
+        html: $('#popup').html(),
+        previewClassName: $('#preview').attr('class') || '',
+        view: shell.view(),
+      },
+    };
+  });
+
+  expect(result).toEqual({
+    initial: {cooldownActive: false, pinned: false, previewOpen: false, previewSource: ''},
+    nearEdge: {left: 8, top: 8},
+    farEdgeInsideViewport: true,
+    pinned: {
+      outcome: 'pinned',
+      className: 'container-pinned',
+      announcements: ['Ticket Pinned! Hit esc to close !'],
+    },
+    preview: {
+      outcome: 'preview-opened',
+      oldOutcome: 'ignored',
+      className: 'is-open',
+      src: 'display:new.png',
+      view: {cooldownActive: false, pinned: true, previewOpen: true, previewSource: 'new.png'},
+    },
+    scheduledDelay: 250,
+    cooldown: {delay: 200, activeBefore: true, activeAfter: false},
+    closeCalls: [{reason: 'pointer-exit'}],
+    cleared: {
+      outcome: 'cleared',
+      html: '',
+      previewClassName: '',
+      view: {cooldownActive: false, pinned: false, previewOpen: false, previewSource: ''},
+    },
+  });
+});
+
+test('browser popup shell default scheduler releases cooldown in Chromium', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupShell, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup">Issue</div><div id="preview"><img></div>';
+    const shell = createBrowserPopupShell({
+      close() {},
+      container: $('#popup'),
+      media: {displayUrl: source => Promise.resolve(source)},
+      previewOverlay: $('#preview'),
+    });
+
+    await shell.dispatch({type: 'begin-cooldown', delay: 10});
+    const activeBefore = shell.view().cooldownActive;
+    await new Promise(resolve => window.setTimeout(resolve, 25));
+    return {activeBefore, activeAfter: shell.view().cooldownActive};
+  });
+
+  expect(result).toEqual({activeBefore: true, activeAfter: false});
+});
+
+test('browser comment presentation renders lifecycle state through one DOM interface', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const {createBrowserCommentPresentation, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = `
+      <div id="popup">
+        <div class="_JX_comment_compose">
+          <div class="_JX_comment_input_wrap"><textarea class="_JX_comment_input"></textarea></div>
+          <div class="_JX_comment_mentions"></div>
+          <div class="_JX_comment_uploads"></div>
+          <div class="_JX_comment_error"></div>
+          <button class="_JX_comment_save"></button>
+          <button class="_JX_comment_discard"></button>
+        </div>
+      </div>`;
+    const view = {
+      value: 'Draft text',
+      selection: {start: 2, end: 5},
+      focused: true,
+      saving: false,
+      canSave: true,
+      errorMessage: '',
+      mention: {
+        visible: true,
+        loading: false,
+        errorMessage: '',
+        selectedIndex: 0,
+        range: {start: 0, end: 2},
+        suggestions: [{displayName: 'Ada Lovelace', secondaryText: 'ada@example.test'}],
+      },
+      uploads: [{localId: 'upload-1', fileName: 'diagram.png', previewUrl: 'blob:diagram', status: 'uploaded', canRetry: false}],
+    };
+    const shellIntents = [];
+    const presentation = createBrowserCommentPresentation({
+      comments: {view() { return {compose: view}; }},
+      container: $('#popup'),
+      shell: {dispatch(intent) { shellIntents.push(intent); return Promise.resolve({kind: 'positioned'}); }},
+    });
+    presentation.render({applyValue: true, restoreFocus: true});
+    const capture = presentation.capture();
+    presentation.showError('Visible failure');
+    return {
+      capture,
+      input: $('._JX_comment_input').val(),
+      selection: {start: $('._JX_comment_input').get(0).selectionStart, end: $('._JX_comment_input').get(0).selectionEnd},
+      mention: $('._JX_comment_mentions').text().replace(/\s+/g, ' ').trim(),
+      upload: $('._JX_comment_uploads').text().replace(/\s+/g, ' ').trim(),
+      error: $('._JX_comment_error').text(),
+      saveDisabled: $('._JX_comment_save').prop('disabled'),
+      shellIntents,
+    };
+  });
+
+  expect(result).toEqual({
+    capture: {present: true, saving: false, selection: {start: 2, end: 5}, value: 'Draft text'},
+    input: 'Draft text',
+    selection: {start: 2, end: 5},
+    mention: 'Ada Lovelace ada@example.test',
+    upload: 'diagram.png Attached to issue',
+    error: 'Visible failure',
+    saveDisabled: false,
+    shellIntents: [{type: 'keep-visible'}, {type: 'keep-visible'}],
+  });
+});
+
+test('browser renderer commits one deterministic DOM path and restores continuity', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup"></div>';
+    const container = $('#popup');
+    const continuityCalls = [];
+    let fieldView = null;
+    const renderer = createBrowserPopupRenderer({
+      comments: {dispatch() { return Promise.resolve(); }, view() { return {issueKey: 'ABC-1', rowAction: null}; }},
+      commentPresentation: {render() { continuityCalls.push('comments'); }},
+      container,
+      contentBlockOrder: ['first', 'second'],
+      continuity: {
+        constrainPopovers() { continuityCalls.push('constrain'); },
+        renderEditMentions() { continuityCalls.push('editMentions'); },
+      },
+      fieldEditing: {view() { return fieldView; }},
+      shell: {position() { return {left: 15, top: 25}; }, view() { return {pinned: false}; }},
+      projectState(state) { return {value: state.value}; },
+      template: '<div class="_JX_content_blocks" style="width:50px;height:20px;overflow:scroll"><div data-content-block="second">second</div><div data-content-block="first">first</div><div style="width:200px;height:100px"></div></div><input class="_JX_edit_input" value="{{value}}">',
+    });
+    const context = {isCurrent() { return true; }};
+    await renderer.render({issueData: {key: 'ABC-1'}, key: 'ABC-1', pointerX: 1, pointerY: 2, value: 'initial'}, context);
+    container.find('._JX_content_blocks').scrollLeft(12).scrollTop(18);
+    continuityCalls.length = 0;
+    fieldView = {fieldKey: 'summary', selectionStart: 2, selectionEnd: 5};
+    const receipt = await renderer.render({issueData: {key: 'ABC-1'}, key: 'ABC-1', pointerX: 1, pointerY: 2, value: 'updated'}, context);
+    const input = container.find('._JX_edit_input').get(0);
+    return {
+      receipt,
+      blockOrder: container.find('[data-content-block]').map((index, element) => element.getAttribute('data-content-block')).get(),
+      scroll: {
+        left: container.find('._JX_content_blocks').scrollLeft(),
+        top: container.find('._JX_content_blocks').scrollTop(),
+      },
+      selection: {start: input.selectionStart, end: input.selectionEnd, active: document.activeElement === input},
+      position: {left: container.css('left'), top: container.css('top')},
+      continuityCalls,
+    };
+  });
+
+  expect(result).toEqual({
+    receipt: {kind: 'committed'},
+    blockOrder: ['first', 'second'],
+    scroll: {left: 12, top: 18},
+    selection: {start: 2, end: 5, active: true},
+    position: {left: '15px', top: '25px'},
+    continuityCalls: ['comments', 'editMentions', 'constrain'],
+  });
+});
+
+test('browser renderer presents current loading identity at the pointer and pins click activations', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupRenderer, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup"></div>';
+    const shellIntents = [];
+    const renderer = createBrowserPopupRenderer({
+      comments: {dispatch() { return Promise.resolve(); }, view() { return {}; }},
+      commentPresentation: {render() {}},
+      container: $('#popup'),
+      contentBlockOrder: [],
+      continuity: {constrainPopovers() {}, renderEditMentions() {}},
+      fieldEditing: {view() { return null; }},
+      shell: {
+        dispatch(intent) { shellIntents.push(intent); return Promise.resolve({kind: 'handled'}); },
+        position(anchor) { return {left: anchor.x + 20, top: anchor.y + 25}; },
+        view() { return {pinned: false}; },
+      },
+      projectState() { return {}; },
+      template: '',
+    });
+    const receipt = await renderer.renderLoading({
+      activation: 'click',
+      anchor: {x: 40, y: 60},
+      issueKey: 'ABC-123',
+    }, {isCurrent() { return true; }});
+    return {
+      receipt,
+      text: $('#popup').text().replace(/\s+/g, ' ').trim(),
+      hasSpinner: $('#popup ._JX_loading_spinner').length === 1,
+      position: {left: $('#popup').css('left'), top: $('#popup').css('top')},
+      shellIntents,
+    };
+  });
+
+  expect(result).toEqual({
+    receipt: {kind: 'committed'},
+    text: 'Loading ABC-123',
+    hasSpinner: true,
+    position: {left: '60px', top: '85px'},
+    shellIntents: [
+      {type: 'prepare-opening'},
+      {type: 'pin', announce: false},
+    ],
+  });
+});
+
+test('browser renderer rejects a stale asynchronous projection before DOM commit', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupRenderer, createDeferred, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<div id="popup">current</div>';
+    const projection = createDeferred();
+    let current = true;
+    const renderer = createBrowserPopupRenderer({
+      comments: {dispatch() { return Promise.resolve(); }, view() { return {}; }},
+      commentPresentation: {render() {}},
+      container: $('#popup'),
+      contentBlockOrder: [],
+      continuity: {
+        constrainPopovers() {}, renderEditMentions() {},
+      },
+      fieldEditing: {view() { return null; }},
+      shell: {position() { return {}; }, view() { return {pinned: true}; }},
+      projectState() { return projection.promise; },
+      template: '<div>{{value}}</div>',
+    });
+    const pending = renderer.render({issueData: {key: 'OLD-1'}, key: 'OLD-1'}, {isCurrent() { return current; }});
+    current = false;
+    projection.resolve({value: 'stale'});
+    const receipt = await pending;
+    return {receipt, html: $('#popup').html()};
+  });
+
+  expect(result).toEqual({receipt: {kind: 'stale'}, html: 'current'});
+});
+
+test('browser popup model owns projection state across session renders and rejects stale frames', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupModel} = window.JiraQuickViewDeepModules;
+    const projections = [];
+    const model = createBrowserPopupModel({
+      createDescriptionState(issue) { return {open: false, value: issue.fields.description}; },
+      createTimeTrackingState(issue) { return {saving: false, value: issue.fields.timetracking}; },
+      async renderProjection(state) { projections.push(structuredClone(state)); },
+    });
+    const initialSnapshot = {
+      issueKey: 'ABC-1',
+      core: {key: 'ABC-1', fields: {description: 'first', timetracking: '1h'}},
+      sections: {
+        children: {status: 'ready', items: [{key: 'ABC-2'}], jql: 'parent=ABC-1'},
+        pullRequests: {status: 'ready', items: [{id: 'pr-1'}]},
+      },
+    };
+    const opened = await model.commit({
+      issueKey: 'ABC-1',
+      issueSnapshot: initialSnapshot,
+      anchor: {x: 11, y: 22},
+      presentation: {activePanel: 'history'},
+      history: {status: 'ready'},
+      watchers: {open: false},
+      linkedIssues: {open: false},
+      quickActions: {open: false},
+      notice: '',
+    }, {isCurrent() { return true; }}, {opening: true});
+    model.dispatch({type: 'descriptionChanged', state: {open: true, value: 'draft'}});
+    model.dispatch({type: 'timeTrackingChanged', state: {saving: true, value: '2h'}});
+    const refreshedSnapshot = {
+      ...initialSnapshot,
+      core: {key: 'ABC-1', fields: {description: 'server', timetracking: '3h'}},
+    };
+    const updated = await model.commit({
+      issueKey: 'ABC-1',
+      issueSnapshot: refreshedSnapshot,
+      presentation: {activePanel: ''},
+      history: {status: 'ready'},
+      watchers: {open: true},
+      linkedIssues: {open: false},
+      quickActions: {open: true},
+      notice: 'Updated',
+    }, {isCurrent() { return true; }});
+    const beforeStale = structuredClone(model.view());
+    const stale = await model.commit({
+      issueKey: 'OLD-9',
+      issueSnapshot: {issueKey: 'OLD-9', core: {key: 'OLD-9', fields: {}}, sections: {}},
+    }, {isCurrent() { return false; }});
+    const afterStale = structuredClone(model.view());
+    const closed = model.close();
+    return {
+      opened: opened.kind,
+      updated: updated.kind,
+      stale: stale.kind,
+      projectionCount: projections.length,
+      view: beforeStale,
+      unchangedByStale: JSON.stringify(beforeStale) === JSON.stringify(afterStale),
+      closed: closed.kind,
+      finalView: model.view(),
+    };
+  });
+
+  expect(result).toMatchObject({
+    opened: 'committed',
+    updated: 'committed',
+    stale: 'stale',
+    projectionCount: 2,
+    unchangedByStale: true,
+    closed: 'closed',
+    finalView: null,
+    view: {
+      key: 'ABC-1',
+      issueData: {fields: {description: 'server', timetracking: '3h'}},
+      children: [{key: 'ABC-2'}],
+      pullRequests: [{id: 'pr-1'}],
+      descriptionEditState: {open: true, value: 'draft'},
+      timeTrackingEditState: {saving: true, value: '2h'},
+      historyOpen: false,
+      watcherView: {open: true},
+      quickActionView: {open: true},
+      lastActionSuccess: 'Updated',
+    },
+  });
+});

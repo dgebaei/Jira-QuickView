@@ -10,7 +10,7 @@
 
 ## One hover, much more context
 
-Open a Jira notification email in Gmail or Outlook, hover the issue key in the message, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.
+Open a Jira notification email in Gmail or Outlook, click the issue link, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.
 
 ![Main product overview](docs/screenshots/marketing-hidpi-light/popup-overview.png)
 
@@ -41,9 +41,9 @@ Open a Jira notification email in Gmail or Outlook, hover the issue key in the m
 3. Open the Jira QuickView Options page.
 4. Enter your Jira instance URL, for example `https://your-company.atlassian.net`.
 5. Add the pages where Jira QuickView should run, such as `github.com`, `mail.google.com`, or `outlook.office.com`.
-6. Save, open an allowed page, and hover a Jira issue key such as `ABC-123`.
+6. Save, open an allowed page, and click a Jira issue link such as `ABC-123`.
 
-By default, the popup opens when you hover a Jira key and then hold `Alt`, `Ctrl`, or `Shift`. This keeps busy pages readable while still making issue details one gesture away.
+By default, a plain left click on a Jira issue link opens and pins QuickView instead of navigating, while hovering previews Jira IDs that are not links. Middle-click and modifier-click retain normal browser behavior. Hover preview can be disabled or require a modifier in Advanced settings.
 
 For full setup details, advanced allowed-page patterns, desktop-app/PWA setup notes, custom fields, troubleshooting, and day-to-day workflows, read the [User guide](docs/user-guide.md).
 

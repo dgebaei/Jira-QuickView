@@ -377,6 +377,7 @@ function createState(origin) {
       },
     ],
     labels: ['needs-triage', 'ux-bug', 'release-candidate'],
+    reactions: {},
     boards: [{id: 77, name: 'Mock Board'}],
     sprints: [
       {id: 42, name: 'Sprint 42', state: 'active'},
@@ -1320,6 +1321,63 @@ async function createMockJiraServer() {
       return;
     }
 
+    if (pathname === '/rest/internal/2/reactions/view' && req.method === 'POST') {
+      if (scenarioIn('reaction-unsupported')) {
+        json(res, 404, {errorMessages: ['Reactions are not available']});
+        return;
+      }
+      const body = await parseJsonBody(req);
+      const requestedIds = new Set((body?.commentIds || []).map(String));
+      const entries = [];
+      Object.entries(state.reactions).forEach(([commentId, byEmojiId]) => {
+        if (!requestedIds.has(String(commentId))) return;
+        Object.entries(byEmojiId || {}).forEach(([emojiId, entry]) => {
+          entries.push({commentId, emojiId, count: entry.count, reacted: entry.reacted});
+        });
+      });
+      json(res, 200, entries);
+      return;
+    }
+
+    if (pathname === '/rest/internal/2/reactions' && req.method === 'POST') {
+      if (scenarioIn('reaction-unsupported')) {
+        json(res, 404, {errorMessages: ['Reactions are not available']});
+        return;
+      }
+      if (scenarioIn('reaction-update-fails')) {
+        json(res, 500, {errorMessages: ['Could not update reaction']});
+        return;
+      }
+      const body = await parseJsonBody(req);
+      const commentId = String(body?.commentId || '');
+      const emojiId = String(body?.emojiId || '');
+      state.reactions[commentId] = state.reactions[commentId] || {};
+      const current = state.reactions[commentId][emojiId] || {count: 0, reacted: false};
+      state.reactions[commentId][emojiId] = {
+        count: current.reacted ? current.count : current.count + 1,
+        reacted: true,
+      };
+      json(res, 200, state.reactions[commentId][emojiId]);
+      return;
+    }
+
+    if (pathname === '/rest/internal/2/reactions' && req.method === 'DELETE') {
+      if (scenarioIn('reaction-update-fails')) {
+        json(res, 500, {errorMessages: ['Could not update reaction']});
+        return;
+      }
+      const commentId = String(url.searchParams.get('commentId') || '');
+      const emojiId = String(url.searchParams.get('emojiId') || '');
+      const current = state.reactions[commentId]?.[emojiId] || {count: 0, reacted: false};
+      state.reactions[commentId] = state.reactions[commentId] || {};
+      state.reactions[commentId][emojiId] = {
+        count: current.reacted ? Math.max(0, current.count - 1) : current.count,
+        reacted: false,
+      };
+      noContent(res);
+      return;
+    }
+
     if (pathname === `/rest/api/2/issue/${state.issue.key}/comment` && req.method === 'POST') {
       if (state.scenario === 'anonymous-readonly' || state.scenario === 'logged-out') {
         json(res, 401, {errorMessages: ['Login required']});
@@ -1332,13 +1390,13 @@ async function createMockJiraServer() {
       const body = await parseJsonBody(req);
       const newComment = {
         id: `comment-${Date.now()}`,
-        author: {displayName: state.currentUser.displayName},
+        author: {...state.currentUser},
         created: new Date().toISOString(),
         body: body?.body || '',
         renderedBody: buildRenderedCommentBody(body?.body || ''),
       };
       state.issue.comments.push(newComment);
-      json(res, 201, {id: newComment.id});
+      json(res, 201, newComment);
       return;
     }
 
@@ -1357,6 +1415,22 @@ async function createMockJiraServer() {
       comment.body = String(body?.body || '');
       comment.renderedBody = buildRenderedCommentBody(comment.body);
       json(res, 200, {id: comment.id});
+      return;
+    }
+
+    if (pathname.startsWith(`/rest/api/2/issue/${state.issue.key}/comment/`) && req.method === 'DELETE') {
+      if (state.scenario === 'anonymous-readonly' || state.scenario === 'logged-out') {
+        json(res, 401, {errorMessages: ['Login required']});
+        return;
+      }
+      const commentId = pathname.split('/').pop();
+      const commentIndex = state.issue.comments.findIndex(entry => String(entry.id || '') === String(commentId || ''));
+      if (commentIndex === -1) {
+        json(res, 404, {errorMessages: ['Comment not found']});
+        return;
+      }
+      state.issue.comments.splice(commentIndex, 1);
+      noContent(res);
       return;
     }
 
@@ -1526,6 +1600,10 @@ async function createMockJiraServer() {
     }
 
     if ((pathname === '/rest/api/2/user/assignable/search' || pathname === '/rest/api/2/user/search') && req.method === 'GET') {
+      if (pathname === '/rest/api/2/user/search' && scenarioIn('mention-search-fails')) {
+        json(res, 500, {errorMessages: ['Could not load people']});
+        return;
+      }
       const query = String(url.searchParams.get('query') || url.searchParams.get('username') || '').toLowerCase();
       const users = state.assignableUsers.filter(user => !query || user.displayName.toLowerCase().includes(query) || user.name.toLowerCase().includes(query));
       json(res, 200, users);
@@ -1614,10 +1692,10 @@ async function createMockJiraServer() {
 
     if (pathname === '/rest/api/2/project/JRACLOUD/versions' && req.method === 'GET') {
       json(res, 200, [
-        {id: '301', name: '2026.03'},
-        {id: '302', name: '2026.05'},
-        {id: '401', name: '2026.04'},
-        {id: '402', name: '2026.06'},
+        {id: '301', name: '2026.03', released: true, releaseDate: '2026-03-31'},
+        {id: '302', name: '2026.05', released: false, startDate: '2026-05-01'},
+        {id: '401', name: '2026.04', released: false, startDate: '2026-04-01'},
+        {id: '402', name: '2026.06', released: false, startDate: '2026-06-01'},
       ]);
       return;
     }

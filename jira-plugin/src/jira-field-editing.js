@@ -1,0 +1,1909 @@
+function copyValue(value) {
+  if (Array.isArray(value)) return value.map(copyValue);
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce((copy, [key, entry]) => {
+      copy[key] = copyValue(entry);
+      return copy;
+    }, {});
+  }
+  return value;
+}
+
+function normalizeInstanceUrl(value) {
+  const instanceUrl = String(value || '').trim();
+  return instanceUrl && !instanceUrl.endsWith('/') ? `${instanceUrl}/` : instanceUrl;
+}
+
+function normalizeFailure(error, fallback = 'Field edit failed') {
+  return {
+    message: String(error?.message || error?.inner || error || fallback),
+    name: String(error?.name || 'Error'),
+  };
+}
+
+function issueKeyOf(snapshot) {
+  return String(snapshot?.issueKey || snapshot?.core?.key || '').trim();
+}
+
+function buildTransitionOptions(transitions) {
+  return (Array.isArray(transitions) ? transitions : [])
+    .filter(transition => transition?.id && transition?.to?.name)
+    .map(transition => {
+      const targetStatusName = String(transition.to.name);
+      const transitionName = transition.name && transition.name !== targetStatusName
+        ? String(transition.name)
+        : '';
+      const label = transitionName ? `${transitionName} -> ${targetStatusName}` : targetStatusName;
+      return {
+        id: String(transition.id),
+        label,
+        iconUrl: transition.to?.iconUrl || '',
+        metaText: transitionName,
+        searchText: `${label} ${targetStatusName} ${transitionName}`.trim().toLowerCase(),
+        targetStatusName,
+        transitionName,
+      };
+    });
+}
+
+function buildAllowedValueOption(value) {
+  const label = String(value?.name || value?.value || '');
+  return {
+    id: String(value?.id || value?.value || ''),
+    label,
+    iconUrl: value?.iconUrl || '',
+    metaText: value?.description || '',
+    rawValue: copyValue(value),
+    searchText: `${label} ${value?.description || ''}`.trim().toLowerCase(),
+  };
+}
+
+function buildLabelOption(item) {
+  const label = String(typeof item === 'string' ? item : item?.value || item?.label || '').trim();
+  const metaText = String(typeof item === 'string' ? '' : item?.metaText || '').trim();
+  return {
+    id: label,
+    label,
+    metaText: metaText && metaText !== label ? metaText : '',
+    rawValue: label,
+    searchText: `${label} ${metaText}`.trim().toLowerCase(),
+  };
+}
+
+function buildLabelOptions(items) {
+  return (Array.isArray(items) ? items : []).map(buildLabelOption).filter(option => option.id);
+}
+
+function mergeOptions(primary, secondary) {
+  const seen = new Set();
+  return [...primary, ...secondary].filter(option => {
+    if (!option.id || !option.label || seen.has(option.id)) return false;
+    seen.add(option.id);
+    return true;
+  });
+}
+
+function normalizeOptionIds(optionIds) {
+  return [...new Set((Array.isArray(optionIds) ? optionIds : [])
+    .map(optionId => String(optionId || '').trim())
+    .filter(Boolean))];
+}
+
+function areSameOptionIds(left, right) {
+  const leftIds = normalizeOptionIds(left).sort();
+  const rightIds = normalizeOptionIds(right).sort();
+  return leftIds.length === rightIds.length && leftIds.every((optionId, index) => optionId === rightIds[index]);
+}
+
+function resolveOptions(optionIds, options, fallbackOptions = []) {
+  const optionsById = new Map();
+  [...fallbackOptions, ...options].forEach(option => {
+    if (option?.id) optionsById.set(String(option.id), option);
+  });
+  return normalizeOptionIds(optionIds).map(optionId => optionsById.get(optionId)).filter(Boolean);
+}
+
+function compareVersionNames(left, right) {
+  const sortName = option => String(option?.name || '').trim().replace(/^v(?=\d)/i, '');
+  return sortName(left).localeCompare(sortName(right), undefined, {numeric: true, sensitivity: 'base'});
+}
+
+function compareVersionDates(left, right, direction = 1) {
+  const leftDate = Date.parse(left?.releaseDate || left?.startDate || '');
+  const rightDate = Date.parse(right?.releaseDate || right?.startDate || '');
+  if (Number.isFinite(leftDate) && Number.isFinite(rightDate) && leftDate !== rightDate) {
+    return (leftDate - rightDate) * direction;
+  }
+  if (Number.isFinite(leftDate) !== Number.isFinite(rightDate)) {
+    return Number.isFinite(leftDate) ? -1 : 1;
+  }
+  return compareVersionNames(left, right) * direction;
+}
+
+function buildVersionOptions(versions) {
+  const available = (Array.isArray(versions) ? versions : []).filter(version => version?.id && version?.name);
+  const unreleased = available
+    .filter(version => version.released !== true)
+    .sort((left, right) => compareVersionDates(left, right));
+  const released = available
+    .filter(version => version.released === true)
+    .sort((left, right) => compareVersionDates(left, right, -1))
+    .slice(0, 5);
+  const options = [{id: '__clear__', label: 'N/A', rawValue: null, searchText: 'n/a none clear'}];
+  if (unreleased.length) {
+    options.push({id: '__group__versions-unreleased', isGroupLabel: true, label: 'Unreleased', searchText: 'unreleased'});
+    options.push(...unreleased.map(buildAllowedValueOption));
+  }
+  if (released.length) {
+    options.push({id: '__group__versions-released', isGroupLabel: true, label: 'Released (latest 5)', searchText: 'released'});
+    options.push(...released.map(buildAllowedValueOption));
+  }
+  return options;
+}
+
+function sprintEntries(issue) {
+  const names = issue?.names || {};
+  const fields = issue?.fields || {};
+  return Object.keys(names)
+    .filter(fieldId => String(names[fieldId] || '').toLowerCase().includes('sprint'))
+    .flatMap(fieldId => Array.isArray(fields[fieldId]) ? fields[fieldId] : [fields[fieldId]])
+    .filter(Boolean);
+}
+
+function readSprints(issue) {
+  const seen = new Set();
+  return sprintEntries(issue).map(entry => {
+    if (typeof entry !== 'string') {
+      return {id: String(entry?.id || ''), name: entry?.name || entry?.goal || String(entry?.id || ''), state: entry?.state || ''};
+    }
+    const read = name => entry.match(new RegExp(`${name}=([^,\\]]+)`, 'i'))?.[1] || '';
+    return {id: read('id'), name: read('name') || entry, state: read('state')};
+  }).filter(sprint => {
+    const key = sprint.id || `${sprint.name}::${sprint.state}`;
+    if (!sprint.name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function readSprintBoardRefs(issue) {
+  const projectKey = String(issue?.key || '').split('-')[0];
+  const seen = new Set();
+  const refs = [];
+  sprintEntries(issue).forEach(entry => {
+    const ids = [];
+    if (typeof entry === 'string') {
+      ['rapidViewId', 'boardId', 'originBoardId'].forEach(name => {
+        const value = entry.match(new RegExp(`${name}=([^,\\]]+)`, 'i'))?.[1];
+        if (value) ids.push(value);
+      });
+    } else {
+      ids.push(entry?.rapidViewId, entry?.boardId, entry?.originBoardId, entry?.board?.id, entry?.rapidView?.id);
+    }
+    ids.forEach(id => {
+      const value = String(id || '').trim();
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      refs.push({
+        id: value,
+        name: String(entry?.board?.name || entry?.rapidView?.name || ''),
+        projectKey,
+      });
+    });
+  });
+  return refs;
+}
+
+function compareBoardRefs(left, right, issueProjectKey) {
+  const leftIsLocal = String(left?.projectKey || '') === issueProjectKey;
+  const rightIsLocal = String(right?.projectKey || '') === issueProjectKey;
+  if (leftIsLocal !== rightIsLocal) return leftIsLocal ? -1 : 1;
+  const nameOrder = String(left?.name || '').localeCompare(String(right?.name || ''), undefined, {numeric: true, sensitivity: 'base'});
+  return nameOrder || String(left?.id || '').localeCompare(String(right?.id || ''), undefined, {numeric: true, sensitivity: 'base'});
+}
+
+function sprintGroupMeta(sprint, issue, issueBoardIds) {
+  const projectKey = String(issue?.key || '').split('-')[0];
+  const projectName = String(issue?.fields?.project?.name || '').trim();
+  const boardRefs = Array.isArray(sprint?.boardRefs) ? sprint.boardRefs : [];
+  const preferredBoard = boardRefs.slice().sort((left, right) => compareBoardRefs(left, right, projectKey))[0] || null;
+  const boardId = String(preferredBoard?.id || '').trim();
+  const boardProjectKey = String(preferredBoard?.projectKey || '').trim();
+  return {
+    groupKey: boardId ? `board:${boardId}` : '__other_boards__',
+    groupLabel: preferredBoard?.name || (boardProjectKey ? `${boardProjectKey} board` : (projectName || projectKey || 'Other boards')),
+    groupSortKey: boardRefs.some(ref => issueBoardIds.has(String(ref?.id || ''))) ? '0' : '1',
+  };
+}
+
+function groupOptions(options, {hideSingleGroup = false} = {}) {
+  const ungrouped = options.filter(option => !option.groupKey);
+  const groups = new Map();
+  options.filter(option => option.groupKey).forEach(option => {
+    const group = groups.get(option.groupKey) || {
+      key: option.groupKey,
+      label: option.groupLabel || option.groupKey,
+      sortKey: option.groupSortKey || '9',
+      options: [],
+    };
+    group.options.push(option);
+    groups.set(group.key, group);
+  });
+  const sortedGroups = [...groups.values()].sort((left, right) => {
+    const rank = String(left.sortKey).localeCompare(String(right.sortKey), undefined, {numeric: true, sensitivity: 'base'});
+    return rank || String(left.label).localeCompare(String(right.label), undefined, {numeric: true, sensitivity: 'base'});
+  });
+  const showLabels = !(hideSingleGroup && sortedGroups.length <= 1);
+  return [
+    ...ungrouped,
+    ...sortedGroups.flatMap(group => showLabels ? [{
+      id: `__group__${group.key}`,
+      isGroupLabel: true,
+      label: group.label,
+      searchText: String(group.label).toLowerCase(),
+    }, ...group.options] : group.options),
+  ];
+}
+
+function buildSprintOptions(issue, sprints) {
+  const stateOrder = {active: 0, future: 1, closed: 2};
+  const issueBoardIds = new Set(readSprintBoardRefs(issue).map(board => board.id));
+  const options = (Array.isArray(sprints) ? sprints : [])
+    .filter(sprint => sprint?.id && sprint?.name && String(sprint.state || '').toLowerCase() !== 'closed')
+    .slice()
+    .sort((left, right) => {
+      const stateDelta = (stateOrder[String(left?.state || '').toLowerCase()] ?? 99) -
+        (stateOrder[String(right?.state || '').toLowerCase()] ?? 99);
+      return stateDelta || String(left.name).localeCompare(String(right.name));
+    })
+    .map(sprint => {
+      const state = String(sprint.state || '').toUpperCase();
+      const label = state ? `${sprint.name} (${state})` : sprint.name;
+      return {
+        id: String(sprint.id),
+        label,
+        rawValue: copyValue(sprint),
+        searchText: label.toLowerCase(),
+        ...sprintGroupMeta(sprint, issue, issueBoardIds),
+      };
+    });
+  return [
+    {id: '', label: 'No sprint', rawValue: null, searchText: 'no sprint'},
+    ...groupOptions(options, {hideSingleGroup: true}),
+  ];
+}
+
+function buildUserOption(user) {
+  const id = String(user?.accountId || user?.name || user?.key || '');
+  const label = String(user?.displayName || user?.name || user?.key || '');
+  const nameParts = label.trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length > 1
+    ? `${nameParts[0][0] || ''}${nameParts[nameParts.length - 1][0] || ''}`.toUpperCase()
+    : String(nameParts[0] || '').slice(0, 2).toUpperCase();
+  return {
+    id,
+    label,
+    avatarUrl: user?.avatarUrls?.['48x48'] || '',
+    initials,
+    metaText: user?.name || user?.key || '',
+    rawValue: {
+      accountId: user?.accountId || '',
+      name: user?.name || '',
+      key: user?.key || '',
+    },
+    searchText: `${label} ${user?.name || ''} ${user?.key || ''}`.trim().toLowerCase(),
+  };
+}
+
+function encodeJqlValue(value) {
+  return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function customFieldSupport(field) {
+  const schemaType = String(field?.schema?.type || '').toLowerCase();
+  const itemType = String(field?.schema?.items || '').toLowerCase();
+  const schemaCustom = String(field?.schema?.custom || '').toLowerCase();
+  if (schemaType === 'account' || schemaCustom.includes('tempo-accounts')) {
+    return {selectionMode: 'single', valueKind: 'tempo-account'};
+  }
+  if (schemaCustom.includes('cascadingselect')) return null;
+  if (schemaType === 'option') return {selectionMode: 'single', valueKind: 'option'};
+  if (schemaType === 'string') return {selectionMode: 'single', valueKind: 'primitive'};
+  if (schemaType === 'user') return {selectionMode: 'single', valueKind: 'user'};
+  if (schemaType === 'array' && itemType === 'option') return {selectionMode: 'multi', valueKind: 'option'};
+  if (schemaType === 'array' && itemType === 'user') return {selectionMode: 'multi', valueKind: 'user'};
+  return null;
+}
+
+function customFieldPrimitive(value) {
+  if (value === undefined || value === null) return '';
+  if (['string', 'number', 'boolean'].includes(typeof value)) return String(value);
+  return String(value?.displayName || value?.name || value?.value || value?.key || value?.id || '');
+}
+
+function customFieldOption(value, valueKind = 'option') {
+  if (valueKind === 'user') return buildUserOption(value);
+  const label = customFieldPrimitive(value);
+  const id = String(value?.id || value?.value || value?.name || value?.key || label).trim();
+  if (!id || !label) return null;
+  return {
+    id,
+    label,
+    iconUrl: value?.iconUrl || '',
+    metaText: value?.description || value?.child?.value || '',
+    rawValue: copyValue(value),
+    searchText: `${label} ${value?.description || ''} ${value?.child?.value || ''}`.trim().toLowerCase(),
+  };
+}
+
+function clearCustomFieldOption(label) {
+  return {
+    id: '__clear__',
+    label,
+    metaText: 'Remove the current value',
+    rawValue: null,
+    searchText: `${label} remove current value`.toLowerCase(),
+  };
+}
+
+function userPayloadCandidates(user) {
+  if (!user) return [];
+  return [
+    ['accountId', user.accountId],
+    ['name', user.name],
+    ['key', user.key],
+  ].filter(([, value]) => String(value || '').trim()).map(([identifier, value]) => ({
+    identifier,
+    value: {[identifier]: String(value)},
+  }));
+}
+
+function tempoAccountOption(account) {
+  const id = String(account?.id || '').trim();
+  const key = String(account?.key || '').trim();
+  const name = String(account?.name || key).trim();
+  if (!id || !name) return null;
+  const customerName = String(account?.customer?.name || '').trim();
+  const categoryName = String(account?.category?.name || '').trim();
+  return {
+    id,
+    label: name,
+    metaText: [key, customerName, categoryName].filter(Boolean).join(' | '),
+    rawValue: copyValue(account),
+    searchText: `${name} ${key} ${customerName} ${categoryName}`.trim().toLowerCase(),
+  };
+}
+
+function customFieldSaveValue(option, valueKind) {
+  const value = option?.rawValue;
+  if (valueKind === 'user') return userPayloadCandidates(value || option)[0]?.value || null;
+  if (value === undefined || value === null) return value;
+  if (valueKind === 'primitive' || ['string', 'number', 'boolean'].includes(typeof value)) return value;
+  if (value?.id) return {id: String(value.id)};
+  if (value?.value) return {value: value.value};
+  if (value?.name) return {name: value.name};
+  if (value?.key) return {key: value.key};
+  return value;
+}
+
+function customFieldPresentation(issue, fieldId, fieldName, support, editable) {
+  const rawValue = issue?.fields?.[fieldId];
+  const values = (Array.isArray(rawValue) ? rawValue : [rawValue])
+    .filter(value => value !== undefined && value !== null && value !== '');
+  const labels = values.map(customFieldPrimitive).filter(Boolean);
+  const jqlValues = values.map(value => {
+    if (support?.valueKind === 'tempo-account') return String(value?.id || value || '').trim();
+    if (support?.valueKind === 'user') {
+      return String(value?.accountId || value?.key || value?.name || value?.displayName || '').trim();
+    }
+    if (support?.valueKind === 'primitive') return encodeJqlValue(value);
+    const comparable = value?.value || value?.name || value?.displayName || value?.key || value?.id;
+    return comparable ? encodeJqlValue(comparable) : '';
+  }).filter(Boolean);
+  const jqlClause = !jqlValues.length
+    ? ''
+    : jqlValues.length === 1
+      ? `${fieldName} = ${jqlValues[0]}`
+      : `${fieldName} in (${jqlValues.join(', ')})`;
+  return {
+    editable,
+    empty: labels.length === 0,
+    fieldId,
+    jqlClause,
+    linkLabel: labels.join(', '),
+    supported: !!support,
+    text: `${fieldName}: ${labels.join(', ') || '--'}`,
+    visibleWhenEmpty: editable || support?.valueKind === 'user',
+  };
+}
+
+function unassignedOption(metaText = 'Clear assignee') {
+  return {
+    id: '__unassigned__',
+    label: 'Unassigned',
+    metaText,
+    rawValue: null,
+    searchText: `unassigned ${metaText}`.toLowerCase(),
+  };
+}
+
+function currentAssigneeOption(issue) {
+  const assignee = issue?.fields?.assignee;
+  return assignee ? buildUserOption(assignee) : null;
+}
+
+function buildAssigneeOptions(issue, assignees = [], people = [], baseline = []) {
+  const currentOption = currentAssigneeOption(issue);
+  const fixedOptions = [unassignedOption(), ...(currentOption ? [currentOption] : [])];
+  return mergeOptions(
+    fixedOptions,
+    mergeOptions(
+      assignees.map(buildUserOption),
+      mergeOptions(people.map(buildUserOption), baseline)
+    )
+  );
+}
+
+function detectAssigneeIdentifier(issue, preferredIdentifier) {
+  if (preferredIdentifier) return preferredIdentifier;
+  const assignee = issue?.fields?.assignee;
+  if (assignee?.accountId) return 'accountId';
+  if (assignee?.name) return 'name';
+  if (assignee?.key) return 'key';
+  return 'accountId';
+}
+
+function assigneeWriteCandidates(selectedOption, issue, preferredIdentifier) {
+  const rawValue = selectedOption?.rawValue || {};
+  const isUnassigned = selectedOption?.id === '__unassigned__';
+  const payloads = {
+    accountId: isUnassigned ? {accountId: null} : (rawValue.accountId ? {accountId: rawValue.accountId} : null),
+    name: isUnassigned ? {name: null} : (rawValue.name ? {name: rawValue.name} : null),
+    key: isUnassigned ? {key: null} : (rawValue.key ? {key: rawValue.key} : null),
+  };
+  const preferred = detectAssigneeIdentifier(issue, preferredIdentifier);
+  return [preferred, 'accountId', 'name', 'key']
+    .filter((identifier, index, identifiers) => identifier && identifiers.indexOf(identifier) === index)
+    .filter(identifier => payloads[identifier])
+    .map(identifier => ({identifier, body: payloads[identifier]}));
+}
+
+function linkageValueKey(value) {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object') return String(value.key || value.value || value.id || '').trim();
+  return '';
+}
+
+function resolveLinkage(issue, context) {
+  const editMetaFields = context?.editMeta?.fields || {};
+  const parent = issue?.fields?.parent;
+  if (parent?.key || editMetaFields.parent) {
+    const key = String(parent?.key || '').trim();
+    return {
+      currentKey: key,
+      currentSummary: parent?.fields?.summary || key,
+      editable: !!editMetaFields.parent,
+      fieldId: 'parent',
+      mode: 'parent',
+    };
+  }
+  const names = issue?.names || {};
+  const fromNames = Object.keys(names).find(fieldId => ['epic', 'epic link'].includes(String(names[fieldId] || '').toLowerCase()));
+  const fromEditMeta = Object.keys(editMetaFields).find(fieldId => {
+    return ['epic', 'epic link'].includes(String(editMetaFields[fieldId]?.name || '').toLowerCase());
+  });
+  const fieldId = fromNames || fromEditMeta || context?.fieldIds?.epicLink?.[0] || '';
+  const key = linkageValueKey(issue?.fields?.[fieldId]);
+  return {
+    currentKey: key,
+    currentSummary: key,
+    editable: !!fieldId && !!editMetaFields[fieldId],
+    fieldId,
+    mode: fieldId || key ? 'epicLink' : '',
+  };
+}
+
+function buildParentOption(candidate, issueKey) {
+  const key = String(candidate?.key || '').trim();
+  const summary = String(candidate?.fields?.summary || candidate?.summary || key).trim();
+  const statusName = String(candidate?.fields?.status?.name || '');
+  const projectKey = issueKey.split('-')[0];
+  const candidateProjectKey = String(candidate?.fields?.project?.key || key).split('-')[0];
+  const isLocal = candidateProjectKey === projectKey;
+  return {
+    id: key,
+    label: `[${key}] ${summary}`.trim(),
+    iconUrl: candidate?.fields?.issuetype?.iconUrl || candidate?.issuetype?.iconUrl || '',
+    metaText: statusName,
+    rawValue: {key, summary},
+    searchText: `${key} ${summary} ${statusName}`.trim().toLowerCase(),
+    groupKey: isLocal ? `project:${projectKey}` : '__other_projects__',
+    groupLabel: isLocal ? `${projectKey} project` : 'Other projects',
+    groupSortKey: isLocal ? '0' : '1',
+  };
+}
+
+function buildParentOptions(linkage, issueKey, candidates = [], baseline = []) {
+  const candidateOptions = candidates.map(candidate => buildParentOption(candidate, issueKey)).filter(option => option.id);
+  const currentCandidate = candidates.find(candidate => String(candidate?.key || '') === linkage.currentKey);
+  const currentOption = linkage.currentKey ? buildParentOption({
+    key: linkage.currentKey,
+    fields: {
+      project: {key: linkage.currentKey.split('-')[0]},
+      summary: currentCandidate?.fields?.summary || linkage.currentSummary || linkage.currentKey,
+      issuetype: currentCandidate?.fields?.issuetype || {},
+      status: currentCandidate?.fields?.status || {},
+    },
+  }, issueKey) : null;
+  const merged = mergeOptions(
+    currentOption ? [currentOption] : [],
+    mergeOptions(candidateOptions, baseline.filter(option => !option.isGroupLabel))
+  );
+  return {
+    currentOption,
+    options: groupOptions(merged),
+  };
+}
+
+export function createJiraFieldEditing(options = {}) {
+  const jira = options.jira;
+  const issueData = options.issueData;
+  const instanceUrl = normalizeInstanceUrl(options.instanceUrl);
+  if (!jira || typeof jira.write !== 'function') {
+    throw new Error('JiraFieldEditing requires a Jira adapter');
+  }
+  if (!issueData || typeof issueData.loadFieldContext !== 'function' || typeof issueData.refreshAfterMutation !== 'function' || typeof issueData.search !== 'function') {
+    throw new Error('JiraFieldEditing requires QuickViewIssueData');
+  }
+
+  let generation = 0;
+  let editSequence = 0;
+  let searchSequence = 0;
+  let session = null;
+  let edit = null;
+  let resolvedFieldId = '';
+  let linkageMode = '';
+  let mutationFieldId = '';
+  let customFieldContext = null;
+  let preferredAssigneeIdentifier = '';
+  let labelSearchTimer = null;
+  let resolvePendingLabelSearch = null;
+
+  function view() {
+    const editView = copyValue(edit);
+    if (editView) editView.visibleOptions = copyValue(visibleOptions());
+    return {
+      sessionId: session?.sessionId || '',
+      issueKey: session?.issueKey || '',
+      edit: editView,
+    };
+  }
+
+  function outcome(kind, details = {}) {
+    const result = {
+      kind,
+      sessionId: details.sessionId || session?.sessionId || '',
+      issueKey: details.issueKey || session?.issueKey || '',
+      editId: details.editId || edit?.editId || '',
+      view: view(),
+      refreshedSnapshot: details.refreshedSnapshot || null,
+      notice: details.notice || '',
+      failure: details.failure || null,
+    };
+    if (details.field) result.field = copyValue(details.field);
+    if (details.linkage) result.linkage = copyValue(details.linkage);
+    return result;
+  }
+
+  function cancelPendingLabelSearch() {
+    if (labelSearchTimer) clearTimeout(labelSearchTimer);
+    labelSearchTimer = null;
+    const resolve = resolvePendingLabelSearch;
+    resolvePendingLabelSearch = null;
+    if (resolve) resolve(outcome('ignored'));
+  }
+
+  function attach({sessionId, issueSnapshot, requirements = {}} = {}) {
+    const normalizedSessionId = String(sessionId || '').trim();
+    const issueKey = issueKeyOf(issueSnapshot);
+    if (!normalizedSessionId || !issueKey || !issueSnapshot?.core) {
+      throw new Error('JiraFieldEditing.attach requires a session id and issue snapshot');
+    }
+    const sameSession = session?.sessionId === normalizedSessionId && session?.issueKey === issueKey;
+    if (!sameSession) {
+      cancelPendingLabelSearch();
+      generation += 1;
+      edit = null;
+      resolvedFieldId = '';
+      linkageMode = '';
+      mutationFieldId = '';
+      customFieldContext = null;
+    }
+    session = {
+      generation,
+      issueKey,
+      issueSnapshot,
+      requirements: copyValue(requirements || {}),
+      sessionId: normalizedSessionId,
+    };
+    return view();
+  }
+
+  function detach({sessionId} = {}) {
+    if (sessionId && session?.sessionId !== sessionId) return view();
+    cancelPendingLabelSearch();
+    generation += 1;
+    session = null;
+    edit = null;
+    resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
+    customFieldContext = null;
+    return view();
+  }
+
+  function isCurrent(capturedSession, editId = '') {
+    return !!session && session.generation === capturedSession.generation &&
+      session.sessionId === capturedSession.sessionId && session.issueKey === capturedSession.issueKey &&
+      (!editId || edit?.editId === editId);
+  }
+
+  function matchesEdit(intent) {
+    return !!edit && (!intent.editId || intent.editId === edit.editId);
+  }
+
+  function visibleOptions() {
+    const query = String(edit?.inputValue || '').trim().toLowerCase();
+    if (!query) return edit?.options || [];
+    return (edit?.options || []).filter(option => {
+      return String(option.searchText || option.label || '').toLowerCase().includes(query);
+    });
+  }
+
+  function visibleSelectableOptions() {
+    return visibleOptions().filter(option => !option.isGroupLabel);
+  }
+
+  async function describeField(intent) {
+    if (!session || !String(intent.fieldId || '').trim()) return outcome('ignored');
+    const capturedSession = session;
+    const fieldId = String(intent.fieldId);
+    const fieldOutcome = await issueData.loadFieldContext({
+      issueKey: capturedSession.issueKey,
+      fieldId,
+      includeTransitions: fieldId === 'status',
+      signal: intent.signal,
+    });
+    if (!isCurrent(capturedSession)) {
+      return outcome('ignored', {issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+    }
+    const context = fieldOutcome.context;
+    if (!String(fieldId).startsWith('customfield_') && intent.configured !== true) {
+      return outcome('described', {
+        field: {
+          allowedValues: copyValue(context?.allowedValues || []),
+          editable: !!context?.editable,
+          fieldId: context?.fieldId || fieldId,
+          operations: copyValue(context?.operations || []),
+          transitions: fieldId === 'status' ? buildTransitionOptions(context?.transitions) : [],
+        },
+      });
+    }
+    const support = customFieldSupport(context?.field);
+    const operations = context?.operations || [];
+    const hasSelectableValues = support?.valueKind !== 'option' || (context?.allowedValues || []).length > 0 ||
+      !!capturedSession.issueSnapshot.core?.fields?.[fieldId];
+    const editable = !!(support && context?.editable && operations.includes('set') && hasSelectableValues);
+    const fieldName = String(
+      capturedSession.issueSnapshot.core?.names?.[fieldId] || context?.field?.name || fieldId
+    );
+    return outcome('described', {
+      field: customFieldPresentation(
+        capturedSession.issueSnapshot.core,
+        fieldId,
+        fieldName,
+        support,
+        editable
+      ),
+    });
+  }
+
+  async function describeLinkage(intent) {
+    if (!session) return outcome('ignored');
+    const capturedSession = session;
+    const fieldOutcome = await issueData.loadFieldContext({
+      issueKey: capturedSession.issueKey,
+      fieldId: 'parent',
+      signal: intent.signal,
+    });
+    if (!isCurrent(capturedSession)) {
+      return outcome('ignored', {issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+    }
+    const linkage = resolveLinkage(capturedSession.issueSnapshot.core, fieldOutcome.context);
+    let currentSummary = linkage.currentSummary || linkage.currentKey;
+    if (linkage.currentKey && currentSummary === linkage.currentKey && typeof issueData.openIssue === 'function') {
+      try {
+        const summaryOutcome = await issueData.openIssue({
+          issueKey: linkage.currentKey,
+          requirements: {core: 'summary'},
+          signal: intent.signal,
+        });
+        if (!isCurrent(capturedSession)) {
+          return outcome('ignored', {issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+        }
+        currentSummary = summaryOutcome.snapshot?.core?.summary || linkage.currentKey;
+      } catch (error) {
+        currentSummary = linkage.currentKey;
+      }
+    }
+    return outcome('described', {
+      linkage: {
+        currentLink: linkage.currentKey ? {
+          key: linkage.currentKey,
+          summary: currentSummary,
+          url: `${instanceUrl}browse/${linkage.currentKey}`,
+        } : null,
+        editable: !!linkage.editable,
+        fieldId: linkage.fieldId || '',
+        label: 'Parent',
+        mode: linkage.mode || '',
+      },
+    });
+  }
+
+  async function begin(intent) {
+    if (!session || !intent.fieldId) return outcome('ignored');
+    if (edit?.fieldKey === intent.fieldId) return outcome('ignored', {editId: edit.editId});
+    const isSchemaField = String(intent.fieldId).startsWith('customfield_') || intent.configured === true;
+    if (!isSchemaField && !['assignee', 'environment', 'fixVersions', 'issuetype', 'labels', 'parentLink', 'priority', 'sprint', 'status', 'summary', 'versions'].includes(intent.fieldId)) return outcome('ignored');
+    const capturedSession = session;
+    const editId = `${capturedSession.sessionId}:edit-${++editSequence}`;
+    cancelPendingLabelSearch();
+    resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
+    customFieldContext = null;
+    edit = {
+      editId,
+      fieldKey: String(intent.fieldId),
+      label: intent.fieldId === 'summary' ? 'Issue title' : String(intent.fieldId),
+      editorType: 'text',
+      selectionMode: 'text',
+      inputValue: '',
+      originalInputValue: '',
+      inputPlaceholder: 'Loading field…',
+      options: [],
+      selectedOptions: [],
+      hasChanges: false,
+      loadingOptions: true,
+      saving: false,
+      errorMessage: '',
+      showActionButtons: true,
+      highlightedOptionId: null,
+      selectionStart: 0,
+      selectionEnd: 0,
+      status: 'loadingDefinition',
+      writeSucceeded: false,
+    };
+
+    const fieldOutcome = await issueData.loadFieldContext({
+      issueKey: capturedSession.issueKey,
+      fieldId: intent.fieldId,
+      includeOptions: ['fixVersions', 'sprint', 'versions'].includes(intent.fieldId),
+      includeTransitions: intent.fieldId === 'status',
+      signal: intent.signal,
+    });
+    if (!isCurrent(capturedSession, editId)) {
+      return outcome('ignored', {
+        editId,
+        issueKey: capturedSession.issueKey,
+        sessionId: capturedSession.sessionId,
+      });
+    }
+    const context = fieldOutcome.context;
+    if (['environment', 'summary'].includes(intent.fieldId)) {
+      const operations = context?.operations || [];
+      if (!context?.editable || !operations.includes('set')) {
+        const failure = fieldOutcome.failure || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const isSummary = intent.fieldId === 'summary';
+      const currentValue = String(capturedSession.issueSnapshot.core?.fields?.[intent.fieldId] || '');
+      edit = {
+        ...edit,
+        editorType: isSummary ? 'text' : 'textarea',
+        label: isSummary ? 'Issue title' : 'Environment',
+        inputValue: currentValue,
+        originalInputValue: currentValue,
+        inputPlaceholder: isSummary ? 'Enter a new issue title' : 'Describe the environment',
+        loadingOptions: false,
+        selectionStart: currentValue.length,
+        selectionEnd: currentValue.length,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'status') {
+      const transitions = buildTransitionOptions(context?.transitions);
+      if (!transitions.length) {
+        const failure = fieldOutcome.failures?.transitions || fieldOutcome.failures?.fieldContext || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        editorType: 'transition-select',
+        fieldKey: 'status',
+        label: 'Status transition',
+        selectionMode: 'single',
+        inputPlaceholder: 'Type to filter transitions',
+        options: transitions,
+        selectedOptionId: null,
+        showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'assignee') {
+      if (!context?.editable) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentOption = currentAssigneeOption(capturedSession.issueSnapshot.core);
+      edit = {
+        ...edit,
+        editorType: 'user-search',
+        fieldKey: 'assignee',
+        label: 'Assignee',
+        selectionMode: 'single',
+        inputPlaceholder: 'Search assignable users',
+        options: [],
+        selectedOptionId: currentOption?.id || '__unassigned__',
+        selectedOptions: currentOption ? [currentOption] : [unassignedOption('No assignee')],
+        showActionButtons: false,
+        loadingOptions: true,
+        searchRequestId: ++searchSequence,
+        status: 'loadingOptions',
+      };
+      const assigneeOutcome = await issueData.search({
+        purpose: 'assignee',
+        issueKey: capturedSession.issueKey,
+        query: '',
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId)) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (assigneeOutcome.kind !== 'loaded') {
+        const failure = assigneeOutcome.failure || normalizeFailure(new Error('Could not search assignable users'));
+        edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        options: buildAssigneeOptions(capturedSession.issueSnapshot.core, assigneeOutcome.items),
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'parentLink') {
+      const linkage = resolveLinkage(capturedSession.issueSnapshot.core, context);
+      if (!linkage.editable || !linkage.mode || !linkage.fieldId) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      resolvedFieldId = linkage.fieldId;
+      linkageMode = linkage.mode;
+      mutationFieldId = linkage.mode === 'parent' ? 'parent' : 'epicLink';
+      edit = {
+        ...edit,
+        editorType: 'issue-search',
+        fieldKey: 'parentLink',
+        label: 'Parent',
+        selectionMode: 'single',
+        inputPlaceholder: 'Search issues by key or summary',
+        options: [],
+        selectedOptionId: linkage.currentKey || null,
+        selectedOptions: [],
+        showActionButtons: false,
+        loadingOptions: true,
+        searchRequestId: ++searchSequence,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({
+        purpose: 'parent',
+        issueKey: capturedSession.issueKey,
+        fieldId: linkage.fieldId,
+        query: '',
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId)) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      const parentOptions = buildParentOptions(
+        linkage,
+        capturedSession.issueKey,
+        searchOutcome.kind === 'loaded' ? searchOutcome.items : []
+      );
+      edit = {
+        ...edit,
+        options: parentOptions.options,
+        selectedOptions: parentOptions.currentOption ? [parentOptions.currentOption] : [],
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'sprint') {
+      if (!context?.editable || !context.fieldId || fieldOutcome.failures?.options) {
+        const failure = fieldOutcome.failures?.options || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentSprints = readSprints(capturedSession.issueSnapshot.core);
+      const currentSprint = currentSprints.length === 1 ? currentSprints[0] : null;
+      const sprintOptions = buildSprintOptions(capturedSession.issueSnapshot.core, context.options);
+      resolvedFieldId = context.fieldId;
+      mutationFieldId = 'sprint';
+      edit = {
+        ...edit,
+        editorType: 'single-select',
+        fieldKey: 'sprint',
+        label: 'Sprint',
+        selectionMode: 'single',
+        inputPlaceholder: 'Type to filter Sprint values',
+        options: sprintOptions,
+        selectedOptionId: currentSprint?.id || null,
+        selectedOptions: currentSprint ? [{
+          id: currentSprint.id,
+          label: currentSprint.state ? `${currentSprint.name} (${String(currentSprint.state).toUpperCase()})` : currentSprint.name,
+          rawValue: copyValue(currentSprint),
+        }] : [],
+        showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (intent.fieldId === 'labels') {
+      if (!context?.editable) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const currentOptions = buildLabelOptions(capturedSession.issueSnapshot.core?.fields?.labels);
+      const selectedOptionIds = normalizeOptionIds(currentOptions.map(option => option.id));
+      edit = {
+        ...edit,
+        editorType: 'label-search',
+        fieldKey: 'labels',
+        label: 'Labels',
+        selectionMode: 'multi',
+        inputPlaceholder: 'Search existing labels',
+        options: currentOptions,
+        selectedOptionId: null,
+        selectedOptionIds,
+        originalOptionIds: [...selectedOptionIds],
+        selectedOptions: currentOptions,
+        showActionButtons: true,
+        loadingOptions: true,
+        searchRequestId: ++searchSequence,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({purpose: 'label', query: '', signal: intent.signal});
+      if (!isCurrent(capturedSession, editId)) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (searchOutcome.kind !== 'loaded') {
+        const failure = searchOutcome.failure || normalizeFailure(new Error('Could not load labels'));
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        options: mergeOptions(currentOptions, buildLabelOptions(searchOutcome.items)),
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else if (isSchemaField) {
+      const fieldId = String(intent.fieldId);
+      const field = context?.field;
+      const support = customFieldSupport(field);
+      const operations = context?.operations || [];
+      const fieldName = String(capturedSession.issueSnapshot.core?.names?.[fieldId] || field?.name || fieldId);
+      const currentValue = capturedSession.issueSnapshot.core?.fields?.[fieldId];
+      if (!context?.editable || !operations.includes('set') || !support) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const isMultiValue = support.selectionMode === 'multi';
+      const currentEntries = isMultiValue
+        ? (Array.isArray(currentValue) ? currentValue : [])
+        : (currentValue === undefined || currentValue === null ? [] : [currentValue]);
+      const currentOptions = currentEntries
+        .map(value => customFieldOption(value, support.valueKind))
+        .filter(Boolean);
+      resolvedFieldId = fieldId;
+      mutationFieldId = fieldId;
+      customFieldContext = {
+        fieldId,
+        fieldName,
+        projectId: String(capturedSession.issueSnapshot.core?.fields?.project?.id || ''),
+        support,
+      };
+
+      if (support.valueKind === 'primitive') {
+        const currentInputValue = currentValue === undefined || currentValue === null ? '' : String(currentValue);
+        const isTextarea = String(field?.schema?.custom || '').toLowerCase().includes('textarea');
+        edit = {
+          ...edit,
+          editorType: isTextarea ? 'textarea' : 'text',
+          fieldKey: fieldId,
+          label: fieldName,
+          selectionMode: 'text',
+          inputValue: currentInputValue,
+          originalInputValue: currentInputValue,
+          inputPlaceholder: isTextarea ? `Enter ${fieldName.toLowerCase()}` : `Type ${fieldName.toLowerCase()}`,
+          loadingOptions: false,
+          selectionStart: currentInputValue.length,
+          selectionEnd: currentInputValue.length,
+          status: 'editing',
+        };
+      } else if (support.valueKind === 'tempo-account') {
+        const currentOption = currentValue ? tempoAccountOption(currentValue) : null;
+        const clearOption = clearCustomFieldOption(`Clear ${fieldName}`);
+        edit = {
+          ...edit,
+          editorType: 'tempo-account-search',
+          fieldKey: fieldId,
+          label: fieldName,
+          selectionMode: 'single',
+          inputPlaceholder: 'Search accounts',
+          options: mergeOptions([clearOption], currentOption ? [currentOption] : []),
+          selectedOptionId: currentOption?.id || null,
+          selectedOptions: currentOption ? [currentOption] : [],
+          showActionButtons: false,
+          loadingOptions: true,
+          searchRequestId: ++searchSequence,
+          status: 'loadingOptions',
+        };
+        const searchOutcome = await issueData.search({
+          purpose: 'tempo',
+          projectId: customFieldContext.projectId,
+          query: '',
+          signal: intent.signal,
+        });
+        if (!isCurrent(capturedSession, editId)) {
+          return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+        }
+        if (searchOutcome.kind !== 'loaded') {
+          const failure = searchOutcome.failure || normalizeFailure(new Error('Could not load Tempo accounts'));
+          edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+          return outcome('failed', {editId, failure});
+        }
+        edit = {
+          ...edit,
+          options: mergeOptions([clearOption], mergeOptions(
+            searchOutcome.items.map(tempoAccountOption).filter(Boolean),
+            currentOption ? [currentOption] : []
+          )),
+          loadingOptions: false,
+          status: 'editing',
+        };
+      } else if (support.valueKind === 'user') {
+        const clearOption = isMultiValue ? null : clearCustomFieldOption(`Clear ${fieldName}`);
+        const selectedOptionIds = normalizeOptionIds(currentOptions.map(option => option.id));
+        edit = {
+          ...edit,
+          editorType: 'user-search',
+          fieldKey: fieldId,
+          label: fieldName,
+          selectionMode: isMultiValue ? 'multi' : 'single',
+          inputPlaceholder: 'Search users',
+          options: mergeOptions(clearOption ? [clearOption] : [], currentOptions),
+          selectedOptionId: isMultiValue ? null : currentOptions[0]?.id || null,
+          selectedOptionIds: isMultiValue ? selectedOptionIds : [],
+          originalOptionIds: isMultiValue ? [...selectedOptionIds] : [],
+          selectedOptions: currentOptions,
+          showActionButtons: isMultiValue,
+          loadingOptions: true,
+          searchRequestId: ++searchSequence,
+          status: 'loadingOptions',
+        };
+        const [assigneeOutcome, peopleOutcome] = await Promise.all([
+          issueData.search({purpose: 'assignee', issueKey: capturedSession.issueKey, query: '', signal: intent.signal}),
+          issueData.search({purpose: 'userPicker', query: '', signal: intent.signal}),
+        ]);
+        if (!isCurrent(capturedSession, editId)) {
+          return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+        }
+        const userOptions = mergeOptions(
+          (assigneeOutcome.kind === 'loaded' ? assigneeOutcome.items : []).map(buildUserOption).filter(Boolean),
+          (peopleOutcome.kind === 'loaded' ? peopleOutcome.items : []).map(buildUserOption).filter(Boolean)
+        );
+        const searchFailed = assigneeOutcome.kind !== 'loaded' && peopleOutcome.kind !== 'loaded';
+        edit = {
+          ...edit,
+          options: mergeOptions(clearOption ? [clearOption] : [], mergeOptions(userOptions, currentOptions)),
+          loadingOptions: false,
+          status: searchFailed ? 'failed' : 'editing',
+          errorMessage: searchFailed
+            ? String(peopleOutcome.failure?.message || assigneeOutcome.failure?.message || 'Could not search Jira users')
+            : '',
+        };
+        if (searchFailed) {
+          const failure = normalizeFailure(new Error(edit.errorMessage));
+          return outcome('failed', {editId, failure});
+        }
+      } else {
+        const allowedOptions = (context?.allowedValues || [])
+          .map(value => customFieldOption(value, support.valueKind))
+          .filter(Boolean);
+        const options = mergeOptions(currentOptions, allowedOptions);
+        if (!options.length) {
+          edit = null;
+          customFieldContext = null;
+          return outcome('ignored', {editId});
+        }
+        const clearOption = isMultiValue ? null : clearCustomFieldOption(`Clear ${fieldName}`);
+        const selectedOptionIds = normalizeOptionIds(currentOptions.map(option => option.id));
+        edit = {
+          ...edit,
+          editorType: isMultiValue ? 'multi-select' : 'single-select',
+          fieldKey: fieldId,
+          label: fieldName,
+          selectionMode: isMultiValue ? 'multi' : 'single',
+          inputPlaceholder: `Type to filter ${fieldName.toLowerCase()} values`,
+          options: mergeOptions(clearOption ? [clearOption] : [], options),
+          selectedOptionId: isMultiValue ? null : currentOptions[0]?.id || null,
+          selectedOptionIds: isMultiValue ? selectedOptionIds : [],
+          originalOptionIds: isMultiValue ? [...selectedOptionIds] : [],
+          selectedOptions: currentOptions,
+          showActionButtons: isMultiValue,
+          loadingOptions: false,
+          status: 'editing',
+        };
+      }
+    } else if (['fixVersions', 'versions'].includes(intent.fieldId)) {
+      const fieldId = intent.fieldId;
+      const currentValues = Array.isArray(capturedSession.issueSnapshot.core?.fields?.[fieldId])
+        ? capturedSession.issueSnapshot.core.fields[fieldId]
+        : [];
+      const currentOptions = currentValues
+        .filter(value => value?.id && value?.name)
+        .map(buildAllowedValueOption);
+      const versionOptions = buildVersionOptions(context?.options || []);
+      if (!context?.editable || fieldOutcome.failures?.options) {
+        const failure = fieldOutcome.failures?.options || fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      const selectedOptionIds = normalizeOptionIds(currentOptions.map(option => option.id));
+      edit = {
+        ...edit,
+        editorType: 'multi-select',
+        fieldKey: fieldId,
+        label: fieldId === 'fixVersions' ? 'Fix version' : 'Affects version',
+        selectionMode: 'multi',
+        inputPlaceholder: `Type to filter ${fieldId === 'fixVersions' ? 'fix' : 'affected'} versions`,
+        options: versionOptions,
+        selectedOptionId: null,
+        selectedOptionIds,
+        originalOptionIds: [...selectedOptionIds],
+        selectedOptions: currentOptions,
+        showActionButtons: true,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    } else {
+      const fieldId = intent.fieldId;
+      const currentValue = capturedSession.issueSnapshot.core?.fields?.[fieldId] || null;
+      const currentIsSubtask = currentValue?.subtask === true;
+      const allowedOptions = (context?.allowedValues || [])
+        .filter(value => value?.id && value?.name)
+        .filter(value => {
+          if (fieldId !== 'issuetype' || typeof value.subtask !== 'boolean' || typeof currentValue?.subtask !== 'boolean') return true;
+          return value.subtask === currentIsSubtask;
+        })
+        .map(buildAllowedValueOption);
+      const currentOption = currentValue?.id && currentValue?.name
+        ? buildAllowedValueOption(currentValue)
+        : null;
+      const options = fieldId === 'issuetype'
+        ? mergeOptions(currentOption ? [currentOption] : [], allowedOptions)
+        : allowedOptions;
+      const minimumOptions = fieldId === 'issuetype' ? 2 : 1;
+      if (!context?.editable || options.length < minimumOptions) {
+        const failure = fieldOutcome.failures?.fieldContext || fieldOutcome.failures?.editMeta || null;
+        edit = null;
+        return outcome('ignored', {editId, failure});
+      }
+      edit = {
+        ...edit,
+        editorType: 'single-select',
+        fieldKey: fieldId,
+        label: fieldId === 'issuetype' ? 'Issue type' : 'Priority',
+        selectionMode: 'single',
+        inputPlaceholder: `Type to filter ${fieldId === 'issuetype' ? 'issue type' : 'priority'} values`,
+        options,
+        selectedOptionId: currentOption?.id || null,
+        selectedOptions: currentOption ? [currentOption] : [],
+        showActionButtons: false,
+        loadingOptions: false,
+        status: 'editing',
+      };
+    }
+    return outcome('changed', {editId});
+  }
+
+  async function inputChanged(intent) {
+    if (!matchesEdit(intent) || edit.saving) return outcome('ignored');
+    const typedValue = String(intent.value || '');
+    let inputValue = typedValue;
+    let start = Number.isInteger(intent.selection?.start) ? intent.selection.start : inputValue.length;
+    let end = Number.isInteger(intent.selection?.end) ? intent.selection.end : start;
+    let selectedOptionId = edit.selectedOptionId || null;
+    if (edit.editorType === 'user-search' && edit.fieldKey === 'assignee' && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      const exactOption = baselineOptions.find(option => option.label.toLowerCase() === typedValue.trim().toLowerCase());
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        selectedOptionId: exactOption?.id || null,
+        selectedOptions: exactOption ? [exactOption] : [],
+        highlightedOptionId: null,
+        hasChanges: !!exactOption,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      const [assigneeOutcome, peopleOutcome] = await Promise.all([
+        issueData.search({purpose: 'assignee', issueKey: capturedSession.issueKey, query: typedValue, signal: intent.signal}),
+        issueData.search({purpose: 'userPicker', query: typedValue, signal: intent.signal}),
+      ]);
+      if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      edit = {
+        ...edit,
+        options: buildAssigneeOptions(
+          capturedSession.issueSnapshot.core,
+          assigneeOutcome.kind === 'loaded' ? assigneeOutcome.items : [],
+          peopleOutcome.kind === 'loaded' ? peopleOutcome.items : [],
+          baselineOptions
+        ),
+        loadingOptions: false,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
+    if (edit.editorType === 'user-search' && customFieldContext && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      const isMultiValue = customFieldContext.support.selectionMode === 'multi';
+      const clearOption = isMultiValue ? null : clearCustomFieldOption(`Clear ${customFieldContext.fieldName}`);
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        selectedOptionId: isMultiValue ? null : null,
+        highlightedOptionId: null,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      const [assigneeOutcome, peopleOutcome] = await Promise.all([
+        issueData.search({purpose: 'assignee', issueKey: capturedSession.issueKey, query: typedValue, signal: intent.signal}),
+        issueData.search({purpose: 'userPicker', query: typedValue, signal: intent.signal}),
+      ]);
+      if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (assigneeOutcome.kind !== 'loaded' && peopleOutcome.kind !== 'loaded') {
+        const failure = peopleOutcome.failure || assigneeOutcome.failure || normalizeFailure(new Error('Could not search Jira users'));
+        edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      const userOptions = mergeOptions(
+        (assigneeOutcome.kind === 'loaded' ? assigneeOutcome.items : []).map(buildUserOption).filter(Boolean),
+        (peopleOutcome.kind === 'loaded' ? peopleOutcome.items : []).map(buildUserOption).filter(Boolean)
+      );
+      const options = mergeOptions(clearOption ? [clearOption] : [], mergeOptions(userOptions, baselineOptions));
+      const exactOption = options.find(option => !option.isGroupLabel && option.label.toLowerCase() === typedValue.trim().toLowerCase());
+      edit = {
+        ...edit,
+        options,
+        selectedOptionId: isMultiValue ? null : exactOption?.id || null,
+        selectedOptions: isMultiValue ? edit.selectedOptions : (exactOption ? [exactOption] : []),
+        hasChanges: isMultiValue ? edit.hasChanges : !!exactOption,
+        loadingOptions: false,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
+    if (edit.editorType === 'tempo-account-search' && customFieldContext && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        selectedOptionId: null,
+        selectedOptions: [],
+        highlightedOptionId: null,
+        hasChanges: false,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({
+        purpose: 'tempo',
+        projectId: customFieldContext.projectId,
+        query: typedValue,
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (searchOutcome.kind !== 'loaded') {
+        const failure = searchOutcome.failure || normalizeFailure(new Error('Could not load Tempo accounts'));
+        edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      const clearOption = clearCustomFieldOption(`Clear ${customFieldContext.fieldName}`);
+      const options = mergeOptions(
+        [clearOption],
+        mergeOptions(searchOutcome.items.map(tempoAccountOption).filter(Boolean), baselineOptions)
+      );
+      const exactOption = options.find(option => option.label.toLowerCase() === typedValue.trim().toLowerCase());
+      edit = {
+        ...edit,
+        options,
+        selectedOptionId: exactOption?.id || null,
+        selectedOptions: exactOption ? [exactOption] : [],
+        hasChanges: !!exactOption,
+        loadingOptions: false,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
+    if (edit.editorType === 'issue-search' && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        selectedOptionId: null,
+        selectedOptions: [],
+        highlightedOptionId: null,
+        hasChanges: false,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      const searchOutcome = await issueData.search({
+        purpose: 'parent',
+        issueKey: capturedSession.issueKey,
+        fieldId: resolvedFieldId,
+        query: typedValue,
+        signal: intent.signal,
+      });
+      if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+        return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+      }
+      if (searchOutcome.kind !== 'loaded') {
+        const failure = searchOutcome.failure || normalizeFailure(new Error('Issue search failed'));
+        edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      const linkage = resolveLinkage(capturedSession.issueSnapshot.core, {
+        editMeta: {fields: {[resolvedFieldId]: {name: linkageMode === 'parent' ? 'Parent' : 'Epic Link'}}},
+        fieldIds: {epicLink: linkageMode === 'epicLink' ? [resolvedFieldId] : []},
+      });
+      edit = {
+        ...edit,
+        options: buildParentOptions(linkage, capturedSession.issueKey, searchOutcome.items, baselineOptions).options,
+        loadingOptions: false,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
+    if (edit.editorType === 'label-search' && session) {
+      const capturedSession = session;
+      const editId = edit.editId;
+      const requestId = ++searchSequence;
+      const baselineOptions = edit.options;
+      cancelPendingLabelSearch();
+      edit = {
+        ...edit,
+        inputValue: typedValue,
+        highlightedOptionId: null,
+        loadingOptions: true,
+        errorMessage: '',
+        searchRequestId: requestId,
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'loadingOptions',
+      };
+      return new Promise(resolve => {
+        resolvePendingLabelSearch = resolve;
+        labelSearchTimer = setTimeout(async () => {
+          labelSearchTimer = null;
+          resolvePendingLabelSearch = null;
+          const searchOutcome = await issueData.search({purpose: 'label', query: typedValue, signal: intent.signal});
+          if (!isCurrent(capturedSession, editId) || edit.searchRequestId !== requestId) {
+            resolve(outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId}));
+            return;
+          }
+          if (searchOutcome.kind !== 'loaded') {
+            const failure = searchOutcome.failure || normalizeFailure(new Error('Could not load labels'));
+            edit = {...edit, errorMessage: failure.message, loadingOptions: false, status: 'failed'};
+            resolve(outcome('failed', {editId, failure}));
+            return;
+          }
+          const searchedOptions = buildLabelOptions(searchOutcome.items);
+          edit = {
+            ...edit,
+            options: typedValue.trim()
+              ? searchedOptions
+              : mergeOptions(edit.selectedOptions, mergeOptions(searchedOptions, baselineOptions)),
+            loadingOptions: false,
+            status: 'editing',
+          };
+          resolve(outcome('changed'));
+        }, 180);
+      });
+    }
+    if (edit.selectionMode === 'multi') {
+      edit = {
+        ...edit,
+        inputValue,
+        highlightedOptionId: null,
+        errorMessage: '',
+        selectionStart: start,
+        selectionEnd: end,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
+    if (edit.selectionMode !== 'text') {
+      const normalizedValue = typedValue.trim().toLowerCase();
+      const exactOption = edit.options.find(option => option.label.toLowerCase() === normalizedValue);
+      selectedOptionId = exactOption?.id || null;
+      const canAutoComplete = !exactOption && normalizedValue && start === end && end === typedValue.length;
+      const prefixOption = canAutoComplete
+        ? edit.options.find(option => option.label.toLowerCase().startsWith(normalizedValue))
+        : null;
+      if (prefixOption) {
+        inputValue = prefixOption.label;
+        selectedOptionId = prefixOption.id;
+        start = typedValue.length;
+        end = prefixOption.label.length;
+      }
+    }
+    edit = {
+      ...edit,
+      inputValue,
+      selectedOptionId,
+      selectedOptions: selectedOptionId ? edit.options.filter(option => option.id === selectedOptionId) : [],
+      highlightedOptionId: null,
+      hasChanges: edit.selectionMode === 'text'
+        ? inputValue !== edit.originalInputValue
+        : !!selectedOptionId,
+      errorMessage: '',
+      selectionStart: start,
+      selectionEnd: end,
+      status: 'editing',
+    };
+    return outcome('changed');
+  }
+
+  function moveHighlight(intent, delta) {
+    if (!matchesEdit(intent) || edit.selectionMode === 'text' || edit.saving) return outcome('ignored');
+    const options = visibleSelectableOptions();
+    if (!options.length) return outcome('ignored');
+    const currentIndex = Math.max(0, options.findIndex(option => option.id === edit.highlightedOptionId));
+    const nextIndex = Math.max(0, Math.min(options.length - 1, currentIndex + delta));
+    edit = {...edit, errorMessage: '', highlightedOptionId: options[nextIndex].id};
+    return outcome('changed');
+  }
+
+  function cancel(intent) {
+    if (!matchesEdit(intent) || edit.saving) return outcome('ignored');
+    const editId = edit.editId;
+    cancelPendingLabelSearch();
+    edit = null;
+    resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
+    customFieldContext = null;
+    return outcome('cancelled', {editId});
+  }
+
+  async function selectOption(intent) {
+    if (!matchesEdit(intent) || edit.loadingOptions || edit.saving) return outcome('ignored');
+    const selectedOption = edit.options.find(option => option.id === String(intent.optionId || ''));
+    if (!selectedOption || selectedOption.isGroupLabel) return outcome('ignored');
+    if (edit.selectionMode === 'multi') {
+      const selectedOptionIds = normalizeOptionIds(edit.selectedOptionIds);
+      const nextSelectedOptionIds = selectedOption.id === '__clear__'
+        ? []
+        : (selectedOptionIds.includes(selectedOption.id)
+            ? selectedOptionIds.filter(optionId => optionId !== selectedOption.id)
+            : [...selectedOptionIds, selectedOption.id]);
+      const inputValue = edit.editorType === 'label-search' ? edit.inputValue : '';
+      edit = {
+        ...edit,
+        errorMessage: '',
+        hasChanges: !areSameOptionIds(nextSelectedOptionIds, edit.originalOptionIds),
+        highlightedOptionId: selectedOption.id,
+        inputValue,
+        selectedOptionIds: nextSelectedOptionIds,
+        selectedOptions: resolveOptions(nextSelectedOptionIds, edit.options, edit.selectedOptions),
+        selectionStart: inputValue.length,
+        selectionEnd: inputValue.length,
+        status: 'editing',
+      };
+      return outcome('changed');
+    }
+    edit = {
+      ...edit,
+      errorMessage: '',
+      hasChanges: true,
+      highlightedOptionId: selectedOption.id,
+      inputValue: selectedOption.label,
+      selectedOptionId: selectedOption.id,
+      selectedOptions: [selectedOption],
+      selectionStart: selectedOption.label.length,
+      selectionEnd: selectedOption.label.length,
+      status: 'editing',
+    };
+    if (edit.editorType === 'transition-select') {
+      return save({...intent, type: 'save'});
+    }
+    return outcome('changed');
+  }
+
+  async function save(intent) {
+    if (!matchesEdit(intent) || edit.loadingOptions || edit.saving || !session) return outcome('ignored');
+    const capturedSession = session;
+    const editId = edit.editId;
+    if (!edit.hasChanges) return outcome('ignored', {editId});
+    let writeRequest;
+    let writeCandidates = null;
+    let rememberAssigneeIdentifier = false;
+    let notice;
+    if (edit.fieldKey === 'summary') {
+      const nextSummary = String(edit.inputValue || '').trim();
+      if (!nextSummary) {
+        const failure = normalizeFailure(new Error('Issue title cannot be empty'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = 'Issue title updated';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {summary: nextSummary}},
+      };
+    } else if (edit.fieldKey === 'environment') {
+      const nextEnvironment = String(edit.inputValue || '');
+      notice = nextEnvironment.trim() ? 'Environment updated' : 'Environment cleared';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {environment: nextEnvironment.trim() ? nextEnvironment : null}},
+      };
+    } else if (edit.fieldKey === 'status') {
+      const selectedTransition = edit.options.find(option => option.id === edit.selectedOptionId);
+      if (!selectedTransition) {
+        const failure = normalizeFailure(new Error('Pick a transition before saving'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = selectedTransition.targetStatusName
+        ? `Status moved to ${selectedTransition.targetStatusName}`
+        : 'Status updated';
+      writeRequest = {
+        method: 'POST',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}/transitions`,
+        body: {transition: {id: selectedTransition.id}},
+      };
+    } else if (['issuetype', 'priority'].includes(edit.fieldKey)) {
+      const selectedValue = edit.options.find(option => option.id === edit.selectedOptionId);
+      if (!selectedValue) {
+        const failure = normalizeFailure(new Error(`Pick ${edit.fieldKey === 'issuetype' ? 'an issue type' : 'a priority'} before saving`));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = `${edit.fieldKey === 'issuetype' ? 'Issue type' : 'Priority'} set to ${selectedValue.label}`;
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {[edit.fieldKey]: {id: selectedValue.id}}},
+      };
+    } else if (edit.fieldKey === 'assignee') {
+      const selectedAssignee = edit.options.find(option => option.id === edit.selectedOptionId);
+      if (!selectedAssignee) {
+        const failure = normalizeFailure(new Error('Pick an assignee before saving'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      writeCandidates = assigneeWriteCandidates(
+        selectedAssignee,
+        capturedSession.issueSnapshot.core,
+        preferredAssigneeIdentifier
+      );
+      if (!writeCandidates.length) {
+        const failure = normalizeFailure(new Error('Could not build assignee payload'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = selectedAssignee.id === '__unassigned__'
+        ? 'Assignee cleared'
+        : `Assignee set to ${selectedAssignee.label}`;
+      writeCandidates = writeCandidates.map(candidate => ({
+        ...candidate,
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}/assignee`,
+      }));
+      rememberAssigneeIdentifier = true;
+    } else if (edit.fieldKey === 'parentLink') {
+      const selectedParent = edit.options.find(option => !option.isGroupLabel && option.id === edit.selectedOptionId);
+      const selectedIssueKey = selectedParent?.rawValue?.key || selectedParent?.id || '';
+      if (!selectedIssueKey || !resolvedFieldId || !linkageMode) {
+        const failure = normalizeFailure(new Error('Pick a parent issue before saving'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = `Parent set to ${selectedIssueKey}`;
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: linkageMode === 'parent'
+          ? {parent: {key: selectedIssueKey}}
+          : {[resolvedFieldId]: selectedIssueKey}},
+      };
+    } else if (edit.fieldKey === 'labels') {
+      const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
+      notice = 'Labels updated';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {labels: selectedValues.map(value => value.id)}},
+      };
+    } else if (['fixVersions', 'versions'].includes(edit.fieldKey)) {
+      const selectedValues = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
+      notice = edit.fieldKey === 'fixVersions'
+        ? (selectedValues.length ? 'Fix versions updated' : 'Fix versions cleared')
+        : (selectedValues.length ? 'Affects versions updated' : 'Affects versions cleared');
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {[edit.fieldKey]: selectedValues.map(value => ({id: value.id}))}},
+      };
+    } else if (edit.fieldKey === 'sprint') {
+      const selectedSprint = edit.options.find(option => !option.isGroupLabel && option.id === String(edit.selectedOptionId ?? ''));
+      if (!selectedSprint || !resolvedFieldId) {
+        const failure = normalizeFailure(new Error('Could not resolve the Sprint field'));
+        edit = {...edit, errorMessage: failure.message, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+      notice = selectedSprint.id ? `Sprint set to ${selectedSprint.label}` : 'Sprint cleared';
+      writeRequest = {
+        method: 'PUT',
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`,
+        body: {fields: {[resolvedFieldId]: selectedSprint.id ? (Number(selectedSprint.id) || selectedSprint.id) : null}},
+      };
+    } else if (customFieldContext && edit.fieldKey === customFieldContext.fieldId) {
+      const {fieldId, fieldName, support} = customFieldContext;
+      const writePath = `${instanceUrl}rest/api/2/issue/${encodeURIComponent(capturedSession.issueKey)}`;
+      if (support.valueKind === 'primitive') {
+        const nextValue = String(edit.inputValue || '');
+        notice = nextValue.trim() ? `${fieldName} updated` : `${fieldName} cleared`;
+        writeRequest = {
+          method: 'PUT',
+          path: writePath,
+          body: {fields: {[fieldId]: nextValue.trim() ? nextValue : null}},
+        };
+      } else if (support.valueKind === 'tempo-account') {
+        const selected = edit.options.find(option => option.id === edit.selectedOptionId);
+        if (!selected) {
+          const failure = normalizeFailure(new Error('Pick an account before saving'));
+          edit = {...edit, errorMessage: failure.message, status: 'failed'};
+          return outcome('failed', {editId, failure});
+        }
+        if (selected.id === '__clear__' || selected.rawValue === null) {
+          notice = `${fieldName} cleared`;
+          writeRequest = {method: 'PUT', path: writePath, body: {fields: {[fieldId]: null}}};
+        } else {
+          const numericId = Number(selected.id);
+          const accountId = Number.isFinite(numericId) ? numericId : selected.id;
+          const accountKey = String(selected.rawValue?.key || '').trim();
+          notice = `${fieldName} set to ${selected.label}`;
+          writeCandidates = [
+            {identifier: 'tempo-id-object', body: {fields: {[fieldId]: {id: accountId}}}},
+            {identifier: 'tempo-id-value', body: {fields: {[fieldId]: accountId}}},
+            {identifier: 'tempo-id-string', body: {fields: {[fieldId]: {id: String(selected.id)}}}},
+            ...(accountKey ? [{identifier: 'tempo-key', body: {fields: {[fieldId]: {key: accountKey}}}}] : []),
+          ].map(candidate => ({...candidate, method: 'PUT', path: writePath}));
+        }
+      } else if (support.valueKind === 'user') {
+        if (support.selectionMode === 'multi') {
+          const selected = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
+          notice = selected.length ? `${fieldName} updated` : `${fieldName} cleared`;
+          writeRequest = {
+            method: 'PUT',
+            path: writePath,
+            body: {fields: {[fieldId]: selected.map(option => customFieldSaveValue(option, 'user')).filter(Boolean)}},
+          };
+        } else {
+          const selected = edit.options.find(option => option.id === edit.selectedOptionId);
+          if (!selected || selected.id === '__clear__' || selected.rawValue === null) {
+            notice = `${fieldName} cleared`;
+            writeRequest = {method: 'PUT', path: writePath, body: {fields: {[fieldId]: null}}};
+          } else {
+            const candidates = userPayloadCandidates(selected.rawValue || selected);
+            if (!candidates.length) {
+              const failure = normalizeFailure(new Error('Could not build user field payload'));
+              edit = {...edit, errorMessage: failure.message, status: 'failed'};
+              return outcome('failed', {editId, failure});
+            }
+            notice = `${fieldName} set to ${selected.label}`;
+            writeCandidates = candidates.map(candidate => ({
+              identifier: candidate.identifier,
+              method: 'PUT',
+              path: writePath,
+              body: {fields: {[fieldId]: candidate.value}},
+            }));
+          }
+        }
+      } else if (support.selectionMode === 'multi') {
+        const selected = resolveOptions(edit.selectedOptionIds, edit.options, edit.selectedOptions);
+        notice = selected.length ? `${fieldName} updated` : `${fieldName} cleared`;
+        writeRequest = {
+          method: 'PUT',
+          path: writePath,
+          body: {fields: {[fieldId]: selected.map(option => customFieldSaveValue(option, support.valueKind))}},
+        };
+      } else {
+        const selected = edit.options.find(option => option.id === edit.selectedOptionId);
+        notice = !selected || selected.id === '__clear__' ? `${fieldName} cleared` : `${fieldName} updated`;
+        writeRequest = {
+          method: 'PUT',
+          path: writePath,
+          body: {fields: {[fieldId]: !selected || selected.id === '__clear__'
+            ? null
+            : customFieldSaveValue(selected, support.valueKind)}},
+        };
+      }
+    } else {
+      return outcome('ignored', {editId});
+    }
+    const writeAlreadySucceeded = edit.writeSucceeded === true;
+    edit = {...edit, errorMessage: '', saving: true, status: 'saving'};
+
+    if (!writeAlreadySucceeded) {
+      try {
+        if (writeCandidates) {
+          let lastError = null;
+          let successfulIdentifier = '';
+          for (const candidate of writeCandidates) {
+            try {
+              await jira.write({
+                method: candidate.method,
+                path: candidate.path,
+                body: candidate.body,
+                signal: intent.signal,
+              });
+              successfulIdentifier = candidate.identifier;
+              break;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          if (!successfulIdentifier) throw lastError || new Error('Could not update assignee');
+          if (rememberAssigneeIdentifier) preferredAssigneeIdentifier = successfulIdentifier;
+        } else {
+          await jira.write({
+            ...writeRequest,
+            signal: intent.signal,
+          });
+        }
+      } catch (error) {
+        if (!isCurrent(capturedSession, editId)) {
+          return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+        }
+        const failure = normalizeFailure(error);
+        edit = {...edit, errorMessage: failure.message, saving: false, status: 'failed'};
+        return outcome('failed', {editId, failure});
+      }
+    }
+    if (!isCurrent(capturedSession, editId)) {
+      return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+    }
+
+    const refreshOutcome = await issueData.refreshAfterMutation({
+      issueKey: capturedSession.issueKey,
+      priorSnapshot: capturedSession.issueSnapshot,
+      mutation: {kind: 'fieldChanged', fieldId: mutationFieldId || edit.fieldKey},
+      requirements: capturedSession.requirements,
+      signal: intent.signal,
+    });
+    if (!isCurrent(capturedSession, editId)) {
+      return outcome('ignored', {editId, issueKey: capturedSession.issueKey, sessionId: capturedSession.sessionId});
+    }
+    if (!refreshOutcome.snapshot?.core) {
+      const failure = normalizeFailure(refreshOutcome.failures?.core?.message || 'The field was saved, but Jira could not refresh the issue');
+      edit = {
+        ...edit,
+        errorMessage: failure.message,
+        saving: false,
+        status: 'failed',
+        writeSucceeded: true,
+      };
+      return outcome('savedButRefreshFailed', {editId, failure, notice});
+    }
+    session = {...session, issueSnapshot: refreshOutcome.snapshot};
+    cancelPendingLabelSearch();
+    edit = null;
+    resolvedFieldId = '';
+    linkageMode = '';
+    mutationFieldId = '';
+    customFieldContext = null;
+    return outcome('saved', {
+      editId,
+      notice,
+      refreshedSnapshot: refreshOutcome.snapshot,
+    });
+  }
+
+  async function dispatch(intent = {}) {
+    if (intent.type === 'describeField') return describeField(intent);
+    if (intent.type === 'describeLinkage') return describeLinkage(intent);
+    if (intent.type === 'begin') return begin(intent);
+    if (intent.type === 'inputChanged') return inputChanged(intent);
+    if (intent.type === 'cancel') return cancel(intent);
+    if (intent.type === 'selectOption') return selectOption(intent);
+    if (intent.type === 'save') return save(intent);
+    if (intent.type === 'key') {
+      if (intent.key === 'Escape') return cancel(intent);
+      if (intent.key === 'ArrowDown') return moveHighlight(intent, 1);
+      if (intent.key === 'ArrowUp') return moveHighlight(intent, -1);
+      if (intent.key === 'Enter') {
+        if (edit?.selectionMode === 'multi') {
+          if (intent.ctrlKey || intent.metaKey) return save(intent);
+          const optionId = edit?.highlightedOptionId || visibleSelectableOptions()[0]?.id;
+          return optionId ? selectOption({...intent, optionId}) : outcome('ignored');
+        }
+        if (edit?.selectionMode !== 'text') {
+          const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleSelectableOptions()[0]?.id;
+          const selected = await selectOption({...intent, optionId: edit?.highlightedOptionId || optionId});
+          if (edit?.editorType !== 'transition-select' && selected.kind === 'changed') {
+            return save(intent);
+          }
+          return selected;
+        }
+        return save(intent);
+      }
+    }
+    return outcome('ignored');
+  }
+
+  return {attach, detach, dispatch, view};
+}

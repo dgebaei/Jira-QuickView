@@ -29,6 +29,10 @@ module.exports = {
   globalSetup: path.join(__dirname, 'tests/e2e/helpers/global-setup.js'),
   projects: [
     {
+      name: 'deep-modules',
+      testMatch: /(?:^|\/)deep-modules\/(?:comment-lifecycle|jira-field-editing|linked-issue-lifecycle|popup-quick-actions|popup-session|transport-contract|quickview-issue-data|watcher-lifecycle)\.spec\.js$/,
+    },
+    {
       name: 'mock-edge',
       testMatch: /(?:^|\/)(?:action-click|error-states|linked-issues-helpers|partial-failures|user-field-editing)\.spec\.js$/,
     },

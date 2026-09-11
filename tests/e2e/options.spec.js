@@ -89,7 +89,7 @@ test('expands and collapses advanced settings from anywhere in the header', asyn
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(form.hoverDepthSelect).toBeVisible();
 
-  await toggle.getByText('Hover trigger depth, modifier keys, field layout editor, custom fields, and settings sync.', {exact: true}).click();
+  await toggle.getByText('QuickView activation, field layout editor, custom fields, and settings sync.', {exact: true}).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(form.hoverDepthSelect).toBeHidden();
 
@@ -267,7 +267,7 @@ test('persists custom field row changes when moving a field into row 2', async (
 test('persists hover behavior settings through the options page', async ({optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   const form = optionsPageModel(optionsPage);
-  await configureExtension(optionsPage, baseConfig(servers, target));
+  await configureExtension(optionsPage, baseConfig(servers, target, {activationMode: 'hover-modifier'}));
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
 
@@ -298,19 +298,33 @@ test('keeps native dropdown surfaces aligned with the selected theme', async ({o
   await openAdvancedSettings(optionsPage);
 
   await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'light');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('background-color', 'rgb(248, 250, 252)');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('color', 'rgb(55, 65, 81)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(248, 250, 252)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(55, 65, 81)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(219, 234, 254)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(30, 64, 175)');
   if (themeScreenshotDir) {
     await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-light.png')});
   }
 
   await optionsPage.getByTestId('options-theme-mode-dark').click();
   await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'dark');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('background-color', 'rgb(30, 41, 59)');
-  await expect(form.hoverDepthSelect.locator('option').first()).toHaveCSS('color', 'rgb(237, 243, 249)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(30, 41, 59)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(237, 243, 249)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(30, 58, 95)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(147, 197, 253)');
   if (themeScreenshotDir) {
     await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-dark.png')});
   }
+});
+
+test('includes attachments in the default layout for a new installation', async ({optionsPage}) => {
+  const form = optionsPageModel(optionsPage);
+  await optionsPage.evaluate(async () => chrome.storage.sync.clear());
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+
+  await expect(contentBlockItem(optionsPage, 'attachments')).toBeVisible();
+  await expect(form.contentBlocksDropzone).toHaveAttribute('data-content-order', /(?:^|,)attachments(?:,|$)/);
 });
 
 test('enables Jira inline copy buttons by default and persists the preference', async ({optionsPage, servers}) => {
@@ -319,8 +333,16 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   await configureExtension(optionsPage, baseConfig(servers, target));
   await optionsPage.reload();
 
+  const appearanceCard = optionsPage.locator('.settingsCard').filter({hasText: 'Appearance'});
+  await expect(appearanceCard.getByTestId('options-inline-copy-buttons')).toBeVisible();
+  await expect(appearanceCard.getByTestId('options-open-quickview-on-click')).toBeVisible();
+  for (const testId of ['options-inline-copy-description', 'options-click-navigation-description']) {
+    const renderedHeight = await appearanceCard.getByTestId(testId).evaluate(element => element.getBoundingClientRect().height);
+    expect(renderedHeight).toBeLessThan(20);
+  }
+
   await expect(form.inlineCopyButtonsCheckbox).toBeChecked();
-  await optionsPage.getByText('Show copy buttons in Jira', {exact: true}).click();
+  await optionsPage.getByText('Show copy buttons beside Jira issues', {exact: true}).click();
   await expect(form.inlineCopyButtonsCheckbox).not.toBeChecked();
   await expect(form.statusPill).toContainText('Unsaved changes.');
   await form.saveButton.click();
@@ -330,6 +352,101 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   await expect(form.inlineCopyButtonsCheckbox).not.toBeChecked();
   const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['inlineCopyButtons']));
   expect(stored.inlineCopyButtons).toBe(false);
+});
+
+test('persists independent click interception and hover preview settings', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+  await optionsPage.evaluate(async () => chrome.storage.sync.clear());
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('automatic');
+  await expect(form.hoverDepthSelect).toBeEnabled();
+  await expect(form.hoverModifierSelect).toBeDisabled();
+  if (themeScreenshotDir) {
+    await optionsPage.setViewportSize({width: 1600, height: 1200});
+    await optionsPage.locator('.actionBar').evaluate(element => {
+      element.style.display = 'none';
+    });
+    await optionsPage.screenshot({path: path.join(themeScreenshotDir, 'options-quickview-activation.png')});
+    await optionsPage.locator('.actionBar').evaluate(element => {
+      element.style.removeProperty('display');
+    });
+  }
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({activationMode: 'click'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('off');
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({activationMode: 'hover'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('automatic');
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({activationMode: 'hover-modifier', hoverModifierKey: 'shift'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('modifier');
+  await expect(form.hoverModifierSelect).toHaveValue('shift');
+
+  await optionsPage.evaluate(async () => {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set({openQuickViewOnClick: true, hoverModifierKey: 'shift'});
+  });
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('modifier');
+  await expect(form.hoverModifierSelect).toHaveValue('shift');
+
+  await expect(form.hoverModifierSelect).toBeVisible();
+  await expect(form.hoverDepthSelect).toBeEnabled();
+  await expect(form.hoverModifierSelect).toBeEnabled();
+  await form.hoverModifierSelect.selectOption('ctrl');
+  await form.instanceUrlInput.fill(target.instanceUrl);
+  await form.domainsInput.fill(servers.allowedPage.origin);
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('modifier');
+  await expect(form.hoverModifierSelect).toHaveValue('ctrl');
+
+  await form.hoverActivationModeSelect.selectOption('off');
+  await expect(form.hoverDepthSelect).toBeDisabled();
+  await expect(form.hoverModifierSelect).toBeDisabled();
+  await optionsPage.getByText('Open Jira issue links in QuickView instead of navigating', {exact: true}).click();
+  await expect(form.statusPill).toContainText('Unsaved changes.');
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+
+  await optionsPage.reload();
+  await openAdvancedSettings(optionsPage);
+  await expect(form.openQuickViewOnClickCheckbox).not.toBeChecked();
+  await expect(form.hoverActivationModeSelect).toHaveValue('off');
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get([
+    'openQuickViewOnClick', 'hoverActivationMode', 'hoverModifierKey'
+  ]));
+  expect(stored).toMatchObject({
+    openQuickViewOnClick: false,
+    hoverActivationMode: 'off',
+    hoverModifierKey: 'ctrl',
+  });
 });
 
 test('persists reordered content blocks through the options page', async ({optionsPage, servers}) => {
@@ -383,6 +500,8 @@ test('exports the current settings as JSON', async ({optionsPage, servers}) => {
   expect(exported.minimumExtensionVersion).toBe(CURRENT_EXTENSION_VERSION);
   expect(exported.policy.instanceUrl).toBe('locked');
   expect(exported.settings.instanceUrl).toBe('https://example.atlassian.net/');
+  expect(exported.settings.openQuickViewOnClick).toBe(false);
+  expect(exported.settings.hoverActivationMode).toBe('modifier');
   expect(exported.settings.hoverDepth).toBe('deep');
   expect(exported.settings.hoverModifierKey).toBe('shift');
   expect(exported.settings.tooltipLayout.contentBlocks).toContain('children');
