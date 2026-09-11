@@ -81,7 +81,12 @@ function getIssueSummary(documentRef, issueElement) {
 }
 
 function getResultContainer(issueElement) {
-  return issueElement.closest(RESULT_CONTAINER_SELECTOR);
+  const container = issueElement?.closest?.(RESULT_CONTAINER_SELECTOR);
+  if (container !== issueElement || !issueElement?.matches?.('a, span, strong')) {
+    return container;
+  }
+  return issueElement.parentElement?.closest(RESULT_CONTAINER_SELECTOR)
+    || issueElement.parentElement;
 }
 
 function getResultSummary(issueElement, key) {
@@ -119,6 +124,14 @@ function findResultCopyTarget(container) {
 
 function isIssueHeaderLink(issueElement) {
   return HEADER_LINK_SELECTORS.some(selector => issueElement?.matches?.(selector));
+}
+
+function isOwnCopyButtonAddition(record) {
+  if (record.type !== 'childList' || record.removedNodes.length > 0) return false;
+  const changedNodes = [...record.addedNodes];
+  return changedNodes.length > 0 && changedNodes.every(node => (
+    node.nodeType === 1 && node.matches('._JX_inline_copy_button')
+  ));
 }
 
 function findResultKeyElement(container, key) {
@@ -532,7 +545,11 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       scanFrame = documentRef.defaultView.requestAnimationFrame(scan);
     }
   };
-  const observer = new MutationObserver(scheduleScan);
+  const observer = new MutationObserver(records => {
+    if (!records.every(isOwnCopyButtonAddition)) {
+      scheduleScan();
+    }
+  });
   observer.observe(documentRef.body, {
     attributes: true,
     attributeFilter: ['data-issue-key', 'data-issuekey', 'href'],

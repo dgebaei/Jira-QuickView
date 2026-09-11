@@ -132,6 +132,41 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   await page.close();
 });
 
+test('keeps one copy button for an issue link inside a Jira comment @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira comment markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    document.body.innerHTML = `
+      <main>
+        <article data-testid="issue-comment">
+          <p>Tracked by <a data-issue-key="PLATFORM-101" href="/browse/PLATFORM-101">PLATFORM-101</a></p>
+        </article>
+      </main>`;
+  });
+
+  const comment = page.getByTestId('issue-comment');
+  const copyButton = comment.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
+  await expect(copyButton).toHaveCount(1);
+  await comment.evaluate(element => {
+    for (let index = 0; index < 20; index += 1) {
+      element.dataset.renderPass = String(index);
+      element.appendChild(document.createTextNode(' '));
+    }
+  });
+  await expect(copyButton).toHaveCount(1);
+  await comment.hover();
+  await captureInlineCopyScreenshot(comment, 'jira-inline-copy-comment-issue-link.png');
+  await page.close();
+});
+
 test('adds copy controls to an Active Sprint side panel and its issue links @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Side-by-side Jira markup is deterministic in mocked mode only.');
