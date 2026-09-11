@@ -247,12 +247,12 @@ test('adds copy buttons beside issue keys in modern JQL result rows @mock-only',
     document.querySelector('#issue-results').innerHTML = `
       <table aria-label="Search results">
         <tbody>
-          <tr role="row" data-testid="issue-table.ui.issue-row">
+          <tr role="row" data-testid="issue-table.ui.issue-row" data-issue-key="PLATFORM-101">
             <td data-testid="issue-table.common.ui.issue-cells.issue-key">
-              <a href="/jira/software/c/projects/PLATFORM/issues/PLATFORM-101">PLATFORM-101</a>
+              <a href="/browse/PLATFORM-101">PLATFORM-101</a>
             </td>
             <td data-testid="issue-table.common.ui.issue-cells.summary">
-              <span>Cross-project platform initiative</span>
+              <a href="/browse/PLATFORM-101">Cross-project platform initiative</a>
             </td>
           </tr>
         </tbody>
@@ -260,6 +260,13 @@ test('adds copy buttons beside issue keys in modern JQL result rows @mock-only',
   });
 
   const copyButton = page.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
+  await expect(copyButton).toHaveCount(1);
+  await page.locator('[data-testid="issue-table.ui.issue-row"]').evaluate(row => {
+    for (let index = 0; index < 20; index += 1) {
+      row.dataset.renderPass = String(index);
+      row.appendChild(document.createTextNode(' '));
+    }
+  });
   await expect(copyButton).toHaveCount(1);
   await page.getByRole('row').hover();
   await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-modern-jql.png');

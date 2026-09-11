@@ -99,7 +99,7 @@ function getResultSummary(issueElement, key) {
 
 function findResultCopyTarget(container) {
   if (!container) return null;
-  return container.querySelector('[data-testid*="summary"], .summary, .ghx-summary, td:nth-child(3)') || null;
+  return container.querySelector('[data-testid*="summary"], .summary, td:nth-child(3)') || null;
 }
 
 function findResultKeyElement(container, key) {
@@ -273,10 +273,23 @@ function removeStaleCopyButtons(issueElement, key, summary) {
   }
 }
 
-function insertResultCopyButton(documentRef, issueElement, reference, copy) {
+function reconcileResultCopyButton(documentRef, issueElement, reference, copy) {
   const container = getResultContainer(issueElement);
   if (!container) {
-    return;
+    return null;
+  }
+  const resultButtons = Array.from(container.querySelectorAll('._JX_inline_copy_button_result'));
+  const matchingButton = resultButtons.find(button => (
+    button.dataset.jxInlineCopyKey === reference.key
+    && button.dataset.jxInlineCopySummary === reference.summary
+  ));
+  for (const button of resultButtons) {
+    if (button !== matchingButton) {
+      button.remove();
+    }
+  }
+  if (matchingButton) {
+    return matchingButton;
   }
   container.classList.add('_JX_inline_copy_scope');
   const button = createCopyButton(documentRef, reference, copy, 'result');
@@ -286,6 +299,7 @@ function insertResultCopyButton(documentRef, issueElement, reference, copy) {
   } else {
     issueElement.append(button);
   }
+  return button;
 }
 
 function installNativeCommentCopyButtons(documentRef, copy) {
@@ -451,14 +465,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       if (!resultSummary) {
         continue;
       }
-      removeStaleCopyButtons(copyTarget, key, resultSummary);
-      const existing = copyTarget.matches('a, span, strong')
-        ? copyTarget.nextElementSibling
-        : copyTarget.querySelector('._JX_inline_copy_button');
-      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
-        continue;
-      }
-      insertResultCopyButton(documentRef, copyTarget, {
+      reconcileResultCopyButton(documentRef, copyTarget, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
@@ -478,12 +485,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       if (!resultSummary) {
         continue;
       }
-      removeStaleCopyButtons(issueElement, key, resultSummary);
-      const existing = issueElement.nextElementSibling;
-      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
-        continue;
-      }
-      insertResultCopyButton(documentRef, issueElement, {
+      reconcileResultCopyButton(documentRef, issueElement, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
@@ -500,12 +502,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       if (!resultSummary) {
         continue;
       }
-      removeStaleCopyButtons(issueElement, key, resultSummary);
-      const existing = issueElement.nextElementSibling;
-      if (existing?.matches(`._JX_inline_copy_button[data-jx-inline-copy-key="${key}"]`)) {
-        continue;
-      }
-      insertResultCopyButton(documentRef, issueElement, {
+      reconcileResultCopyButton(documentRef, issueElement, {
         key,
         summary: resultSummary,
         url: buildIssueUrl(instanceUrl, key),
