@@ -342,16 +342,31 @@ test('keeps the copy icon inline with an issue link in a narrow Jira Issues drop
   await page.evaluate(() => {
     document.body.innerHTML = `
       <main style="padding:24px">
-        <ul aria-label="Issues" role="menu" style="list-style:none;margin:0;padding:8px;width:106px">
-          <li role="menuitem" style="width:106px">
-            <a href="/browse/PLATFORM-101">PLATFORM-101</a>
+        <ul id="issues-dropdown" aria-label="Issues" role="menu">
+          <li id="issue_lnk_322356" role="menuitem">
+            <a href="/browse/PLATFORM-101" data-issue-key="PLATFORM-101">
+              <img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'/%3E">
+              PLATFORM-101 Admin|E-mail: Nedo...
+            </a>
           </li>
         </ul>
+        <style>
+          #issues-dropdown { list-style: none; margin: 0; padding: 8px; width: 355px; }
+          #issues-dropdown li { width: 355px; }
+          #issues-dropdown li > a {
+            box-sizing: border-box;
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+          }
+          #issues-dropdown img { height: 16px; margin-right: 8px; width: 16px; }
+        </style>
       </main>`;
   });
 
   const menuItem = page.getByRole('menuitem');
-  const issueLink = menuItem.getByRole('link', {name: 'PLATFORM-101'});
+  const issueLink = menuItem.getByRole('link', {name: /PLATFORM-101/});
   const copyButton = menuItem.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
   await expect(copyButton).toHaveCount(1);
   await menuItem.hover();

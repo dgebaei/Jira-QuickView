@@ -79,7 +79,14 @@
 }
 
 ._JX_inline_copy_dropdown_pair {
+  align-items: center;
+  display: flex;
   white-space: nowrap;
+
+  > ._JX_inline_copy_anchor {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
 ._JX_inline_copy_button_result {
