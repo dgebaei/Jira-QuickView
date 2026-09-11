@@ -196,7 +196,7 @@ test('adds copy controls to an Active Sprint side panel and its issue links @moc
           <section id="issuelinks">
             <h2>Issue Links</h2>
             <ul>
-              <li><a href="/browse/RELATED-202">RELATED-202</a><span class="link-summary">Related issue summary</span></li>
+              <li><a data-issue-key="RELATED-202" href="/browse/RELATED-202">RELATED-202</a><span class="link-summary">Related issue summary</span></li>
             </ul>
           </section>
         </aside>
@@ -206,7 +206,16 @@ test('adds copy controls to an Active Sprint side panel and its issue links @moc
   const copyButton = page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`});
   await expect(copyButton).toBeVisible();
   await expect(copyButton).toHaveAttribute('data-jx-inline-copy-summary', 'Correct Active Sprint side-panel title');
-  await expect(page.locator('#issuelinks').getByRole('button', {name: 'Copy RELATED-202 issue link'})).toBeVisible();
+  const issueLinks = page.locator('#issuelinks');
+  const linkedIssueCopyButton = issueLinks.getByRole('button', {name: 'Copy RELATED-202 issue link'});
+  await expect(linkedIssueCopyButton).toHaveCount(1);
+  await issueLinks.evaluate(async element => {
+    for (let index = 0; index < 50; index += 1) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      element.appendChild(document.createTextNode(' '));
+    }
+  });
+  await expect(linkedIssueCopyButton).toHaveCount(1);
   await page.locator('[data-testid="active-sprint-issue-details-panel"]').hover();
   await expect(copyButton).toHaveCSS('opacity', '1');
   await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-active-sprint-side-panel.png');
