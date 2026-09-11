@@ -41,6 +41,14 @@ const RESULT_CONTAINER_SELECTOR = [
   'article',
   'li',
 ].join(', ');
+const DROPDOWN_SELECTOR = [
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+  '.aui-dropdown',
+  '.aui-dropdown2',
+].join(', ');
 
 function getIssueKey(element) {
   const dataKey = String(
@@ -319,6 +327,13 @@ function reconcileResultCopyButton(documentRef, issueElement, reference, copy) {
     if (button !== matchingButton) {
       button.remove();
     }
+  }
+  if (issueElement.matches('a, span, strong')) {
+    const pairOwner = issueElement.parentElement;
+    pairOwner?.classList.toggle(
+      '_JX_inline_copy_dropdown_pair',
+      !!pairOwner.closest(DROPDOWN_SELECTOR)
+    );
   }
   if (matchingButton) {
     return matchingButton;

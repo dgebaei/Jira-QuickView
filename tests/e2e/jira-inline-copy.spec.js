@@ -328,6 +328,46 @@ test('adds copy buttons beside issue keys in modern JQL result rows @mock-only',
   await page.close();
 });
 
+test('keeps the copy icon inline with an issue link in a narrow Jira Issues dropdown @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira Issues dropdown markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    document.body.innerHTML = `
+      <main style="padding:24px">
+        <ul aria-label="Issues" role="menu" style="list-style:none;margin:0;padding:8px;width:106px">
+          <li role="menuitem" style="width:106px">
+            <a href="/browse/PLATFORM-101">PLATFORM-101</a>
+          </li>
+        </ul>
+      </main>`;
+  });
+
+  const menuItem = page.getByRole('menuitem');
+  const issueLink = menuItem.getByRole('link', {name: 'PLATFORM-101'});
+  const copyButton = menuItem.getByRole('button', {name: 'Copy PLATFORM-101 issue link'});
+  await expect(copyButton).toHaveCount(1);
+  await menuItem.hover();
+
+  const [linkBox, buttonBox] = await Promise.all([issueLink.boundingBox(), copyButton.boundingBox()]);
+  expect(linkBox).not.toBeNull();
+  expect(buttonBox).not.toBeNull();
+  const linkCenterY = linkBox.y + (linkBox.height / 2);
+  const buttonCenterY = buttonBox.y + (buttonBox.height / 2);
+  expect(Math.abs(buttonCenterY - linkCenterY)).toBeLessThan(4);
+  expect(buttonBox.x).toBeGreaterThanOrEqual(linkBox.x + linkBox.width);
+  await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-issues-dropdown.png');
+
+  await page.close();
+});
+
 test('adds copy buttons to Jira board cards without issue links @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Inline Jira UI coverage is deterministic in mocked mode only.');
