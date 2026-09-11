@@ -132,7 +132,7 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   await page.close();
 });
 
-test('copies the issue title from an Active Sprint side panel instead of its development summary @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('adds copy controls to an Active Sprint side panel and its issue links @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Side-by-side Jira markup is deterministic in mocked mode only.');
 
@@ -154,10 +154,16 @@ test('copies the issue title from an Active Sprint side panel instead of its dev
             <div class="ghx-summary">Board card summary</div>
           </article>
         </section>
-        <aside role="dialog" data-testid="active-sprint-issue-details-panel" data-issue-key="${issueKey}">
+        <aside role="dialog" data-testid="active-sprint-issue-details-panel">
           <a data-testid="issue-detail-key" href="/browse/${issueKey}">${issueKey}</a>
           <section data-testid="development-summary">1 branch</section>
           <h1 data-testid="issue-detail-summary">Correct Active Sprint side-panel title</h1>
+          <section id="issuelinks">
+            <h2>Issue Links</h2>
+            <ul>
+              <li><a href="/browse/RELATED-202">RELATED-202</a><span class="link-summary">Related issue summary</span></li>
+            </ul>
+          </section>
         </aside>
       </main>`;
   }, target.primaryIssueKey);
@@ -165,6 +171,7 @@ test('copies the issue title from an Active Sprint side panel instead of its dev
   const copyButton = page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`});
   await expect(copyButton).toBeVisible();
   await expect(copyButton).toHaveAttribute('data-jx-inline-copy-summary', 'Correct Active Sprint side-panel title');
+  await expect(page.locator('#issuelinks').getByRole('button', {name: 'Copy RELATED-202 issue link'})).toBeVisible();
   await page.locator('[data-testid="active-sprint-issue-details-panel"]').hover();
   await expect(copyButton).toHaveCSS('opacity', '1');
   await captureInlineCopyScreenshot(page.locator('main'), 'jira-inline-copy-active-sprint-side-panel.png');

@@ -28,7 +28,19 @@ const RESULT_KEY_SELECTORS = [
   '.card-key',
 ];
 const RESULT_KEY_SELECTOR = RESULT_KEY_SELECTORS.join(', ');
-const RESULT_CONTAINER_SELECTOR = '[data-issue-key], [data-issuekey], tr, [role="row"], article, li';
+const RESULT_CONTAINER_SELECTOR = [
+  '[data-issue-key]',
+  '[data-issuekey]',
+  '[data-testid*="issue-details-panel"]',
+  '[data-testid*="issue-detail-panel"]',
+  '[role="dialog"]',
+  '.ghx-detail-view',
+  '.ghx-detail-issue',
+  'tr',
+  '[role="row"]',
+  'article',
+  'li',
+].join(', ');
 
 function getIssueKey(element) {
   const dataKey = String(
@@ -98,8 +110,15 @@ function getResultSummary(issueElement, key) {
 }
 
 function findResultCopyTarget(container) {
-  if (!container) return null;
-  return container.querySelector('[data-testid*="summary"], .summary, td:nth-child(3)') || null;
+  const row = container?.matches?.('tr, [role="row"]')
+    ? container
+    : container?.closest?.('tr, [role="row"]');
+  if (!row) return null;
+  return row.querySelector('[data-testid*="summary"], .summary, td:nth-child(3)') || null;
+}
+
+function isIssueHeaderLink(issueElement) {
+  return HEADER_LINK_SELECTORS.some(selector => issueElement?.matches?.(selector));
 }
 
 function findResultKeyElement(container, key) {
@@ -455,16 +474,15 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       const resultContainer = getResultContainer(issueElement);
       const isKeyOnlyLink = elementText.toUpperCase() === key;
       const hasSeparateKey = !!resultContainer && !!findResultKeyElement(resultContainer, key);
-      const copyTarget = isKeyOnlyLink ? findResultCopyTarget(resultContainer) : issueElement;
-      if (!key || (isKeyOnlyLink && (!copyTarget || copyTarget === issueElement))
+      const copyTarget = isKeyOnlyLink
+        ? (findResultCopyTarget(resultContainer) || issueElement)
+        : issueElement;
+      if (!key || isIssueHeaderLink(issueElement)
         || (!elementText.toUpperCase().includes(key) && !hasSeparateKey)
         || issueElement.closest('._JX_container')) {
         continue;
       }
       const resultSummary = getResultSummary(copyTarget, key);
-      if (!resultSummary) {
-        continue;
-      }
       reconcileResultCopyButton(documentRef, copyTarget, {
         key,
         summary: resultSummary,
