@@ -20,7 +20,7 @@
 <p><img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" /> <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" /> <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" /></p>
 <p><a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> · <a href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a> · <a href="user-guide.html">User guide</a> · <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a> · <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a></p>
 <h2 id="one-hover-much-more-context">One hover, much more context</h2>
-<p>Open a Jira notification email in Gmail or Outlook, hover the issue key in the message, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.</p>
+<p>Open a Jira notification email in Gmail or Outlook, click the issue link, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.</p>
 <p><img src="screenshots/marketing-hidpi-light/popup-overview.png" alt="Main product overview" /></p>
 <h2 id="feature-highlights">Feature highlights</h2>
 <ul>
@@ -49,9 +49,9 @@
 <li>Open the Jira QuickView Options page.</li>
 <li>Enter your Jira instance URL, for example <code>https://your-company.atlassian.net</code>.</li>
 <li>Add the pages where Jira QuickView should run, such as <code>github.com</code>, <code>mail.google.com</code>, or <code>outlook.office.com</code>.</li>
-<li>Save, open an allowed page, and hover a Jira issue key such as <code>ABC-123</code>.</li>
+<li>Save, open an allowed page, and click a Jira issue link such as <code>ABC-123</code>.</li>
 </ol>
-<p>By default, the popup opens when you hover a Jira key and then hold <code>Alt</code>, <code>Ctrl</code>, or <code>Shift</code>. This keeps busy pages readable while still making issue details one gesture away.</p>
+<p>By default, a plain left click on a Jira issue link opens and pins QuickView instead of navigating, while hovering previews Jira IDs that are not links. Middle-click and modifier-click retain normal browser behavior. Hover preview can be disabled or require a modifier in Advanced settings.</p>
 <p>For full setup details, advanced allowed-page patterns, desktop-app/PWA setup notes, custom fields, troubleshooting, and day-to-day workflows, read the <a href="user-guide.html">User guide</a>.</p>
 <h2 id="where-it-works">Where it works</h2>
 <p>Jira QuickView works on pages you explicitly allow, including GitHub, Gmail, Outlook on the web, internal docs, wiki pages, dashboards, release notes, and QA checklists. On your configured Jira Cloud or Jira Data Center instance, it can also add a copy action beside issue keys on details, search results, boards, and backlogs. It does not scan every site you visit.</p>

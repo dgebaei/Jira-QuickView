@@ -19,7 +19,7 @@
 </blockquote>
 <p><img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" /> <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" /> <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" /></p>
 <p><a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> · <a href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a> · <a href="https://dgebaei.github.io/Jira-QuickView/user-guide.html">User guide</a> · <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a> · <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a></p>
-<p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can hover an issue key and use the popup to inspect, update, comment on, and triage the issue.</p>
+<p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
 <p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
 <details class="user-guide-toc" open>
 <summary>Table of contents</summary>
@@ -50,7 +50,7 @@
       <li><a href="#41-basic-connection">4.1 Basic: Connection</a></li>
       <li><a href="#42-basic-appearance">4.2 Basic: Appearance</a></li>
       <li><a href="#43-advanced-show-advanced-settings">4.3 Advanced: Show Advanced Settings</a></li>
-      <li><a href="#44-advanced-hover-behavior">4.4 Advanced: Hover Behavior</a></li>
+      <li><a href="#44-advanced-hover-preview">4.4 Advanced: Hover Preview</a></li>
       <li><a href="#45-advanced-tooltip-layout-overview">4.5 Advanced: Tooltip Layout Overview</a></li>
       <li>
         <a href="#46-advanced-organizing-row-fields">4.6 Advanced: Organizing Row Fields</a>
@@ -122,7 +122,7 @@
 <p>Jira QuickView is built for people who see Jira issue keys outside Jira all day: in Gmail, Outlook, GitHub, release notes, incident docs, QA checklists, internal dashboards, and team wikis.</p>
 <p>With the extension, you can:</p>
 <ul>
-<li>Open a Jira issue preview by hovering an issue key such as <code>ABC-123</code>.</li>
+<li>Open a Jira issue in QuickView from its link, with optional hover preview for recognized keys such as <code>ABC-123</code>.</li>
 <li>Copy issue links directly from issue details, search results, boards, and backlogs inside Jira.</li>
 <li>See the issue summary, reporter, assignee, status, priority, versions, sprint, labels, linked Jira issues, description, comments, attachments, history, and linked pull requests.</li>
 <li>Update supported fields directly from the popup when Jira allows it.</li>
@@ -149,16 +149,16 @@
 <li>Add the pages where you want Jira issue popups to appear.</li>
 <li>Choose your color mode, or keep <code>System</code>.</li>
 <li>Click <code>Save</code>.</li>
-<li>Open an allowed page and hover a Jira key.</li>
+<li>Open an allowed page and click a Jira issue link.</li>
 </ol>
-<p>If nothing happens after setup, check the troubleshooting section at the end of this guide. The most common causes are an unallowed page, a Jira URL typo, not being signed in to Jira, or using the hover modifier incorrectly.</p>
+<p>If nothing happens after setup, check the troubleshooting section at the end of this guide. The most common causes are an unallowed page, a Jira URL typo, not being signed in to Jira, or disabling both click interception and hover preview.</p>
 <h3 id="31-use-websites-as-desktop-apps-pwas">3.1 Use websites as desktop apps (PWAs)</h3>
 <p>This subsection is only about turning supported websites such as Gmail or Outlook on the web into standalone desktop-style app windows after Jira QuickView already works in your browser.</p>
 <p>Before installing a site as a desktop app:</p>
 <ol type="1">
 <li>Install Jira QuickView in a supported desktop browser: <code>Chrome</code>, <code>Microsoft Edge</code>, or <code>Brave</code>.</li>
 <li>Open Jira QuickView Options and configure your Jira URL plus allowed pages.</li>
-<li>Open the target site in a normal browser tab first and confirm that hovering a Jira key works there.</li>
+<li>Open the target site in a normal browser tab first and confirm that clicking a Jira issue link opens QuickView there.</li>
 <li>Make sure the exact site domain is in <code>Allowed pages</code>.</li>
 </ol>
 <p>Useful allowed page examples:</p>
@@ -278,16 +278,22 @@
 <li><code>Dark</code> keeps the extension in dark mode.</li>
 </ul>
 <p>Most users should keep <code>System</code>. Use <code>Light</code> or <code>Dark</code> only if you want Jira QuickView to stay fixed regardless of your OS theme.</p>
-<p><code>Show copy buttons in Jira</code> is enabled by default. It adds a copy action beside issue keys on Jira issue details, search results, boards, and backlogs. Turn it off if you want Jira QuickView to leave the Jira interface unchanged. This setting supports both Jira Cloud and Jira Data Center.</p>
+<p><code>Show copy buttons beside Jira issues</code> is enabled by default. It adds copy actions in Jira and beside Jira links and plain issue IDs on allowed pages. Issue titles are fetched only when needed for copying. Editable text and action controls are excluded.</p>
+<p><code>Open Jira issue links in QuickView instead of navigating</code> is also enabled by default. A plain left click on a genuine Jira issue link opens and pins QuickView instead of leaving the page. Turn it off to preserve normal link navigation. Middle-click and modifier-click always keep native browser behavior.</p>
 <h3 id="43-advanced-show-advanced-settings">4.3 Advanced: Show Advanced Settings</h3>
 <p><img src="screenshots/user-guide/options-advanced-toggle.png" alt="Show advanced settings toggle" /></p>
 <p>The Advanced section is hidden by default so the setup page stays simple. Open it when you want to change how the popup is triggered, how its rows are arranged, which custom fields appear, or how to export/import settings.</p>
 <p>Advanced settings are still safe to use, but they affect the day-to-day feel of the extension. If you are setting this up for a team, configure one browser first, test the popup on real work pages, then export the configuration for others.</p>
-<h3 id="44-advanced-hover-behavior">4.4 Advanced: Hover Behavior</h3>
+<h3 id="44-advanced-hover-preview">4.4 Advanced: Hover Preview</h3>
 <p><img src="screenshots/user-guide/options-hover-behavior.png" alt="Hover behavior settings" /></p>
-<p>Hover Behavior controls when Jira QuickView opens the popup after your mouse is near a Jira issue key.</p>
-<h4 id="trigger-depth">Trigger depth</h4>
-<p>Trigger depth controls how aggressively the extension searches surrounding page elements for Jira keys.</p>
+<p><code>Hover preview</code> has three modes:</p>
+<ul>
+<li><code>Off</code> disables hover preview.</li>
+<li><code>Automatic</code> previews an issue when you hover a recognized Jira key. This is the default.</li>
+<li><code>With modifier</code> previews only while the selected modifier key is pressed.</li>
+</ul>
+<h4 id="depth">Depth</h4>
+<p>Depth controls how aggressively hover preview searches surrounding page elements for Jira keys. It is disabled when Hover preview is Off.</p>
 <ul>
 <li><code>Exact</code> checks only the exact element under your mouse.</li>
 <li><code>Shallow</code> checks the hovered element and its immediate parent.</li>
@@ -295,15 +301,14 @@
 </ul>
 <p>Use <code>Exact</code> if popups appear too often on dense pages. Use <code>Deep</code> if a site wraps issue keys in complex HTML and the popup does not reliably open.</p>
 <h4 id="modifier-key">Modifier key</h4>
-<p>Modifier key controls whether hovering alone is enough, or whether you must press a keyboard key after hovering.</p>
+<p>Modifier key is available only when Hover preview is set to With modifier.</p>
 <ul>
-<li><code>None</code> opens the popup on hover.</li>
 <li><code>Alt</code> opens it when you hover and then press <code>Alt</code>.</li>
 <li><code>Ctrl</code> opens it when you hover and then press <code>Ctrl</code>.</li>
 <li><code>Shift</code> opens it when you hover and then press <code>Shift</code>.</li>
 <li><code>Any</code> opens it when you hover and then press <code>Alt</code>, <code>Ctrl</code>, or <code>Shift</code>.</li>
 </ul>
-<p>Modifier keys are useful on pages with many Jira keys, such as inboxes and pull request pages. They prevent accidental popups while still keeping the issue one gesture away.</p>
+<p>Modifier keys are useful on pages with many Jira keys, such as inboxes and pull request pages. They prevent accidental previews while still keeping the issue one gesture away.</p>
 <h3 id="45-advanced-tooltip-layout-overview">4.5 Advanced: Tooltip Layout Overview</h3>
 <p><img src="screenshots/user-guide/options-tooltip-layout.png" alt="Tooltip layout editor" /></p>
 <p>Tooltip Layout controls the rows and content blocks inside the popup. The layout editor has two concepts:</p>
@@ -485,7 +490,7 @@
 </ul>
 <p>The extension only looks for Jira issue keys on allowed pages. It does not scan every site you visit.</p>
 <h4 id="511-copy-issue-links-inside-jira">5.1.1 Copy Issue Links Inside Jira</h4>
-<p>When <code>Show copy buttons in Jira</code> is enabled, Jira QuickView adds a copy action beside structured issue keys on your configured Jira instance.</p>
+<p>When <code>Show copy buttons beside Jira issues</code> is enabled, Jira QuickView adds copy actions inside Jira and beside recognized Jira links and plain issue IDs on allowed pages.</p>
 <table>
 <thead>
 <tr class="header">
@@ -504,7 +509,7 @@
 </table>
 <p>The action is always available beside the key on issue details. In search results, boards, and backlogs, hover or focus a result to reveal it without adding permanent visual clutter.</p>
 <p>Copying uses the same behavior as the popup header: applications that accept rich clipboard content receive a linked <code>[KEY] Summary</code> label, while the plain-text clipboard contains the canonical Jira issue URL. Jira QuickView follows dynamically loaded Jira content and avoids adding duplicate actions during in-app navigation.</p>
-<p>The copy action appears only on the Jira instance configured in Options. If it is missing, confirm that <code>Show copy buttons in Jira</code> is enabled, save Options, and reload the Jira tab.</p>
+<p>If the copy action is missing, confirm that <code>Show copy buttons beside Jira issues</code> is enabled and the page is allowed (or belongs to your configured Jira instance), save Options, and reload the tab.</p>
 <h3 id="52-header-reporter-assignee-summary-and-actions">5.2 Header: Reporter, Assignee, Summary, and Actions</h3>
 <p><img src="screenshots/marketing-hidpi-light/popup-actions.png" alt="Popup quick actions in context" /></p>
 <p>The header is the top part of the popup. It keeps the most common actions close together.</p>
@@ -764,8 +769,9 @@
 <ul>
 <li>The current page is included in Allowed pages.</li>
 <li>You saved the Options page after changing settings.</li>
-<li>You are hovering an issue key in a recognizable format, such as <code>ABC-123</code>.</li>
-<li>You are pressing the configured modifier key after hovering, if a modifier is configured.</li>
+<li>The page contains a genuine Jira issue link, or a recognizable issue key such as <code>ABC-123</code> when hover preview is enabled.</li>
+<li><code>Open Jira issue links in QuickView instead of navigating</code> is enabled for click activation, or Hover preview is set to Automatic or With modifier.</li>
+<li>You are pressing the configured modifier key after hovering when Hover preview is set to With modifier.</li>
 <li>You are signed in to Jira in the same browser.</li>
 <li>Your Jira instance is reachable from the browser.</li>
 </ul>
