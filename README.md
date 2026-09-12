@@ -1,6 +1,6 @@
 # Jira QuickView
 
-> Hover Jira keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect issues, follow linked PRs, comment, transition, and edit fields without opening a new Jira tab.
+> Click Jira issue links or hover recognized keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect and update issues without opening another Jira tab.
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&logo=googlechrome&logoColor=white)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge)
@@ -8,7 +8,7 @@
 
 [Download Extension](https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia) · [Extension website](https://dgebaei.github.io/Jira-QuickView/) · [User guide](docs/user-guide.md) · [GitHub repository](https://github.com/dgebaei/Jira-QuickView) · [Issue tracker](https://github.com/dgebaei/Jira-QuickView/issues)
 
-## One hover, much more context
+## One gesture, much more context
 
 Open a Jira notification email in Gmail or Outlook, click the issue link, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.
 
@@ -24,7 +24,17 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Configurable layout with Jira custom fields placed directly into the popup rows
 - Comment drafting with mentions and support for comment reactions
 - Jira-backed quick actions and workflow transitions
-- Copy issue links directly from Jira details, search results, boards, and backlogs
+- Copy rich issue links beside Jira references in Jira and on allowed pages
+
+## What's new in 2.8.0
+
+- Plain-click Jira links open a pinned QuickView by default, while automatic hover preview keeps working for Jira IDs that are not links
+- Field editing now keeps its own Jira metadata, search, selection, save, retry, and stale-response handling; picker edits save when you click away
+- Linked issues can be searched, added in batches, grouped by relationship, and removed with confirmation
+- Comment drafts, mentions, pasted-image uploads, reactions, edit/delete flows, focus, and error recovery remain stable across permitted rerenders
+- Attachments are enabled for new installations and show both image previews and downloadable non-image files
+- Copy controls work across allowed pages and dynamic Jira views, including search results, boards, side panels, comments, linked issues, and dropdowns
+- Popup loading, positioning, caching, refreshes, avatars, light-theme selection states, and preservation of open work are more resilient
 
 ## Why it matters
 
@@ -49,11 +59,11 @@ For full setup details, advanced allowed-page patterns, desktop-app/PWA setup no
 
 ## Where it works
 
-Jira QuickView works on pages you explicitly allow, including GitHub, Gmail, Outlook on the web, internal docs, wiki pages, dashboards, release notes, and QA checklists. On your configured Jira Cloud or Jira Data Center instance, it can also add a copy action beside issue keys on details, search results, boards, and backlogs. It does not scan every site you visit.
+Jira QuickView works on pages you explicitly allow, including GitHub, Gmail, Outlook on the web, internal docs, wiki pages, dashboards, release notes, and QA checklists. It can add copy actions beside recognized Jira references on those pages and across supported Jira Cloud or Jira Data Center views. It does not scan every site you visit.
 
 ## Customize the popup
 
-The Options page lets you choose color mode, hover behavior, row fields, content blocks, custom Jira fields, and import/export settings. The [User guide](docs/user-guide.md) explains each configuration block and the Jira permission or workflow limits behind edit controls.
+The Options page lets you choose color mode, click and hover activation, row fields, content blocks, custom Jira fields, and import/export settings. The [User guide](docs/user-guide.md) explains each configuration block and the Jira permission or workflow limits behind edit controls.
 
 ## Privacy
 

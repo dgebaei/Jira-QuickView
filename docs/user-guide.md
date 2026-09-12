@@ -12,6 +12,15 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
+### What's new in 2.8.0
+
+- A plain click on a genuine Jira issue link opens and pins QuickView by default; middle-click and modifier-click keep normal browser navigation.
+- Automatic hover preview remains enabled by default for Jira IDs that are not links, including IDs in notification emails and documents.
+- Supported field pickers save when you click elsewhere, while `Escape` cancels and visible failures keep the editor available for retry.
+- Linked-issue, watcher, comment, attachment, history, and popup-session flows preserve active work more reliably during refreshes.
+- Attachments now include image previews and compact downloadable entries for non-image files.
+- Copy actions are available beside recognized Jira references on allowed pages and across supported dynamic Jira views.
+
 <details class="user-guide-toc" open>
 <summary>Table of contents</summary>
 
@@ -117,7 +126,7 @@ Jira QuickView is built for people who see Jira issue keys outside Jira all day:
 With the extension, you can:
 
 - Open a Jira issue in QuickView from its link, with optional hover preview for recognized keys such as `ABC-123`.
-- Copy issue links directly from issue details, search results, boards, and backlogs inside Jira.
+- Copy issue links beside recognized Jira references in Jira and on allowed pages.
 - See the issue summary, reporter, assignee, status, priority, versions, sprint, labels, linked Jira issues, description, comments, attachments, history, and linked pull requests.
 - Update supported fields directly from the popup when Jira allows it.
 - Add comments, mention teammates, react to comments, edit your own comments, and inspect attachment evidence.
@@ -446,7 +455,7 @@ How to use them:
 
 Business logic and limitations:
 
-- Attachments currently preview image attachments. Non-image files may still be linked from Jira or visible in history, but the visual attachment grid focuses on previewable images.
+- Image attachments use previews when Jira supplies usable media data. Non-image files appear as compact entries with a type, size when available, and a link to the original file.
 - Pull Requests appear only when Jira returns development-status data for the issue.
 - Time Tracking appears when Jira exposes time tracking data or editable time tracking metadata.
 - Comments appear when the content block is enabled. The composer follows your Jira permissions.
@@ -529,10 +538,10 @@ If custom fields are invalid, saving is disabled until the issue is fixed. This 
 After setup, the normal flow is simple:
 
 1. Open a page you allowed in Options.
-2. Find a Jira key such as `ABC-123`.
-3. Hover the key.
-4. Press the configured modifier key if your settings require it.
-5. Read or update the issue from the popup.
+2. Plain-click a genuine Jira issue link to open and pin QuickView without navigating away.
+3. For a Jira ID that is not a link, hover it to open the automatic preview.
+4. If Hover preview is set to `With modifier`, press the configured key after hovering.
+5. Read or update the issue from QuickView.
 
 The popup uses your Jira permissions. If you can only view an issue in Jira, the popup will mostly be read-only. If you can edit the issue in Jira, supported edit controls may appear.
 
@@ -710,6 +719,8 @@ Business logic and limitations:
 - Parent editing depends on the hierarchy model Jira exposes for the issue.
 - Sprint values can come from Jira Agile fields that vary by company and project.
 - Version chips are most linkable when there is exactly one version.
+- Picker and multi-value edits save when you click elsewhere in QuickView or outside it. `Escape` cancels; `Enter` accepts the highlighted single-value option, and `Ctrl+Enter` or `Command+Enter` saves multi-value changes.
+- Fix Version and Affects Version choices put `N/A` first, then unreleased versions, followed by the five most recent released versions.
 - These fields can be moved to other rows in the layout editor if your team wants a different visual priority.
 
 ### 5.6 Row 3: Environment, Labels, and Custom Fields
@@ -771,18 +782,18 @@ Business logic and limitations:
 
 ![Attachments block](screenshots/marketing-hidpi-light/popup-attachments.png)
 
-The Attachments block helps you inspect visual evidence without opening Jira.
+The Attachments block helps you inspect evidence without opening Jira and is enabled by default for new installations.
 
 What you can do:
 
 - Preview image attachments.
+- See non-image files as compact entries with file type and size when Jira provides them.
 - Open the full attachment in Jira.
 - Use screenshot evidence during QA, release checks, bug triage, or support work.
 
 Business logic and limitations:
 
-- The visual grid focuses on image attachments that can be previewed in the popup.
-- Non-image files may be linked or visible elsewhere, but they do not get the same image preview treatment.
+- Images use the visual preview grid. Other file types remain visible and downloadable without pretending they have an image preview.
 - Attachment visibility follows your Jira permissions.
 
 ### 5.10 Pull Requests Block

@@ -1,12 +1,12 @@
 # Jira QuickView Privacy Policy
 
-Effective date: 2026-04-12
+Effective date: 2026-09-12
 
 This draft is based on the current implementation in this repository.
 
 ## Overview
 
-Jira QuickView is a Chrome extension that detects Jira issue keys on pages you enable, shows Jira issue details in a hover popup, and lets you perform Jira actions without opening a separate Jira tab.
+Jira QuickView is a Chrome extension that detects Jira issue keys and links on pages you enable, opens Jira issue details by click or optional hover preview, and lets you perform Jira actions without opening a separate Jira tab.
 
 The extension does not operate a developer-run backend service. In the current implementation, it works inside your browser, stores its own settings in Chrome storage, and sends Jira requests directly from your browser to the Jira instance you configure.
 
