@@ -2,7 +2,7 @@
 // grey is the same hue and the whole ladder survives the dark-mode inversion.
 // One accent (Jira blue) is kept for links, selection, focus and the primary action.
 :root {
-  --jx-surface: oklch(100% 0 none);
+  --jx-surface: #fff;
   --jx-ink: oklch(0% 0 none / 90%);
   --jx-ink-2: oklch(0% 0 none / 66%);
   --jx-ink-meta: oklch(0% 0 none / 58%);
