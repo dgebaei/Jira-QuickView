@@ -4,6 +4,11 @@ body ._JX {
     z-index: 99999;
     width: max-content;
 
+    // Focused programmatically on open so keyboard input (Escape) reaches the popup.
+    &:focus {
+      outline: none;
+    }
+
     &.container-pinned {
       position: fixed !important;
     }

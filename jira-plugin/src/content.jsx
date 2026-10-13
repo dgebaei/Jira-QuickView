@@ -2568,7 +2568,7 @@ async function mainAsyncLocal() {
   // ── Popup Rendering & State ────────────────────────────────
   let hoverDelayTimeout;
   let lastHoveredKey = '';
-  const container = $('<div class="_JX_container" data-testid="jira-popup-root">');
+  const container = $('<div class="_JX_container" data-testid="jira-popup-root" tabindex="-1">');
   const previewOverlay = $(`
     <div class="_JX_preview_overlay" data-testid="jira-popup-preview-overlay">
       <img class="_JX_preview_image" data-testid="jira-popup-preview-image" />

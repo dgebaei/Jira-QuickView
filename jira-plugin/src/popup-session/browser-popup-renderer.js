@@ -59,6 +59,7 @@ export function createBrowserPopupRenderer({
     if (frame.activation === 'click') {
       await shell.dispatch({type: 'pin', announce: false});
     }
+    await shell.dispatch({type: 'take-focus'});
     return {kind: 'committed'};
   }
 
@@ -80,6 +81,8 @@ export function createBrowserPopupRenderer({
       return {kind: 'stale'};
     }
 
+    const containerElement = container[0];
+    const hadFocus = !!containerElement?.contains(containerElement.ownerDocument?.activeElement);
     const existingContentBlocks = container.find('._JX_content_blocks');
     const savedScrollLeft = existingContentBlocks.length ? existingContentBlocks.scrollLeft() : 0;
     const savedScrollTop = existingContentBlocks.length ? existingContentBlocks.scrollTop() : 0;
@@ -136,6 +139,10 @@ export function createBrowserPopupRenderer({
         start: commentRowAction.selection?.start,
         end: commentRowAction.selection?.end,
       });
+    }
+    // Replacing the markup drops focus from a removed child to <body>; keep it in the popup.
+    if (hadFocus && !containerElement.contains(containerElement.ownerDocument.activeElement)) {
+      containerElement.focus({preventScroll: true});
     }
     continuity.renderEditMentions();
     continuity.constrainPopovers();
