@@ -680,6 +680,27 @@ test('autosaves dropdown field edits when focus leaves the popover @mock-only', 
   await page.close();
 });
 
+test('closes an unchanged fix version editor when clicking elsewhere in the popup @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Outside-click dismissal is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  await popup.editButton('fixVersions').click();
+  await waitForOptions(popup.editOptions('fixVersions'), 1);
+  await popup.editInput('fixVersions').click();
+
+  await popup.root.locator('._JX_description').first().click({position: {x: 20, y: 10}});
+
+  await expect(popup.editPopover('fixVersions')).toHaveCount(0);
+  await expect(popup.root).toBeVisible();
+
+  await page.close();
+});
+
 test('removes a selected fix version directly from its chip @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Fix version removal coverage is deterministic in mocked mode only.');

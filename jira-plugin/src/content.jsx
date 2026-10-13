@@ -2657,8 +2657,10 @@ async function mainAsyncLocal() {
 
   function commitFieldEditOnOutsideInteraction() {
     const fieldView = jiraFieldEditing.view().edit;
-    if (!fieldView) return;
-    dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
+    if (!fieldView || fieldView.saving) return;
+    // Nothing to save means save() is a no-op, so close the editor instead of leaving it open.
+    const type = fieldView.hasChanges ? 'save' : 'cancel';
+    dispatchJiraFieldEditing({type, editId: fieldView.editId}).catch(() => {});
   }
 
   function selectFieldEditOption(optionId) {
