@@ -1,8 +1,55 @@
+// Neutral ink ladder: alpha black over the popup's white surface, so every
+// grey is the same hue and the whole ladder survives the dark-mode inversion.
+// One accent (Jira blue) is kept for links, selection, focus and the primary action.
+:root {
+  --jx-surface: oklch(100% 0 none);
+  --jx-ink: oklch(0% 0 none / 90%);
+  --jx-ink-2: oklch(0% 0 none / 66%);
+  --jx-ink-meta: oklch(0% 0 none / 58%);
+  --jx-ink-3: oklch(0% 0 none / 44%);
+  --jx-border: oklch(0% 0 none / 10%);
+  --jx-border-strong: oklch(0% 0 none / 18%);
+  --jx-wash: oklch(0% 0 none / 3%);
+  --jx-fill-hover: oklch(0% 0 none / 5%);
+  --jx-fill-pressed: oklch(0% 0 none / 9%);
+  --jx-accent: oklch(54.2% 0.207 259.4);
+  --jx-accent-hover: color-mix(in oklch, var(--jx-accent), black 15%);
+  --jx-accent-border: color-mix(in oklch, var(--jx-accent) 45%, transparent);
+  --jx-accent-subtle: color-mix(in oklch, var(--jx-accent) 9%, transparent);
+  --jx-accent-subtle-strong: color-mix(in oklch, var(--jx-accent) 18%, transparent);
+  --jx-focus: color-mix(in oklch, var(--jx-accent) 70%, white);
+  --jx-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
 body ._JX {
   &_container {
     position: absolute;
     z-index: 99999;
     width: max-content;
+
+    a {
+      color: var(--jx-accent);
+      text-underline-offset: 2px;
+    }
+
+    // Links that are chrome rather than prose read as their surroundings:
+    // field chips stay ink, comment timestamps stay metadata.
+    a._JX_field_chip,
+    a._JX_field_chip_link,
+    a._JX_field_chip_inline_link {
+      color: inherit;
+    }
+
+    a._JX_comment_time {
+      color: var(--jx-ink-meta);
+      text-decoration: none;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      #_JX_title_link:hover {
+        text-decoration: underline;
+      }
+    }
 
     &.container-pinned {
       position: fixed !important;
@@ -11,13 +58,13 @@ body ._JX {
 
   &_loading_tooltip {
     align-items: center;
-    background: #fff;
-    border: 1px solid #c9d3df;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
-    box-shadow: 0 6px 18px rgba(9, 30, 66, 0.2);
-    color: #172b4d;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+    color: var(--jx-ink);
     display: inline-flex;
-    font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font: 500 13px/1.2 var(--jx-font);
     gap: 8px;
     padding: 9px 12px;
     white-space: nowrap;
@@ -25,9 +72,9 @@ body ._JX {
 
   &_loading_spinner {
     animation: _JX_loading_spin 0.75s linear infinite;
-    border: 2px solid #d8e2ee;
+    border: 2px solid var(--jx-border);
     border-radius: 50%;
-    border-top-color: #0c66e4;
+    border-top-color: var(--jx-accent);
     box-sizing: border-box;
     display: inline-block;
     height: 15px;
@@ -37,9 +84,9 @@ body ._JX {
   }
 
   &_title {
-    background-color: #f2f8fa;
+    background-color: var(--jx-wash);
     padding: 10px 10px;
-    border: 1px solid #dde4e6;
+    border: 1px solid var(--jx-border);
     display: flex;
     align-items: center;
     min-width: 0;
@@ -65,9 +112,9 @@ body ._JX {
       align-self: center;
       min-width: 32px;
       margin-top: -2px;
-      border: 1px solid #dfe1e6;
+      border: 1px solid var(--jx-border);
       border-radius: 50%;
-      background: #fff;
+      background: var(--jx-surface);
       object-fit: cover;
       overflow: hidden;
     }
@@ -86,10 +133,10 @@ body ._JX {
 
     &_user_placeholder {
       align-items: center;
-      color: #5e6c84;
+      color: var(--jx-ink-meta);
       display: inline-flex;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 600;
       justify-content: center;
     }
 
@@ -153,8 +200,10 @@ body ._JX {
       width: auto;
     }
 
-    &_edit_action._JX_edit_save:hover {
-      color: #fff;
+    @media (hover: hover) and (pointer: fine) {
+      &_edit_action._JX_edit_save:hover {
+        color: #fff;
+      }
     }
 
     &_summary_slot ._JX_title_edit_button {
@@ -183,9 +232,12 @@ body ._JX {
       padding: 0;
     }
     #_JX_title_link {
+      color: var(--jx-ink);
       flex: 1 1 auto;
       font-size: 14px;
+      font-weight: 600;
       line-height: 1.3;
+      text-decoration: none;
       min-width: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -195,11 +247,11 @@ body ._JX {
   &_control_button {
     align-items: center;
     appearance: none;
-    background: linear-gradient(180deg, #fff 0%, #f4f7fb 100%);
-    border: 1px solid #c4d2df;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 8px;
-    box-shadow: 0 1px 2px rgba(9, 30, 66, 0.08);
-    color: #44546f;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     gap: 3px;
@@ -209,14 +261,16 @@ body ._JX {
     padding: 0 8px;
     transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
 
-    &:hover {
-      background: #eef4fb;
-      border-color: #8eb3da;
-      color: #1f4f82;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-fill-hover);
+        border-color: var(--jx-border-strong);
+        color: var(--jx-ink);
+      }
     }
 
     &:focus-visible {
-      outline: 2px solid #4c9aff;
+      outline: 2px solid var(--jx-focus);
       outline-offset: 2px;
     }
 
@@ -238,10 +292,10 @@ body ._JX {
     padding-right: 6px;
 
     &.is-open {
-      background: linear-gradient(180deg, #d8e9ff 0%, #eef5ff 100%);
-      border-color: #76a4d5;
-      box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.14);
-      color: #0c4a7a;
+      background: var(--jx-accent-subtle);
+      border-color: var(--jx-accent-border);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--jx-accent) 14%, transparent);
+      color: var(--jx-ink);
     }
 
     &.is-open ._JX_actions_toggle_chevron {
@@ -255,10 +309,10 @@ body ._JX {
   }
 
   &_actions_menu {
-    background: #fff;
-    border: 1px solid #c7d5e3;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 10px;
-    box-shadow: 0 14px 32px rgba(9, 30, 66, 0.16), 0 2px 6px rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 32px rgb(0 0 0 / 10%), 0 2px 6px rgb(0 0 0 / 5%);
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -270,9 +324,9 @@ body ._JX {
     z-index: 3;
 
     &::before {
-      background: #fff;
-      border-left: 1px solid #c7d5e3;
-      border-top: 1px solid #c7d5e3;
+      background: var(--jx-surface);
+      border-left: 1px solid var(--jx-border-strong);
+      border-top: 1px solid var(--jx-border-strong);
       content: '';
       height: 10px;
       position: absolute;
@@ -284,7 +338,7 @@ body ._JX {
   }
 
   &_action_divider {
-    border-top: 1px solid #d7e1ec;
+    border-top: 1px solid var(--jx-border);
     margin: 6px 4px;
   }
 
@@ -293,7 +347,7 @@ body ._JX {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
-    color: #172b4d;
+    color: var(--jx-ink);
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
@@ -302,18 +356,20 @@ body ._JX {
     text-align: left;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 
-    &:hover {
-      background: #eef4fb;
-      border-color: #c7daee;
-      color: #0c4a7a;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-fill-hover);
+        border-color: var(--jx-border-strong);
+        color: var(--jx-ink);
+      }
     }
 
     &.is-loading,
     &.is-disabled,
     &:disabled {
-      background: #f4f5f7;
+      background: var(--jx-fill-hover);
       border-color: transparent;
-      color: #7a869a;
+      color: var(--jx-ink-3);
       cursor: wait;
     }
   }  &_subtitle {
@@ -322,8 +378,8 @@ body ._JX {
   }
 
   &_status {
-    background-color: #f2f8fa;
-    border-bottom: 1px solid #dde4e6;
+    background-color: var(--jx-wash);
+    border-bottom: 1px solid var(--jx-border);
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -346,7 +402,7 @@ body ._JX {
       justify-content: space-between;
       gap: 10px;
       padding-bottom: 6px;
-      border-bottom: 1px solid #d0dbe5;
+      border-bottom: 1px solid var(--jx-border);
     }
 
     &_row_main {
@@ -375,12 +431,12 @@ body ._JX {
     overflow: visible;
     user-select: text;
     -webkit-user-select: text;
-    color: #24292f;
-    font-family: 'Nunito', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    border: 1px solid #dde4e6;
+    color: var(--jx-ink);
+    font-family: var(--jx-font);
+    border: 1px solid var(--jx-border);
     border-radius: 3px;
-    background-color: white;
-    box-shadow: 2px 2px 6px rgb(162, 183, 189);
+    background-color: var(--jx-surface);
+    box-shadow: 2px 2px 6px rgb(0 0 0 / 10%);
 
     &:after,
     &:before {
@@ -397,20 +453,20 @@ body ._JX {
 
     &:after {
       border: 10px rgba(242, 248, 250, 0);
-      border-bottom-color: #f2f8fa;
+      border-bottom-color: var(--jx-border);
     }
 
     &:before {
       border: 11px rgba(221, 228, 230, 0);
-      border-bottom-color: #dde4e6;
+      border-bottom-color: var(--jx-border);
       margin-left: -1px;
     }
   }
 
   &_activity_strip {
     align-items: center;
-    border-left: 1px solid #d9e1ea;
-    color: #52657a;
+    border-left: 1px solid var(--jx-border);
+    color: var(--jx-ink-2);
     display: inline-flex;
     flex: 0 0 auto;
     gap: 10px;
@@ -434,39 +490,41 @@ body ._JX {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 999px;
-    color: #52657a;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     font-family: inherit;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     gap: 4px;
     line-height: 1;
     min-height: 24px;
     padding: 3px 8px;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 
-    &:hover {
-      background: #e9f0f7;
-      border-color: #c7d5e3;
-      color: #1f4f82;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-fill-hover);
+        border-color: var(--jx-border-strong);
+        color: var(--jx-ink);
+      }
     }
 
     &:focus-visible {
-      outline: 2px solid #4c9aff;
+      outline: 2px solid var(--jx-focus);
       outline-offset: 2px;
     }
 
     &.is-open {
-      background: #eef4fb;
-      border-color: #9fb8d1;
-      color: #1f4f82;
+      background: var(--jx-fill-hover);
+      border-color: var(--jx-border-strong);
+      color: var(--jx-ink);
     }
 
     &.is-watching {
-      background: linear-gradient(180deg, #dbeafe 0%, #eef6ff 100%);
-      border-color: #8db5dc;
-      color: #0c4a7a;
+      background: var(--jx-accent-subtle);
+      border-color: var(--jx-accent-border);
+      color: var(--jx-ink);
     }
   }
 
@@ -482,13 +540,13 @@ body ._JX {
   &_history_flyout,
   &_linked_issues_panel,
   &_watchers_panel {
-    background: #fff;
+    background: var(--jx-surface);
     background-clip: padding-box;
-    border: 1px solid #c7d5e3;
+    border: 1px solid var(--jx-border-strong);
     border-radius: 12px;
     box-sizing: border-box;
-    box-shadow: 0 14px 32px rgba(9, 30, 66, 0.16), 0 2px 6px rgba(9, 30, 66, 0.08);
-    color: #172b4d;
+    box-shadow: 0 14px 32px rgb(0 0 0 / 10%), 0 2px 6px rgb(0 0 0 / 5%);
+    color: var(--jx-ink);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -500,9 +558,9 @@ body ._JX {
     z-index: 6;
 
     &::before {
-      background: #fff;
-      border-left: 1px solid #c7d5e3;
-      border-top: 1px solid #c7d5e3;
+      background: var(--jx-surface);
+      border-left: 1px solid var(--jx-border-strong);
+      border-top: 1px solid var(--jx-border-strong);
       box-sizing: border-box;
       content: '';
       height: 10px;
@@ -533,11 +591,9 @@ body ._JX {
   &_watchers_section_label,
   &_linked_issues_title,
   &_history_header {
-    color: #44546f;
+    color: var(--jx-ink-2);
     font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    font-weight: 600;
   }
 
   &_history_close,
@@ -548,7 +604,7 @@ body ._JX {
     background: transparent;
     border: none;
     border-radius: 6px;
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     cursor: pointer;
     display: inline-flex;
     height: 24px;
@@ -556,9 +612,11 @@ body ._JX {
     padding: 0;
     width: 24px;
 
-    &:hover {
-      background: #f1f3f5;
-      color: #172b4d;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-fill-hover);
+        color: var(--jx-ink);
+      }
     }
   }
 
@@ -571,11 +629,11 @@ body ._JX {
 
   &_watchers_search_input {
     appearance: none;
-    background: #fff;
-    border: 1px solid #c7d1db;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 7px;
     box-sizing: border-box;
-    color: #172b4d;
+    color: var(--jx-ink);
     font-family: inherit;
     font-size: 12px;
     line-height: 1.35;
@@ -584,9 +642,9 @@ body ._JX {
     width: 100%;
 
     &:focus {
-      border-color: #0c66e4;
-      box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.18);
-      outline: none;
+      border-color: var(--jx-accent);
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 18%, transparent);
+      outline: 2px solid transparent;
     }
   }
 
@@ -601,7 +659,7 @@ body ._JX {
   &_watchers_hint,
   &_watchers_empty,
   &_watchers_loading {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
   }
 
   &_watchers_error {
@@ -629,8 +687,10 @@ body ._JX {
     padding: 5px 6px;
     text-align: left;
 
-    &:hover {
-      background: #f5f8fc;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-wash);
+      }
     }
 
     &.is-pending {
@@ -659,11 +719,11 @@ body ._JX {
 
   &_watchers_avatar_placeholder {
     align-items: center;
-    background: #dfe1e6;
-    color: #44546f;
+    background: var(--jx-fill-pressed);
+    color: var(--jx-ink-2);
     display: inline-flex;
     font-size: 10px;
-    font-weight: 800;
+    font-weight: 600;
     justify-content: center;
   }
 
@@ -689,9 +749,9 @@ body ._JX {
   }
 
   &_watchers_feedback_row_neutral {
-    background: #f1f2f4;
-    border: 1px solid #dcdfe4;
-    color: #44546f;
+    background: var(--jx-fill-hover);
+    border: 1px solid var(--jx-border);
+    color: var(--jx-ink-2);
   }
 
   &_watchers_feedback_row_error {
@@ -707,7 +767,7 @@ body ._JX {
   }
 
   &_watchers_name {
-    color: #172b4d;
+    color: var(--jx-ink);
     font-size: 12px;
     line-height: 1.3;
     overflow: visible;
@@ -716,7 +776,7 @@ body ._JX {
   }
 
   &_watchers_meta {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-size: 10px;
     line-height: 1.2;
     overflow: hidden;
@@ -725,18 +785,17 @@ body ._JX {
   }
 
   &_watchers_you_badge {
-    color: #0c66e4;
+    color: var(--jx-accent);
     font-size: 10px;
-    font-weight: 800;
+    font-weight: 600;
     margin-left: 3px;
-    text-transform: uppercase;
   }
 
   &_watchers_action,
   &_watchers_remove {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_watchers_action {
@@ -758,14 +817,16 @@ body ._JX {
     pointer-events: none;
     transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 
-    &:hover {
-      background: #fbe9e7;
-      color: #ae2e24;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: #fbe9e7;
+        color: #ae2e24;
+      }
     }
 
     &:disabled {
       background: transparent;
-      color: #6b778c;
+      color: var(--jx-ink-meta);
       cursor: wait;
       opacity: 1;
       pointer-events: none;
@@ -788,7 +849,7 @@ body ._JX {
 
   &_activity_item strong {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_history_toggle_icon,
@@ -804,7 +865,7 @@ body ._JX {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 999px;
-    color: #52657a;
+    color: var(--jx-ink-2);
     cursor: pointer;
     font: inherit;
     justify-content: center;
@@ -813,21 +874,23 @@ body ._JX {
     padding: 4px;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 
-    &:hover {
-      background: #e9f0f7;
-      border-color: #c7d5e3;
-      color: #1f4f82;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-fill-hover);
+        border-color: var(--jx-border-strong);
+        color: var(--jx-ink);
+      }
     }
 
     &:focus-visible {
-      outline: 2px solid #4c9aff;
+      outline: 2px solid var(--jx-focus);
       outline-offset: 2px;
     }
 
     &.is-active {
-      background: #eef4fb;
-      border-color: #9fb8d1;
-      color: #1f4f82;
+      background: var(--jx-fill-hover);
+      border-color: var(--jx-border-strong);
+      color: var(--jx-ink);
     }
   }
 
@@ -859,9 +922,9 @@ body ._JX {
 
   &_linked_issues_count {
     align-items: center;
-    background: #edf1f5;
+    background: var(--jx-fill-hover);
     border-radius: 999px;
-    color: #44546f;
+    color: var(--jx-ink-2);
     display: inline-flex;
     font-size: 10px;
     justify-content: center;
@@ -880,7 +943,7 @@ body ._JX {
 
   &_linked_issues_loading,
   &_linked_issues_empty {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     text-align: center;
   }
 
@@ -893,8 +956,8 @@ body ._JX {
   }
 
   &_linked_issues_composer {
-    background: #f7f8f9;
-    border: 1px solid #e4e8ed;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
     padding: 7px;
   }
@@ -913,8 +976,8 @@ body ._JX {
     padding-top: 6px;
 
     option {
-      background-color: #fff;
-      color: #172b4d;
+      background-color: var(--jx-surface);
+      color: var(--jx-ink);
     }
   }
 
@@ -949,18 +1012,16 @@ body ._JX {
 
   &_linked_issues_section_header {
     align-items: center;
-    color: #44546f;
+    color: var(--jx-ink-2);
     display: flex;
     font-size: 10px;
-    font-weight: 800;
+    font-weight: 600;
     gap: 6px;
-    letter-spacing: 0.03em;
     padding: 4px 4px 2px;
-    text-transform: uppercase;
   }
 
   &_linked_issues_section_line {
-    background: #e4e8ed;
+    background: var(--jx-fill-pressed);
     flex: 1 1 auto;
     height: 1px;
   }
@@ -976,7 +1037,7 @@ body ._JX {
 
     &:hover,
     &:focus-within {
-      background: #f5f8fc;
+      background: var(--jx-wash);
     }
 
     &.is-pending {
@@ -991,14 +1052,14 @@ body ._JX {
 
   &_linked_issues_key {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   &_linked_issues_summary {
-    color: #253858;
+    color: var(--jx-ink);
     font-size: 11px;
     min-width: 0;
     overflow: hidden;
@@ -1018,7 +1079,6 @@ body ._JX {
     overflow: hidden;
     padding: 3px 6px;
     text-overflow: ellipsis;
-    text-transform: uppercase;
     white-space: nowrap;
   }
 
@@ -1059,12 +1119,12 @@ body ._JX {
   }
 
   &_history_header {
-    color: #44546f;
+    color: var(--jx-ink-2);
   }
 
   &_history_loading,
   &_history_empty {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-size: 11px;
     padding: 12px 8px;
     text-align: center;
@@ -1080,7 +1140,7 @@ body ._JX {
   }
 
   &_history_entry {
-    border-bottom: 1px solid #eef0f4;
+    border-bottom: 1px solid var(--jx-border);
     padding: 0 0 10px;
 
     &:last-child {
@@ -1090,13 +1150,13 @@ body ._JX {
   }
 
   &_history_entry_header {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-size: 12px;
     line-height: 1.4;
     margin-bottom: 6px;
 
     strong {
-      color: #172b4d;
+      color: var(--jx-ink);
       font-weight: 600;
     }
   }
@@ -1110,8 +1170,8 @@ body ._JX {
 
   &_history_change_row {
     align-items: flex-start;
-    background: #f8fafc;
-    border: 1px solid #e6edf5;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
     display: flex;
     gap: 8px;
@@ -1124,7 +1184,7 @@ body ._JX {
   }
 
   &_history_change {
-    color: #344563;
+    color: var(--jx-ink);
     flex: 1 1 auto;
     font-size: 11px;
     line-height: 1.5;
@@ -1133,7 +1193,7 @@ body ._JX {
   }
 
   &_history_event_time {
-    color: #7a869a;
+    color: var(--jx-ink-3);
     flex: 0 0 auto;
     font-size: 10px;
     line-height: 1.6;
@@ -1141,20 +1201,20 @@ body ._JX {
   }
 
   &_history_field {
-    color: #7a869a;
+    color: var(--jx-ink-3);
     font-size: 11px;
     font-weight: 600;
   }
 
   &_history_rich_event {
-    background: #f8fafc;
-    border: 1px solid #e6edf5;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
     overflow: hidden;
 
     &[open] {
-      background: #fff;
-      border-color: #e6edf5;
+      background: var(--jx-surface);
+      border-color: var(--jx-border);
       box-shadow: none;
     }
   }
@@ -1174,8 +1234,10 @@ body ._JX {
       display: none;
     }
 
-    &:hover {
-      background: #f7fafd;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-wash);
+      }
     }
   }
 
@@ -1194,7 +1256,7 @@ body ._JX {
   }
 
   &_history_rich_preview {
-    color: #344563;
+    color: var(--jx-ink);
     flex: 1 1 auto;
     font-size: 11px;
     min-width: 0;
@@ -1212,17 +1274,15 @@ body ._JX {
   }
 
   &_history_rich_attachment_count {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-weight: 600;
     white-space: nowrap;
-    text-transform: uppercase;
   }
 
   &_history_rich_body {
-    border-top: 1px solid #e6edf5;
-    background: #fff;
+    border-top: 1px solid var(--jx-border);
+    background: var(--jx-surface);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -1242,15 +1302,13 @@ body ._JX {
   }
 
   &_history_rich_section_label {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    font-weight: 600;
   }
 
   &_history_rich_section_body {
-    color: #344563;
+    color: var(--jx-ink);
     font-size: 11px;
     line-height: 1.55;
     overflow-wrap: anywhere;
@@ -1295,7 +1353,7 @@ body ._JX {
     padding: 0;
 
     img {
-      border: 1px solid #d5dde6;
+      border: 1px solid var(--jx-border);
       border-radius: 6px;
       display: block;
       max-height: 72px;
@@ -1310,7 +1368,7 @@ body ._JX {
     appearance: none;
     background: transparent;
     border: none;
-    color: #0c66e4;
+    color: var(--jx-accent);
     cursor: pointer;
     font-size: 11px;
     font-weight: 600;
@@ -1323,13 +1381,15 @@ body ._JX {
   }
 
   &_history_attachment_name {
-    color: #344563;
+    color: var(--jx-ink);
     cursor: default;
   }
 
-  &_history_attachment_link:hover,
-  &_history_attachment_preview:hover {
-    text-decoration: underline;
+  @media (hover: hover) and (pointer: fine) {
+    &_history_attachment_link:hover,
+    &_history_attachment_preview:hover {
+      text-decoration: underline;
+    }
   }
 
   &_history_change_details {
@@ -1340,7 +1400,7 @@ body ._JX {
   }
 
   &_history_change_summary {
-    color: #344563;
+    color: var(--jx-ink);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1353,13 +1413,15 @@ body ._JX {
       display: none;
     }
 
-    &:hover {
-      color: #0052cc;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        color: var(--jx-accent);
+      }
     }
   }
 
   &_history_change_full {
-    color: #344563;
+    color: var(--jx-ink);
     font-size: 11px;
     line-height: 1.5;
     margin-top: 6px;
@@ -1369,17 +1431,19 @@ body ._JX {
   }
 
   &_history_issue_link {
-    color: #0c66e4;
+    color: var(--jx-accent);
     font-weight: 600;
     text-decoration: none;
 
-    &:hover {
-      text-decoration: underline;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        text-decoration: underline;
+      }
     }
   }
 
   &_status_row_lower {
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--jx-border);
     margin-top: 2px;
     padding-top: 6px;
   }
@@ -1440,9 +1504,9 @@ body ._JX {
   }
 
   &_time_tracking_label {
-    color: #52657a;
+    color: var(--jx-ink-2);
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_time_tracking_label_log {
@@ -1452,11 +1516,11 @@ body ._JX {
 
   &_time_tracking_value {
     align-items: center;
-    background: #f7f8f9;
-    border: 1px solid #d7dde5;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     box-sizing: border-box;
     border-radius: 6px;
-    color: #172b4d;
+    color: var(--jx-ink);
     display: flex;
     font-size: 11px;
     line-height: 14px;
@@ -1466,11 +1530,11 @@ body ._JX {
 
   &_time_tracking_input {
     appearance: none;
-    background: #fff;
-    border: 1px solid #c7d1db;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 6px;
     box-sizing: border-box;
-    color: #172b4d;
+    color: var(--jx-ink);
     font-family: inherit;
     font-size: 11px;
     line-height: 14px;
@@ -1499,27 +1563,27 @@ body ._JX {
   }
 
   &_time_tracking_input:focus {
-    border-color: #0c66e4;
-    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.18);
-    outline: none;
+    border-color: var(--jx-accent);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 18%, transparent);
+    outline: 2px solid transparent;
   }
 
   &_time_tracking_input:disabled {
-    background: #f7f8f9;
-    color: #7a869a;
+    background: var(--jx-wash);
+    color: var(--jx-ink-3);
     cursor: not-allowed;
   }
 
   &_time_tracking_save {
-    background: #0c66e4;
-    border: 1px solid #0c66e4;
+    background: var(--jx-accent);
+    border: 1px solid var(--jx-accent);
     border-radius: 999px;
     box-sizing: border-box;
     color: #fff;
     cursor: pointer;
     font-family: inherit;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.2;
     min-height: 26px;
     min-width: 70px;
@@ -1528,9 +1592,9 @@ body ._JX {
   }
 
   &_time_tracking_save:disabled {
-    background: #f3f4f6;
-    border-color: #d7dde5;
-    color: #7a869a;
+    background: var(--jx-fill-hover);
+    border-color: var(--jx-border);
+    color: var(--jx-ink-3);
     cursor: not-allowed;
   }
 
@@ -1541,26 +1605,26 @@ body ._JX {
   }
 
   &_time_tracking_hint {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
   }
 
   &_time_tracking_error {
     color: #c9372c;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_action_notice {
-    border-left: 1px solid #dde4e6;
-    border-right: 1px solid #dde4e6;
-    border-bottom: 1px solid #dde4e6;
+    border-left: 1px solid var(--jx-border);
+    border-right: 1px solid var(--jx-border);
+    border-bottom: 1px solid var(--jx-border);
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     padding: 8px 10px;
   }
 
   &_action_notice_info {
-    background: #eef4ff;
-    color: #1d4f91;
+    background: var(--jx-accent-subtle);
+    color: var(--jx-ink);
   }
 
   &_action_notice_success {
@@ -1578,12 +1642,12 @@ body ._JX {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    border-bottom: 1px solid #dde4e6;
+    border-bottom: 1px solid var(--jx-border);
     padding: 0;
   }
 
   &_content_block {
-    border-top: 1px solid #dde4e6;
+    border-top: 1px solid var(--jx-border);
     padding: 0 0 6px;
   }
 
@@ -1619,7 +1683,7 @@ body ._JX {
     &_status {
       border-radius: 999px;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 600;
       line-height: 1.2;
       margin-left: auto;
       max-width: 240px;
@@ -1630,8 +1694,8 @@ body ._JX {
     }
 
     &_status_info {
-      background: #eef4ff;
-      color: #1d4f91;
+      background: var(--jx-accent-subtle);
+      color: var(--jx-ink);
     }
 
     &_status_success {
@@ -1647,10 +1711,10 @@ body ._JX {
     &_header_button,
     &_edit_button {
       align-items: center;
-      background: #fff;
-      border: 1px solid #c7d1db;
+      background: var(--jx-surface);
+      border: 1px solid var(--jx-border-strong);
       border-radius: 999px;
-      color: #42526e;
+      color: var(--jx-ink-2);
       cursor: pointer;
       display: inline-flex;
       font-size: 12px;
@@ -1664,10 +1728,12 @@ body ._JX {
       transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
     }
 
-    &_header_button:hover,
-    &_edit_button:hover {
-      border-color: #0c66e4;
-      color: #0c66e4;
+    @media (hover: hover) and (pointer: fine) {
+      &_header_button:hover,
+      &_edit_button:hover {
+        border-color: var(--jx-accent);
+        color: var(--jx-accent);
+      }
     }
 
     &_edit_button_text {
@@ -1675,28 +1741,30 @@ body ._JX {
     }
 
     &_save {
-      background: #0c66e4;
-      border-color: #0c66e4;
+      background: var(--jx-accent);
+      border-color: var(--jx-accent);
       color: #fff;
     }
 
-    &_save:hover {
-      background: #0055cc;
-      border-color: #0055cc;
-      color: #fff;
+    @media (hover: hover) and (pointer: fine) {
+      &_save:hover {
+        background: var(--jx-accent);
+        border-color: var(--jx-accent);
+        color: #fff;
+      }
     }
 
     &_header_button:disabled,
     &_edit_button:disabled {
-      background: #f4f5f7;
-      border-color: #dfe1e6;
-      color: #97a0af;
+      background: var(--jx-fill-hover);
+      border-color: var(--jx-border);
+      color: var(--jx-ink-3);
       cursor: not-allowed;
     }
 
     &_editor {
-      background: #f7f8fa;
-      border: 1px solid #dfe1e6;
+      background: var(--jx-wash);
+      border: 1px solid var(--jx-border);
       border-radius: 8px;
       padding: 10px;
     }
@@ -1709,31 +1777,33 @@ body ._JX {
     }
 
     &_toolbar_button {
-      background: #fff;
-      border: 1px solid #c7d1db;
+      background: var(--jx-surface);
+      border: 1px solid var(--jx-border-strong);
       border-radius: 6px;
-      color: #42526e;
+      color: var(--jx-ink-2);
       cursor: pointer;
       font-family: inherit;
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 600;
       line-height: 1;
       min-height: 30px;
       min-width: 30px;
       padding: 0 10px;
     }
 
-    &_toolbar_button:hover {
-      border-color: #0c66e4;
-      color: #0c66e4;
+    @media (hover: hover) and (pointer: fine) {
+      &_toolbar_button:hover {
+        border-color: var(--jx-accent);
+        color: var(--jx-accent);
+      }
     }
 
     &_input {
-      background: #fff;
-      border: 1px solid #c7d1db;
+      background: var(--jx-surface);
+      border: 1px solid var(--jx-border-strong);
       border-radius: 6px;
       box-sizing: border-box;
-      color: #172b4d;
+      color: var(--jx-ink);
       font-family: inherit;
       font-size: 13px;
       line-height: 1.5;
@@ -1744,9 +1814,9 @@ body ._JX {
     }
 
     &_input:focus {
-      border-color: #0c66e4;
-      box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
-      outline: none;
+      border-color: var(--jx-accent);
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 16%, transparent);
+      outline: 2px solid transparent;
     }
 
     &_uploads {
@@ -1754,7 +1824,7 @@ body ._JX {
     }
 
     &_empty {
-      color: #5e6c84;
+      color: var(--jx-ink-meta);
       font-size: 13px;
       line-height: 1.5;
       padding: 4px 0 2px;
@@ -1806,19 +1876,19 @@ body ._JX {
     }
   }
 
+  // Chapter headings: one hairline marks where a section starts, and the
+  // heading sits close to its content (12px above, 4px below).
   &_section_title {
     align-items: center;
-    background: #f5f5f5;
-    color: #5e6c84;
+    border-top: 1px solid var(--jx-border);
+    color: var(--jx-ink);
     display: flex;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 600;
     gap: 8px;
     justify-content: space-between;
-    letter-spacing: 0.05em;
-    margin: 0 0 6px;
-    padding: 6px;
-    text-transform: uppercase;
+    margin: 0 0 4px;
+    padding: 12px 10px 4px;
   }
 
   &_section_title_with_action {
@@ -1842,12 +1912,19 @@ body ._JX {
 
     a {
       font-size: 12px;
+      text-decoration: none;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      a:hover {
+        text-decoration: underline;
+      }
     }
 
     th,
     td {
       padding: 8px 0px;
-      border-bottom: 1px solid #dde4e6;
+      border-bottom: 1px solid var(--jx-border);
       min-width: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -1856,12 +1933,10 @@ body ._JX {
     }
 
     thead th {
-      border-bottom: 1px solid #dde4e6;
-      color: #5e6c84;
+      border-bottom: 1px solid var(--jx-border);
+      color: var(--jx-ink-meta);
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      font-weight: 600;
     }
 
     tbody tr:last-child td {
@@ -1894,12 +1969,14 @@ body ._JX {
     padding: 0;
     text-transform: inherit;
 
-    &:hover {
-      color: #0052cc;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        color: var(--jx-accent);
+      }
     }
 
     &.is-active {
-      color: #172b4d;
+      color: var(--jx-ink);
     }
   }
 
@@ -1917,7 +1994,7 @@ body ._JX {
 
   &_related_table_sort_path {
     fill: none;
-    stroke: #7a869a;
+    stroke: var(--jx-ink-3);
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.25;
@@ -1927,8 +2004,10 @@ body ._JX {
     }
   }
 
-  &_related_table_sort:hover &_related_table_sort_path:not(.is-active) {
-    stroke: #97a0af;
+  @media (hover: hover) and (pointer: fine) {
+    &_related_table_sort:hover &_related_table_sort_path:not(.is-active) {
+      stroke: var(--jx-ink-3);
+    }
   }
 
   &_related_table_type_cell {
@@ -1948,7 +2027,7 @@ body ._JX {
 
   &_related_table_type_placeholder {
     align-items: center;
-    color: #7a869a;
+    color: var(--jx-ink-3);
     justify-content: center;
   }
 
@@ -1970,11 +2049,11 @@ body ._JX {
 
   &_related_table_user_avatar_placeholder {
     align-items: center;
-    background: #dfe1e6;
-    color: #42526e;
+    background: var(--jx-fill-pressed);
+    color: var(--jx-ink-2);
     display: inline-flex;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     justify-content: center;
   }
 
@@ -2030,24 +2109,26 @@ body ._JX {
 
   &_children_jql_link {
     align-items: center;
-    color: #42526e;
+    color: var(--jx-ink-2);
     display: inline-flex;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     gap: 4px;
     letter-spacing: normal;
     line-height: 1;
     text-decoration: none;
     text-transform: none;
 
-    &:hover {
-      color: #0052cc;
-      text-decoration: underline;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        color: var(--jx-accent);
+        text-decoration: underline;
+      }
     }
 
     &:focus-visible {
       border-radius: 2px;
-      outline: 2px solid #4c9aff;
+      outline: 2px solid var(--jx-focus);
       outline-offset: 2px;
     }
 
@@ -2063,15 +2144,15 @@ body ._JX {
   &_comment_sort_toggle {
     align-items: center;
     appearance: none;
-    background: #fff;
-    border: 1px solid #c7d1db;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 999px;
-    color: #42526e;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     font-family: inherit;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     gap: 6px;
     justify-content: center;
     letter-spacing: normal;
@@ -2081,26 +2162,26 @@ body ._JX {
     text-transform: none;
     transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 
-    &:hover {
-      border-color: #0c66e4;
-      color: #0c66e4;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        border-color: var(--jx-accent);
+        color: var(--jx-accent);
+      }
     }
 
     &:focus-visible {
-      outline: 2px solid #4c9aff;
+      outline: 2px solid var(--jx-focus);
       outline-offset: 2px;
     }
   }
 
   &_comment_sort_toggle_prefix {
     align-items: center;
-    color: #7a869a;
+    color: var(--jx-ink-3);
     display: inline-flex;
     flex: 0 0 auto;
     font-size: 9px;
-    letter-spacing: 0.04em;
     line-height: 1;
-    text-transform: uppercase;
   }
 
   &_comment_sort_toggle_label {
@@ -2121,7 +2202,7 @@ body ._JX {
 
   &_comment_sort_toggle_path {
     fill: none;
-    stroke: #7a869a;
+    stroke: var(--jx-ink-3);
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.25;
@@ -2131,12 +2212,14 @@ body ._JX {
     }
   }
 
-  &_comment_sort_toggle:hover &_comment_sort_toggle_path:not(.is-active) {
-    stroke: #97a0af;
+  @media (hover: hover) and (pointer: fine) {
+    &_comment_sort_toggle:hover &_comment_sort_toggle_path:not(.is-active) {
+      stroke: var(--jx-ink-3);
+    }
   }
 
   &_comment {
-    border-bottom: 1px solid #dde4e6;
+    border-bottom: 1px solid var(--jx-border);
     margin-bottom: 4px;
     padding-bottom: 3px;
 
@@ -2149,7 +2232,7 @@ body ._JX {
 
   &_comment_meta {
     align-items: center;
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     display: flex;
     font-size: 11px;
     gap: 8px;
@@ -2168,11 +2251,13 @@ body ._JX {
   }
 
   &_comment_time {
-    color: #44546f;
+    color: var(--jx-ink-2);
     text-decoration: underline;
 
-    &:hover {
-      color: #0c66e4;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        color: var(--jx-accent);
+      }
     }
   }
 
@@ -2182,7 +2267,7 @@ body ._JX {
     background: transparent;
     border: none;
     border-radius: 999px;
-    color: #44546f;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     height: 22px;
@@ -2190,13 +2275,15 @@ body ._JX {
     padding: 0;
     width: 22px;
 
-    &:hover {
-      background: #f4f5f7;
-      color: #0c66e4;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-fill-hover);
+        color: var(--jx-accent);
+      }
     }
 
     &:focus-visible {
-      outline: 2px solid #4c9aff;
+      outline: 2px solid var(--jx-focus);
       outline-offset: 2px;
     }
 
@@ -2220,9 +2307,9 @@ body ._JX {
   &_comment_delete_confirm {
     appearance: none;
     background: transparent;
-    border: 1px solid #c7d1db;
+    border: 1px solid var(--jx-border-strong);
     border-radius: 999px;
-    color: #344563;
+    color: var(--jx-ink);
     cursor: pointer;
     font-family: inherit;
     font-size: 11px;
@@ -2233,16 +2320,18 @@ body ._JX {
     padding: 5px 10px;
   }
 
-  &_comment_meta_button:hover,
-  &_comment_edit_cancel:hover,
-  &_comment_delete_cancel:hover {
-    background: #f4f5f7;
+  @media (hover: hover) and (pointer: fine) {
+    &_comment_meta_button:hover,
+    &_comment_edit_cancel:hover,
+    &_comment_delete_cancel:hover {
+      background: var(--jx-fill-hover);
+    }
   }
 
   &_comment_edit_save,
   &_comment_delete_confirm {
-    background: #0c66e4;
-    border-color: #0c66e4;
+    background: var(--jx-accent);
+    border-color: var(--jx-accent);
     color: #fff;
   }
 
@@ -2251,14 +2340,18 @@ body ._JX {
     border-color: #c9372c;
   }
 
-  &_comment_edit_save:hover {
-    background: #0055cc;
-    border-color: #0055cc;
+  @media (hover: hover) and (pointer: fine) {
+    &_comment_edit_save:hover {
+      background: var(--jx-accent);
+      border-color: var(--jx-accent);
+    }
   }
 
-  &_comment_delete_confirm:hover {
-    background: #ae2e24;
-    border-color: #ae2e24;
+  @media (hover: hover) and (pointer: fine) {
+    &_comment_delete_confirm:hover {
+      background: #ae2e24;
+      border-color: #ae2e24;
+    }
   }
 
   &_comment_meta_button:disabled,
@@ -2266,9 +2359,9 @@ body ._JX {
   &_comment_edit_save:disabled,
   &_comment_delete_cancel:disabled,
   &_comment_delete_confirm:disabled {
-    background: #f3f4f6;
-    border-color: #d7dde5;
-    color: #7a869a;
+    background: var(--jx-fill-hover);
+    border-color: var(--jx-border);
+    color: var(--jx-ink-3);
     cursor: not-allowed;
   }
   &_comment_author_avatar {
@@ -2282,18 +2375,18 @@ body ._JX {
 
   &_comment_author_avatar_placeholder {
     align-items: center;
-    background: #c1c7d0;
+    background: var(--jx-border-strong);
     color: #fff;
     display: inline-flex;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     justify-content: center;
     line-height: 1;
   }
 
   &_comment_author {
-    color: #172b4d;
-    font-weight: bold;
+    color: var(--jx-ink);
+    font-weight: 600;
   }
 
   &_comment_body {
@@ -2354,9 +2447,9 @@ body ._JX {
 
     &[open] {
       ._JX_comment_reaction_more {
-        background: #f4f8fb;
-        border-color: #8fb8e8;
-        color: #0c4a7a;
+        background: var(--jx-wash);
+        border-color: var(--jx-accent-border);
+        color: var(--jx-ink);
       }
     }
   }
@@ -2364,10 +2457,10 @@ body ._JX {
   &_comment_reaction_pill {
     align-items: center;
     appearance: none;
-    background: #f1f2f4;
+    background: var(--jx-fill-hover);
     border: 1px solid transparent;
     border-radius: 999px;
-    color: #42526e;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     font-family: inherit;
@@ -2378,17 +2471,21 @@ body ._JX {
     padding: 2px 8px 2px 4px;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 
-    &:hover:not(:disabled) {
-      background: #e4e6ea;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover:not(:disabled) {
+        background: var(--jx-fill-pressed);
+      }
     }
 
     &.is-reacted {
-      background: #e9f2ff;
-      border-color: #85b8ff;
-      color: #0c66e4;
+      background: var(--jx-accent-subtle);
+      border-color: var(--jx-accent-border);
+      color: var(--jx-accent);
 
-      &:hover:not(:disabled) {
-        background: #cce0ff;
+      @media (hover: hover) and (pointer: fine) {
+        &:hover:not(:disabled) {
+          background: var(--jx-accent-subtle-strong);
+        }
       }
     }
 
@@ -2408,10 +2505,10 @@ body ._JX {
   &_comment_reaction_button {
     align-items: center;
     appearance: none;
-    background: #fff;
-    border: 1px solid #d0d7de;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 999px;
-    color: #42526e;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     font-family: inherit;
@@ -2425,21 +2522,23 @@ body ._JX {
     padding: 3px;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 
-    &:hover:not(:disabled) {
-      background: #f4f8fb;
-      border-color: #8fb8e8;
-      color: #0c4a7a;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover:not(:disabled) {
+        background: var(--jx-wash);
+        border-color: var(--jx-accent-border);
+        color: var(--jx-ink);
+      }
     }
 
     &:focus-visible {
-      box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
-      outline: none;
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 16%, transparent);
+      outline: 2px solid transparent;
     }
 
     &.is-reacted {
-      background: #e9f2ff;
-      border-color: #85b8ff;
-      color: #0c66e4;
+      background: var(--jx-accent-subtle);
+      border-color: var(--jx-accent-border);
+      color: var(--jx-accent);
     }
 
     &.is-pending,
@@ -2452,10 +2551,10 @@ body ._JX {
   &_comment_reaction_more {
     align-items: center;
     appearance: none;
-    background: #fff;
-    border: 1px solid #d0d7de;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 999px;
-    color: #42526e;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     font-family: inherit;
@@ -2473,15 +2572,17 @@ body ._JX {
       display: none;
     }
 
-    &:hover {
-      background: #f4f8fb;
-      border-color: #8fb8e8;
-      color: #0c4a7a;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--jx-wash);
+        border-color: var(--jx-accent-border);
+        color: var(--jx-ink);
+      }
     }
 
     &:focus-visible {
-      box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
-      outline: none;
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 16%, transparent);
+      outline: 2px solid transparent;
     }
   }
 
@@ -2492,10 +2593,10 @@ body ._JX {
   }
 
   &_comment_reaction_menu {
-    background: #fff;
-    border: 1px solid #d0d7de;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 12px;
-    box-shadow: 0 8px 18px rgba(9, 30, 66, 0.16);
+    box-shadow: 0 8px 18px rgb(0 0 0 / 10%);
     display: flex;
     flex-direction: row;
     gap: 8px;
@@ -2520,25 +2621,25 @@ body ._JX {
   &_comment_reaction_error {
     color: #ae2e24;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     margin-top: 4px;
   }
 
   &_comment_editor,
   &_comment_delete_panel {
-    background: #f7f8fa;
-    border: 1px solid #dfe1e6;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
     padding: 10px;
     position: relative;
   }
 
   &_comment_edit_input {
-    background: #fff;
-    border: 1px solid #c7d1db;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 6px;
     box-sizing: border-box;
-    color: #172b4d;
+    color: var(--jx-ink);
     font-family: inherit;
     font-size: 13px;
     line-height: 1.45;
@@ -2549,33 +2650,33 @@ body ._JX {
   }
 
   &_comment_edit_input:focus {
-    border-color: #0c66e4;
-    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
-    outline: none;
+    border-color: var(--jx-accent);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 16%, transparent);
+    outline: 2px solid transparent;
   }
 
   &_comment_delete_text {
-    color: #172b4d;
+    color: var(--jx-ink);
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_comment_action_error {
     color: #ae2e24;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     margin-top: 8px;
   }
 
   &_comments_empty {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 12px;
     margin-bottom: 8px;
   }
 
   &_comment_compose {
-    background: #fff;
-    border-top: 1px solid #dde4e6;
+    background: var(--jx-surface);
+    border-top: 1px solid var(--jx-border);
     bottom: 0;
     box-shadow: none;
     margin: 20px -10px -10px;
@@ -2589,11 +2690,11 @@ body ._JX {
   }
 
   &_comment_input {
-    background: #fff;
-    border: 1px solid #c7d1db;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     box-sizing: border-box;
     border-radius: 6px;
-    color: #172b4d;
+    color: var(--jx-ink);
     font-family: inherit;
     font-size: 13px;
     font-weight: 500;
@@ -2606,7 +2707,7 @@ body ._JX {
   }
 
   &_comment_input::placeholder {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-family: inherit;
     font-size: 13px;
     font-weight: 500;
@@ -2615,16 +2716,16 @@ body ._JX {
   }
 
   &_comment_input:focus {
-    border-color: #0c66e4;
-    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.16);
-    outline: none;
+    border-color: var(--jx-accent);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 16%, transparent);
+    outline: 2px solid transparent;
   }
 
   &_comment_mentions {
-    background: #fff;
-    border: 1px solid #c7d1db;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 8px;
-    box-shadow: 0 10px 18px rgba(9, 30, 66, 0.12);
+    box-shadow: 0 10px 18px rgb(0 0 0 / 7%);
     max-height: 210px;
     overflow-y: auto;
     position: absolute;
@@ -2636,7 +2737,7 @@ body ._JX {
   }
 
   &_comment_mentions_status {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 12px;
     padding: 9px 10px;
   }
@@ -2646,7 +2747,7 @@ body ._JX {
     appearance: none;
     background: transparent;
     border: 0;
-    border-top: 1px solid #ebecf0;
+    border-top: 1px solid var(--jx-border);
     cursor: pointer;
     display: flex;
     gap: 8px;
@@ -2659,19 +2760,19 @@ body ._JX {
     }
 
     &.is-selected {
-      background: #e9f2ff;
+      background: var(--jx-accent-subtle);
     }
   }
 
   &_comment_mention_primary {
-    color: #172b4d;
+    color: var(--jx-ink);
     display: block;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_comment_mention_secondary {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     display: block;
     font-size: 11px;
     margin-top: 2px;
@@ -2689,8 +2790,8 @@ body ._JX {
 
   &_comment_upload {
     align-items: center;
-    background: #f7f8fa;
-    border: 1px solid #dfe1e6;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
     display: grid;
     gap: 10px;
@@ -2704,8 +2805,8 @@ body ._JX {
   }
 
   &_comment_upload_preview {
-    background: #fff;
-    border: 1px solid #dfe1e6;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 6px;
     display: block;
     height: 52px;
@@ -2714,14 +2815,14 @@ body ._JX {
   }
 
   &_comment_upload_name {
-    color: #172b4d;
+    color: var(--jx-ink);
     display: block;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   &_comment_upload_status {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     display: block;
     font-size: 11px;
     margin-top: 2px;
@@ -2734,11 +2835,11 @@ body ._JX {
   &_comment_upload_retry {
     background: transparent;
     border: 0;
-    color: #0c66e4;
+    color: var(--jx-accent);
     cursor: pointer;
     font: inherit;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     margin-top: 4px;
     padding: 0;
 
@@ -2751,7 +2852,7 @@ body ._JX {
   &_comment_error {
     color: #ae2e24;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     min-height: 18px;
     padding-top: 6px;
 
@@ -2775,7 +2876,7 @@ body ._JX {
   &_comment_save,
   &_comment_discard {
     appearance: none;
-    border: 1px solid #c7d1db;
+    border: 1px solid var(--jx-border-strong);
     border-radius: 999px;
     cursor: pointer;
     font-family: inherit;
@@ -2786,37 +2887,37 @@ body ._JX {
   }
 
   &_comment_save {
-    background: #1f6feb;
-    border-color: #1f6feb;
+    background: var(--jx-accent);
+    border-color: var(--jx-accent);
     color: #fff;
   }
 
   &_comment_discard {
-    background: #fff;
-    color: #253858;
+    background: var(--jx-surface);
+    color: var(--jx-ink);
   }
 
   &_comment_save:disabled,
   &_comment_discard:disabled {
-    background: #f3f4f6;
-    border-color: #d7dde5;
-    color: #7a869a;
+    background: var(--jx-fill-hover);
+    border-color: var(--jx-border);
+    color: var(--jx-ink-3);
     cursor: not-allowed;
   }
 
   &_mention {
-    background: #e9f2ff;
+    background: var(--jx-accent-subtle);
     border-radius: 999px;
-    color: #0c66e4;
+    color: var(--jx-accent);
     display: inline-flex;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     padding: 1px 8px;
     vertical-align: middle;
   }
 
   &_empty_body {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 13px;
     line-height: 1.4;
     padding: 2px 0;
@@ -2824,15 +2925,14 @@ body ._JX {
 
   &_field_group {
     padding: 10px;
-    border-bottom: 1px solid #dde4e6;
+    border-bottom: 1px solid var(--jx-border);
   }
 
   &_field_label {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 12px;
-    font-weight: bold;
+    font-weight: 600;
     margin-bottom: 6px;
-    text-transform: uppercase;
   }
 
   &_field_values {
@@ -2842,10 +2942,10 @@ body ._JX {
   }
 
   &_field_chip {
-    background: #ebecf0;
-    border: 1px solid #dfe1e6;
+    background: var(--jx-fill-pressed);
+    border: 1px solid var(--jx-border);
     border-radius: 20px;
-    color: #172b4d;
+    color: var(--jx-ink);
     display: inline-flex;
     align-items: center;
     font-size: 12px;
@@ -2862,11 +2962,13 @@ body ._JX {
 
   &_field_chip_link {
     text-decoration: none !important;
-    color: #172b4d !important;
+    color: var(--jx-ink) !important;
 
-    &:hover {
-      text-decoration: underline !important;
-      text-underline-offset: 2px;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        text-decoration: underline !important;
+        text-underline-offset: 2px;
+      }
     }
   }
 
@@ -2897,7 +2999,7 @@ body ._JX {
     background: transparent;
     border: none;
     border-radius: 999px;
-    color: #52657a;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     flex: 0 0 auto;
@@ -2920,17 +3022,19 @@ body ._JX {
     opacity: 1;
   }
 
-  &_field_chip_edit:hover {
-    background: #dfe1e6;
-    color: #172b4d;
+  @media (hover: hover) and (pointer: fine) {
+    &_field_chip_edit:hover {
+      background: var(--jx-fill-pressed);
+      color: var(--jx-ink);
+    }
   }
 
   &_edit_popover {
-    background: #fff;
-    border: 1px solid #d0d7de;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 10px;
-    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
-    color: #172b4d;
+    box-shadow: 0 14px 30px rgb(0 0 0 / 11%);
+    color: var(--jx-ink);
     left: 0;
     min-width: 260px;
     max-width: min(360px, calc(100vw - 48px));
@@ -2952,12 +3056,10 @@ body ._JX {
   }
 
   &_edit_field_label {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
     font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    font-weight: 600;
     margin-bottom: 6px;
-    text-transform: uppercase;
   }
 
   &_edit_input_shell {
@@ -2968,10 +3070,10 @@ body ._JX {
   }
 
   &_edit_input {
-    background: #fff;
-    border: 1px solid #7a869a;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 6px;
-    color: #172b4d;
+    color: var(--jx-ink);
     flex: 1 1 auto;
     font-family: inherit;
     font-size: 12px;
@@ -2988,22 +3090,22 @@ body ._JX {
   }
 
   &_edit_input::placeholder {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     opacity: 1;
   }
 
   &_edit_input:focus {
-    border-color: #0c66e4;
-    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.18);
-    outline: none;
+    border-color: var(--jx-accent);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--jx-accent) 18%, transparent);
+    outline: 2px solid transparent;
   }
 
   &_edit_cancel,
   &_edit_discard {
-    background: #f7f8f9;
-    border: 1px solid #d0d7de;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 6px;
-    color: #344563;
+    color: var(--jx-ink);
     cursor: pointer;
     flex: 0 0 auto;
     font-family: inherit;
@@ -3013,9 +3115,11 @@ body ._JX {
     padding: 7px 10px;
   }
 
-  &_edit_cancel:hover,
-  &_edit_discard:hover {
-    background: #ebecf0;
+  @media (hover: hover) and (pointer: fine) {
+    &_edit_cancel:hover,
+    &_edit_discard:hover {
+      background: var(--jx-fill-pressed);
+    }
   }
 
   &_edit_cancel:disabled,
@@ -3034,10 +3138,10 @@ body ._JX {
 
   &_edit_selected_chip {
     align-items: center;
-    background: #e9f2ff;
-    border: 1px solid #bcd6f7;
+    background: var(--jx-accent-subtle);
+    border: 1px solid var(--jx-accent-border);
     border-radius: 999px;
-    color: #12315b;
+    color: var(--jx-ink);
     display: inline-flex;
     font-size: 12px;
     gap: 2px;
@@ -3058,7 +3162,7 @@ body ._JX {
     background: transparent;
     border: none;
     border-radius: 50%;
-    color: #44546f;
+    color: var(--jx-ink-2);
     cursor: pointer;
     display: inline-flex;
     flex: 0 0 18px;
@@ -3080,9 +3184,9 @@ body ._JX {
 
   &_edit_selected_remove:hover,
   &_edit_selected_remove:focus-visible {
-    background: #bcd6f7;
-    color: #172b4d;
-    outline: none;
+    background: var(--jx-accent-subtle-strong);
+    color: var(--jx-ink);
+    outline: 2px solid transparent;
   }
 
   &_edit_selected_remove:disabled {
@@ -3098,10 +3202,10 @@ body ._JX {
   }
 
   &_edit_dropdown {
-    background: #fff;
-    border: 1px solid #d0d7de;
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border);
     border-radius: 8px;
-    box-shadow: inset 0 1px 0 rgba(9, 30, 66, 0.04);
+    box-shadow: inset 0 1px 0 rgb(0 0 0 / 2%);
     display: flex;
     flex-direction: column;
     margin-top: 8px;
@@ -3110,15 +3214,13 @@ body ._JX {
   }
 
   &_edit_group_label {
-    background: #f7f8f9;
-    border-top: 1px solid #e5e8ec;
-    color: #44546f;
+    background: var(--jx-wash);
+    border-top: 1px solid var(--jx-border);
+    color: var(--jx-ink-2);
     font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-weight: 600;
     line-height: 12px;
     padding: 2px 8px 1px;
-    text-transform: uppercase;
 
     &:first-child {
       border-top: none;
@@ -3132,7 +3234,7 @@ body ._JX {
     background-image: none;
     border: none;
     box-shadow: none;
-    color: #172b4d;
+    color: var(--jx-ink);
     cursor: pointer;
     display: flex;
     font-family: inherit;
@@ -3145,13 +3247,13 @@ body ._JX {
   }
 
   &_edit_option.is-selected {
-    background: #e9f2ff;
+    background: var(--jx-accent-subtle);
   }
 
   &_edit_option:hover,
   &_edit_option.is-highlighted {
-    background: #cce0ff;
-    color: #091e42;
+    background: var(--jx-accent-subtle-strong);
+    color: var(--jx-ink);
   }
 
   &_edit_option_icon,
@@ -3165,11 +3267,11 @@ body ._JX {
 
   &_edit_option_avatar_placeholder {
     align-items: center;
-    background: #c1c7d0;
+    background: var(--jx-border-strong);
     color: #fff;
     display: inline-flex;
     font-size: 9px;
-    font-weight: 700;
+    font-weight: 600;
     justify-content: center;
     line-height: 1;
   }
@@ -3184,11 +3286,11 @@ body ._JX {
 
   &_edit_option_check {
     align-items: center;
-    color: #0c66e4;
+    color: var(--jx-accent);
     display: inline-flex;
     flex: 0 0 14px;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     height: 16px;
     justify-content: center;
     line-height: 16px;
@@ -3229,7 +3331,7 @@ body ._JX {
   }
 
   &_edit_option_meta {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-size: 11px;
     line-height: 1.2;
     min-width: 0;
@@ -3246,8 +3348,8 @@ body ._JX {
   }
 
   &_edit_save {
-    background: #0c66e4;
-    border: 1px solid #0c66e4;
+    background: var(--jx-accent);
+    border: 1px solid var(--jx-accent);
     border-radius: 6px;
     color: #fff;
     cursor: pointer;
@@ -3258,9 +3360,11 @@ body ._JX {
     padding: 7px 12px;
   }
 
-  &_edit_save:hover {
-    background: #0055cc;
-    border-color: #0055cc;
+  @media (hover: hover) and (pointer: fine) {
+    &_edit_save:hover {
+      background: var(--jx-accent);
+      border-color: var(--jx-accent);
+    }
   }
 
   &_edit_empty,
@@ -3277,7 +3381,7 @@ body ._JX {
 
   &_edit_empty,
   &_edit_hint {
-    color: #5e6c84;
+    color: var(--jx-ink-meta);
   }
 
   &_edit_empty {
@@ -3297,8 +3401,10 @@ body ._JX {
     color: inherit;
     text-decoration: none;
 
-    &:hover {
-      text-decoration: underline;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        text-decoration: underline;
+      }
     }
   }
 
@@ -3306,22 +3412,27 @@ body ._JX {
     font-weight: inherit;
   }
   &_PR_STATUS {
-    border: 1px solid #a5b3c2;
+    border: 1px solid var(--jx-border-strong);
     border-radius: 3px;
     display: inline-block;
     font-size: 11px;
-    font-weight: bold;
+    font-weight: 600;
     line-height: 100%;
     margin: 0;
     padding: 2px 5px;
     text-align: center;
     text-decoration: none;
-    text-transform: uppercase;
+    // Providers send single-word states in capitals (MERGED, OPEN); show them in sentence case.
+    text-transform: lowercase;
+
+    &::first-letter {
+      text-transform: uppercase;
+    }
   }
 
   &_PR_OPEN {
-    background-color: #fff;
-    color: #4a6785;
+    background-color: var(--jx-surface);
+    color: var(--jx-ink-2);
   }
 
   &_PR_MERGED {
@@ -3346,7 +3457,7 @@ body ._JX {
   }
 
   &_thumb {
-    border: 1px solid rgb(221, 228, 230) !important;
+    border: 1px solid var(--jx-border) !important;
     cursor: pointer;
     height: auto;
     width: auto;
@@ -3372,8 +3483,8 @@ body ._JX {
     position: absolute;
     white-space: nowrap;
     width: 100%;
-    background-color: white;
-    color: #172b4d;
+    background-color: var(--jx-surface);
+    color: var(--jx-ink);
     font-size: 12px;
     line-height: 18px;
     max-height: 20px;
@@ -3398,10 +3509,10 @@ body ._JX {
 
   &_attachment_file > a {
     align-items: center;
-    background: #f7f8f9;
-    border: 1px solid #d9e1ea;
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border);
     border-radius: 7px;
-    color: #172b4d;
+    color: var(--jx-ink);
     display: flex;
     gap: 9px;
     min-width: 0;
@@ -3410,24 +3521,23 @@ body ._JX {
 
     &:hover,
     &:focus-visible {
-      background: #e9f2ff;
-      border-color: #85b8ff;
-      outline: none;
+      background: var(--jx-accent-subtle);
+      border-color: var(--jx-accent-border);
+      outline: 2px solid transparent;
     }
   }
 
   &_attachment_file_type {
     align-items: center;
-    background: #dfe1e6;
+    background: var(--jx-fill-pressed);
     border-radius: 5px;
-    color: #44546f;
+    color: var(--jx-ink-2);
     display: inline-flex;
     flex: 0 0 42px;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     height: 28px;
     justify-content: center;
-    letter-spacing: 0.03em;
   }
 
   &_attachment_file_details {
@@ -3444,12 +3554,12 @@ body ._JX {
   }
 
   &_attachment_file_size {
-    color: #6b778c;
+    color: var(--jx-ink-meta);
     font-size: 10px;
   }
 
   &_attachment_file_open {
-    color: #44546f;
+    color: var(--jx-ink-2);
     flex: 0 0 auto;
     font-size: 14px;
   }
@@ -3487,7 +3597,7 @@ body ._JX {
 
     &_activity_strip {
       border-left: none;
-      border-top: 1px solid #d9e1ea;
+      border-top: 1px solid var(--jx-border);
       padding-left: 0;
       padding-top: 8px;
       width: 100%;
@@ -3540,24 +3650,24 @@ html[data-jhl-theme='dark'] body ._JX {
   // The popup inherits the legacy whole-container inversion. Cancel it here so
   // editor states can use intentional dark-theme colors with stable contrast.
   &_edit_popover {
-    background: #161b22;
-    border-color: #3d4654;
-    color: #dbe5f1;
+    background: #1b1b1b;
+    border-color: #454545;
+    color: #e4e4e4;
     filter: invert(1) hue-rotate(180deg);
   }
 
   &_edit_popover ._JX_edit_field_label {
-    color: #c7d1df;
+    color: #d0d0d0;
   }
 
   &_edit_popover ._JX_edit_input {
-    background: #202733;
-    border-color: #64748b;
-    color: #f1f5f9;
+    background: #272727;
+    border-color: #737373;
+    color: #f4f4f4;
   }
 
   &_edit_popover ._JX_edit_input::placeholder {
-    color: #aeb9c8;
+    color: #b8b8b8;
   }
 
   &_edit_popover ._JX_edit_input:focus {
@@ -3582,18 +3692,18 @@ html[data-jhl-theme='dark'] body ._JX {
   }
 
   &_edit_popover ._JX_edit_dropdown {
-    background: #161b22;
-    border-color: #3d4654;
+    background: #1b1b1b;
+    border-color: #454545;
   }
 
   &_edit_popover ._JX_edit_group_label {
-    background: #202733;
-    border-color: #3d4654;
-    color: #c7d1df;
+    background: #272727;
+    border-color: #454545;
+    color: #d0d0d0;
   }
 
   &_edit_popover ._JX_edit_option {
-    color: #f1f5f9;
+    color: #f4f4f4;
   }
 
   &_edit_popover ._JX_edit_option.is-selected {
@@ -3607,7 +3717,7 @@ html[data-jhl-theme='dark'] body ._JX {
   }
 
   &_edit_popover ._JX_edit_option_meta {
-    color: #b2bdcc;
+    color: #bcbcbc;
   }
 
   &_edit_popover ._JX_edit_option_check {
@@ -3618,26 +3728,28 @@ html[data-jhl-theme='dark'] body ._JX {
     color-scheme: dark;
 
     option {
-      background-color: #202733;
-      color: #f1f5f9;
+      background-color: #272727;
+      color: #f4f4f4;
     }
   }
 
   &_edit_popover ._JX_edit_cancel,
   &_edit_popover ._JX_edit_discard {
-    background: #202733;
-    border-color: #3d4654;
-    color: #dbe5f1;
+    background: #272727;
+    border-color: #454545;
+    color: #e4e4e4;
   }
 
-  &_edit_popover ._JX_edit_cancel:hover,
-  &_edit_popover ._JX_edit_discard:hover {
-    background: #2b3442;
+  @media (hover: hover) and (pointer: fine) {
+    &_edit_popover ._JX_edit_cancel:hover,
+    &_edit_popover ._JX_edit_discard:hover {
+      background: #333333;
+    }
   }
 
   &_edit_popover ._JX_edit_empty,
   &_edit_popover ._JX_edit_hint {
-    color: #b2bdcc;
+    color: #bcbcbc;
   }
 
   &_title_user,
@@ -3681,15 +3793,17 @@ body ._JX {
     align-items: center;
     gap: 4px;
     font-size: 11px;
-    color: #8993a4;
+    color: #929292;
     text-decoration: none;
     background: none;
     border: none;
     padding: 0;
     cursor: pointer;
 
-    &:hover {
-      color: #5e6c84;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        color: #6b6b6b;
+      }
     }
 
     svg {
