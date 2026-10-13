@@ -2393,6 +2393,12 @@ async function mainAsyncLocal() {
     const selectableOptions = visibleOptions.filter(option => !option.isGroupLabel);
     const highlightedOption = selectableOptions.find(option => option.id === editState.highlightedOptionId) || selectableOptions[0];
     const filteredOptions = visibleOptions.map((option, optionIndex) => ({
+      // Mustache resolves a missing key from the enclosing context, so an option
+      // without its own avatar (such as Unassigned) would show the current assignee's.
+      avatarUrl: '',
+      initials: '',
+      iconUrl: '',
+      metaText: '',
       ...option,
       fieldKey,
       optionDomId: `jira-popup-edit-option-${fieldKey}-${optionIndex}`,

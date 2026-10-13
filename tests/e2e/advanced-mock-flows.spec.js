@@ -763,6 +763,24 @@ test('leaves focus in a host text field when the popup opens @mock-only', async 
   await page.close();
 });
 
+test('shows no avatar on the Unassigned assignee option @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Assignee option rendering is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  await popup.editButton('assignee').click();
+  const unassigned = page.locator('._JX_edit_option[data-field-key="assignee"][data-option-id="__unassigned__"]');
+  await expect(unassigned).toBeVisible();
+  // The option has no avatar of its own; it must not inherit the surrounding assignee's.
+  await expect(unassigned.locator('._JX_edit_option_avatar')).toHaveCount(0);
+
+  await page.close();
+});
+
 test('removes a selected fix version directly from its chip @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Fix version removal coverage is deterministic in mocked mode only.');
