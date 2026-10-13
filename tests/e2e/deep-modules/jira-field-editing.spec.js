@@ -563,7 +563,7 @@ test('fix version editing owns multi-selection, filtering, keyboard selection, a
   });
 
   expect(result).toEqual({
-    begun: {kind: 'changed', labels: ['N/A', 'Unreleased', 'v1', 'v10'], selectedOptionIds: ['1']},
+    begun: {kind: 'changed', labels: ['Unreleased', 'v1', 'v10'], selectedOptionIds: ['1']},
     filtered: {kind: 'changed', inputValue: 'v10'},
     selected: {kind: 'changed', selectedOptionIds: ['1', '10'], hasChanges: true},
     writesBeforeSave: 0,
@@ -572,7 +572,7 @@ test('fix version editing owns multi-selection, filtering, keyboard selection, a
   });
 });
 
-test('version choices expose N/A, unreleased versions oldest first, and only the five latest released versions', async ({page}) => {
+test('version choices list unreleased versions oldest first, and only the five latest released versions', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
     const jira = createMockJiraAdapter({scripts: [
@@ -601,28 +601,20 @@ test('version choices expose N/A, unreleased versions oldest first, and only the
     });
 
     const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
-    const cleared = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '__clear__'});
-    return {
-      options: begun.view.edit.options.map(option => ({id: option.id, label: option.label, isGroupLabel: !!option.isGroupLabel})),
-      selectedOptionIds: cleared.view.edit.selectedOptionIds,
-    };
+    return begun.view.edit.options.map(option => ({id: option.id, label: option.label, isGroupLabel: !!option.isGroupLabel}));
   });
 
-  expect(result).toEqual({
-    options: [
-      {id: '__clear__', label: 'N/A', isGroupLabel: false},
-      {id: '__group__versions-unreleased', label: 'Unreleased', isGroupLabel: true},
-      {id: 'u1', label: '2027.1', isGroupLabel: false},
-      {id: 'u2', label: '2027.2', isGroupLabel: false},
-      {id: '__group__versions-released', label: 'Released (latest 5)', isGroupLabel: true},
-      {id: 'r6', label: '2026.6', isGroupLabel: false},
-      {id: 'r5', label: '2026.5', isGroupLabel: false},
-      {id: 'r4', label: '2026.4', isGroupLabel: false},
-      {id: 'r3', label: '2026.3', isGroupLabel: false},
-      {id: 'r2', label: '2026.2', isGroupLabel: false},
-    ],
-    selectedOptionIds: [],
-  });
+  expect(result).toEqual([
+    {id: '__group__versions-unreleased', label: 'Unreleased', isGroupLabel: true},
+    {id: 'u1', label: '2027.1', isGroupLabel: false},
+    {id: 'u2', label: '2027.2', isGroupLabel: false},
+    {id: '__group__versions-released', label: 'Released (latest 5)', isGroupLabel: true},
+    {id: 'r6', label: '2026.6', isGroupLabel: false},
+    {id: 'r5', label: '2026.5', isGroupLabel: false},
+    {id: 'r4', label: '2026.4', isGroupLabel: false},
+    {id: 'r3', label: '2026.3', isGroupLabel: false},
+    {id: 'r2', label: '2026.2', isGroupLabel: false},
+  ]);
 });
 
 test('version chip selection toggles off and saves the cleared Affects version field', async ({page}) => {

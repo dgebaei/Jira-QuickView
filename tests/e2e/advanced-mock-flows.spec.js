@@ -254,6 +254,7 @@ test('keeps fix version options readable and distinct in dark mode @mock-only', 
 
   const options = popup.editOptions('fixVersions');
   await waitForOptions(options, 4);
+  await popup.editInput('fixVersions').press('ArrowDown');
   const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected').first();
   const normalOption = page.locator('._JX_edit_option[data-field-key="fixVersions"]:not(.is-selected):not(.is-highlighted)').first();
@@ -281,6 +282,7 @@ test('keeps highlighted and selected fix version options light in light mode @mo
 
   const options = popup.editOptions('fixVersions');
   await waitForOptions(options, 4);
+  await popup.editInput('fixVersions').press('ArrowDown');
   const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected:not(.is-highlighted)').first();
   await expect(highlightedOption).toHaveCSS('background-color', 'rgb(204, 224, 255)');

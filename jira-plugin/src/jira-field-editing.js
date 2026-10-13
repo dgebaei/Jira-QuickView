@@ -129,7 +129,7 @@ function buildVersionOptions(versions) {
     .filter(version => version.released === true)
     .sort((left, right) => compareVersionDates(left, right, -1))
     .slice(0, 5);
-  const options = [{id: '__clear__', label: 'N/A', rawValue: null, searchText: 'n/a none clear'}];
+  const options = [];
   if (unreleased.length) {
     options.push({id: '__group__versions-unreleased', isGroupLabel: true, label: 'Unreleased', searchText: 'unreleased'});
     options.push(...unreleased.map(buildAllowedValueOption));
