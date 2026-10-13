@@ -51,6 +51,12 @@ body ._JX {
       }
     }
 
+    // Focused programmatically on open so keyboard input (Escape) reaches the popup.
+    // A transparent outline keeps the ring invisible but lets forced-colors mode draw it.
+    &:focus {
+      outline: 2px solid transparent;
+    }
+
     &.container-pinned {
       position: fixed !important;
     }
@@ -469,8 +475,8 @@ body ._JX {
     color: var(--jx-ink-2);
     display: inline-flex;
     flex: 0 0 auto;
-    gap: 10px;
-    padding-left: 10px;
+    gap: 1px;
+    padding-left: 4px;
     position: relative;
     white-space: nowrap;
   }

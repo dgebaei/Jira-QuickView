@@ -720,7 +720,7 @@ Business logic and limitations:
 - Sprint values can come from Jira Agile fields that vary by company and project.
 - Version chips are most linkable when there is exactly one version.
 - Picker and multi-value edits save when you click elsewhere in QuickView or outside it. `Escape` cancels; `Enter` accepts the highlighted single-value option, and `Ctrl+Enter` or `Command+Enter` saves multi-value changes.
-- Fix Version and Affects Version choices put `N/A` first, then unreleased versions, followed by the five most recent released versions.
+- Fix Version and Affects Version choices list unreleased versions first, followed by the five most recent released versions.
 - These fields can be moved to other rows in the layout editor if your team wants a different visual priority.
 
 ### 5.6 Row 3: Environment, Labels, and Custom Fields

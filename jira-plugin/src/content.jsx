@@ -2568,7 +2568,7 @@ async function mainAsyncLocal() {
   // ── Popup Rendering & State ────────────────────────────────
   let hoverDelayTimeout;
   let lastHoveredKey = '';
-  const container = $('<div class="_JX_container" data-testid="jira-popup-root">');
+  const container = $('<div class="_JX_container" data-testid="jira-popup-root" tabindex="-1">');
   const previewOverlay = $(`
     <div class="_JX_preview_overlay" data-testid="jira-popup-preview-overlay">
       <img class="_JX_preview_image" data-testid="jira-popup-preview-image" />
@@ -2657,8 +2657,10 @@ async function mainAsyncLocal() {
 
   function commitFieldEditOnOutsideInteraction() {
     const fieldView = jiraFieldEditing.view().edit;
-    if (!fieldView) return;
-    dispatchJiraFieldEditing({type: 'save', editId: fieldView.editId}).catch(() => {});
+    if (!fieldView || fieldView.saving) return;
+    // Nothing to save means save() is a no-op, so close the editor instead of leaving it open.
+    const type = fieldView.hasChanges ? 'save' : 'cancel';
+    dispatchJiraFieldEditing({type, editId: fieldView.editId}).catch(() => {});
   }
 
   function selectFieldEditOption(optionId) {

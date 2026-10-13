@@ -1,3 +1,9 @@
+function isEditableElement(element) {
+  if (!element) return false;
+  if (element.isContentEditable) return true;
+  return ['INPUT', 'TEXTAREA', 'SELECT', 'IFRAME'].includes(element.tagName);
+}
+
 function requireOperation(owner, operation) {
   if (typeof owner?.[operation] !== 'function') {
     throw new TypeError(`Browser popup shell requires ${operation}()`);
@@ -25,6 +31,7 @@ export function createBrowserPopupShell({
 
   let cooldownActive = false;
   let cooldownTimer = null;
+  let focusReturnTarget = null;
   let hideTimer = null;
   let pinned = false;
   let previewOpen = false;
@@ -104,6 +111,36 @@ export function createBrowserPopupShell({
     return outcome('repositioned', {position: nextPosition});
   }
 
+  function hasFocus() {
+    const element = container[0];
+    const activeElement = element?.ownerDocument?.activeElement;
+    return !!activeElement && !!element?.contains(activeElement);
+  }
+
+  function takeFocus() {
+    const element = container[0];
+    const documentRef = element?.ownerDocument;
+    const activeElement = documentRef?.activeElement;
+    if (!element || typeof element.focus !== 'function') return outcome('ignored', {reason: 'missing-container'});
+    if (hasFocus()) return outcome('ignored', {reason: 'already-focused'});
+    // Never pull the caret out of something the user is typing into on the host page.
+    if (isEditableElement(activeElement)) return outcome('ignored', {reason: 'host-editing'});
+    focusReturnTarget = activeElement && activeElement !== documentRef.body ? activeElement : null;
+    element.focus({preventScroll: true});
+    return outcome('focused');
+  }
+
+  function releaseFocus() {
+    const returnTarget = focusReturnTarget;
+    focusReturnTarget = null;
+    if (!hasFocus()) return;
+    if (returnTarget?.isConnected && typeof returnTarget.focus === 'function') {
+      returnTarget.focus({preventScroll: true});
+    } else {
+      container[0].blur();
+    }
+  }
+
   function closePreview() {
     previewRequest += 1;
     previewOpen = false;
@@ -123,6 +160,7 @@ export function createBrowserPopupShell({
       return outcome('opening-prepared');
     }
     if (intent.type === 'pin') return pin(intent);
+    if (intent.type === 'take-focus') return takeFocus();
     if (intent.type === 'reposition') return reposition(intent.anchor);
     if (intent.type === 'keep-visible') {
       if (pinned || !container.html()) return outcome('ignored', {reason: pinned ? 'pinned' : 'empty-popup'});
@@ -178,6 +216,7 @@ export function createBrowserPopupShell({
       cancelCooldown();
       cancelHide();
       closePreview();
+      releaseFocus();
       pinned = false;
       container.html('').css({left: -5000, top: -5000, position: 'absolute'}).removeClass('container-pinned');
       return outcome('cleared');

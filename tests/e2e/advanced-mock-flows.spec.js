@@ -254,6 +254,7 @@ test('keeps fix version options readable and distinct in dark mode @mock-only', 
 
   const options = popup.editOptions('fixVersions');
   await waitForOptions(options, 4);
+  await popup.editInput('fixVersions').press('ArrowDown');
   const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected').first();
   const normalOption = page.locator('._JX_edit_option[data-field-key="fixVersions"]:not(.is-selected):not(.is-highlighted)').first();
@@ -281,6 +282,7 @@ test('keeps highlighted and selected fix version options light in light mode @mo
 
   const options = popup.editOptions('fixVersions');
   await waitForOptions(options, 4);
+  await popup.editInput('fixVersions').press('ArrowDown');
   const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected:not(.is-highlighted)').first();
   await expect(highlightedOption).toHaveCSS('background-color', 'rgb(204, 224, 255)');
@@ -675,6 +677,89 @@ test('autosaves dropdown field edits when focus leaves the popover @mock-only', 
   await page.locator('._JX_content_blocks').click({position: {x: 4, y: 4}});
   await expect(popup.root).toContainText(/Fix version/i);
   await expect(popup.editPopover('fixVersions')).toHaveCount(0);
+  await page.close();
+});
+
+test('closes an unchanged fix version editor when clicking elsewhere in the popup @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Outside-click dismissal is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  await popup.editButton('fixVersions').click();
+  await waitForOptions(popup.editOptions('fixVersions'), 1);
+  await popup.editInput('fixVersions').click();
+
+  await popup.root.locator('._JX_description').first().click({position: {x: 20, y: 10}});
+
+  await expect(popup.editPopover('fixVersions')).toHaveCount(0);
+  await expect(popup.root).toBeVisible();
+
+  await page.close();
+});
+
+test('focuses the popup on open, keeps Escape from the host page, and restores focus on close @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Focus handling is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const resolvedTarget = await resolveTargetIssueKeys(target);
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/popup-actions`);
+  await replaceIssueKeysOnPage(page, [{from: 'JRACLOUD-97846', to: resolvedTarget.primaryIssueKey}]);
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'host-focus';
+    button.textContent = 'Host control';
+    document.body.prepend(button);
+    window.hostEscapeCount = 0;
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') window.hostEscapeCount += 1;
+    });
+  });
+  await injectContentScript(extensionApp, page);
+  await page.locator('#host-focus').focus();
+
+  await hoverIssueKey(page, '#popup-key');
+  await expect(page.locator('#_JX_title_link')).toContainText(resolvedTarget.primaryIssueKey);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains('_JX_container'))).toBe(true);
+  if (themeScreenshotDir) {
+    await page.locator('._JX_container').screenshot({path: path.join(themeScreenshotDir, 'popup-focused-on-open.png')});
+  }
+
+  await page.keyboard.press('Escape');
+
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  expect(await page.evaluate(() => window.hostEscapeCount)).toBe(0);
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe('host-focus');
+
+  await page.close();
+});
+
+test('leaves focus in a host text field when the popup opens @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Focus handling is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const resolvedTarget = await resolveTargetIssueKeys(target);
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.allowedPage.origin}/popup-actions`);
+  await replaceIssueKeysOnPage(page, [{from: 'JRACLOUD-97846', to: resolvedTarget.primaryIssueKey}]);
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.id = 'host-input';
+    document.body.prepend(input);
+  });
+  await injectContentScript(extensionApp, page);
+  await page.locator('#host-input').focus();
+
+  await hoverIssueKey(page, '#popup-key');
+  await expect(page.locator('#_JX_title_link')).toContainText(resolvedTarget.primaryIssueKey);
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe('host-input');
+
   await page.close();
 });
 

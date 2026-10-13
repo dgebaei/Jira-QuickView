@@ -901,6 +901,39 @@ test('browser popup shell default scheduler releases cooldown in Chromium', asyn
   expect(result).toEqual({activeBefore: true, activeAfter: false});
 });
 
+test('browser popup shell takes focus on open, spares host text fields, and returns focus on clear', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createBrowserPopupShell, jquery: $} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<button id="host">Host</button><input id="field"><div id="popup" tabindex="-1">Issue</div><div id="preview"><img></div>';
+    const shell = createBrowserPopupShell({
+      close() {},
+      container: $('#popup'),
+      media: {displayUrl: source => Promise.resolve(source)},
+      previewOverlay: $('#preview'),
+    });
+    const active = () => document.activeElement?.id || document.activeElement?.tagName;
+
+    document.getElementById('host').focus();
+    const taken = await shell.dispatch({type: 'take-focus'});
+    const afterTake = active();
+    await shell.dispatch({type: 'clear'});
+    const afterClear = active();
+
+    $('#popup').html('Issue');
+    document.getElementById('field').focus();
+    const spared = await shell.dispatch({type: 'take-focus'});
+    return {taken: taken.kind, afterTake, afterClear, spared, afterSpare: active()};
+  });
+
+  expect(result).toEqual({
+    taken: 'focused',
+    afterTake: 'popup',
+    afterClear: 'host',
+    spared: {kind: 'ignored', reason: 'host-editing'},
+    afterSpare: 'field',
+  });
+});
+
 test('browser comment presentation renders lifecycle state through one DOM interface', async ({page}) => {
   const result = await page.evaluate(() => {
     const {createBrowserCommentPresentation, jquery: $} = window.JiraQuickViewDeepModules;
@@ -1058,6 +1091,7 @@ test('browser renderer presents current loading identity at the pointer and pins
     shellIntents: [
       {type: 'prepare-opening'},
       {type: 'pin', announce: false},
+      {type: 'take-focus'},
     ],
   });
 });

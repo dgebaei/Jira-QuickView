@@ -148,7 +148,13 @@ export function createBrowserPopupEvents({root, emit}) {
       }
     });
     root.on(`keydown${EVENT_NAMESPACE}`, function (event) {
-      if (event.key === 'Escape' || event.keyCode === 27) publish({type: 'escape'});
+      if (event.key !== 'Escape' && event.keyCode !== 27) return;
+      // Escape pressed inside the popup belongs to the popup; keep host-page shortcuts
+      // (e.g. Outlook closing the reading pane) from also reacting to it.
+      if (typeof event.target?.closest === 'function' && event.target.closest('._JX_container')) {
+        event.stopPropagation();
+      }
+      publish({type: 'escape'});
     });
     root.on(`input${EVENT_NAMESPACE}`, '._JX_watchers_search_input', function (event) {
       event.stopPropagation();
