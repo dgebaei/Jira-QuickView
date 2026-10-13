@@ -2947,9 +2947,11 @@ body ._JX {
     gap: 6px;
   }
 
+  // Chips sit on the header's grey wash, so they are raised to the white
+  // surface with a hairline; a grey fill on grey reads as disabled.
   &_field_chip {
-    background: var(--jx-fill-pressed);
-    border: 1px solid var(--jx-border);
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
     border-radius: 20px;
     color: var(--jx-ink);
     display: inline-flex;
