@@ -3228,7 +3228,7 @@ body ._JX {
     font-size: 12px;
     font-weight: 600;
     line-height: 12px;
-    padding: 4px 8px 2px;
+    padding: 4px 8px;
 
     &:first-child {
       border-top: none;
@@ -3249,19 +3249,27 @@ body ._JX {
     font-size: 12px;
     gap: 8px;
     line-height: 16px;
-    padding: 9px 10px;
+    padding: 8px;
     text-align: left;
     -webkit-tap-highlight-color: transparent;
   }
 
+  // Pointer/keyboard position is neutral grey; the chosen value is blue.
+  // A chosen row under the pointer takes the stronger blue, so the two states
+  // never share a colour.
   &_edit_option.is-selected {
     background: var(--jx-accent-subtle);
   }
 
   &_edit_option:hover,
   &_edit_option.is-highlighted {
-    background: var(--jx-accent-subtle-strong);
+    background: var(--jx-fill-pressed);
     color: var(--jx-ink);
+  }
+
+  &_edit_option.is-selected:hover,
+  &_edit_option.is-selected.is-highlighted {
+    background: var(--jx-accent-subtle-strong);
   }
 
   &_edit_option_icon,
@@ -3720,8 +3728,13 @@ html[data-jhl-theme='dark'] body ._JX {
 
   &_edit_popover ._JX_edit_option:hover,
   &_edit_popover ._JX_edit_option.is-highlighted {
-    background: #315f8f;
+    background: #333333;
     color: #fff;
+  }
+
+  &_edit_popover ._JX_edit_option.is-selected:hover,
+  &_edit_popover ._JX_edit_option.is-selected.is-highlighted {
+    background: #315f8f;
   }
 
   &_edit_popover ._JX_edit_option_meta {

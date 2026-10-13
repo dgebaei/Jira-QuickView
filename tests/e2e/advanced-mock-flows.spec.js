@@ -261,7 +261,7 @@ test('keeps fix version options readable and distinct in dark mode @mock-only', 
 
   await expect(normalOption).toHaveCSS('color', 'rgb(244, 244, 244)');
   await expect(selectedOption).toHaveCSS('background-color', 'rgb(38, 56, 79)');
-  await expect(highlightedOption).toHaveCSS('background-color', 'rgb(49, 95, 143)');
+  await expect(highlightedOption).toHaveCSS('background-color', 'rgb(51, 51, 51)');
   await expect(highlightedOption).toHaveCSS('color', 'rgb(255, 255, 255)');
 
   await page.close();
@@ -285,7 +285,7 @@ test('keeps highlighted and selected fix version options light in light mode @mo
   await popup.editInput('fixVersions').press('ArrowDown');
   const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected:not(.is-highlighted)').first();
-  await expect(highlightedOption).toHaveCSS('background-color', 'oklch(0.542 0.207 259.4 / 0.18)');
+  await expect(highlightedOption).toHaveCSS('background-color', 'oklch(0 0 none / 0.09)');
   await expect(highlightedOption).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
   await expect(selectedOption).toHaveCSS('background-color', 'oklch(0.542 0.207 259.4 / 0.09)');
   await expect(selectedOption).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
