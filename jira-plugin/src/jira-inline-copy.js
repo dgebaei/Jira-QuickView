@@ -369,7 +369,10 @@ function installNativeCommentCopyButtons(documentRef, copy) {
   }
 }
 
-function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
+let installCount = 0;
+
+function installAllowedPageCopyButtons(documentRef, instanceUrl, copy, isAlive) {
+  const owner = String(++installCount) + Math.random().toString(36).slice(2, 8);
   const excluded = 'a, button, input, textarea, select, option, script, style, noscript, svg, code, pre, [contenteditable], [role="button"], [role="menu"], [role="menuitem"], [role="textbox"], ._JX_container, ._JX_global_copy_reference, ._JX_inline_copy_button';
   const references = new Map();
   let frame = 0;
@@ -378,6 +381,10 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
   }, copy, 'global');
   const scan = () => {
     frame = 0;
+    if (!isAlive()) {
+      dispose();
+      return;
+    }
     observer.disconnect();
     for (const wrapper of documentRef.querySelectorAll('._JX_global_copy_reference')) {
       const key = wrapper.firstChild?.textContent || '';
@@ -406,6 +413,15 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
       // Jira action links such as “View issue” and “Add comment” can point at
       // an issue URL but are not issue references users should copy.
       if (!key || !new RegExp(`\\b${key}\\b`, 'i').test(link.textContent || '')) continue;
+      // A button already after a link this install does not track was left by
+      // another install, typically a content script orphaned by an extension
+      // reload. Replace it so the link never carries two.
+      let stale = link.nextElementSibling;
+      while (stale?.matches('._JX_inline_copy_button')) {
+        const next = stale.nextElementSibling;
+        stale.remove();
+        stale = next;
+      }
       const button = makeButton(key);
       link.after(button);
       references.set(link, {href: link.href, button});
@@ -424,6 +440,7 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
         fragment.append(text.slice(offset, match.index));
         const wrapper = documentRef.createElement('span');
         wrapper.className = '_JX_global_copy_reference';
+        wrapper.dataset.jxInlineCopyOwner = owner;
         const key = documentRef.createElement('span');
         key.textContent = match[0];
         wrapper.append(key, makeButton(match[0]));
@@ -436,6 +453,10 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
     observer.observe(documentRef.body, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href']});
   };
   const observer = new documentRef.defaultView.MutationObserver(records => {
+    if (!isAlive()) {
+      dispose();
+      return;
+    }
     const relevant = records.some(record => {
       const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
       return !element?.closest('._JX_container, ._JX_snack, ._JX_inline_copy_button');
@@ -443,18 +464,24 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy) {
     if (!relevant) return;
     if (!frame) frame = documentRef.defaultView.requestAnimationFrame(scan);
   });
-  scan();
-  return () => {
+  function dispose() {
     observer.disconnect();
     if (frame) documentRef.defaultView.cancelAnimationFrame(frame);
+    frame = 0;
     for (const {button} of references.values()) button.remove();
-    for (const wrapper of documentRef.querySelectorAll('._JX_global_copy_reference')) {
+    references.clear();
+    for (const wrapper of documentRef.querySelectorAll(`._JX_global_copy_reference[data-jx-inline-copy-owner="${owner}"]`)) {
       wrapper.replaceWith(documentRef.createTextNode(wrapper.firstChild.textContent));
     }
-  };
+  }
+  scan();
+  return dispose;
 }
 
-export function installJiraInlineCopyButtons({document: documentRef, instanceUrl, enabled = true, copy}) {
+// `isAlive` reports whether the extension context that installed the buttons
+// still exists. After an extension reload the old content script keeps running
+// in open tabs; once its context is gone it removes its buttons and stops.
+export function installJiraInlineCopyButtons({document: documentRef, instanceUrl, enabled = true, copy, isAlive = () => true}) {
   if (!enabled || !documentRef?.body || typeof copy !== 'function') {
     return () => {};
   }
@@ -466,7 +493,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
     return () => {};
   }
   if (documentRef.location.origin !== instanceOrigin) {
-    return installAllowedPageCopyButtons(documentRef, instanceUrl, copy);
+    return installAllowedPageCopyButtons(documentRef, instanceUrl, copy, isAlive);
   }
 
   let scanFrame = 0;
@@ -560,7 +587,21 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
       scanFrame = documentRef.defaultView.requestAnimationFrame(scan);
     }
   };
+  const dispose = () => {
+    observer.disconnect();
+    if (scanFrame) {
+      documentRef.defaultView.cancelAnimationFrame(scanFrame);
+      scanFrame = 0;
+    }
+  };
   const observer = new MutationObserver(records => {
+    if (!isAlive()) {
+      // Buttons from a dead context cannot copy anymore. A live install, if
+      // any, re-adds its own on the mutations these removals cause.
+      dispose();
+      for (const button of documentRef.querySelectorAll('._JX_inline_copy_button')) button.remove();
+      return;
+    }
     if (!records.every(isOwnCopyButtonAddition)) {
       scheduleScan();
     }
@@ -573,10 +614,5 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
   });
   scan();
 
-  return () => {
-    observer.disconnect();
-    if (scanFrame) {
-      documentRef.defaultView.cancelAnimationFrame(scanFrame);
-    }
-  };
+  return dispose;
 }

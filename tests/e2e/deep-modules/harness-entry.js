@@ -13,6 +13,7 @@ import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
 import {createBrowserCommentPresentation} from 'src/popup-session/browser-comment-presentation';
 import {createDeferred, createMockJiraAdapter} from './mock-jira-adapter';
 import {createFixturePopupSurface} from './fixture-popup-surface';
+import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
 import jquery from 'jquery';
 
 window.JiraQuickViewDeepModules = {
@@ -32,5 +33,6 @@ window.JiraQuickViewDeepModules = {
   createPopupQuickActions,
   createQuickViewIssueData,
   createWatcherLifecycle,
+  installJiraInlineCopyButtons,
   jquery,
 };
