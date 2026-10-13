@@ -597,8 +597,8 @@ body ._JX {
   &_watchers_section_label,
   &_linked_issues_title,
   &_history_header {
-    color: var(--jx-ink-2);
-    font-size: 11px;
+    color: var(--jx-ink);
+    font-size: 13px;
     font-weight: 600;
   }
 
@@ -792,7 +792,7 @@ body ._JX {
 
   &_watchers_you_badge {
     color: var(--jx-accent);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     margin-left: 3px;
   }
@@ -1020,7 +1020,7 @@ body ._JX {
     align-items: center;
     color: var(--jx-ink-2);
     display: flex;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     gap: 6px;
     padding: 4px 4px 2px;
@@ -1281,7 +1281,7 @@ body ._JX {
 
   &_history_rich_attachment_count {
     color: var(--jx-ink-meta);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -1309,7 +1309,7 @@ body ._JX {
 
   &_history_rich_section_label {
     color: var(--jx-ink-meta);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
   }
 
@@ -1941,7 +1941,7 @@ body ._JX {
     thead th {
       border-bottom: 1px solid var(--jx-border);
       color: var(--jx-ink-meta);
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
     }
 
@@ -2186,7 +2186,7 @@ body ._JX {
     color: var(--jx-ink-3);
     display: inline-flex;
     flex: 0 0 auto;
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1;
   }
 
@@ -3064,8 +3064,8 @@ body ._JX {
   }
 
   &_edit_field_label {
-    color: var(--jx-ink-meta);
-    font-size: 11px;
+    color: var(--jx-ink);
+    font-size: 13px;
     font-weight: 600;
     margin-bottom: 6px;
   }
@@ -3225,10 +3225,10 @@ body ._JX {
     background: var(--jx-wash);
     border-top: 1px solid var(--jx-border);
     color: var(--jx-ink-2);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     line-height: 12px;
-    padding: 2px 8px 1px;
+    padding: 4px 8px 2px;
 
     &:first-child {
       border-top: none;
