@@ -378,6 +378,7 @@ async function mainAsyncLocal() {
     document,
     instanceUrl: INSTANCE_URL,
     enabled: config.inlineCopyButtons !== false,
+    isAlive: () => Boolean(chrome.runtime?.id),
     copy: async reference => {
       try {
         let summary = reference.summary;
