@@ -2995,9 +2995,11 @@ body ._JX {
     white-space: nowrap;
   }
 
+  // The pencil is laid over the chip's right end instead of taking layout
+  // space: reserving it on every chip made each one ~16px wider than its text
+  // and pushed most issues' rows onto a second line.
   &_field_chip_editable_group {
     overflow: visible;
-    padding-right: 4px;
     position: relative;
   }
 
@@ -3016,11 +3018,29 @@ body ._JX {
     flex: 0 0 auto;
     height: 20px;
     justify-content: center;
-    margin-left: 2px;
     opacity: 0;
     padding: 0;
     transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
     width: 20px;
+  }
+
+  // Inside a chip the pencil overlays the right end on the chip's own surface,
+  // with a short fade so clipped text does not end in a hard edge.
+  &_field_chip_editable_group > ._JX_field_chip_edit {
+    background: var(--jx-surface);
+    box-shadow: -6px 0 6px var(--jx-surface);
+    position: absolute;
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  // Opaque hover fill: a translucent one would let the clipped text show through.
+  @media (hover: hover) and (pointer: fine) {
+    &_field_chip_editable_group > ._JX_field_chip_edit:hover {
+      background: color-mix(in oklch, var(--jx-surface), black 9%);
+      box-shadow: -6px 0 6px var(--jx-surface);
+    }
   }
 
   &_field_chip_editable_group:hover ._JX_field_chip_edit,
