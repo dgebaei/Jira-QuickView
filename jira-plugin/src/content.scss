@@ -9,6 +9,7 @@
   --jx-ink-3: oklch(0% 0 none / 44%);
   --jx-border: oklch(0% 0 none / 10%);
   --jx-border-strong: oklch(0% 0 none / 18%);
+  --jx-border-faint: oklch(0% 0 none / 6%);
   --jx-wash: oklch(0% 0 none / 3%);
   --jx-fill-hover: oklch(0% 0 none / 5%);
   --jx-fill-pressed: oklch(0% 0 none / 9%);
@@ -22,6 +23,19 @@
 }
 
 body ._JX {
+  // Chip text is "Label: value": the label sits on the metadata rung so the
+  // value carries the chip.
+  // Weight carries the distinction, so the label can stay readable: Segoe UI
+  // ships no 500, which would quietly resolve to regular.
+  &_container ._JX_field_chip ._JX_field_chip_label {
+    color: var(--jx-ink-2);
+    font-weight: 400;
+  }
+
+  &_container ._JX_field_chip {
+    font-weight: 600;
+  }
+
   &_container {
     position: absolute;
     z-index: 99999;
@@ -118,7 +132,8 @@ body ._JX {
       align-self: center;
       min-width: 32px;
       margin-top: -2px;
-      border: 1px solid var(--jx-border);
+      border: 2px solid var(--jx-border-strong);
+      box-sizing: border-box;
       border-radius: 50%;
       background: var(--jx-surface);
       object-fit: cover;
@@ -410,6 +425,10 @@ body ._JX {
       flex-wrap: nowrap;
       justify-content: space-between;
       gap: 10px;
+      // A faint rule between configured rows: enough to show where a row that
+      // wraps ends, light enough not to box each row in.
+      border-bottom: 1px solid var(--jx-border-faint);
+      padding-bottom: 8px;
     }
 
     &_row_main {
@@ -1450,7 +1469,8 @@ body ._JX {
   }
 
   &_status_row_lower {
-    margin-top: 0;
+    border-top: 1px solid var(--jx-border-faint);
+    padding-top: 8px;
   }
 
   &_time_tracking {

@@ -588,17 +588,26 @@ export function createPopupProjectView(options) {
       }
     };
 
-    const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]);
+    // Chip text arrives as "Label: value". Split it so the template can set the
+    // label quietly and the value in full ink. Both keys are always present:
+    // Mustache would otherwise resolve a missing one from the enclosing context.
+    const withChipTextParts = chip => {
+      if (!chip) return chip;
+      const text = String(chip.text ?? '');
+      const match = text.match(/^([^:[\]]{1,40}:)\s([\s\S]*)$/);
+      return {...chip, textLabel: match ? match[1] : '', textValue: match ? match[2] : text};
+    };
+    const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]).map(withChipTextParts);
     const row2Chips = layoutRow2.map(buildRow2Chip).filter(Boolean).concat(customFieldChips[2]);
     const row3Chips = layoutRow3.map(buildRow3Chip).filter(Boolean).concat(customFieldChips[3]);
     const secondaryStatusRows = [
       {
         rowClass: '',
-        chips: row2Chips.map(normalizeSecondaryStatusChip).filter(Boolean),
+        chips: row2Chips.map(normalizeSecondaryStatusChip).filter(Boolean).map(withChipTextParts),
       },
       {
         rowClass: '_JX_status_row_lower',
-        chips: row3Chips.map(normalizeSecondaryStatusChip).filter(Boolean),
+        chips: row3Chips.map(normalizeSecondaryStatusChip).filter(Boolean).map(withChipTextParts),
       }
     ].filter(row => row.chips.length > 0);
     const maxMetaFieldsPerRow = Math.max(row2Chips.length, row3Chips.length);

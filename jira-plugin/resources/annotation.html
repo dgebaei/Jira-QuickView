@@ -146,10 +146,10 @@
                 {{#isEditable}}
                 <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
                     {{#linkUrl}}
-                    {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/isEditing}}
-                    {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/isEditing}}
+                    {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/isEditing}}
+                    {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/isEditing}}
                     {{/linkUrl}}
-                    {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
+                    {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
                     {{^hideInlineEditButton}}
                     <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
                         {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
@@ -205,8 +205,8 @@
                 </div>
                 {{/isEditable}}
                 {{^isEditable}}
-                {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</a>{{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{text}}</span>{{/linkUrl}}
+                {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
                 {{/isEditable}}
                 {{/row1Chips}}
             </div>
@@ -487,9 +487,9 @@
             <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
                 {{#isLabelsComposite}}
                 <span class="_JX_field_chip_content _JX_labels_chip_content">
-                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
-                    {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
-                    <span>: </span>
+                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link _JX_field_chip_label" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+                    {{^labelsView.headerLinkUrl}}<span class="_JX_field_chip_label">{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+                    <span class="_JX_field_chip_label">: </span>
                     {{#labelsView.hasLabels}}
                     {{#labelsView.labels}}
                     <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
@@ -500,10 +500,10 @@
                 {{/isLabelsComposite}}
                 {{^isLabelsComposite}}
                 {{#linkUrl}}
-                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{text}}</a>{{/isEditing}}
-                {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{text}}</span>{{/isEditing}}
+                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/isEditing}}
+                {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/isEditing}}
                 {{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{text}}</span>{{/linkUrl}}
+                {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
                 {{/isLabelsComposite}}
                 <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
                     {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
@@ -564,9 +564,9 @@
             {{#isLabelsComposite}}
             <span class="_JX_field_chip"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>
                 <span class="_JX_field_chip_content _JX_labels_chip_content">
-                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
-                    {{^labelsView.headerLinkUrl}}<span>{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
-                    <span>: </span>
+                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link _JX_field_chip_label" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+                    {{^labelsView.headerLinkUrl}}<span class="_JX_field_chip_label">{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+                    <span class="_JX_field_chip_label">: </span>
                     {{#labelsView.hasLabels}}
                     {{#labelsView.labels}}
                     <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
@@ -577,8 +577,8 @@
             </span>
             {{/isLabelsComposite}}
             {{^isLabelsComposite}}
-            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{text}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{text}}</span>{{/linkUrl}}
+            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/linkUrl}}
+            {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
             {{/isLabelsComposite}}
             {{/isEditable}}
             {{/chips}}
