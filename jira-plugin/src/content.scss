@@ -388,8 +388,10 @@ body ._JX {
     border-bottom: 1px solid var(--jx-border);
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px;
+    // Rows are separated by space alone; a rule between every row boxed each
+    // one in and read as clutter next to the chip outlines.
+    gap: 4px;
+    padding: 4px 8px;
     overflow: visible;
     user-select: none;
     -webkit-user-select: none;
@@ -397,7 +399,7 @@ body ._JX {
     &_row {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
       overflow: visible;
     }
@@ -407,15 +409,13 @@ body ._JX {
       flex-wrap: nowrap;
       justify-content: space-between;
       gap: 10px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid var(--jx-border);
     }
 
     &_row_main {
       display: flex;
       flex: 1 1 auto;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
       overflow: visible;
     }
@@ -1449,9 +1449,7 @@ body ._JX {
   }
 
   &_status_row_lower {
-    border-top: 1px solid var(--jx-border);
-    margin-top: 2px;
-    padding-top: 6px;
+    margin-top: 0;
   }
 
   &_time_tracking {
