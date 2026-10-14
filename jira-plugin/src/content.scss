@@ -202,7 +202,8 @@ body ._JX {
       margin-right: 10px;
     }
 
-    &_edit_input {
+    // Chained with ._JX_edit_input so it outranks the generic rule further down.
+    &_edit_input._JX_edit_input {
       font-size: 13px;
       line-height: 14px;
       min-height: 24px;
