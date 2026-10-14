@@ -34,15 +34,14 @@
 <li>Jira-backed quick actions and workflow transitions</li>
 <li>Copy rich issue links beside Jira references in Jira and on allowed pages</li>
 </ul>
-<h2 id="whats-new-in-280">What's new in 2.8.0</h2>
+<h2 id="whats-new-in-290">What's new in 2.9.0</h2>
 <ul>
-<li>Plain-click Jira links open a pinned QuickView by default, while automatic hover preview keeps working for Jira IDs that are not links</li>
-<li>Field editing now keeps its own Jira metadata, search, selection, save, retry, and stale-response handling; picker edits save when you click away</li>
-<li>Linked issues can be searched, added in batches, grouped by relationship, and removed with confirmation</li>
-<li>Comment drafts, mentions, pasted-image uploads, reactions, edit/delete flows, focus, and error recovery remain stable across permitted rerenders</li>
-<li>Attachments are enabled for new installations and show both image previews and downloadable non-image files</li>
-<li>Copy controls work across allowed pages and dynamic Jira views, including search results, boards, side panels, comments, linked issues, and dropdowns</li>
-<li>Popup loading, positioning, caching, refreshes, avatars, light-theme selection states, and preservation of open work are more resilient</li>
+<li>A calmer popup: neutral greys with one Jira-blue accent, sentence-case headings, flat buttons, and section headings that stand apart from issue content</li>
+<li>Field chips size to their text, with grey labels and semibold values, so rows wrap less and values are easier to scan</li>
+<li>Dropdowns show the row under the pointer in grey and the selected value in blue, so the two never look alike</li>
+<li>QuickView takes keyboard focus when it opens, so <code>Escape</code> closes the popup instead of reaching the page behind it (for example, Outlook's reading pane)</li>
+<li>Clicking outside an unchanged field editor closes it; Fix Version and Affects Version list only your Jira versions, without a separate "N/A" entry</li>
+<li>Copy icons no longer multiply after the extension is updated or reloaded, and the Unassigned option no longer shows the current assignee's avatar</li>
 </ul>
 <h2 id="why-it-matters">Why it matters</h2>
 <ul>

@@ -21,14 +21,14 @@
 <p><a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> · <a href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a> · <a href="https://dgebaei.github.io/Jira-QuickView/user-guide.html">User guide</a> · <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a> · <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a></p>
 <p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
 <p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
-<h3 id="whats-new-in-280">What's new in 2.8.0</h3>
+<h3 id="whats-new-in-290">What's new in 2.9.0</h3>
 <ul>
-<li>A plain click on a genuine Jira issue link opens and pins QuickView by default; middle-click and modifier-click keep normal browser navigation.</li>
-<li>Automatic hover preview remains enabled by default for Jira IDs that are not links, including IDs in notification emails and documents.</li>
-<li>Supported field pickers save when you click elsewhere, while <code>Escape</code> cancels and visible failures keep the editor available for retry.</li>
-<li>Linked-issue, watcher, comment, attachment, history, and popup-session flows preserve active work more reliably during refreshes.</li>
-<li>Attachments now include image previews and compact downloadable entries for non-image files.</li>
-<li>Copy actions are available beside recognized Jira references on allowed pages and across supported dynamic Jira views.</li>
+<li>The popup and the Options page use a quieter, neutral design: grey tones with one Jira-blue accent, sentence-case headings, and section headings set in their own band.</li>
+<li>Field chips are only as wide as their text. Labels such as "Sprint:" are grey and values are semibold.</li>
+<li>In dropdowns, the row under the pointer is grey and the selected value is blue.</li>
+<li>QuickView takes keyboard focus when it opens, unless you are typing in a field on the page, and returns focus when it closes. <code>Escape</code> then closes QuickView without also acting on the page behind it.</li>
+<li>Clicking elsewhere closes a field editor you have not changed. Version pickers list only the versions defined in Jira.</li>
+<li>Copy icons no longer appear twice or three times after the extension is updated or reloaded.</li>
 </ul>
 <details class="user-guide-toc" open>
 <summary>Table of contents</summary>
