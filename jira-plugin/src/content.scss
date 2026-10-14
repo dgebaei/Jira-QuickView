@@ -1882,10 +1882,13 @@ body ._JX {
     }
   }
 
-  // Chapter headings: one hairline marks where a section starts, and the
-  // heading sits close to its content (12px above, 4px below).
+  // Section headings are popup chrome, not issue content: a grey band with a
+  // hairline above and below keeps "Description" from reading like the bold
+  // headings inside the description itself. Same wash as the popup header.
   &_section_title {
     align-items: center;
+    background: var(--jx-wash);
+    border-bottom: 1px solid var(--jx-border);
     border-top: 1px solid var(--jx-border);
     color: var(--jx-ink);
     display: flex;
@@ -1893,8 +1896,8 @@ body ._JX {
     font-weight: 600;
     gap: 8px;
     justify-content: space-between;
-    margin: 0 0 4px;
-    padding: 12px 10px 4px;
+    margin: 0 0 8px;
+    padding: 8px 10px;
   }
 
   &_section_title_with_action {
