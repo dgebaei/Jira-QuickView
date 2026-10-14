@@ -12,14 +12,14 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
-### What's new in 2.8.0
+### What's new in 2.9.0
 
-- A plain click on a genuine Jira issue link opens and pins QuickView by default; middle-click and modifier-click keep normal browser navigation.
-- Automatic hover preview remains enabled by default for Jira IDs that are not links, including IDs in notification emails and documents.
-- Supported field pickers save when you click elsewhere, while `Escape` cancels and visible failures keep the editor available for retry.
-- Linked-issue, watcher, comment, attachment, history, and popup-session flows preserve active work more reliably during refreshes.
-- Attachments now include image previews and compact downloadable entries for non-image files.
-- Copy actions are available beside recognized Jira references on allowed pages and across supported dynamic Jira views.
+- The popup and the Options page use a quieter, neutral design: grey tones with one Jira-blue accent, sentence-case headings, and section headings set in their own band.
+- Field chips are only as wide as their text. Labels such as "Sprint:" are grey and values are semibold.
+- In dropdowns, the row under the pointer is grey and the selected value is blue.
+- QuickView takes keyboard focus when it opens, unless you are typing in a field on the page, and returns focus when it closes. `Escape` then closes QuickView without also acting on the page behind it.
+- Clicking elsewhere closes a field editor you have not changed. Version pickers list only the versions defined in Jira.
+- Copy icons no longer appear twice or three times after the extension is updated or reloaded.
 
 <details class="user-guide-toc" open>
 <summary>Table of contents</summary>

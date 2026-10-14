@@ -26,15 +26,14 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Jira-backed quick actions and workflow transitions
 - Copy rich issue links beside Jira references in Jira and on allowed pages
 
-## What's new in 2.8.0
+## What's new in 2.9.0
 
-- Plain-click Jira links open a pinned QuickView by default, while automatic hover preview keeps working for Jira IDs that are not links
-- Field editing now keeps its own Jira metadata, search, selection, save, retry, and stale-response handling; picker edits save when you click away
-- Linked issues can be searched, added in batches, grouped by relationship, and removed with confirmation
-- Comment drafts, mentions, pasted-image uploads, reactions, edit/delete flows, focus, and error recovery remain stable across permitted rerenders
-- Attachments are enabled for new installations and show both image previews and downloadable non-image files
-- Copy controls work across allowed pages and dynamic Jira views, including search results, boards, side panels, comments, linked issues, and dropdowns
-- Popup loading, positioning, caching, refreshes, avatars, light-theme selection states, and preservation of open work are more resilient
+- A calmer popup: neutral greys with one Jira-blue accent, sentence-case headings, flat buttons, and section headings that stand apart from issue content
+- Field chips size to their text, with grey labels and semibold values, so rows wrap less and values are easier to scan
+- Dropdowns show the row under the pointer in grey and the selected value in blue, so the two never look alike
+- QuickView takes keyboard focus when it opens, so `Escape` closes the popup instead of reaching the page behind it (for example, Outlook's reading pane)
+- Clicking outside an unchanged field editor closes it; Fix Version and Affects Version list only your Jira versions, without a separate "N/A" entry
+- Copy icons no longer multiply after the extension is updated or reloaded, and the Unassigned option no longer shows the current assignee's avatar
 
 ## Why it matters
 
