@@ -259,9 +259,9 @@ test('keeps fix version options readable and distinct in dark mode @mock-only', 
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected').first();
   const normalOption = page.locator('._JX_edit_option[data-field-key="fixVersions"]:not(.is-selected):not(.is-highlighted)').first();
 
-  await expect(normalOption).toHaveCSS('color', 'rgb(241, 245, 249)');
+  await expect(normalOption).toHaveCSS('color', 'rgb(244, 244, 244)');
   await expect(selectedOption).toHaveCSS('background-color', 'rgb(38, 56, 79)');
-  await expect(highlightedOption).toHaveCSS('background-color', 'rgb(49, 95, 143)');
+  await expect(highlightedOption).toHaveCSS('background-color', 'rgb(51, 51, 51)');
   await expect(highlightedOption).toHaveCSS('color', 'rgb(255, 255, 255)');
 
   await page.close();
@@ -285,10 +285,10 @@ test('keeps highlighted and selected fix version options light in light mode @mo
   await popup.editInput('fixVersions').press('ArrowDown');
   const highlightedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-highlighted').first();
   const selectedOption = page.locator('._JX_edit_option[data-field-key="fixVersions"].is-selected:not(.is-highlighted)').first();
-  await expect(highlightedOption).toHaveCSS('background-color', 'rgb(204, 224, 255)');
-  await expect(highlightedOption).toHaveCSS('color', 'rgb(9, 30, 66)');
-  await expect(selectedOption).toHaveCSS('background-color', 'rgb(233, 242, 255)');
-  await expect(selectedOption).toHaveCSS('color', 'rgb(23, 43, 77)');
+  await expect(highlightedOption).toHaveCSS('background-color', 'oklch(0 0 none / 0.09)');
+  await expect(highlightedOption).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
+  await expect(selectedOption).toHaveCSS('background-color', 'oklch(0.542 0.207 259.4 / 0.09)');
+  await expect(selectedOption).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
   if (themeScreenshotDir) {
     await popup.editPopover('fixVersions').screenshot({path: path.join(themeScreenshotDir, 'popup-version-dropdown-light.png')});
   }
@@ -357,7 +357,7 @@ test('themes the linked-issue relationship dropdown in light and dark modes @moc
 
   await expect(relationshipSelect).toHaveCSS('color-scheme', 'light');
   await expect(firstOption).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await expect(firstOption).toHaveCSS('color', 'rgb(23, 43, 77)');
+  await expect(firstOption).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
   if (themeScreenshotDir) {
     await page.getByTestId('jira-popup-linked-issues-panel').screenshot({path: path.join(themeScreenshotDir, 'linked-issues-dropdown-light.png')});
   }
@@ -365,11 +365,11 @@ test('themes the linked-issue relationship dropdown in light and dark modes @moc
   await page.locator('html').evaluate(element => element.setAttribute('data-jhl-theme', 'dark'));
   await expect(relationshipSelect).toHaveCSS('color-scheme', 'dark');
   await expect(relationshipSelect).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await expect(relationshipSelect).toHaveCSS('color', 'rgb(23, 43, 77)');
+  await expect(relationshipSelect).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
   await expect(issueSearchInput).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await expect(issueSearchInput).toHaveCSS('color', 'rgb(23, 43, 77)');
-  await expect(firstOption).toHaveCSS('background-color', 'rgb(32, 39, 51)');
-  await expect(firstOption).toHaveCSS('color', 'rgb(241, 245, 249)');
+  await expect(issueSearchInput).toHaveCSS('color', 'oklch(0 0 none / 0.9)');
+  await expect(firstOption).toHaveCSS('background-color', 'rgb(39, 39, 39)');
+  await expect(firstOption).toHaveCSS('color', 'rgb(244, 244, 244)');
   if (themeScreenshotDir) {
     await page.getByTestId('jira-popup-linked-issues-panel').screenshot({path: path.join(themeScreenshotDir, 'linked-issues-dropdown-dark.png')});
   }
