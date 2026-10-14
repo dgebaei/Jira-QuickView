@@ -383,15 +383,16 @@ body ._JX {
     padding-left: 36px;
   }
 
+  // No bottom border: the first section heading below draws the line, and two
+  // stacked hairlines read as one thick rule.
   &_status {
     background-color: var(--jx-wash);
-    border-bottom: 1px solid var(--jx-border);
     display: flex;
     flex-direction: column;
-    // Rows are separated by space alone; a rule between every row boxed each
-    // one in and read as clutter next to the chip outlines.
-    gap: 4px;
-    padding: 4px 8px;
+    // Rows are separated by space alone, a little more than the chips inside
+    // a row, so a wrapped row still reads as one group.
+    gap: 8px;
+    padding: 8px;
     overflow: visible;
     user-select: none;
     -webkit-user-select: none;
@@ -399,7 +400,7 @@ body ._JX {
     &_row {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: 6px;
       min-width: 0;
       overflow: visible;
     }
@@ -415,7 +416,7 @@ body ._JX {
       display: flex;
       flex: 1 1 auto;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: 6px;
       min-width: 0;
       overflow: visible;
     }
@@ -2952,7 +2953,7 @@ body ._JX {
   // surface with a hairline; a grey fill on grey reads as disabled.
   &_field_chip {
     background: var(--jx-surface);
-    border: 1px solid var(--jx-border-strong);
+    border: 1px solid var(--jx-border);
     border-radius: 20px;
     color: var(--jx-ink);
     display: inline-flex;
