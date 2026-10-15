@@ -106,7 +106,10 @@ body ._JX {
   &_title {
     background-color: var(--jx-wash);
     padding: 10px 10px;
-    border: 1px solid var(--jx-border);
+    // The popup draws the outer frame; a full border here doubled the top edge
+    // and sat 1px inside the right one.
+    border-bottom: 1px solid var(--jx-border);
+    border-radius: 3px 3px 0 0;
     display: flex;
     align-items: center;
     min-width: 0;
@@ -463,7 +466,11 @@ body ._JX {
     border: 1px solid var(--jx-border);
     border-radius: 3px;
     background-color: var(--jx-surface);
-    box-shadow: 2px 2px 6px rgb(0 0 0 / 10%);
+    // Centered so it lifts the popup evenly on every side: a tight contact
+    // shadow for the edge, a soft wide one for depth.
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 10%),
+      0 6px 24px rgb(0 0 0 / 14%);
 
     &:after,
     &:before {
