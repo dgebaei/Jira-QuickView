@@ -1046,6 +1046,36 @@ body ._JX {
     overflow-y: auto;
   }
 
+  &_linked_issues_header_actions {
+    align-items: center;
+    display: inline-flex;
+    gap: 8px;
+  }
+
+  &_linked_issues_category {
+    padding: 2px 0 4px;
+
+    & + & {
+      border-top: 1px solid var(--jx-border);
+      margin-top: 4px;
+      padding-top: 6px;
+    }
+  }
+
+  &_linked_issues_category_header {
+    align-items: center;
+    color: var(--jx-ink);
+    display: flex;
+    font-size: 12px;
+    font-weight: 600;
+    gap: 6px;
+    padding: 2px 4px 4px;
+  }
+
+  &_linked_issues_category_link {
+    margin-left: auto;
+  }
+
   &_linked_issues_section {
     padding: 2px 0;
   }
@@ -1088,6 +1118,39 @@ body ._JX {
   &_linked_issues_type_icon {
     height: 16px;
     width: 16px;
+  }
+
+  &_linked_issues_row.is-remote {
+    grid-template-columns: 18px minmax(0, 1fr) auto 24px;
+  }
+
+  &_linked_issues_remote_icon {
+    align-items: center;
+    color: var(--jx-ink-meta);
+    display: inline-flex;
+    justify-content: center;
+  }
+
+  &_linked_issues_remote_title {
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &.is-resolved {
+      text-decoration: line-through;
+    }
+  }
+
+  &_linked_issues_remote_source {
+    color: var(--jx-ink-meta);
+    font-size: 10px;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &_linked_issues_key {
@@ -1149,6 +1212,10 @@ body ._JX {
 
   &_linked_issues_remove_confirmation > span {
     flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   @media (hover: none) {
@@ -2149,7 +2216,9 @@ body ._JX {
     }
   }
 
-  &_children_jql_link {
+  &_children_jql_link,
+  &_linked_issues_view_in_jira,
+  &_linked_issues_category_link {
     align-items: center;
     color: var(--jx-ink-2);
     display: inline-flex;

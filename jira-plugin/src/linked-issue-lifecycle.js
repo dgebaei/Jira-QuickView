@@ -4,6 +4,7 @@ import {
   createEmptyLinkedIssuesState,
   getLinkedIssueKeys,
   parseLinkedIssueKeys,
+  remoteLinkIdFromRowId,
 } from 'src/content-linked-issues-helpers';
 
 function failureOf(error, fallback) {
@@ -64,6 +65,8 @@ function copyView(state) {
   };
 }
 
+const PANEL_REQUIREMENTS = {children: true, linkedIssues: true, remoteLinks: true};
+
 export function createLinkedIssueLifecycle({instanceUrl, issueData, jira}) {
   if (typeof issueData?.openIssue !== 'function') throw new TypeError('Linked issue lifecycle requires issueData.openIssue()');
   if (typeof issueData?.refreshAfterMutation !== 'function') {
@@ -109,7 +112,7 @@ export function createLinkedIssueLifecycle({instanceUrl, issueData, jira}) {
     const expectedRevision = ++revision;
     const sessionId = state.sessionId;
     state = {...state, open: true, loading: true, errorMessage: '', feedbackMessage: '', focusSearch: true};
-    const outcome = await issueData.openIssue({issueKey: state.issueKey, requirements: {linkedIssues: true}});
+    const outcome = await issueData.openIssue({issueKey: state.issueKey, requirements: PANEL_REQUIREMENTS});
     if (!isCurrent(expectedRevision, sessionId) || !state.open) return {kind: 'ignored', reason: 'superseded'};
     const section = outcome.snapshot?.sections?.linkedIssues;
     if (!['ready', 'empty', 'staleRetained'].includes(section?.status)) {
@@ -245,7 +248,7 @@ export function createLinkedIssueLifecycle({instanceUrl, issueData, jira}) {
       issueKey: state.issueKey,
       priorSnapshot: snapshot,
       mutation: {kind: 'linksChanged'},
-      requirements: {...requirements, linkedIssues: true},
+      requirements: {...requirements, ...PANEL_REQUIREMENTS},
     });
     const section = outcome.snapshot?.sections?.linkedIssues;
     if (!outcome.snapshot?.core || !['ready', 'empty', 'staleRetained'].includes(section?.status)) {
@@ -304,27 +307,44 @@ export function createLinkedIssueLifecycle({instanceUrl, issueData, jira}) {
     }
   }
 
+  function findRemovalTarget(rowId) {
+    const remoteLinkId = remoteLinkIdFromRowId(rowId);
+    if (remoteLinkId) {
+      const remoteLink = (snapshot?.sections?.remoteLinks?.items || []).find(candidate => String(candidate?.id || '') === remoteLinkId);
+      if (!remoteLink) return null;
+      return {
+        label: String(remoteLink.object?.title || remoteLink.object?.url || 'external link'),
+        path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(state.issueKey)}/remotelink/${encodeURIComponent(remoteLinkId)}`,
+      };
+    }
+    const link = (snapshot?.core?.fields?.issuelinks || []).find(candidate => String(candidate?.id || '') === rowId);
+    if (!link) return null;
+    return {
+      label: issueKeyOf(link.outwardIssue || link.inwardIssue) || 'linked issue',
+      path: `${instanceUrl}rest/api/2/issueLink/${encodeURIComponent(rowId)}`,
+    };
+  }
+
   async function confirmRemove(intent) {
     const linkId = String(intent.linkId || '');
     if (!state.open || state.pendingRemoveIds.includes(linkId)) return {kind: 'ignored', reason: 'unavailable'};
-    const link = (snapshot?.core?.fields?.issuelinks || []).find(candidate => String(candidate?.id || '') === linkId);
-    if (!link) return {kind: 'ignored', reason: 'missing-link'};
-    const linkedKey = issueKeyOf(link.outwardIssue || link.inwardIssue) || 'linked issue';
+    const target = findRemovalTarget(linkId);
+    if (!target) return {kind: 'ignored', reason: 'missing-link'};
     const expectedRevision = ++revision;
     const sessionId = state.sessionId;
     state = {...state, pendingRemoveIds: [...state.pendingRemoveIds, linkId], confirmingRemoveId: '', errorMessage: '', feedbackMessage: '', focusSearch: false};
     try {
-      await jira.write({method: 'DELETE', path: `${instanceUrl}rest/api/2/issueLink/${encodeURIComponent(linkId)}`});
+      await jira.write({method: 'DELETE', path: target.path});
       if (!isCurrent(expectedRevision, sessionId)) return {kind: 'ignored', reason: 'superseded'};
       const issueSnapshot = await refreshAfterLinksChanged(intent.requirements || {}, {
-        feedbackMessage: `Link to ${linkedKey} removed.`,
+        feedbackMessage: `Link to ${target.label} removed.`,
         errorMessage: '',
       });
       if (!isCurrent(expectedRevision, sessionId)) return {kind: 'ignored', reason: 'superseded'};
       return {kind: 'removed', issueSnapshot, view: view()};
     } catch (error) {
       if (!isCurrent(expectedRevision, sessionId)) return {kind: 'ignored', reason: 'superseded'};
-      const failure = failureOf(error, 'Could not remove linked issue');
+      const failure = failureOf(error, 'Could not remove link');
       state = {...state, pendingRemoveIds: state.pendingRemoveIds.filter(id => id !== linkId), errorMessage: failure.message};
       return {kind: 'failed', failure, view: view()};
     }

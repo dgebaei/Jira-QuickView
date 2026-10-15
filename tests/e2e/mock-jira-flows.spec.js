@@ -1617,16 +1617,34 @@ test('views, searches, adds, and removes linked issues in mocked mode @mock-only
 
   const {page} = await openPopup(extensionApp, servers, target);
   const trigger = page.getByTestId('jira-popup-linked-issues-trigger');
-  await expect(trigger).toContainText('3');
+  // 3 children + 3 issue links + 2 external links, counted before the panel opens.
+  await expect(trigger).toContainText('8');
 
   await trigger.click();
   const panel = page.getByTestId('jira-popup-linked-issues-panel');
   await expect(panel).toBeVisible();
-  const groupHeaders = panel.locator('._JX_linked_issues_section_header');
+  await expect(panel.locator('._JX_linked_issues_category_title')).toHaveText(['Children', 'Linked issues', 'External links']);
+  await expect(panel.getByTestId('jira-popup-linked-issues-view-in-jira')).toHaveAttribute('href', /\/browse\/JRACLOUD-97846#linkingmodule$/);
+
+  const childrenSection = panel.locator('._JX_linked_issues_category[data-section="children"]');
+  await expect(childrenSection.locator('._JX_linked_issues_row')).toHaveCount(3);
+  await expect(childrenSection.locator('._JX_linked_issues_row[data-issue-key="JRACLOUD-97848"]')).toBeVisible();
+  await expect(childrenSection.locator('._JX_linked_issues_remove')).toHaveCount(0);
+
+  const linkedSection = panel.locator('._JX_linked_issues_category[data-section="linked"]');
+  const groupHeaders = linkedSection.locator('._JX_linked_issues_section_header');
   await expect(groupHeaders.filter({hasText: 'blocks'})).toBeVisible();
   await expect(groupHeaders.filter({hasText: 'is blocked by'})).toBeVisible();
   await expect(groupHeaders.filter({hasText: 'relates to'})).toBeVisible();
-  await expect(panel.locator('._JX_linked_issues_row')).toHaveCount(3);
+  await expect(linkedSection.locator('._JX_linked_issues_row')).toHaveCount(3);
+  await expect(linkedSection.locator('._JX_linked_issues_category_link')).toHaveAttribute('href', /jql=issue%20in%20linkedIssues/);
+
+  const externalSection = panel.locator('._JX_linked_issues_category[data-section="external"]');
+  const remoteRow = externalSection.locator('._JX_linked_issues_row[data-link-id="remote:9101"]');
+  await expect(remoteRow.locator('._JX_linked_issues_remote_title')).toHaveText('TC-CPM-0019: Client case overview in a single window');
+  await expect(remoteRow.locator('._JX_linked_issues_remote_title')).toHaveAttribute('href', 'https://qa.example.test/#/cases/key/TC-CPM-0019');
+  await expect(remoteRow.locator('._JX_linked_issues_remote_source')).toHaveText('qa.example.test');
+  await expect(externalSection.locator('._JX_linked_issues_section_header').filter({hasText: 'mentioned in'})).toBeVisible();
 
   const existingRow = panel.locator('._JX_linked_issues_row[data-issue-key="JRACLOUD-98123"]');
   await expect(existingRow.locator('._JX_linked_issues_status')).toHaveText('To Do');
@@ -1650,7 +1668,7 @@ test('views, searches, adds, and removes linked issues in mocked mode @mock-only
   await expect(searchInput).toHaveValue('');
 
   await panel.getByTestId('jira-popup-linked-issues-add').click();
-  await expect(trigger).toContainText('5');
+  await expect(trigger).toContainText('10');
   await expect(panel.locator('._JX_linked_issues_row[data-issue-key="JRACLOUD-99001"]')).toBeVisible();
   await expect(panel.locator('._JX_linked_issues_row[data-issue-key="API-204"]')).toBeVisible();
 
@@ -1658,8 +1676,17 @@ test('views, searches, adds, and removes linked issues in mocked mode @mock-only
   await existingRow.locator('._JX_linked_issues_remove').click();
   await expect(existingRow.locator('._JX_linked_issues_remove_confirmation')).toBeVisible();
   await existingRow.locator('._JX_linked_issues_remove_confirm').click();
-  await expect(trigger).toContainText('4');
+  await expect(trigger).toContainText('9');
   await expect(panel.locator('._JX_linked_issues_row[data-issue-key="JRACLOUD-98123"]')).toHaveCount(0);
+
+  await remoteRow.hover();
+  await remoteRow.locator('._JX_linked_issues_remove').click();
+  await expect(remoteRow.locator('._JX_linked_issues_remove_confirmation')).toContainText('TC-CPM-0019');
+  // The re-render must keep the scrolled list in place so the prompt stays on screen.
+  await expect(remoteRow.locator('._JX_linked_issues_remove_confirm')).toBeInViewport();
+  await remoteRow.locator('._JX_linked_issues_remove_confirm').click();
+  await expect(trigger).toContainText('8');
+  await expect(externalSection.locator('._JX_linked_issues_row[data-link-id="remote:9101"]')).toHaveCount(0);
 
   await page.locator('._JX_history_toggle').click();
   await expect(panel).toHaveCount(0);
@@ -1680,7 +1707,7 @@ test('keeps failed linked issues selected when a multi-link request partially fa
   await panel.getByTestId('jira-popup-linked-issues-search').fill('JRACLOUD-99001, API-204');
   await panel.getByTestId('jira-popup-linked-issues-add').click();
 
-  await expect(trigger).toContainText('4');
+  await expect(trigger).toContainText('9');
   await expect(panel.locator('._JX_linked_issues_row[data-issue-key="JRACLOUD-99001"]')).toBeVisible();
   await expect(panel.locator('._JX_linked_issues_row[data-issue-key="API-204"]')).toHaveCount(0);
   await expect(panel.locator('._JX_linked_issues_selected_chip')).toHaveText('API-204');

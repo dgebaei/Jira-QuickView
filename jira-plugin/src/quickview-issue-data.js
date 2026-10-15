@@ -319,6 +319,7 @@ export function createQuickViewIssueData(options = {}) {
       history: unavailableSection({data: null}),
       linkedIssues: unavailableSection({detailsByKey: {}, items: [], linkTypes: []}),
       pullRequests: unavailableSection({items: []}),
+      remoteLinks: unavailableSection({items: []}),
       reactions: unavailableSection({byCommentId: {}, supported: true}),
       watchers: unavailableSection({data: null, items: []}),
     };
@@ -329,6 +330,7 @@ export function createQuickViewIssueData(options = {}) {
     if (requirements.children === true) plans.push({name: 'children', load: () => optionalSections.loadChildren(normalizedIssueKey, signal)});
     if (requirements.pullRequests === true) plans.push({name: 'pullRequests', load: () => optionalSections.loadPullRequests(String(core?.id || ''), signal)});
     if (requirements.linkedIssues === true) plans.push({name: 'linkedIssues', load: () => optionalSections.loadLinkedIssues(core, signal)});
+    if (requirements.remoteLinks === true) plans.push({name: 'remoteLinks', load: () => optionalSections.loadRemoteLinks(normalizedIssueKey, signal)});
     if (requirements.watchers === true) plans.push({name: 'watchers', load: () => optionalSections.loadWatchers(normalizedIssueKey, signal)});
     if (requirements.viewer === true) plans.push({name: 'viewer', load: () => optionalSections.loadViewer(signal)});
     if (requirements.reactions === true) {
@@ -386,6 +388,12 @@ export function createQuickViewIssueData(options = {}) {
           detailsByKey: copyValue(result.value.detailsByKey),
           items: copyValue(result.value.items),
           linkTypes: copyValue(result.value.linkTypes),
+          failure: null,
+        };
+      } else if (result.name === 'remoteLinks') {
+        sections.remoteLinks = {
+          status: result.value.length ? 'ready' : 'empty',
+          items: copyValue(result.value),
           failure: null,
         };
       } else if (result.name === 'watchers') {

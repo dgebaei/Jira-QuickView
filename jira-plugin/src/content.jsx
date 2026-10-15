@@ -293,7 +293,6 @@ async function mainAsyncLocal() {
   if (displayFields.description !== false && !layoutContentBlocks.includes('description')) {
     layoutContentBlocks.unshift('description');
   }
-  const showChildren = layoutContentBlocks.includes('children');
   const showPullRequests = layoutContentBlocks.includes('pullRequests');
   const hoverDepth = config.hoverDepth || 'exact';
   const activation = resolveQuickViewActivation(config);
@@ -2619,7 +2618,7 @@ async function mainAsyncLocal() {
       sessionId,
       issueSnapshot: popupView.issueSnapshot,
       requirements: {
-        children: showChildren,
+        children: true,
         history: !!popupView.historyOpen,
         linkedIssues: !!linkedIssueLifecycle.view().open,
         pullRequests: showPullRequests,
@@ -3726,9 +3725,10 @@ async function mainAsyncLocal() {
       activation: activation || (hoverActivationMode === 'modifier' ? 'modifier' : 'hover'),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
-        children: showChildren,
+        children: true,
         pullRequests: showPullRequests,
         reactions: true,
+        remoteLinks: true,
         viewer: true,
       },
     }).catch(error => {

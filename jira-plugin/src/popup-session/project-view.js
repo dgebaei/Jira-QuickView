@@ -683,7 +683,10 @@ export function createPopupProjectView(options) {
     const linkedIssuesPanel = buildLinkedIssuesPanelView(state, issueData, {
       buildLinkHoverTitle,
       buildUserView: people.buildUserView,
+      children: childIssues,
+      childrenJql: normalizedChildrenJql,
       instanceUrl,
+      remoteLinks: state.issueSnapshot?.sections?.remoteLinks?.items || [],
     });
     const timeTrackingSection = showTimeTracking ? buildTimeTrackingSectionPresentation(issueData, state.timeTrackingEditState, timeTrackingCapability) : null;
     const rawDescription = typeof issueData?.fields?.description === 'string' ? issueData.fields.description : '';
@@ -803,7 +806,7 @@ export function createPopupProjectView(options) {
       watchersPanel,
       linkedIssuesTrigger: {
         count: linkedIssuesPanel.count,
-        title: linkedIssuesPanel.count === 1 ? '1 linked issue' : `${linkedIssuesPanel.count} linked issues`,
+        title: `Children and links: ${linkedIssuesPanel.count}`,
         isOpen: linkedIssuesPanel.isOpen,
       },
       linkedIssuesPanel,

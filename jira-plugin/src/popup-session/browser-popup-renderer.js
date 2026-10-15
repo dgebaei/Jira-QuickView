@@ -1,5 +1,8 @@
 import Mustache from 'mustache';
 
+// Re-rendering replaces these scroll containers, so keep the reader's place in them.
+const SCROLL_PRESERVED_SELECTORS = ['._JX_content_blocks', '._JX_linked_issues_groups', '._JX_watchers_list', '._JX_history_entries'];
+
 function restoreSelection(input, selection = {}) {
   if (!input) return;
   input.focus();
@@ -83,16 +86,18 @@ export function createBrowserPopupRenderer({
 
     const containerElement = container[0];
     const hadFocus = !!containerElement?.contains(containerElement.ownerDocument?.activeElement);
-    const existingContentBlocks = container.find('._JX_content_blocks');
-    const savedScrollLeft = existingContentBlocks.length ? existingContentBlocks.scrollLeft() : 0;
-    const savedScrollTop = existingContentBlocks.length ? existingContentBlocks.scrollTop() : 0;
+    const savedScrollPositions = SCROLL_PRESERVED_SELECTORS.map(selector => {
+      const element = container.find(selector);
+      return element.length ? {selector, left: element.scrollLeft(), top: element.scrollTop()} : null;
+    }).filter(Boolean);
     container.html(Mustache.render(template, displayData));
     reorderContentBlocks(container, contentBlockOrder);
-    const nextContentBlocks = container.find('._JX_content_blocks');
-    if (nextContentBlocks.length) {
-      nextContentBlocks.scrollLeft(savedScrollLeft);
-      nextContentBlocks.scrollTop(savedScrollTop);
-    }
+    savedScrollPositions.forEach(({selector, left, top}) => {
+      const element = container.find(selector);
+      if (!element.length) return;
+      element.scrollLeft(left);
+      element.scrollTop(top);
+    });
 
     commentPresentation.render({applyValue: true, restoreFocus: true});
     if (shell.view().pinned) {

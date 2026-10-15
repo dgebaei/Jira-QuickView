@@ -837,6 +837,7 @@ function createState(origin) {
     ],
     uploadedAttachments: [],
     issueLinkSequence: 4,
+    remoteLinks: [],
   };
 }
 
@@ -1054,6 +1055,29 @@ async function createMockJiraServer() {
     if (state.scenario === 'child-issues-empty') {
       state.childIssues = [];
     }
+    if (state.scenario === 'linked-issues' || state.scenario === 'linked-issues-partial-add-fails') {
+      state.remoteLinks = [
+        {
+          id: 9101,
+          object: {
+            url: 'https://qa.example.test/#/cases/key/TC-CPM-0019',
+            title: 'TC-CPM-0019: Client case overview in a single window',
+            icon: {},
+            status: {icon: {}},
+          },
+        },
+        {
+          id: 9102,
+          relationship: 'mentioned in',
+          application: {type: 'com.atlassian.confluence', name: 'Confluence'},
+          object: {
+            url: 'https://wiki.example.test/pages/viewpage.action?pageId=42',
+            title: 'Editor slash command spec',
+            icon: {url16x16: `${origin}/assets/issuetype-task.png`, title: 'Page'},
+          },
+        },
+      ];
+    }
     if (state.scenario === 'empty-user-field' || state.scenario === 'empty-user-field-missing-editmeta' || state.scenario === 'empty-user-field-empty-picker-defaults') {
       state.issue.customFields.customfield_67890 = null;
     }
@@ -1174,6 +1198,23 @@ async function createMockJiraServer() {
       state.issue.issueLinks = state.issue.issueLinks.filter(link => String(link.id) !== String(linkId));
       if (state.issue.issueLinks.length === originalLength) {
         json(res, 404, {errorMessages: ['Issue link not found']});
+        return;
+      }
+      noContent(res);
+      return;
+    }
+
+    const remoteLinkMatch = pathname.match(/^\/rest\/api\/2\/issue\/([^/]+)\/remotelink(?:\/([^/]+))?$/);
+    if (remoteLinkMatch && req.method === 'GET' && !remoteLinkMatch[2]) {
+      json(res, 200, state.remoteLinks);
+      return;
+    }
+
+    if (remoteLinkMatch && req.method === 'DELETE' && remoteLinkMatch[2]) {
+      const originalLength = state.remoteLinks.length;
+      state.remoteLinks = state.remoteLinks.filter(link => String(link.id) !== String(remoteLinkMatch[2]));
+      if (state.remoteLinks.length === originalLength) {
+        json(res, 404, {errorMessages: ['Remote link not found']});
         return;
       }
       noContent(res);

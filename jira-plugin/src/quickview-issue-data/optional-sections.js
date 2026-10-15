@@ -187,6 +187,21 @@ export function createOptionalSectionAcquisition(options = {}) {
     });
   }
 
+  async function loadRemoteLinks(issueKey, signal) {
+    return cache.read({
+      family: 'remoteLinks',
+      key: issueKey,
+      ttlMs,
+      load: async () => {
+        const response = await jira.read({
+          path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(issueKey)}/remotelink`,
+          signal,
+        });
+        return (Array.isArray(response) ? response : []).filter(link => link?.id && link?.object?.url);
+      },
+    });
+  }
+
   async function loadViewer(signal) {
     return cache.read({
       family: 'viewer',
@@ -277,6 +292,7 @@ export function createOptionalSectionAcquisition(options = {}) {
     }
     if (mutation.kind === 'issueChanged' || mutation.kind === 'linksChanged') {
       cache.invalidate('linkedIssues', issueKey);
+      cache.invalidate('remoteLinks', issueKey);
     }
     if (mutation.kind === 'issueChanged' || mutation.kind === 'watchersChanged') {
       cache.invalidate('watchers', issueKey);
@@ -290,5 +306,5 @@ export function createOptionalSectionAcquisition(options = {}) {
     if (mutation.kind === 'issueChanged' && issueId) cache.invalidate('pullRequests', issueId);
   }
 
-  return {invalidateIssue, loadChildren, loadLinkedIssues, loadPullRequests, loadReactions, loadViewer, loadWatchers};
+  return {invalidateIssue, loadChildren, loadLinkedIssues, loadPullRequests, loadReactions, loadRemoteLinks, loadViewer, loadWatchers};
 }
