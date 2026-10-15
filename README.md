@@ -18,13 +18,20 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 
 - Action Jira email notifications directly from Gmail, Outlook, and other enabled inbox-style pages
 - Rich popup for issue metadata, linked Jira issues, description, attachments, comments, and linked pull requests
-- Linked-issue management grouped by relationship, with key/summary search, multi-key entry, status and assignee context, and confirmed removal
+- Children, linked issues, and external links in one panel, with key/summary search, multi-key entry, status and assignee context, and confirmed removal
 - PR visibility inside the card, including title, author, branch, and status
 - Inline editing for supported Jira fields and supported custom field types
 - Configurable layout with Jira custom fields placed directly into the popup rows
 - Comment drafting with mentions and support for comment reactions
 - Jira-backed quick actions and workflow transitions
 - Copy rich issue links beside Jira references in Jira and on allowed pages
+
+## What's new in 2.9.2
+
+- The links panel shows children (sub-tasks and epic children), linked issues, and external links in three sections; the count on the link button includes all three
+- External links, such as test cases or Confluence pages, open in a new tab and can be removed from the panel
+- `View in Jira` in the panel header, and `View all` searches for children and linked issues
+- Long issue titles in the popup header stop at two lines
 
 ## Fixed in 2.9.1
 
@@ -85,9 +92,9 @@ The Options page lets you choose color mode, click and hover activation, row fie
 
 ## Gallery
 
-| Linked issue management | Multi-key linking |
+| Children and links | Multi-key linking |
 | --- | --- |
-| ![Linked issues grouped by relationship](docs/screenshots/user-guide/popup-linked-issues.png) | ![Direct multi-key linked issue entry](docs/screenshots/user-guide/popup-linked-issues-multi-select.png) |
+| ![Children and linked issues in the links panel](docs/screenshots/user-guide/popup-linked-issues.png) | ![Direct multi-key linked issue entry](docs/screenshots/user-guide/popup-linked-issues-multi-select.png) |
 
 | Quick actions | Inline editing |
 | --- | --- |

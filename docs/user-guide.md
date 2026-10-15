@@ -12,6 +12,13 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
+### What's new in 2.9.2
+
+- The links panel now shows children (sub-tasks and epic children), linked issues, and external links in three sections, and its count includes all three.
+- External links, such as test cases or Confluence pages, open in a new tab and can be removed from the panel.
+- `View in Jira` in the panel header opens the issue's links in Jira; `View all` opens the children or linked issues as a Jira search.
+- Long issue titles in the popup header stop at two lines.
+
 ### Fixed in 2.9.1
 
 - With click activation on, clicking an issue key on a Jira board card, or the key at the top of an issue or of the board's detail panel, opens QuickView. Links Jira uses for its own tabs and actions still work as before.
@@ -81,7 +88,7 @@ The screenshots in this guide are examples. Your popup can look different depend
       <li>
         <a href="#54-row-1-issue-type-status-priority-linked-issues-history-and-watchers">5.4 Row 1: Issue Type, Status, Priority, Linked Issues, History, and Watchers</a>
         <ul>
-          <li><a href="#541-linked-issues-panel">5.4.1 Linked Issues Panel</a></li>
+          <li><a href="#541-children-and-links-panel">5.4.1 Children and Links Panel</a></li>
           <li><a href="#542-history-panel">5.4.2 History Panel</a></li>
           <li><a href="#543-watchers-panel">5.4.3 Watchers Panel</a></li>
         </ul>
@@ -629,7 +636,7 @@ Default fields:
 - Issue Type tells you whether this is a bug, task, story, sub-task, or another Jira type.
 - Status tells you the current workflow state.
 - Priority tells you the urgency or importance set in Jira.
-- Linked Issues shows how many Jira issues are related to the current ticket and opens the relationship panel.
+- Linked Issues shows how many children, linked issues, and external links the current ticket has, and opens the Children and Links panel.
 - History opens a timeline of issue changes.
 - Watchers shows how many people watch the issue and whether you are watching.
 
@@ -640,19 +647,29 @@ Business logic and limitations:
 - The Watchers count comes from Jira's watcher data.
 - History data loads only when you open the history panel, which keeps the initial popup faster.
 
-#### 5.4.1 Linked Issues Panel
+#### 5.4.1 Children and Links Panel
 
-![Linked issues grouped by relationship](screenshots/user-guide/popup-linked-issues.png)
+![Children and linked issues in the links panel](screenshots/user-guide/popup-linked-issues.png)
 
-The Linked Issues panel shows Jira issue links without leaving the page. Existing links are grouped by their displayed relationship, such as `blocks`, `is blocked by`, or `relates to`.
+The Children and Links panel shows everything attached to the issue without leaving the page, in three sections:
 
-Each linked issue row includes:
+- **Children**: sub-tasks and other child issues, such as the issues in an epic. Children are shown for reference and cannot be removed here.
+- **Linked issues**: Jira issue links, grouped by their displayed relationship, such as `blocks`, `is blocked by`, or `relates to`.
+- **External links**: links to pages outside Jira, such as test cases or Confluence pages, grouped by relationship, such as `links to` or `mentioned in`.
+
+Sections with nothing in them are hidden. `View in Jira` in the panel header opens the issue's links in Jira, and `View all` beside Children or Linked issues opens that list as a Jira search.
+
+Each child and linked issue row includes:
 
 - Issue type and key
 - Summary
 - Current status
 - Assignee avatar, with the full assignee name on hover
-- A remove action that appears on hover and asks for confirmation before deleting the link
+- For linked issues, a remove action that appears on hover and asks for confirmation before deleting the link
+
+Each external link row shows the link title, which opens the page in a new tab, and the site or application it points to. External links can be removed the same way as linked issues.
+
+![External links in the links panel](screenshots/user-guide/popup-linked-issues-external.png)
 
 To add linked issues:
 
@@ -666,6 +683,7 @@ To add linked issues:
 Business logic and limitations:
 
 - Jira controls which relationship types are available and whether you can create or delete links.
+- The panel adds issue links only. Create sub-tasks and external links in Jira.
 - A multi-link request may partially succeed. Successful links are refreshed immediately, while failed keys stay selected with an inline error so you can retry.
 - Exact Jira keys can be entered directly. Autocomplete depends on Jira's issue-picker or search APIs.
 - Opening Linked Issues closes History or Watchers if either panel is open.
