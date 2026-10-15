@@ -138,6 +138,34 @@ test('accepts paginated Jira project responses during popup startup @mock-only',
   await page.close();
 });
 
+test('clamps a long popup title to two lines and keeps the full summary in the hover title @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Title length is controlled in mocked mode only.');
+
+  const longSummary = 'Telefon / Dialer pozivi: dvoklik na poziv iz liste za pozivanje ne otvara prozor "Uredi Dialer poziv" '
+    + '(TypeError: Cannot read properties of undefined (reading \'processed\')) and keeps going well past two lines of text';
+  await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^/?]+\\?fields=.*expand=renderedFields', payload => ({
+    ...payload,
+    fields: {...payload.fields, summary: longSummary},
+  }));
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const titleLink = page.locator('#_JX_title_link');
+  await expect(titleLink).toContainText('Telefon / Dialer pozivi');
+  await expect(titleLink).toHaveAttribute('title', new RegExp('keeps going well past two lines'));
+
+  const metrics = await titleLink.evaluate(node => ({
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+    lineHeight: parseFloat(getComputedStyle(node).lineHeight),
+  }));
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+  expect(Math.round(metrics.clientHeight / metrics.lineHeight)).toBe(2);
+
+  await page.close();
+});
+
 test('shows issue-key loading feedback beside the pointer until Jira data is ready @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Initial loading feedback is deterministic in mocked mode only.');

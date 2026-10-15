@@ -266,6 +266,12 @@ body ._JX {
       min-width: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
+      // Long summaries stop at two lines; the hover title carries the full text.
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
     }
   }
 
