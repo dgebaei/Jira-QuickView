@@ -134,6 +134,18 @@ function isIssueHeaderLink(issueElement) {
   return HEADER_LINK_SELECTORS.some(selector => issueElement?.matches?.(selector));
 }
 
+// Dialog and form controls such as Cancel link back to the issue but are not
+// references to it.
+function isFormControlLink(issueElement) {
+  return !!issueElement?.closest?.([
+    '.cancel',
+    '.aui-button',
+    '.buttons-container',
+    '.form-footer',
+    '.aui-dialog2-footer',
+  ].join(', '));
+}
+
 function isOwnCopyButtonAddition(record) {
   if (record.type !== 'childList' || record.removedNodes.length > 0) return false;
   const changedNodes = [...record.addedNodes];
@@ -533,7 +545,7 @@ export function installJiraInlineCopyButtons({document: documentRef, instanceUrl
         ? (findResultCopyTarget(resultContainer) || issueElement)
         : issueElement;
       if (!key || isIssueHeaderLink(issueElement)
-        || (!elementText.toUpperCase().includes(key) && !hasSeparateKey)
+        || (!elementText.toUpperCase().includes(key) && (!hasSeparateKey || isFormControlLink(issueElement)))
         || issueElement.closest('._JX_container')) {
         continue;
       }

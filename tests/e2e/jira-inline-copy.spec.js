@@ -167,6 +167,42 @@ test('keeps one copy button for an issue link inside a Jira comment @mock-only',
   await page.close();
 });
 
+test('does not add a copy button to the Cancel link of a Jira transition dialog @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira dialog markup is deterministic in mocked mode only.');
+
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {
+    domains: [servers.jira.origin],
+  }, target));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${servers.jira.origin}/issues/`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    // Jira Data Center dialog (Assign, workflow transitions): the footer's
+    // Cancel link points back at the issue, and the body lists the bare key.
+    document.body.innerHTML = `
+      <section role="dialog" id="assign-dialog" class="aui-dialog2 jira-dialog2" data-testid="transition-dialog">
+        <header><h2 id="jira-dialog2__heading" title="Assign: VSLIVCR-2386">Assign: VSLIVCR-2386</h2></header>
+        <form>
+          <div class="aui-dialog2-content"><dl><dt>Issue</dt><dd>VSLIVCR-2386</dd></dl></div>
+          <div class="aui-dialog2-footer">
+            <div class="buttons-container">
+              <div class="buttons">
+                <input class="aui-button" type="submit" value="Assign">
+                <a class="aui-button aui-button-link cancel" href="/browse/VSLIVCR-2386" id="assign-issue-form-cancel">Cancel</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </section>`;
+  });
+  await page.waitForTimeout(500);
+
+  await expect(page.getByTestId('transition-dialog').locator('._JX_inline_copy_button')).toHaveCount(0);
+  await page.close();
+});
+
 test('adds copy controls to an Active Sprint side panel and its issue links @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Side-by-side Jira markup is deterministic in mocked mode only.');
