@@ -26,6 +26,12 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Jira-backed quick actions and workflow transitions
 - Copy rich issue links beside Jira references in Jira and on allowed pages
 
+## Fixed in 2.9.1
+
+- Clicking an issue key on a Jira board card, or the key at the top of an issue or of the board's detail panel, opens QuickView instead of navigating; Jira's own tab and action links keep working
+- Copy icons no longer appear beside the Cancel link in Jira dialogs
+- The popup has a single 1px frame with a soft shadow on every side, and the title editor keeps its compact padding
+
 ## What's new in 2.9.0
 
 - A calmer popup: neutral greys with one Jira-blue accent, sentence-case headings, flat buttons, and section headings that stand apart from issue content

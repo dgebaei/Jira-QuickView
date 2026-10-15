@@ -12,6 +12,12 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
+### Fixed in 2.9.1
+
+- With click activation on, clicking an issue key on a Jira board card, or the key at the top of an issue or of the board's detail panel, opens QuickView. Links Jira uses for its own tabs and actions still work as before.
+- Copy icons no longer appear beside the Cancel link in Jira dialogs.
+- The popup's frame is drawn once, with a soft shadow on every side.
+
 ### What's new in 2.9.0
 
 - The popup and the Options page use a quieter, neutral design: grey tones with one Jira-blue accent, sentence-case headings, and section headings set in their own band.
