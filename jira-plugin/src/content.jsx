@@ -3752,8 +3752,11 @@ async function mainAsyncLocal() {
   function getClickedIssueLink(target) {
     if (!openQuickViewOnClick || !target?.closest) return null;
     const link = target.closest('a[href]');
+    // Only the link's ancestors count as controls: Jira board cards mark the
+    // key link itself role="button" while it still navigates to the issue.
     if (!link || link.closest('._JX_container') || link.hasAttribute('download')
-      || link.closest('button, input, textarea, select, option, summary, [role="button"], [role="menuitem"], [contenteditable]')) return null;
+      || link.matches('[role="menuitem"]')
+      || link.parentElement?.closest('button, input, textarea, select, option, summary, [role="button"], [role="menuitem"], [contenteditable]')) return null;
     const declaredHref = String(link.getAttribute('href') || '').trim();
     if (!declaredHref || declaredHref.startsWith('#')) return null;
     let linkUrl;
@@ -3772,10 +3775,15 @@ async function mainAsyncLocal() {
     const key = keyMatch[1].toUpperCase();
     const linkText = String(link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
     if (/^(view issue|add comment|comment|cancel|edit|assign)$/.test(linkText)) return null;
-    const currentKeyMatch = currentUrl.origin === jiraOrigin
-      ? currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)
+    // The issue Jira is showing: the page's own issue, or the one open in a
+    // board/backlog detail panel. A plain link to it (breadcrumb, panel header)
+    // still opens QuickView; with a query or anchor it is one of Jira's tabs or
+    // actions, so it stays native.
+    const currentKey = currentUrl.origin === jiraOrigin
+      ? (currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)?.[1]
+        || currentUrl.searchParams.get('selectedIssue'))
       : null;
-    if (currentKeyMatch?.[1]?.toUpperCase() === key) return null;
+    if (currentKey?.toUpperCase() === key && (linkUrl.search || linkUrl.hash)) return null;
     // Jira's project issue navigator uses these links to open its native
     // side-by-side issue panel. Preserve that interaction when QuickView
     // click interception is enabled globally.

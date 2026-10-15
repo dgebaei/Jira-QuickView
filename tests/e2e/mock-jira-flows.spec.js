@@ -341,6 +341,97 @@ test('ignores Jira action links that resolve to the currently displayed issue @m
   await page.close();
 });
 
+test('opens QuickView from a plain link to the issue already on screen @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira same-issue click interception is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+    domains: [target.instanceUrl],
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await page.evaluate(issueKey => {
+    const link = document.createElement('a');
+    link.id = 'breadcrumb-key';
+    link.href = `/browse/${issueKey}`;
+    link.textContent = issueKey;
+    document.body.appendChild(link);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  const issueUrl = page.url();
+
+  await page.locator('#breadcrumb-key').click();
+
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  expect(page.url()).toBe(issueUrl);
+  await page.close();
+});
+
+test('opens QuickView from a Jira board card key link marked role=button @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira board click interception is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+    domains: [target.instanceUrl],
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await page.evaluate(issueKey => {
+    // Jira Data Center board cards render the key as <a role="button" class="js-key-link">.
+    history.replaceState(null, '', '/secure/RapidBoard.jspa?rapidView=1');
+    const card = document.createElement('div');
+    card.className = 'ghx-issue js-issue';
+    card.setAttribute('role', 'listitem');
+    card.innerHTML = `<div class="ghx-key"><a id="board-card-key" role="button" class="js-key-link ghx-key-link" href="/browse/${issueKey}">${issueKey}</a></div>`;
+    document.body.appendChild(card);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  const boardUrl = page.url();
+
+  await page.locator('#board-card-key').click();
+
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  expect(page.url()).toBe(boardUrl);
+  await page.close();
+});
+
+test('leaves Jira board detail-panel tab links to the selected issue native @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Jira board click interception is deterministic in mocked mode only.');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: true,
+    hoverActivationMode: 'off',
+    domains: [target.instanceUrl],
+  }));
+
+  const page = await extensionApp.context.newPage();
+  await page.goto(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await page.evaluate(issueKey => {
+    // The board detail panel shows selectedIssue; its activity tabs link back to that issue.
+    history.replaceState(null, '', `/secure/RapidBoard.jspa?rapidView=1&view=detail&selectedIssue=${issueKey}`);
+    const tab = document.createElement('a');
+    tab.id = 'detail-tab-link';
+    tab.className = 'ajax-activity-content';
+    tab.href = `/browse/${issueKey}?page=com.atlassian.jira.plugin.system.issuetabpanels:changehistory-tabpanel`;
+    tab.textContent = 'History';
+    document.body.appendChild(tab);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+
+  await page.locator('#detail-tab-link').click();
+
+  await expect(page).toHaveURL(/changehistory-tabpanel/);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await page.close();
+});
+
 test('shows the Children block above pull requests and sorts it from the column headers @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Child table ordering and sorting are deterministic in mocked mode only.');
