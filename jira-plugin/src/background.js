@@ -1,5 +1,6 @@
 /*global chrome */
 import regexEscape from 'escape-string-regexp';
+import {parseGitLabMergeRequestUrl, loadGitLabPullRequest} from 'src/gitlab-pull-requests';
 import defaultConfig from 'options/config.js';
 import {normalizeInstanceUrl, resolveInstanceUrl} from 'options/options-utils';
 import {storageGet, storageSet, storageLocalGet, storageLocalSet, permissionsContains, promisifyChrome} from 'src/chrome';
@@ -887,6 +888,42 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       .catch(error => {
         sendResponse({ error: error.message });
       });
+    return SEND_RESPONSE_IS_ASYNC;
+  }
+
+  if (request.action === 'requestGitLabAccess' || request.action === 'getGitLabPullRequest') {
+    const mr = parseGitLabMergeRequestUrl(request.url);
+    if (!mr) {
+      sendResponse({error: 'Invalid GitLab merge request URL'});
+      return false;
+    }
+    const origins = [`${mr.origin}/*`];
+    if (request.action === 'requestGitLabAccess') {
+      // Must run in the message listener's synchronous user-gesture turn.
+      chrome.permissions.request({origins}, granted => {
+        const error = chrome.runtime.lastError;
+        sendResponse(error ? {error: error.message} : {result: !!granted});
+      });
+      return SEND_RESPONSE_IS_ASYNC;
+    }
+    (async () => {
+      if (!await permissionsContains({origins})) {
+        return {status: 'permission-required', failure: `Allow access to ${new URL(mr.url).host} to load GitLab details.`};
+      }
+      try {
+        return await loadGitLabPullRequest(mr, async path => {
+          const response = await fetchWithCredentials(`${mr.origin}/api/v4${path}`, {
+            headers: {Accept: 'application/json'}, redirect: 'error',
+          });
+          if (!(response.headers.get('Content-Type') || '').includes('application/json')) {
+            throw new Error('Sign in to GitLab in this browser, then retry.');
+          }
+          return {data: await response.json(), nextPage: response.headers.get('X-Next-Page') || ''};
+        });
+      } catch (error) {
+        return {status: 'unavailable', failure: `GitLab details unavailable. Sign in to GitLab and retry. ${error.message}`};
+      }
+    })().then(result => sendResponse({result})).catch(error => sendResponse({error: error.message}));
     return SEND_RESPONSE_IS_ASYNC;
   }
 

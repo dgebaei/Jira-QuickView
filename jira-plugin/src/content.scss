@@ -2173,25 +2173,142 @@ body ._JX {
   }
 
   &_related_table_pr {
-    thead th:nth-child(1),
-    tbody td:nth-child(1) {
-      width: 38%;
+    th,
+    td {
+      vertical-align: middle;
+      padding-inline-end: 10px;
     }
 
-    thead th:nth-child(2),
-    tbody td:nth-child(2) {
-      width: 20%;
+    th:nth-child(1) { inline-size: 12%; }
+    th:nth-child(2) { inline-size: 25%; }
+    th:nth-child(3) { inline-size: 16%; }
+    th:nth-child(4) { inline-size: 13%; }
+    th:nth-child(5) { inline-size: 18%; }
+    th:nth-child(6) { inline-size: 16%; }
+
+    th:last-child,
+    td:last-child {
+      padding-inline-end: 0;
+      text-align: end;
     }
 
-    thead th:nth-child(3),
-    tbody td:nth-child(3) {
-      width: 26%;
+    ._JX_related_table_sort {
+      gap: 3px;
+      white-space: nowrap;
     }
 
-    thead th:nth-child(4),
-    tbody td:nth-child(4) {
-      width: 16%;
+    ._JX_PR_STATUS {
+      padding-inline: 3px;
     }
+  }
+
+  &_pr_id,
+  &_pr_time {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &_pr_time {
+    color: var(--jx-ink-2);
+    cursor: help;
+  }
+
+  &_pr_target {
+    display: block;
+    overflow: clip;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &_pr_signals {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-block-size: 22px;
+  }
+
+  &_pr_signal {
+    align-items: center;
+    display: inline-flex;
+    font-variant-numeric: tabular-nums;
+    gap: 1px;
+    min-block-size: 22px;
+    text-decoration: none;
+
+    svg {
+      block-size: 1.25em;
+      fill: none;
+      flex: none;
+      inline-size: 1.25em;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.5;
+    }
+  }
+
+  &_container a._JX_pr_signal_comments,
+  &_container a._JX_pr_signal_pending { color: oklch(54% 0.12 75deg); }
+  &_container a._JX_pr_signal_failure,
+  &_container a._JX_pr_signal_conflict { color: oklch(50% 0.18 28deg); }
+  &_container a._JX_pr_signal_success { color: oklch(45% 0.13 150deg); }
+  &_container a._JX_pr_signal_approval { color: oklch(45% 0.13 150deg); }
+  &_container a._JX_pr_signal_unknown,
+  &_pr_empty { color: var(--jx-ink-3); }
+
+  &_pr_tooltip {
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px oklch(0% 0 none / 18%);
+    color: var(--jx-ink);
+    font: 12px/1.5 var(--jx-font);
+    inset: auto;
+    margin: 0;
+    max-inline-size: min(380px, calc(100vw - 16px));
+    overflow-wrap: anywhere;
+    padding: 10px 12px;
+    position: fixed;
+    text-align: start;
+    white-space: pre-line;
+
+    > span { display: block; }
+    > span:first-child { font-weight: 600; }
+  }
+
+  &_gitlab_connections {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &_gitlab_connect {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--jx-border-strong);
+    border-radius: 4px;
+    color: var(--jx-accent);
+    cursor: pointer;
+    font: 11px/1.5 var(--jx-font);
+    padding: 2px 6px;
+  }
+
+  &_pr_id,
+  &_pr_time,
+  &_pr_signal,
+  &_gitlab_connect {
+    &:focus-visible {
+      outline: 2px solid var(--jx-focus);
+      outline-offset: 2px;
+    }
+
+    &:active { background: var(--jx-fill-pressed); }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    &_pr_signal:hover,
+    &_gitlab_connect:hover { background: var(--jx-fill-hover); }
   }
 
   &_related_table_children {
@@ -3784,6 +3901,13 @@ body ._JX {
 }
 
 html[data-jhl-theme='dark'] body ._JX {
+  // Top-layer popovers do not inherit the container's legacy inversion.
+  &_pr_tooltip {
+    background: oklch(23% 0 none);
+    border-color: oklch(44% 0 none);
+    color: oklch(92% 0 none);
+  }
+
   &_container {
     filter: invert(0.9) hue-rotate(180deg);
   }

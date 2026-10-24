@@ -822,21 +822,23 @@ Business logic and limitations:
 
 ### 5.10 Pull Requests Block
 
-![Related pull requests](screenshots/marketing-hidpi-light/popup-pull-requests.png)
+![Compact pull request grid](screenshots/user-guide/pull-requests-grid.png)
 
 The Pull Requests block shows development work connected to the Jira issue.
 
 What you can see:
 
-- Pull request title
-- Author
-- Branch
-- Status
-- Link to open the pull request
+- Linked PR/MR ID. Hover or focus the ID for its title, repository, and source branch.
+- Author avatar and full name, target branch, and status.
+- Compact signals for approvals, unresolved review threads, current CI, and merge conflicts when GitLab supplies them. Hover or focus a signal for details; the approval icon includes the count and lists approvers and available approval times.
+- A sortable **Last update** column. Open requests use the latest head commit time; merged and closed requests use their merge or close time. If unavailable, the column falls back to a known update or creation time and explains the fallback in its details.
+- Hover or focus a last-update value for its event, responsible person when known, exact UTC time, and commit details. Newest-first is the default; click the header for oldest-first. Missing dates remain at the bottom in both directions.
 
 Business logic and limitations:
 
-- Pull request data comes from Jira development-status APIs.
+- Linked pull requests are discovered through Jira development-status data. GitLab details load separately, using your existing GitLab browser session and granted host access, without delaying the initial Jira rows.
+- Choose **Connect [GitLab host]** if host access is missing. If authentication fails, sign in to that GitLab instance in the same browser and choose **Retry GitLab**. No API token is configured or stored.
+- Unknown signals are not treated as successful checks. Approvals and passing CI do not imply the request is ready to merge. Closed/merged requests hide obsolete warnings, while recorded approvals remain available.
 - If Jira does not know about linked pull requests, the block will not show them.
 - The current browser page is filtered out when it is the same pull request you are already viewing, which avoids showing a redundant link.
 

@@ -1,7 +1,7 @@
 const DEFAULT_CHILDREN_SORT = Object.freeze({column: 'key', direction: 'asc'});
-const DEFAULT_PULL_REQUESTS_SORT = Object.freeze({column: 'title', direction: 'asc'});
+const DEFAULT_PULL_REQUESTS_SORT = Object.freeze({column: 'updated', direction: 'desc'});
 const CHILDREN_SORT_COLUMNS = new Set(['type', 'key', 'status', 'assignee']);
-const PULL_REQUEST_SORT_COLUMNS = new Set(['title', 'author', 'branch', 'status']);
+const PULL_REQUEST_SORT_COLUMNS = new Set(['id', 'author', 'target', 'status', 'updated']);
 const PANELS = new Set(['history', 'watchers', 'linkedIssues']);
 
 function normalizeCommentSortOrder(value) {
@@ -13,7 +13,8 @@ function toggleSort(current, requestedColumn, allowedColumns) {
   if (!allowedColumns.has(column)) return null;
   return {
     column,
-    direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
+    direction: current.column !== column && column === 'updated' ? 'desc'
+      : current.column === column && current.direction === 'asc' ? 'desc' : 'asc',
   };
 }
 

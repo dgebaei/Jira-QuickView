@@ -71,6 +71,7 @@ function dataSection(data, shape = {}) {
 
 export function createQuickViewIssueData(options = {}) {
   const jira = options.jira;
+  const gitlab = options.gitlab;
   if (!jira || typeof jira.read !== 'function') {
     throw new Error('QuickViewIssueData requires a Jira adapter');
   }
@@ -115,6 +116,34 @@ export function createQuickViewIssueData(options = {}) {
     ttlMs: freshnessPolicy.coreMs,
   });
   let revision = 0;
+
+  async function enrichPullRequests({items, signal, force = false} = {}) {
+    if (!gitlab || !items?.length) return null;
+    const enriched = new Array(items.length);
+    let changed = false;
+    let next = 0;
+    async function worker() {
+      while (next < items.length && !signal?.aborted) {
+        const index = next++;
+        const item = items[index];
+        if (force) cache.invalidate('gitlabPullRequest', item.url);
+        try {
+          const details = await cache.read({
+            family: 'gitlabPullRequest', key: item.url, ttlMs: freshnessPolicy.coreMs,
+            load: () => gitlab.readPullRequest({url: item.url, signal}),
+          });
+          enriched[index] = details ? {...item, gitlab: details} : item;
+          if (details) changed = true;
+        } catch (error) {
+          if (isAbort(error, signal)) return;
+          enriched[index] = {...item, gitlab: {status: 'unavailable', failure: normalizeFailure(error).message}};
+          changed = true;
+        }
+      }
+    }
+    await Promise.all(Array.from({length: Math.min(3, items.length)}, worker));
+    return signal?.aborted || !changed ? null : enriched;
+  }
 
   function invalidateIssue(issueKey, mutation = {}, priorSnapshot = null) {
     const coreMutations = new Set([
@@ -455,5 +484,5 @@ export function createQuickViewIssueData(options = {}) {
     return {...outcome, mutation: copyValue(mutation || {kind: 'issueChanged'})};
   }
 
-  return {loadFieldContext, openIssue, refreshAfterMutation, search};
+  return {loadFieldContext, openIssue, refreshAfterMutation, search, enrichPullRequests};
 }

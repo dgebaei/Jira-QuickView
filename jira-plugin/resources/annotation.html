@@ -817,20 +817,26 @@
         {{#prs.length}}
         <div class="_JX_content_block" data-content-block="pullRequests">
         <div class="_JX_related_table _JX_related_table_pr">
-            <div class="_JX_section_title">Pull Requests</div>
+            <div class="_JX_section_title _JX_section_title_with_action">
+                <span>Pull Requests</span>
+                <span class="_JX_gitlab_connections">{{#gitlabConnections}}<button type="button" class="_JX_gitlab_connect" data-pr-url="{{url}}" title="{{title}}">{{label}}</button>{{/gitlabConnections}}</span>
+            </div>
             <div class="_JX_section_content">
             <table>
                 <thead>
                 <tr>
                     {{#prSortHeaders}}
-                    <th scope="col" aria-sort="{{ariaSort}}">
-                        <button class="_JX_related_table_sort _JX_pr_sort{{#isActive}} is-active{{/isActive}}" type="button" data-sort-column="{{column}}" title="{{title}}">
+                    <th scope="col"{{^isStatic}} aria-sort="{{ariaSort}}"{{/isStatic}}>
+                        {{#isStatic}}{{label}}{{/isStatic}}
+                        {{^isStatic}}
+                        <button class="_JX_related_table_sort _JX_pr_sort{{#isActive}} is-active{{/isActive}}" type="button" data-sort-column="{{column}}" title="{{title}}" aria-label="{{title}}">
                             <span class="_JX_related_table_sort_label">{{label}}</span>
                             <svg class="_JX_related_table_sort_icon" width="8" height="10" viewBox="0 0 10 12" focusable="false" role="presentation" aria-hidden="true">
                                 <path class="_JX_related_table_sort_path{{#isAscendingActive}} is-active{{/isAscendingActive}}" d="M2 4 5 1l3 3"></path>
                                 <path class="_JX_related_table_sort_path{{#isDescendingActive}} is-active{{/isDescendingActive}}" d="M2 8 5 11l3-3"></path>
                             </svg>
                         </button>
+                        {{/isStatic}}
                     </th>
                     {{/prSortHeaders}}
                 </tr>
@@ -838,7 +844,10 @@
                 <tbody>
                 {{#prs}}
                 <tr>
-                    <td><a href="{{url}}" target="_blank" rel="noopener noreferrer" title="{{linkTitle}}">{{title}}</a></td>
+                    <td>
+                        <a class="_JX_pr_id" href="{{linkUrl}}" target="_blank" rel="noopener noreferrer" data-pr-details="{{detailId}}" aria-describedby="{{detailId}}">{{idText}}</a>
+                        <span id="{{detailId}}" class="_JX_pr_tooltip" popover="manual" role="tooltip" hidden>{{linkTitle}}</span>
+                    </td>
                     <td>
                         <div class="_JX_related_table_user" title="{{authorView.titleText}}">
                             {{#authorView.avatarUrl}}<img class="_JX_related_table_user_avatar" src="{{authorView.avatarUrl}}" alt="">{{/authorView.avatarUrl}}
@@ -846,8 +855,33 @@
                             <span class="_JX_related_table_user_name">{{authorView.displayName}}</span>
                         </div>
                     </td>
-                    <td>{{branchText}}</td>
-                    <td><div class="_JX_PR_STATUS _JX_PR_{{status}}">{{status}}</div></td>
+                    <td><span class="_JX_pr_target" title="{{branchTitle}}">{{branchText}}</span></td>
+                    <td><div class="_JX_PR_STATUS _JX_PR_{{status}}">{{statusText}}</div></td>
+                    <td>
+                        <span class="_JX_pr_signals">
+                        {{#signals}}
+                            <span class="_JX_pr_signal_group">
+                            <a class="_JX_pr_signal _JX_pr_signal_{{kind}}" href="{{url}}" target="_blank" rel="noopener noreferrer" aria-label="{{label}}" data-pr-details="{{detailId}}" aria-describedby="{{detailId}}">
+                                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                                    {{#isApproval}}<path d="M6 9h-3v8h3V9zm0 7h8a2 2 0 0 0 2-1.5l1-5a1.5 1.5 0 0 0-1.5-1.8H11l1-4a1.5 1.5 0 0 0-2.5-1L6 9v7z"/>{{/isApproval}}
+                                    {{#isComment}}<path d="M3 3h14v10H8l-5 4V3z"/>{{/isComment}}
+                                    {{#isFailure}}<circle cx="10" cy="10" r="7"/><path d="m7 7 6 6m0-6-6 6"/>{{/isFailure}}
+                                    {{#isSuccess}}<circle cx="10" cy="10" r="7"/><path d="m6 10 3 3 5-6"/>{{/isSuccess}}
+                                    {{#isPending}}<circle cx="10" cy="10" r="7"/><path d="M10 5v5l3 2"/>{{/isPending}}
+                                    {{#isConflict}}<path d="m10 2 8 15H2L10 2zm0 5v4m0 2v1"/>{{/isConflict}}
+                                    {{#isUnknown}}<circle cx="10" cy="10" r="7"/><path d="M8 7a2 2 0 1 1 3 2c-1 0-1 1-1 2m0 2v1"/>{{/isUnknown}}
+                                </svg>{{#count}}<span>{{count}}</span>{{/count}}
+                            </a>
+                            <span id="{{detailId}}" class="_JX_pr_tooltip" popover="manual" role="tooltip" hidden>{{#details}}<span>{{text}}</span>{{/details}}</span>
+                            </span>
+                        {{/signals}}
+                        {{^hasSignals}}<span class="_JX_pr_empty">—</span>{{/hasSignals}}
+                        </span>
+                    </td>
+                    <td class="_JX_pr_time_cell">
+                        <time class="_JX_pr_time" datetime="{{timeIso}}" tabindex="0" data-pr-details="{{timeDetailId}}" aria-label="{{timeLabel}}" aria-describedby="{{timeDetailId}}">{{timeText}}</time>
+                        <span id="{{timeDetailId}}" class="_JX_pr_tooltip" popover="manual" role="tooltip" hidden>{{#timeDetails}}<span>{{text}}</span>{{/timeDetails}}</span>
+                    </td>
                 </tr>
                 {{/prs}}
                 </tbody>

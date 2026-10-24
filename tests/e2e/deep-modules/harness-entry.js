@@ -15,8 +15,15 @@ import {createDeferred, createMockJiraAdapter} from './mock-jira-adapter';
 import {createFixturePopupSurface} from './fixture-popup-surface';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
 import jquery from 'jquery';
+import {loadGitLabPullRequest, parseGitLabMergeRequestUrl} from 'src/gitlab-pull-requests';
+import {buildPullRequestView} from 'src/popup-session/pull-request-view';
+import {installPullRequestTooltips} from 'src/popup-session/pull-request-tooltips';
 
 window.JiraQuickViewDeepModules = {
+  loadGitLabPullRequest,
+  parseGitLabMergeRequestUrl,
+  buildPullRequestView,
+  installPullRequestTooltips,
   createBrowserMessageJiraAdapter,
   createBrowserCommentPresentation,
   createBrowserPopupEvents,

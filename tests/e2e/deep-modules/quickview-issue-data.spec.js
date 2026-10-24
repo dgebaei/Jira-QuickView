@@ -12,6 +12,145 @@ test.beforeEach(async ({page}) => {
   await loadHarness(page);
 });
 
+test('GitLab enrichment counts unresolved threads across pages and ignores an old pipeline', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {loadGitLabPullRequest, parseGitLabMergeRequestUrl, buildPullRequestView} = window.JiraQuickViewDeepModules;
+    const url = 'https://gitlab.example/group/subgroup/repo/-/merge_requests/42';
+    const requests = [];
+    const gitlab = await loadGitLabPullRequest(parseGitLabMergeRequestUrl(url), async path => {
+      requests.push(path);
+      if (path.endsWith('/approvals')) return {data: {approved_by: []}};
+      if (path.includes('/discussions')) {
+        return path.endsWith('page=1')
+          ? {data: [{notes: [{resolvable: true, resolved: false}, {resolvable: true, resolved: false}]}], nextPage: '2'}
+          : {data: [{notes: [{resolvable: true, resolved: false}]}, {notes: [{resolvable: false, resolved: false}]}, {notes: [{resolvable: true, resolved: true}]}]};
+      }
+      if (path.includes('/repository/commits/')) return {data: {id: 'a'.repeat(40), author_name: 'Commit Author', title: 'New code', committed_date: '2026-10-24T10:00:00Z'}};
+      return {data: {iid: 42, state: 'opened', sha: 'a'.repeat(40), source_project_id: 12, target_branch: 'main', detailed_merge_status: 'checking', has_conflicts: false,
+        head_pipeline: {sha: 'b'.repeat(40), status: 'success'}, updated_at: '2026-10-24T11:00:00Z'}};
+    });
+    const view = buildPullRequestView({url, gitlab}, 0, Date.parse('2026-10-24T12:00:00Z'));
+    return {requests, unresolvedThreads: gitlab.unresolvedThreads, pipeline: gitlab.pipeline, conflicts: gitlab.conflicts,
+      time: view.timeText, details: view.timeLabel, signals: view.signals.map(entry => entry.label)};
+  });
+  expect(result.requests).toContain('/projects/group%2Fsubgroup%2Frepo/merge_requests/42/discussions?per_page=100&page=2');
+  expect(result.unresolvedThreads).toBe(2);
+  expect(result.pipeline).toBeNull();
+  expect(result.conflicts).toBeNull();
+  expect(result.time).toBe('2h');
+  expect(result.details).toContain('Latest commit by Commit Author');
+  expect(result.signals).toEqual(['2 unresolved review threads', expect.stringContaining('Unknown: CI, conflicts')]);
+});
+
+test('GitLab partial failures retain known signals without inventing a successful review state', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {loadGitLabPullRequest, parseGitLabMergeRequestUrl, buildPullRequestView} = window.JiraQuickViewDeepModules;
+    const url = 'https://gitlab.example/group/repo/-/merge_requests/42';
+    const gitlab = await loadGitLabPullRequest(parseGitLabMergeRequestUrl(url), async path => {
+      if (path.endsWith('/approvals')) return {data: {approved_by: []}};
+      if (path.includes('/discussions')) throw new Error('Forbidden');
+      return {data: {iid: 42, state: 'opened', sha: 'a'.repeat(40), detailed_merge_status: 'conflict', has_conflicts: true,
+        head_pipeline: {sha: 'a'.repeat(40), status: 'failed'}}};
+    });
+    return {status: gitlab.status, unresolved: gitlab.unresolvedThreads,
+      labels: buildPullRequestView({url, gitlab}, 0).signals.map(entry => entry.label)};
+  });
+  expect(result.status).toBe('partial');
+  expect(result.unresolved).toBeNull();
+  expect(result.labels).toEqual(['CI failed on the current revision', 'Merge conflicts detected', expect.stringContaining('Unknown: review threads')]);
+});
+
+test('terminal PRs use transition dates and actors, never a later generic update', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {loadGitLabPullRequest, parseGitLabMergeRequestUrl, buildPullRequestView} = window.JiraQuickViewDeepModules;
+    const url = 'https://gitlab.example/group/repo/-/merge_requests/42';
+    const requests = [];
+    const gitlab = await loadGitLabPullRequest(parseGitLabMergeRequestUrl(url), async path => {
+      requests.push(path);
+      if (path.endsWith('/approvals')) return {data: {approved_by: []}};
+      return {data: {iid: 42, state: 'merged', merged_at: '2026-10-20T10:00:00Z', merge_user: {name: 'Merge User'}, updated_at: '2026-10-24T11:00:00Z'}};
+    });
+    const merged = buildPullRequestView({url, gitlab}, 0);
+    const closed = buildPullRequestView({url, gitlab: {...gitlab, state: 'CLOSED', closedAt: '2026-10-19T10:00:00Z', closedBy: {name: 'Closing User'}}}, 1);
+    const fallback = buildPullRequestView({url, gitlab: {...gitlab, mergedAt: null}}, 2);
+    return {requests: requests.length, merged: merged.timeLabel, date: merged.timeIso, closed: closed.timeLabel, fallback: fallback.timeLabel, signals: merged.signals};
+  });
+  expect(result.requests).toBe(2);
+  expect(result.merged).toContain('Merged by Merge User');
+  expect(result.date).toBe('2026-10-20T10:00:00.000Z');
+  expect(result.closed).toContain('Closed by Closing User');
+  expect(result.fallback).toContain('Updated (event details unavailable)');
+  expect(result.fallback).not.toContain('Merged by');
+  expect(result.signals).toEqual([]);
+});
+
+test('GitLab enrichment is cached, bounded, and can be explicitly refreshed', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    let active = 0;
+    let maximum = 0;
+    let calls = 0;
+    const data = createQuickViewIssueData({jira: {read() {}}, gitlab: {async readPullRequest() {
+      calls += 1;
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      active -= 1;
+      return {status: 'ready'};
+    }}});
+    const items = Array.from({length: 7}, (_, index) => ({url: `https://gitlab.example/g/r/-/merge_requests/${index}`}));
+    await data.enrichPullRequests({items});
+    await data.enrichPullRequests({items});
+    const cachedCalls = calls;
+    await data.enrichPullRequests({items, force: true});
+    const controller = new AbortController();
+    controller.abort();
+    const aborted = await data.enrichPullRequests({items, signal: controller.signal});
+    return {maximum, cachedCalls, calls, aborted};
+  });
+  expect(result).toEqual({maximum: 3, cachedCalls: 7, calls: 14, aborted: null});
+});
+
+test('GitLab URL parsing rejects credentials, unrelated URLs, and invalid project paths', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const {parseGitLabMergeRequestUrl} = window.JiraQuickViewDeepModules;
+    return ['javascript:alert(1)', 'https://github.com/g/r/pull/1', 'https://u:p@gitlab.example/g/r/-/merge_requests/1',
+      'https://gitlab.example/g%3Fx/r/-/merge_requests/1', 'https://gitlab.example/g/r/-/merge_requests/1?tab=diffs']
+      .map(value => parseGitLabMergeRequestUrl(value));
+  });
+  expect(result.slice(0, 4)).toEqual([null, null, null, null]);
+  expect(result[4]).toEqual({origin: 'https://gitlab.example', project: 'g/r', iid: '1', url: 'https://gitlab.example/g/r/-/merge_requests/1'});
+});
+
+test('approval signals show current approvers, not an empty approved flag or failed lookup', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {loadGitLabPullRequest, parseGitLabMergeRequestUrl, buildPullRequestView} = window.JiraQuickViewDeepModules;
+    const url = 'https://gitlab.example/group/repo/-/merge_requests/42';
+    async function load(approvalResponse) {
+      const gitlab = await loadGitLabPullRequest(parseGitLabMergeRequestUrl(url), async path => {
+        if (path.endsWith('/approvals')) {
+          if (approvalResponse instanceof Error) throw approvalResponse;
+          return {data: approvalResponse};
+        }
+        if (path.includes('/discussions')) return {data: []};
+        return {data: {iid: 42, state: 'opened', detailed_merge_status: 'mergeable', has_conflicts: false}};
+      });
+      return buildPullRequestView({url, gitlab}, 0).signals;
+    }
+    const approved = await load({approved: false, approvals_left: 1, approved_by: [
+      {user: {id: 1, name: 'Alex Reviewer', username: 'alex'}, approved_at: '2026-10-24T09:00:00Z'},
+      {user: {id: 2, name: 'Casey Commenter', username: 'casey'}},
+    ]});
+    return {approved, empty: await load({approved: true, approved_by: []}), failed: await load(new Error('403'))};
+  });
+  expect(result.approved[0]).toMatchObject({kind: 'approval', label: '2 approvals', count: 2});
+  expect(result.approved[0].details.map(entry => entry.text)).toContain('Alex Reviewer (@alex) · 2026-10-24 09:00:00 UTC');
+  expect(result.approved[0].details.map(entry => entry.text)).toContain('1 more required by GitLab approval rules.');
+  expect(result.empty.some(entry => entry.kind === 'approval')).toBe(false);
+  expect(result.failed.some(entry => entry.kind === 'approval')).toBe(false);
+  expect(result.failed.find(entry => entry.kind === 'unknown').label).toContain('approvals');
+});
+
 test('identical pending issue reads coalesce behind openIssue', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createDeferred, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;

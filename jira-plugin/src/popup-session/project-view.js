@@ -1,4 +1,5 @@
 import {buildLinkedIssuesPanelView} from 'src/content-linked-issues-helpers';
+import {buildPullRequestView} from 'src/popup-session/pull-request-view';
 
 export function createPopupProjectView(options) {
   const configuration = options?.configuration || {};
@@ -123,21 +124,8 @@ export function createPopupProjectView(options) {
       }).length > 1;
   }
 
-  function formatPullRequestTitle(pullRequest) {
-    const id = pullRequest?.id || pullRequest?.number || pullRequest?.key || '';
-    const title = pullRequest?.name || pullRequest?.title || 'Untitled pull request';
-    return id ? `[${id}] ${title}` : title;
-  }
-
   function formatPullRequestAuthor(pullRequest) {
     return pullRequest?.author?.name || pullRequest?.author?.displayName || pullRequest?.author?.username || pullRequest?.author?.email || '--';
-  }
-
-  function formatPullRequestBranch(pullRequest) {
-    const source = pullRequest?.source?.branch || pullRequest?.sourceBranch || pullRequest?.fromRef?.displayId || pullRequest?.fromRef?.id || pullRequest?.source?.displayId || '';
-    const target = pullRequest?.destination?.branch || pullRequest?.targetBranch || pullRequest?.toRef?.displayId || pullRequest?.toRef?.id || pullRequest?.destination?.displayId || '';
-    if (source && target) return `${source} --> ${target}`;
-    return source || target || '--';
   }
 
   function formatFixVersionText(versions) {
@@ -302,12 +290,10 @@ export function createPopupProjectView(options) {
 
   function normalizePullRequestsSortState(sort) {
     return {
-      column: ['title', 'author', 'branch', 'status'].includes(sort?.column)
+      column: ['id', 'author', 'target', 'status', 'updated'].includes(sort?.column)
         ? sort.column
-        : 'title',
-      direction: sort?.direction === 'desc'
-        ? 'desc'
-        : 'asc'
+        : 'updated',
+      direction: sort?.direction === 'asc' ? 'asc' : 'desc'
     };
   }
 
@@ -353,20 +339,27 @@ export function createPopupProjectView(options) {
   }
 
   function comparePullRequestRows(left, right, column, direction) {
+    if (column === 'updated') {
+      if (left.timeValue === null && right.timeValue !== null) return 1;
+      if (right.timeValue === null && left.timeValue !== null) return -1;
+    }
     let result = 0;
     switch (column) {
       case 'author':
         result = compareNaturalText(left?.authorView?.displayName, right?.authorView?.displayName);
         break;
-      case 'branch':
+      case 'target':
         result = compareNaturalText(left?.branchText, right?.branchText);
         break;
       case 'status':
         result = compareNaturalText(left?.statusText, right?.statusText);
         break;
-      case 'title':
+      case 'updated':
+        result = (left.timeValue || 0) - (right.timeValue || 0);
+        break;
+      case 'id':
       default:
-        result = compareNaturalText(left?.sortTitleText, right?.sortTitleText);
+        result = compareNaturalText(left?.idText, right?.idText);
         break;
     }
     if (result !== 0) {
@@ -659,10 +652,13 @@ export function createPopupProjectView(options) {
       buildRelatedTableSortHeader(normalizedChildrenSort, 'assignee', 'Assignee')
     ];
     const prSortHeaders = [
-      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'title', 'Title'),
+      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'id', 'PR', 'PR ID'),
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'author', 'Author'),
-      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'branch', 'Branch'),
-      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'status', 'Status')
+      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'target', 'Target', 'target branch'),
+      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'status', 'Status'),
+      {label: 'Signals', isStatic: true},
+      {...buildRelatedTableSortHeader(normalizedPullRequestsSort, 'updated', 'Last update'),
+        title: `Sort by last update ${normalizedPullRequestsSort.column === 'updated' && normalizedPullRequestsSort.direction === 'desc' ? 'oldest first' : 'newest first'}. Open: latest commit; merged: merge time; closed: close time. Uses updated/created time when unavailable.`},
     ];
     const quickActionData = {
       actionsOpen: !!actionsOpen && !!quickActionView.hasQuickActions,
@@ -830,19 +826,21 @@ export function createPopupProjectView(options) {
     if (showPullRequests && Array.isArray(pullRequests) && pullRequests.length) {
       const filteredPullRequests = pullRequests.filter(pr => pr && pr.url !== location.href);
       displayData.prs = filteredPullRequests
-        .map(pr => ({
+        .map((pr, index) => ({
           id: pr.id,
           url: pr.url,
-          linkUrl: pr.url,
-          linkTitle: buildLinkHoverTitle('Open pull request', formatPullRequestTitle(pr), pr.url),
-          title: formatPullRequestTitle(pr),
-          sortTitleText: pr?.name || pr?.title || formatPullRequestTitle(pr),
-          status: pr.status,
-          statusText: pr.status || '--',
           authorView: buildRelatedUserCellView(pr?.author, 'Author', formatPullRequestAuthor(pr)),
-          branchText: formatPullRequestBranch(pr)
+          ...buildPullRequestView(pr, index),
         }))
         .sort((left, right) => comparePullRequestRows(left, right, normalizedPullRequestsSort.column, normalizedPullRequestsSort.direction));
+      const hosts = new Set();
+      displayData.gitlabConnections = displayData.prs.flatMap(pr => {
+        if (!pr.connection) return [];
+        const origin = new URL(pr.connection.url).origin;
+        if (hosts.has(origin)) return [];
+        hosts.add(origin);
+        return [pr.connection];
+      });
     }
     displayData.activityIndicators = buildActivityIndicators();
     displayData.hasRow1Meta = !!displayData.watchersTrigger || !!displayData.linkedIssuesTrigger || displayData.activityIndicators.length > 0;

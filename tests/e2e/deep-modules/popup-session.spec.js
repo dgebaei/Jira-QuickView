@@ -8,6 +8,86 @@ test.beforeEach(async ({page}) => {
   await page.addScriptTag({path: harnessPath});
 });
 
+test('focused PR details survive focus-driven scrolling and consume Escape before the popup', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const {installPullRequestTooltips, jquery} = window.JiraQuickViewDeepModules;
+    document.body.innerHTML = '<a href="#" data-pr-details="details">!1</a><span id="details" popover="manual" role="tooltip" hidden>Approved by Alex</span>';
+    const root = jquery(document.body);
+    const dispose = installPullRequestTooltips(root, '.prTest');
+    let popupEscapes = 0;
+    root.on('keydown.prTest', () => { popupEscapes += 1; });
+    const trigger = document.querySelector('a');
+    const tooltip = document.getElementById('details');
+    trigger.focus();
+    const beforeScroll = tooltip.matches(':popover-open');
+    trigger.dispatchEvent(new Event('scroll'));
+    const afterScroll = tooltip.matches(':popover-open');
+    trigger.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    const afterEscape = tooltip.matches(':popover-open');
+    dispose();
+    root.off('.prTest');
+    return {beforeScroll, afterScroll, afterEscape, popupEscapes};
+  });
+  expect(result).toEqual({beforeScroll: true, afterScroll: true, afterEscape: false, popupEscapes: 0});
+});
+
+test('GitLab enrichment does not block initial rows or overwrite a newer popup', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const pending = createDeferred();
+    const surface = createFixturePopupSurface();
+    const feature = () => ({attach() {}, detach() {}, dispatch() {}, view() { return {}; }});
+    let signal;
+    const popup = createPopupSession({
+      issueData: {
+        async openIssue({issueKey}) {
+          return {snapshot: {issueKey, core: {key: issueKey, fields: {}}, sections: {
+            pullRequests: {status: 'ready', items: issueKey === 'OLD-1' ? [{id: 'original'}] : []},
+          }}};
+        },
+        enrichPullRequests(request) { signal = request.signal; return pending.promise; },
+      },
+      fieldEditing: feature(), comments: feature(), quickActions: feature(), watchers: feature(), linkedIssues: feature(), surface,
+    });
+    await popup.activate({issueKey: 'OLD-1'});
+    const initialItems = surface.getFrames().at(-1).issueSnapshot.sections.pullRequests.items;
+    await popup.activate({issueKey: 'NEW-2'});
+    pending.resolve([{id: 'late-gitlab-result'}]);
+    await pending.promise;
+    await popup.dispatch({type: 'render'});
+    return {initialItems, aborted: signal.aborted, lastIssue: surface.getFrames().at(-1).issueKey,
+      leaked: surface.getFrames().some(frame => frame.issueSnapshot?.sections?.pullRequests?.items?.some(item => item.id === 'late-gitlab-result'))};
+  });
+  expect(result).toEqual({initialItems: [{id: 'original'}], aborted: true, lastIssue: 'NEW-2', leaked: false});
+});
+
+test('GitLab enrichment preserves a sort chosen while details are loading', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
+    const pending = createDeferred();
+    const rendered = createDeferred();
+    const surface = createFixturePopupSurface({beforeRender(frame) {
+      if (frame.reason === 'pull-requests-enriched') rendered.resolve(frame);
+    }});
+    const feature = () => ({attach() {}, detach() {}, dispatch() {}, view() { return {}; }});
+    const popup = createPopupSession({
+      issueData: {
+        async openIssue({issueKey}) {
+          return {snapshot: {issueKey, core: {key: issueKey, fields: {}}, sections: {pullRequests: {status: 'ready', items: [{id: 'original'}]}}}};
+        },
+        enrichPullRequests() { return pending.promise; },
+      },
+      fieldEditing: feature(), comments: feature(), quickActions: feature(), watchers: feature(), linkedIssues: feature(), surface,
+    });
+    await popup.activate({issueKey: 'ABC-1'});
+    await popup.dispatch({type: 'sort-pull-requests', column: 'author'});
+    pending.resolve([{id: 'enriched'}]);
+    const frame = await rendered.promise;
+    return {sort: frame.presentation.pullRequestsSort, items: frame.issueSnapshot.sections.pullRequests.items};
+  });
+  expect(result).toEqual({sort: {column: 'author', direction: 'asc'}, items: [{id: 'enriched'}]});
+});
+
 test('a reversed older issue load cannot attach features or replace the newer popup session', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
@@ -358,12 +438,12 @@ test('popup session owns sorting transitions and publishes their observable pres
     outcomes: {
       children: {
         childrenSort: {column: 'status', direction: 'asc'},
-        pullRequestsSort: {column: 'title', direction: 'asc'},
+        pullRequestsSort: {column: 'updated', direction: 'desc'},
         commentSortOrder: 'oldest',
       },
       childrenReversed: {
         childrenSort: {column: 'status', direction: 'desc'},
-        pullRequestsSort: {column: 'title', direction: 'asc'},
+        pullRequestsSort: {column: 'updated', direction: 'desc'},
         commentSortOrder: 'oldest',
       },
       pullRequests: {
@@ -383,7 +463,7 @@ test('popup session owns sorting transitions and publishes their observable pres
         reason: '',
         presentation: {
           childrenSort: {column: 'key', direction: 'asc'},
-          pullRequestsSort: {column: 'title', direction: 'asc'},
+          pullRequestsSort: {column: 'updated', direction: 'desc'},
           commentSortOrder: 'oldest',
         },
       },
@@ -392,7 +472,7 @@ test('popup session owns sorting transitions and publishes their observable pres
         reason: 'children-sort-changed',
         presentation: {
           childrenSort: {column: 'status', direction: 'asc'},
-          pullRequestsSort: {column: 'title', direction: 'asc'},
+          pullRequestsSort: {column: 'updated', direction: 'desc'},
           commentSortOrder: 'oldest',
         },
       },
@@ -401,7 +481,7 @@ test('popup session owns sorting transitions and publishes their observable pres
         reason: 'children-sort-changed',
         presentation: {
           childrenSort: {column: 'status', direction: 'desc'},
-          pullRequestsSort: {column: 'title', direction: 'asc'},
+          pullRequestsSort: {column: 'updated', direction: 'desc'},
           commentSortOrder: 'oldest',
         },
       },
