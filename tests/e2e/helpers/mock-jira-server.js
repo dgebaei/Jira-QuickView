@@ -1015,6 +1015,14 @@ async function createMockJiraServer() {
       delete state[key];
     });
     Object.assign(state, next);
+    if (state.scenario === 'shortcut-planning') state.issue.sprintEntries = [];
+    if (state.scenario === 'shortcut-resolution') {
+      const done = state.transitions.find(transition => transition.to.statusCategory.key === 'done');
+      done.fields = {
+        resolution: {required: true, name: 'Resolution', allowedValues: [{id: '1', name: 'Fixed'}, {id: '2', name: 'Duplicate'}]},
+        comment: {required: true, name: 'Comment'},
+      };
+    }
     if (state.scenario === 'anonymous-readonly') {
       state.issue.assignee = null;
       state.boards = [];
@@ -1595,6 +1603,15 @@ async function createMockJiraServer() {
     if (pathname === `/rest/api/2/issue/${state.issue.key}` && req.method === 'PUT') {
       const body = await parseJsonBody(req);
       const fields = body?.fields || {};
+      if (fields.assignee) {
+        const userId = fields.assignee.accountId || fields.assignee.name || fields.assignee.key;
+        const assignee = state.assignableUsers.find(user => [user.accountId, user.name, user.key].includes(userId));
+        if (!assignee) {
+          json(res, 400, {errors: {assignee: 'Unknown assignee'}});
+          return;
+        }
+        state.issue.assignee = assignee;
+      }
       if (Object.prototype.hasOwnProperty.call(fields, 'summary')) {
         const nextSummary = String(fields.summary || '').trim();
         if (!nextSummary) {

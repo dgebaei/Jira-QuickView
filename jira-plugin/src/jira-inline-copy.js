@@ -385,7 +385,7 @@ let installCount = 0;
 
 function installAllowedPageCopyButtons(documentRef, instanceUrl, copy, isAlive) {
   const owner = String(++installCount) + Math.random().toString(36).slice(2, 8);
-  const excluded = 'a, button, input, textarea, select, option, script, style, noscript, svg, code, pre, [contenteditable], [role="button"], [role="menu"], [role="menuitem"], [role="textbox"], ._JX_container, ._JX_global_copy_reference, ._JX_inline_copy_button';
+  const excluded = 'a, button, input, textarea, select, option, script, style, noscript, svg, code, pre, [contenteditable], [role="button"], [role="menu"], [role="menuitem"], [role="textbox"], ._JX_container, ._JX_shortcuts_dialog, ._JX_snack, ._JX_global_copy_reference, ._JX_inline_copy_button';
   const references = new Map();
   let frame = 0;
   const makeButton = key => createCopyButton(documentRef, {
@@ -471,7 +471,7 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy, isAlive) 
     }
     const relevant = records.some(record => {
       const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
-      return !element?.closest('._JX_container, ._JX_snack, ._JX_inline_copy_button');
+      return !element?.closest('._JX_container, ._JX_shortcuts_dialog, ._JX_snack, ._JX_inline_copy_button');
     });
     if (!relevant) return;
     if (!frame) frame = documentRef.defaultView.requestAnimationFrame(scan);

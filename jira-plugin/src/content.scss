@@ -22,6 +22,133 @@
   --jx-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+body dialog._JX_shortcuts_dialog {
+  background: var(--jx-surface);
+  border: 1px solid var(--jx-border-strong);
+  border-radius: 10px;
+  box-sizing: border-box;
+  color: var(--jx-ink);
+  font: 14px/1.5 var(--jx-font);
+  inline-size: min(38rem, calc(100% - 2rem));
+  max-block-size: calc(100% - 2rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: clamp(16px, 3vw, 24px);
+
+  &::backdrop { background: oklch(0% 0 none / 40%); }
+
+  h2 {
+    font-size: 18px;
+    margin-block: 0 8px;
+  }
+  p { margin-block: 8px; }
+  ._JX_shortcuts_context { color: var(--jx-ink-2); }
+
+  form, ._JX_shortcuts_field {
+    display: grid;
+    gap: 8px;
+  }
+  form { gap: 16px; }
+  label { font-weight: 600; }
+
+  input:not([type='checkbox']), select, textarea {
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
+    border-radius: 5px;
+    box-sizing: border-box;
+    color: inherit;
+    font: inherit;
+    inline-size: 100%;
+    padding: 8px;
+  }
+
+  textarea {
+    min-block-size: 80px;
+    resize: vertical;
+  }
+
+  button {
+    background: var(--jx-surface);
+    border: 1px solid var(--jx-border-strong);
+    border-radius: 5px;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    min-block-size: 32px;
+    padding: 5px 10px;
+
+    &:active { background: var(--jx-fill-pressed); }
+    &:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+    &[type='submit'] {
+      background: var(--jx-accent);
+      color: oklch(100% 0 none);
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--jx-focus);
+    outline-offset: 2px;
+  }
+  ._JX_shortcuts_footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  ._JX_shortcuts_check {
+    align-items: start;
+    display: flex;
+    font-weight: 400;
+    gap: 8px;
+  }
+  [role='listbox'] {
+    display: grid;
+    gap: 4px;
+    max-block-size: 180px;
+    overflow: auto;
+  }
+  [role='option'] { text-align: start; }
+  [role='option'].is-highlighted {
+    background: var(--jx-accent-subtle);
+    border-color: var(--jx-accent);
+  }
+  table {
+    border-collapse: collapse;
+    inline-size: 100%;
+    text-align: start;
+  }
+  caption {
+    color: var(--jx-ink-2);
+    padding-block-end: 12px;
+    text-align: start;
+  }
+  td, th {
+    border-block-end: 1px solid var(--jx-border);
+    padding: 8px;
+    text-align: start;
+  }
+  th:first-child { white-space: nowrap; }
+
+  @media (hover: hover) and (pointer: fine) {
+    button:not(:disabled):hover { background: var(--jx-fill-hover); }
+    button[type='submit']:not(:disabled):hover { background: var(--jx-accent-hover); }
+  }
+}
+
+html[data-jhl-theme='dark'] body dialog._JX_shortcuts_dialog {
+  --jx-surface: oklch(22% 0 none);
+  --jx-ink: oklch(94% 0 none);
+  --jx-ink-2: oklch(76% 0 none);
+  --jx-border: oklch(100% 0 none / 12%);
+  --jx-border-strong: oklch(100% 0 none / 25%);
+  --jx-fill-hover: oklch(100% 0 none / 8%);
+  --jx-fill-pressed: oklch(100% 0 none / 14%);
+  color-scheme: dark;
+}
+
 body ._JX {
   // Chip text is "Label: value": the label sits on the metadata rung so the
   // value carries the chip.

@@ -30,7 +30,7 @@ module.exports = {
   projects: [
     {
       name: 'deep-modules',
-      testMatch: /(?:^|\/)deep-modules\/(?:comment-lifecycle|jira-field-editing|linked-issue-lifecycle|popup-quick-actions|popup-session|transport-contract|quickview-issue-data|watcher-lifecycle|inline-copy)\.spec\.js$/,
+      testMatch: /(?:^|\/)deep-modules\/(?:comment-lifecycle|jira-field-editing|linked-issue-lifecycle|popup-quick-actions|popup-shortcuts|popup-session|transport-contract|quickview-issue-data|watcher-lifecycle|inline-copy)\.spec\.js$/,
     },
     {
       name: 'mock-edge',
@@ -38,7 +38,7 @@ module.exports = {
     },
     {
       name: 'mock-popup',
-      testMatch: /(?:^|\/)(?:attachment-link-preview|mock-jira-flows|advanced-mock-flows|jira-inline-copy)\.spec\.js$/,
+      testMatch: /(?:^|\/)(?:attachment-link-preview|popup-shortcuts|mock-jira-flows|advanced-mock-flows|jira-inline-copy)\.spec\.js$/,
       grep: /@mock-only/,
     },
     {
