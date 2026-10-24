@@ -38,7 +38,7 @@ module.exports = {
     },
     {
       name: 'mock-popup',
-      testMatch: /(?:^|\/)(?:mock-jira-flows|advanced-mock-flows|jira-inline-copy)\.spec\.js$/,
+      testMatch: /(?:^|\/)(?:attachment-link-preview|mock-jira-flows|advanced-mock-flows|jira-inline-copy)\.spec\.js$/,
       grep: /@mock-only/,
     },
     {

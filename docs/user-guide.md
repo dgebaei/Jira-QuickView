@@ -328,6 +328,8 @@ Most users should keep `System`. Use `Light` or `Dark` only if you want Jira Qui
 
 `Open Jira issue links in QuickView instead of navigating` is also enabled by default. A plain left click on a genuine Jira issue link opens and pins QuickView instead of leaving the page. Turn it off to preserve normal link navigation. Middle-click and modifier-click always keep native browser behavior.
 
+`Open Jira image attachments in QuickView instead of downloading` is disabled by default. When enabled, a plain left click on a direct Jira image attachment link on an allowed page opens the image in the QuickView preview overlay instead of starting a download. This works on pages such as Gmail and Outlook Web, including common Google and Outlook Safe Links redirects. PDFs, Office documents, videos, and archives keep their normal behavior, and Jira's own pages keep Jira's native preview. Middle-click, modifier-click, context-menu opens, and links marked for download are never intercepted.
+
 ### 4.3 Advanced: Show Advanced Settings
 
 ![Show advanced settings toggle](screenshots/user-guide/options-advanced-toggle.png)
