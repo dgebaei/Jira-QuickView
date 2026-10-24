@@ -13,10 +13,16 @@ import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
+import {createBrowserPopupShortcuts} from 'src/popup-session/browser-popup-shortcuts';
 import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {
+  buildAttachmentPreviewUrls,
+  guessAttachmentMimeType,
+  parseJiraAttachmentLink,
+} from 'src/jira-attachment-links';
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
 import {createBrowserAttachmentMediaAdapter} from 'src/browser-attachment-media-adapter';
 import {createBrowserPopupSurface} from 'src/browser-popup-surface';
@@ -299,6 +305,7 @@ async function mainAsyncLocal() {
   const activation = resolveQuickViewActivation(config);
   const hoverModifierKey = activation.hoverModifierKey;
   const {openQuickViewOnClick, hoverActivationMode} = activation;
+  const openAttachmentPreviews = config.openAttachmentPreviews === true;
   const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
   let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
@@ -554,6 +561,7 @@ async function mainAsyncLocal() {
       return popupModel.commit(frame, context);
     },
     commitLoading(frame, context) {
+      popupShortcuts.close(true);
       return popupRenderer.renderLoading(frame, context);
     },
     commitVisible(frame, context) {
@@ -721,6 +729,70 @@ async function mainAsyncLocal() {
     attachment.previewDisplaySrc = previewDataUrl;
     attachment.thumbnail = inlineDataUrl;
     return attachment;
+  }
+
+  // ── Jira Attachment Link Previews ───────────────────────────
+
+  function isImageMimeType(mimeType) {
+    return String(mimeType || '').trim().toLowerCase().startsWith('image/');
+  }
+
+  function openJiraAttachmentInTab(url) {
+    if (!url) return;
+    sendMessage({action: 'openTab', url}).catch(() => {});
+  }
+
+  async function openJiraAttachmentPreview(attachmentLink) {
+    try {
+      const urls = buildAttachmentPreviewUrls(INSTANCE_URL, attachmentLink.attachmentId);
+      let filename = attachmentLink.filename;
+      let mimeType = guessAttachmentMimeType(filename);
+
+      if (!mimeType && attachmentLink.kind !== 'thumbnail') {
+        const metadata = await get(urls.metadataUrl).catch(() => null);
+        if (metadata) {
+          filename = String(metadata.filename || filename || '').trim();
+          mimeType = String(metadata.mimeType || guessAttachmentMimeType(filename) || '').trim().toLowerCase();
+        }
+      }
+
+      if (mimeType && !isImageMimeType(mimeType)) {
+        openJiraAttachmentInTab(attachmentLink.jiraUrl);
+        return;
+      }
+
+      const candidateUrl = attachmentLink.kind === 'thumbnail'
+        ? urls.thumbnailUrl
+        : urls.contentUrl;
+      const displayUrl = await getDisplayImageUrl(candidateUrl, mimeType);
+      if (!isImageDataUrl(displayUrl)) {
+        openJiraAttachmentInTab(attachmentLink.jiraUrl);
+        return;
+      }
+
+      await popupShell.dispatch({type: 'open-preview', source: displayUrl});
+    } catch (error) {
+      openJiraAttachmentInTab(attachmentLink.jiraUrl);
+    }
+  }
+
+  function getClickedAttachmentLink(target) {
+    if (!openAttachmentPreviews || !target?.closest) return null;
+    const link = target.closest('a[href]');
+    if (!link || link.closest('._JX_container') || link.hasAttribute('download')
+      || link.matches('[role="menuitem"]')
+      || link.parentElement?.closest('button, input, textarea, select, option, summary, [role="button"], [role="menuitem"], [contenteditable]')) return null;
+    try {
+      if (new URL(document.location.href).origin === new URL(INSTANCE_URL).origin) return null;
+    } catch (error) {
+      return null;
+    }
+    const attachmentLink = parseJiraAttachmentLink(link.getAttribute('href'), {
+      baseUrl: document.location.href,
+      instanceUrl: INSTANCE_URL,
+    });
+    if (!attachmentLink || attachmentLink.isKnownNonImage) return null;
+    return attachmentLink;
   }
 
   // ── Text & HTML Formatting ─────────────────────────────────
@@ -2617,6 +2689,52 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
   });
+  const popupShortcuts = createBrowserPopupShortcuts({
+    container: container[0],
+    instanceUrl: INSTANCE_URL,
+    jira,
+    issueData: quickViewIssueData,
+    loadViewer: getCurrentUserInfo,
+    getSession: () => ({sessionId: currentPopupSessionId(), issueSnapshot: currentPopupState()?.issueSnapshot}),
+    readSprintsFromIssue,
+    isBusy: () => !!(getActiveFieldEditState() || popupQuickActions.view().loadingKey ||
+      currentPopupState()?.descriptionEditState?.open || currentPopupState()?.timeTrackingEditState?.saving ||
+      commentLifecycle.view().rowAction || popupShell.view().previewOpen),
+    pin: () => popupShell.dispatch({type: 'pin', announce: false}),
+    beginFieldEdit: startFieldEdit,
+    async quickAction(actionKey) {
+      const result = await popupSession.dispatch({type: 'execute-quick-action', actionKey});
+      if (result.actionOutcome?.kind === 'ignored') snackBar('Already assigned to you, or this action is unavailable.');
+    },
+    async copy(plain) {
+      const issue = currentPopupState().issueData;
+      const url = `${INSTANCE_URL}browse/${encodeURIComponent(issue.key)}`;
+      if (plain) {
+        await navigator.clipboard.writeText(url);
+        snackBar('Copied issue URL');
+      } else await copyIssueReferenceWithFeedback({key: issue.key, summary: issue.fields.summary, url});
+    },
+    openIssue: () => container.find('#_JX_title_link')[0]?.click(),
+    focusComment() {
+      const input = container.find('._JX_comment_input')[0];
+      if (input) input.focus();
+      else snackBar('Comments are unavailable or hidden in your layout.');
+    },
+    async loadPreset(key) {
+      const stored = await storageLocalGet(['jqv.quickClosePresets']);
+      return stored['jqv.quickClosePresets']?.[key] || null;
+    },
+    async savePreset(key, preset) {
+      const stored = await storageLocalGet(['jqv.quickClosePresets']);
+      await storageLocalSet({'jqv.quickClosePresets': {...stored['jqv.quickClosePresets'], [key]: preset}});
+    },
+    async onSaved(result) {
+      if (result.sessionId !== currentPopupSessionId() || !result.refreshedSnapshot?.core) return;
+      await popupSession.dispatch({type: 'render', reason: 'shortcut-saved', issueSnapshot: result.refreshedSnapshot});
+    },
+    announce: snackBar,
+  });
+  popupShortcuts.install();
   // ── Field Editing ─────────────────────────────────────────
   function attachJiraFieldEditingToPopup() {
     const popupView = currentPopupState();
@@ -3431,6 +3549,7 @@ async function mainAsyncLocal() {
 
   // ── Container Lifecycle ────────────────────────────────────
   async function clearPopupSurface() {
+    popupShortcuts.close(true);
     lastHoveredKey = '';
     clearDescriptionStatusTimer();
     const descriptionStateSnapshot = currentPopupState()?.descriptionEditState;
@@ -3826,6 +3945,17 @@ async function mainAsyncLocal() {
         ? e.pageY
         : rect.top + window.scrollY + rect.height;
       triggerPopupForKey(clickedIssue.key, pointerX, pointerY, true, 'click');
+    }, true);
+  }
+
+  if (openAttachmentPreviews) {
+    document.addEventListener('click', function (e) {
+      if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const attachmentLink = getClickedAttachmentLink(e.target);
+      if (!attachmentLink) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openJiraAttachmentPreview(attachmentLink).catch(() => {});
     }, true);
   }
 

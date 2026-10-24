@@ -128,6 +128,16 @@ function defaultRouteContent(origin) {
         <span id="near-token-key" class="marker">JRACLOUD-97846</span><span id="near-token-gap" style="display:inline-block; width: 28px; height: 1.8em;"></span><span>adjacent blank area</span>
       </div>
     `),
+    '/attachment-links': createHtml('Attachment Links Fixture', `
+      <h1>Attachment Links</h1>
+      <div class="card stack">
+        <a id="attachment-secure-image" class="target" href="#">Secure image attachment</a>
+        <a id="attachment-content-image" class="target" href="#">REST content image attachment</a>
+        <a id="attachment-wrapped-image" class="target" href="#">Wrapped image attachment</a>
+        <a id="attachment-pdf" class="target" href="#">PDF attachment</a>
+        <a id="attachment-download" class="target" href="#" download>Download image attachment</a>
+      </div>
+    `),
   };
 }
 

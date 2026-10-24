@@ -9,6 +9,7 @@
     "themeMode": "unmanaged",
     "hoverDepth": "locked",
     "hoverModifierKey": "locked",
+    "openAttachmentPreviews": "default",
     "displayFields": "default",
     "tooltipLayout": "default",
     "customFields": "default"
@@ -21,6 +22,7 @@
     ],
     "hoverDepth": "deep",
     "hoverModifierKey": "shift",
+    "openAttachmentPreviews": true,
     "displayFields": {
       "labels": false,
       "comments": true

@@ -58,6 +58,7 @@ export default {
   v15upgrade: false,
   customFields: [],
   openQuickViewOnClick: true,
+  openAttachmentPreviews: false,
   hoverActivationMode: 'automatic',
   hoverDepth: 'exact',
   hoverModifierKey: 'any',
