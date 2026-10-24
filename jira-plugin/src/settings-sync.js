@@ -22,6 +22,7 @@ export const DEFAULT_SYNC_POLICY = {
   hoverDepth: 'default',
   hoverModifierKey: 'default',
   inlineCopyButtons: 'default',
+  openAttachmentPreviews: 'default',
   displayFields: 'default',
   tooltipLayout: 'default',
   customFields: 'default',
@@ -288,6 +289,10 @@ export function normalizeSettingsPayload(payload) {
 
   if (Object.prototype.hasOwnProperty.call(rawSettings, 'inlineCopyButtons')) {
     settings.inlineCopyButtons = rawSettings.inlineCopyButtons !== false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(rawSettings, 'openAttachmentPreviews')) {
+    settings.openAttachmentPreviews = rawSettings.openAttachmentPreviews === true;
   }
 
   if (isObject(rawSettings.displayFields)) {

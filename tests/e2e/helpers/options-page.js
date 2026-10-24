@@ -14,6 +14,7 @@ function optionsPageModel(page) {
     domainsInput: page.getByTestId('options-domains'),
     inlineCopyButtonsCheckbox: page.getByTestId('options-inline-copy-buttons'),
     openQuickViewOnClickCheckbox: page.getByTestId('options-open-quickview-on-click'),
+    openAttachmentPreviewsCheckbox: page.getByTestId('options-open-attachment-previews'),
     hoverActivationModeSelect: page.getByTestId('options-hover-activation-mode'),
     advancedToggle: page.getByTestId('options-advanced-toggle'),
     hoverDepthSelect: page.getByTestId('options-hover-depth'),

@@ -18,6 +18,11 @@ import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation}
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {
+  buildAttachmentPreviewUrls,
+  guessAttachmentMimeType,
+  parseJiraAttachmentLink,
+} from 'src/jira-attachment-links';
 import {createBrowserMessageJiraAdapter} from 'src/browser-message-jira-adapter';
 import {createBrowserAttachmentMediaAdapter} from 'src/browser-attachment-media-adapter';
 import {createBrowserPopupSurface} from 'src/browser-popup-surface';
@@ -299,6 +304,7 @@ async function mainAsyncLocal() {
   const activation = resolveQuickViewActivation(config);
   const hoverModifierKey = activation.hoverModifierKey;
   const {openQuickViewOnClick, hoverActivationMode} = activation;
+  const openAttachmentPreviews = config.openAttachmentPreviews === true;
   const customFields = normalizeCustomFields(config.customFields, tooltipLayout);
   let stopSyncDocumentTheme = syncDocumentTheme(document, config.themeMode || DEFAULT_THEME_MODE);
   let jiraProjects = [];
@@ -714,6 +720,70 @@ async function mainAsyncLocal() {
     attachment.previewDisplaySrc = previewDataUrl;
     attachment.thumbnail = inlineDataUrl;
     return attachment;
+  }
+
+  // ── Jira Attachment Link Previews ───────────────────────────
+
+  function isImageMimeType(mimeType) {
+    return String(mimeType || '').trim().toLowerCase().startsWith('image/');
+  }
+
+  function openJiraAttachmentInTab(url) {
+    if (!url) return;
+    sendMessage({action: 'openTab', url}).catch(() => {});
+  }
+
+  async function openJiraAttachmentPreview(attachmentLink) {
+    try {
+      const urls = buildAttachmentPreviewUrls(INSTANCE_URL, attachmentLink.attachmentId);
+      let filename = attachmentLink.filename;
+      let mimeType = guessAttachmentMimeType(filename);
+
+      if (!mimeType && attachmentLink.kind !== 'thumbnail') {
+        const metadata = await get(urls.metadataUrl).catch(() => null);
+        if (metadata) {
+          filename = String(metadata.filename || filename || '').trim();
+          mimeType = String(metadata.mimeType || guessAttachmentMimeType(filename) || '').trim().toLowerCase();
+        }
+      }
+
+      if (mimeType && !isImageMimeType(mimeType)) {
+        openJiraAttachmentInTab(attachmentLink.jiraUrl);
+        return;
+      }
+
+      const candidateUrl = attachmentLink.kind === 'thumbnail'
+        ? urls.thumbnailUrl
+        : urls.contentUrl;
+      const displayUrl = await getDisplayImageUrl(candidateUrl, mimeType);
+      if (!isImageDataUrl(displayUrl)) {
+        openJiraAttachmentInTab(attachmentLink.jiraUrl);
+        return;
+      }
+
+      await popupShell.dispatch({type: 'open-preview', source: displayUrl});
+    } catch (error) {
+      openJiraAttachmentInTab(attachmentLink.jiraUrl);
+    }
+  }
+
+  function getClickedAttachmentLink(target) {
+    if (!openAttachmentPreviews || !target?.closest) return null;
+    const link = target.closest('a[href]');
+    if (!link || link.closest('._JX_container') || link.hasAttribute('download')
+      || link.matches('[role="menuitem"]')
+      || link.parentElement?.closest('button, input, textarea, select, option, summary, [role="button"], [role="menuitem"], [contenteditable]')) return null;
+    try {
+      if (new URL(document.location.href).origin === new URL(INSTANCE_URL).origin) return null;
+    } catch (error) {
+      return null;
+    }
+    const attachmentLink = parseJiraAttachmentLink(link.getAttribute('href'), {
+      baseUrl: document.location.href,
+      instanceUrl: INSTANCE_URL,
+    });
+    if (!attachmentLink || attachmentLink.isKnownNonImage) return null;
+    return attachmentLink;
   }
 
   // ── Text & HTML Formatting ─────────────────────────────────
@@ -3855,6 +3925,17 @@ async function mainAsyncLocal() {
         ? e.pageY
         : rect.top + window.scrollY + rect.height;
       triggerPopupForKey(clickedIssue.key, pointerX, pointerY, true, 'click');
+    }, true);
+  }
+
+  if (openAttachmentPreviews) {
+    document.addEventListener('click', function (e) {
+      if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const attachmentLink = getClickedAttachmentLink(e.target);
+      if (!attachmentLink) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openJiraAttachmentPreview(attachmentLink).catch(() => {});
     }, true);
   }
 

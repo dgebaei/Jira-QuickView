@@ -990,6 +990,22 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return SEND_RESPONSE_IS_ASYNC;
   }
 
+  if (request.action === 'openTab') {
+    assertAllowedRequestUrl(request.url)
+      .then(url => new Promise((resolve, reject) => {
+        chrome.tabs.create({url, active: true}, tab => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(tab);
+        });
+      }))
+      .then(tab => sendResponse({result: {id: tab?.id ?? null}}))
+      .catch(error => sendResponse({error: error.message}));
+    return SEND_RESPONSE_IS_ASYNC;
+  }
+
   if (request.action === 'openOptionsPage') {
     chrome.runtime.openOptionsPage();
     sendResponse({result: true});

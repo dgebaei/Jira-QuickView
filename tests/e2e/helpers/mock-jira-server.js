@@ -15,6 +15,16 @@ const ATTACHMENT_FIXTURE_BY_ID = {
   '902': 'history-image-2.png',
   '903': 'standalone-graph.png',
 };
+const EXTRA_ATTACHMENT_FIXTURES = {
+  '904': {
+    filename: 'release-notes.pdf',
+    mimeType: 'application/pdf',
+  },
+  '905': {
+    filename: 'release-notes.txt',
+    mimeType: 'text/plain',
+  },
+};
 const ISSUE_LINK_TYPES = [
   {id: '10000', name: 'Blocks', outward: 'blocks', inward: 'is blocked by'},
   {id: '10001', name: 'Cloners', outward: 'clones', inward: 'is cloned by'},
@@ -1096,6 +1106,26 @@ async function createMockJiraServer() {
 
   const scenarioIn = (...names) => names.includes(state.scenario);
 
+  const findAttachmentById = attachmentId => {
+    const id = String(attachmentId || '');
+    const attachment = state.issue.attachments.concat(state.uploadedAttachments).find(candidate => {
+      return String(candidate.id || '') === id;
+    });
+    if (attachment) {
+      return attachment;
+    }
+    const extra = EXTRA_ATTACHMENT_FIXTURES[id];
+    if (!extra) {
+      return null;
+    }
+    return {
+      id,
+      ...extra,
+      content: buildAttachmentContentUrl(origin, id),
+      thumbnail: buildAttachmentThumbnailUrl(origin, id),
+    };
+  };
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, origin);
     const pathname = url.pathname;
@@ -1529,11 +1559,27 @@ async function createMockJiraServer() {
       return;
     }
 
+    if (/^\/rest\/api\/2\/attachment\/\d+$/.test(pathname) && req.method === 'GET') {
+      const attachmentId = pathname.split('/').pop();
+      const attachment = findAttachmentById(attachmentId);
+      if (!attachment) {
+        json(res, 404, {errorMessages: ['Attachment not found']});
+        return;
+      }
+      json(res, 200, {
+        id: attachment.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        size: 4096,
+        content: attachment.content,
+        thumbnail: attachment.thumbnail,
+      });
+      return;
+    }
+
     if (/^\/rest\/api\/2\/attachment\/(?:content|thumbnail)\/[^/]+$/.test(pathname) && req.method === 'GET') {
       const attachmentId = pathname.split('/').pop();
-      const attachment = state.issue.attachments.concat(state.uploadedAttachments).find(candidate => {
-        return String(candidate.id || '') === String(attachmentId || '');
-      });
+      const attachment = findAttachmentById(attachmentId);
       if (!attachment) {
         json(res, 404, {errorMessages: ['Attachment not found']});
         return;
