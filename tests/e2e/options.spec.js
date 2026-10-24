@@ -8,6 +8,7 @@ const {contentBlockItem, customFieldLibraryItem, openAdvancedSettings, optionsPa
 const {buildExtensionConfig, requireJiraTestTarget} = require('./helpers/test-targets');
 
 const CURRENT_EXTENSION_VERSION = String(extensionManifest.version || '');
+const CURRENT_EXTENSION_DISPLAY_VERSION = String(extensionManifest.version_name || extensionManifest.version || '');
 const themeScreenshotDir = String(process.env.JHL_CAPTURE_THEME_SCREENSHOTS || '').trim();
 
 function baseConfig(servers, target, overrides = {}) {
@@ -52,10 +53,10 @@ test('shows whether there are unsaved changes in the hero status pill', async ({
 test('links the hero version badge to the matching GitHub release', async ({optionsPage}) => {
   const form = optionsPageModel(optionsPage);
 
-  await expect(form.heroVersionLink).toHaveText(`v${CURRENT_EXTENSION_VERSION}`);
+  await expect(form.heroVersionLink).toHaveText(`v${CURRENT_EXTENSION_DISPLAY_VERSION}`);
   await expect(form.heroVersionLink).toHaveAttribute(
     'href',
-    `https://github.com/dgebaei/Jira-QuickView/releases/tag/${CURRENT_EXTENSION_VERSION}`
+    `https://github.com/dgebaei/Jira-QuickView/releases/tag/${CURRENT_EXTENSION_DISPLAY_VERSION}`
   );
 });
 

@@ -26,6 +26,8 @@ To get started, enter your Jira instance URL, add the pages where Jira QuickView
 
 Choose a light or dark appearance, and organize popup fields and content blocks in the advanced settings.
 
+Optionally preview Jira image attachment links on enabled pages, including links wrapped by Gmail or Outlook. Image link previews are off by default; unsupported files and failed previews fall back to Jira.
+
 Jira QuickView uses your existing signed-in Jira browser session and follows your Jira permissions and workflow rules. Optional GitLab details use your existing GitLab browser session and permissions. It does not operate a developer-run backend or send your data to developer analytics services. You control which sites the extension can access.
 
 Support and documentation: https://dgebaei.github.io/Jira-QuickView/
@@ -47,9 +49,9 @@ English
 | Asset | Dimensions | Status | Filename |
 |-------|-----------|--------|----------|
 | Store Icon | 128×128 PNG | ✅ Ready | `docs/chrome-web-store-assets/icon-128.png` |
-| Screenshot 1 | 1280×800 PNG | ✅ Ready | `docs/chrome-web-store-assets/screenshot-01-overview-1280x800.png` |
+| Screenshot 1 | 1280×800 PNG | 🟡 Refresh for keyboard-help control | `docs/chrome-web-store-assets/screenshot-01-overview-1280x800.png` |
 | Screenshot 2 | 1280×800 PNG | ✅ Ready | `docs/chrome-web-store-assets/screenshot-02-inline-editing-1280x800.png` |
-| Screenshot 3 | 1280×800 PNG | ✅ Ready | `docs/chrome-web-store-assets/screenshot-03-pull-requests-1280x800.png` |
+| Screenshot 3 | 1280×800 PNG | 🟡 Refresh for compact PR grid | `docs/chrome-web-store-assets/screenshot-03-pull-requests-1280x800.png` |
 | Screenshot 4 | 1280×800 PNG | ✅ Ready | `docs/chrome-web-store-assets/screenshot-04-comment-compose-1280x800.png` |
 | Screenshot 5 | 1280×800 PNG | 🟡 Refresh for redesigned Options page | `docs/chrome-web-store-assets/screenshot-05-options-1280x800.png` |
 | Small Promo Tile | 440×280 PNG | ✅ Ready | `docs/chrome-web-store-assets/promo-tile-440x280.png` |
@@ -107,6 +109,8 @@ https://dgebaei.github.io/Jira-QuickView/privacy-policy.html
 **Visibility**: Public  
 **Regions**: All regions
 
+**3.0 beta distribution**: GitHub prerelease only, installed unpacked. No beta store item is configured, and the existing stable listing is unchanged. The release workflow intentionally skips prereleases for Chrome Web Store submission. Store screenshot refreshes listed above remain prerequisites for a future store release, not for this GitHub beta.
+
 ## Developer Info
 
 **Publisher Name**
@@ -129,7 +133,7 @@ https://dgebaei.github.io/Jira-QuickView/
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| Unreleased | 2026-10-24 | Compact pull request grid with optional GitLab signals and last-update details; popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, browser-local quick-close defaults, and documentation and Options redesign | Draft; refresh screenshots before submission |
+| 3.0.0-beta.1 | 2026-10-24 | Opt-in Jira image attachment link previews; compact pull request grid with optional GitLab signals and last-update details; popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, browser-local quick-close defaults, and documentation and Options redesign | GitHub prerelease only; not submitted to the store |
 | 2.9.2 | 2026-10-15 | Children, linked issues, and external links in one links panel with a combined count, View in Jira links, removable external links, and popup titles clamped to two lines | Ready to submit |
 | 2.9.1 | 2026-10-15 | Click activation on Jira board cards and current-issue keys, no copy icon on Jira dialog Cancel links, single popup frame with an all-round shadow | Ready to submit |
 | 2.9.0 | 2026-10-14 | Calmer neutral popup and Options design, compact field chips, popup keyboard focus with contained Escape, outside-click editor close, real Jira versions only, and copy-icon and assignee-avatar fixes | Ready to submit |

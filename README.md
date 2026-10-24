@@ -19,12 +19,31 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Action Jira email notifications directly from Gmail, Outlook, and other enabled inbox-style pages
 - Rich popup for issue metadata, linked Jira issues, description, attachments, comments, and linked pull requests
 - Children, linked issues, and external links in one panel, with key/summary search, multi-key entry, status and assignee context, and confirmed removal
-- PR visibility inside the card, including title, author, branch, and status
+- Compact linked PR grid with author names, target branches, sortable last-update details, and optional GitLab approval, review, CI, and conflict signals
+- Opt-in Jira image attachment previews from links on allowed pages, including Gmail and Outlook redirect wrappers
 - Inline editing for supported Jira fields and supported custom field types
 - Configurable layout with Jira custom fields placed directly into the popup rows
 - Comment drafting with mentions and support for comment reactions
 - Jira-backed quick actions and workflow transitions
 - Copy rich issue links beside Jira references in Jira and on allowed pages
+
+## What's new in 3.0 beta
+
+**[3.0.0-beta.1](https://github.com/dgebaei/Jira-QuickView/releases/tag/3.0.0-beta.1) is a GitHub prerelease for manual testing.** The Chrome Web Store remains on the stable release; installing the beta is optional.
+
+- Preview Jira image attachment links without leaving allowed pages. Enable **Options → Appearance → Preview Jira image attachments in QuickView**; it is off by default. Non-images and failed previews fall back to Jira.
+- Use number shortcuts while QuickView has focus: assignment, sprint planning, resolve/close, status, comments, copying, and opening Jira. Press **Alt+0** for help. Sprint/assignment and resolve flows require confirmation before writing.
+- Review a compact pull request grid with last-update sorting and details. GitLab enrichment uses your existing signed-in session and requires site access; unavailable signals remain unknown rather than showing success.
+- Configure the extension in redesigned light/dark Options, and browse refreshed documentation with keyboard-accessible screenshot viewing.
+
+### Try the beta
+
+1. Download `jira-plugin-build.zip` from the [beta release](https://github.com/dgebaei/Jira-QuickView/releases/tag/3.0.0-beta.1) and extract it into a separate folder.
+2. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`.
+3. Disable the stable Jira QuickView extension while testing to avoid duplicate popups and actions. Configure the beta separately, or export and import your settings.
+4. To return to stable, disable or remove the unpacked beta and re-enable the store extension.
+
+Live Gmail/Outlook attachment behavior, authenticated GitLab enrichment, and OS-specific Alt/Option shortcut handling still need manual verification. Report problems in the [issue tracker](https://github.com/dgebaei/Jira-QuickView/issues), including the beta version and browser/platform.
 
 ## What's new in 2.9.2
 
@@ -80,7 +99,7 @@ The Options page lets you choose color mode, click and hover activation, row fie
 
 ## Privacy
 
-- Uses your existing Jira browser session
+- Uses your existing Jira browser session and, with granted site access, your GitLab session for optional read-only PR details
 - Stores no separate Jira password
 - Sends requests from the browser to your Jira instance
 - Honors Jira permissions, validation rules, and workflow restrictions

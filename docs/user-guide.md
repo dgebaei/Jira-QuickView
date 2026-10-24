@@ -12,6 +12,16 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
+### What's new in 3.0 beta
+
+The [3.0.0-beta.1 GitHub prerelease](https://github.com/dgebaei/Jira-QuickView/releases/tag/3.0.0-beta.1) combines opt-in Jira image attachment previews, popup-scoped keyboard triage, a compact pull request grid with optional GitLab signals, and redesigned Options and documentation. No new Chrome permissions are required.
+
+The beta is **not distributed through the stable Chrome Web Store listing**. Download `jira-plugin-build.zip` from the release, extract it, and use **chrome://extensions → Developer mode → Load unpacked** to select the folder containing `manifest.json`. Disable the stable extension while testing to prevent duplicate actions. Settings belong to each installation; use export/import if needed. To return to stable, disable or remove the beta and re-enable the store extension.
+
+Attachment previews are off by default; enable **Options → Appearance → Preview Jira image attachments in QuickView**. Press **Alt+0** while QuickView has focus to review shortcuts. GitLab details need a working browser login and granted access to the linked host; unavailable signals are unknown, not proof that a merge is ready. Remembered quick-close defaults stay local to this browser and are not exported or shared by Team Sync.
+
+Live Gmail/Outlook and GitLab verification, plus platform-specific Alt/Option behavior, remain beta testing tasks. Screenshots elsewhere in this guide may show an earlier Options or popup appearance.
+
 ### What's new in 2.9.2
 
 - The links panel now shows children (sub-tasks and epic children), linked issues, and external links in three sections, and its count includes all three.

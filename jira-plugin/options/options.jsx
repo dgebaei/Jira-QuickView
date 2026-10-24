@@ -31,7 +31,8 @@ import {
 import 'options/options.scss';
 
 const TOOLTIP_LAYOUT_ZONES = ['row1', 'row2', 'row3'];
-const EXTENSION_VERSION = chrome.runtime.getManifest().version || '';
+const EXTENSION_MANIFEST = chrome.runtime.getManifest();
+const EXTENSION_VERSION = EXTENSION_MANIFEST.version_name || EXTENSION_MANIFEST.version || '';
 const EXTENSION_RELEASE_URL = `https://github.com/dgebaei/Jira-QuickView/releases/tag/${EXTENSION_VERSION}`;
 const HERO_LINKS = [
   {
