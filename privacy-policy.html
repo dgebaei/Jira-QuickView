@@ -66,6 +66,7 @@
         <h2 id="information-the-extension-handles">Information The Extension Handles</h2>
         <h3>Extension configuration data</h3>
         <p>Jira QuickView stores extension settings in Chrome storage so the extension can keep working across browser sessions. This can include your configured Jira instance URL, enabled pages or domains, popup layout, custom field IDs, theme settings, hover preferences, Team Sync source details, and Team Sync status metadata.</p>
+        <p>If you explicitly remember quick-close defaults, the selected workflow defaults are stored locally in this browser, scoped to the Jira instance, project, and issue type. Actual closing comments are not stored as defaults. Quick-close defaults are not exported or included in Team Sync.</p>
 
         <h3>Page content on enabled pages</h3>
         <p>When Jira QuickView is enabled on a page, it scans page text locally in your browser to detect Jira issue keys such as <code>ABC-123</code>. This page scanning is used only to provide the core user-facing feature of the extension. The extension does not send full page contents to the developer.</p>
