@@ -100,6 +100,7 @@ function ConfigPage(props) {
   const [hoverDepth, setHoverDepth] = useState(props.hoverDepth || defaultConfig.hoverDepth);
   const initialActivation = resolveQuickViewActivation(props);
   const [openQuickViewOnClick, setOpenQuickViewOnClick] = useState(initialActivation.openQuickViewOnClick);
+  const [openAttachmentPreviews, setOpenAttachmentPreviews] = useState(props.openAttachmentPreviews === true);
   const [hoverActivationMode, setHoverActivationMode] = useState(initialActivation.hoverActivationMode);
   const [hoverModifierKey, setHoverModifierKey] = useState(initialActivation.hoverModifierKey);
   const [inlineCopyButtons, setInlineCopyButtons] = useState(props.inlineCopyButtons !== false);
@@ -128,6 +129,7 @@ function ConfigPage(props) {
     domainsText: (props.domains || []).join(', '),
     themeMode: normalizeThemeMode(props.themeMode || DEFAULT_THEME_MODE),
     openQuickViewOnClick: initialActivation.openQuickViewOnClick,
+    openAttachmentPreviews: props.openAttachmentPreviews === true,
     hoverActivationMode: initialActivation.hoverActivationMode,
     hoverDepth: props.hoverDepth || defaultConfig.hoverDepth,
     hoverModifierKey: initialActivation.hoverModifierKey,
@@ -140,6 +142,7 @@ function ConfigPage(props) {
     domainsText,
     themeMode,
     openQuickViewOnClick,
+    openAttachmentPreviews,
     hoverActivationMode,
     hoverDepth,
     hoverModifierKey,
@@ -181,6 +184,7 @@ function ConfigPage(props) {
     const nextActivation = resolveQuickViewActivation(config);
     const nextHoverDepth = config.hoverDepth || defaultConfig.hoverDepth;
     const nextHoverModifierKey = nextActivation.hoverModifierKey;
+    const nextOpenAttachmentPreviews = config.openAttachmentPreviews === true;
     const nextInlineCopyButtons = config.inlineCopyButtons !== false;
     const nextCustomFields = normalizeCustomFields(config.customFields, nextTooltipLayout)
       .map((f, i) => ({...f, _uid: f._uid || `cf-${Date.now()}-${i}`}));
@@ -189,6 +193,7 @@ function ConfigPage(props) {
     setDomainsText(nextDomainsText);
     setThemeMode(nextThemeMode);
     setOpenQuickViewOnClick(nextActivation.openQuickViewOnClick);
+    setOpenAttachmentPreviews(nextOpenAttachmentPreviews);
     setHoverActivationMode(nextActivation.hoverActivationMode);
     setHoverDepth(nextHoverDepth);
     setHoverModifierKey(nextHoverModifierKey);
@@ -204,6 +209,7 @@ function ConfigPage(props) {
       domainsText: nextDomainsText,
       themeMode: nextThemeMode,
       openQuickViewOnClick: nextActivation.openQuickViewOnClick,
+      openAttachmentPreviews: nextOpenAttachmentPreviews,
       hoverActivationMode: nextActivation.hoverActivationMode,
       hoverDepth: nextHoverDepth,
       hoverModifierKey: nextHoverModifierKey,
@@ -371,6 +377,7 @@ function ConfigPage(props) {
       domains: domainsText.split(',').map(x => x.trim()).filter(x => !!x),
       themeMode,
       openQuickViewOnClick,
+      openAttachmentPreviews,
       hoverActivationMode,
       hoverDepth,
       hoverModifierKey,
@@ -416,6 +423,7 @@ function ConfigPage(props) {
         setThemeMode(normalizeThemeMode(config.themeMode || 'system'));
         const nextActivation = resolveQuickViewActivation(config);
         setOpenQuickViewOnClick(nextActivation.openQuickViewOnClick);
+        setOpenAttachmentPreviews(config.openAttachmentPreviews === true);
         setHoverActivationMode(nextActivation.hoverActivationMode);
         setHoverDepth(config.hoverDepth || defaultConfig.hoverDepth);
         setHoverModifierKey(nextActivation.hoverModifierKey);
@@ -647,6 +655,7 @@ function ConfigPage(props) {
         domains,
         themeMode: normalizeThemeMode(themeMode),
         openQuickViewOnClick,
+        openAttachmentPreviews,
         hoverActivationMode,
         v15upgrade: true,
         hoverDepth,
@@ -840,6 +849,19 @@ function ConfigPage(props) {
               <span className='inlineCopySettingCopy'>
                 <strong>Open Jira issue links in QuickView instead of navigating</strong>
                 <span data-testid='options-click-navigation-description'>Open plain-clicked Jira issue links without leaving the page.</span>
+              </span>
+            </label>
+            <label className='inlineCopySetting'>
+              <input
+                type='checkbox'
+                data-testid='options-open-attachment-previews'
+                checked={openAttachmentPreviews}
+                onChange={event => setOpenAttachmentPreviews(event.target.checked)}
+              />
+              <span className='inlineCopySettingSwitch' aria-hidden='true' />
+              <span className='inlineCopySettingCopy'>
+                <strong>Preview Jira image attachments in QuickView</strong>
+                <span data-testid='options-attachment-previews-description'>Images on allowed pages. Other files stay native.</span>
               </span>
             </label>
           </div>

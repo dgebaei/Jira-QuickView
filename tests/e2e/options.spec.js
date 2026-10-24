@@ -336,7 +336,8 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   const appearanceCard = optionsPage.locator('.settingsCard').filter({hasText: 'Appearance'});
   await expect(appearanceCard.getByTestId('options-inline-copy-buttons')).toBeVisible();
   await expect(appearanceCard.getByTestId('options-open-quickview-on-click')).toBeVisible();
-  for (const testId of ['options-inline-copy-description', 'options-click-navigation-description']) {
+  await expect(appearanceCard.getByTestId('options-open-attachment-previews')).toBeVisible();
+  for (const testId of ['options-inline-copy-description', 'options-click-navigation-description', 'options-attachment-previews-description']) {
     const renderedHeight = await appearanceCard.getByTestId(testId).evaluate(element => element.getBoundingClientRect().height);
     expect(renderedHeight).toBeLessThan(20);
   }
@@ -352,6 +353,26 @@ test('enables Jira inline copy buttons by default and persists the preference', 
   await expect(form.inlineCopyButtonsCheckbox).not.toBeChecked();
   const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['inlineCopyButtons']));
   expect(stored.inlineCopyButtons).toBe(false);
+});
+
+test('leaves attachment previews off by default and persists the preference', async ({optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  const form = optionsPageModel(optionsPage);
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  await optionsPage.reload();
+
+  await expect(form.openAttachmentPreviewsCheckbox).toBeVisible();
+  await expect(form.openAttachmentPreviewsCheckbox).not.toBeChecked();
+  await optionsPage.getByText('Preview Jira image attachments in QuickView', {exact: true}).click();
+  await expect(form.openAttachmentPreviewsCheckbox).toBeChecked();
+  await expect(form.statusPill).toContainText('Unsaved changes.');
+  await form.saveButton.click();
+  await expect(form.saveNotice).toContainText('Options saved successfully.');
+
+  await optionsPage.reload();
+  await expect(form.openAttachmentPreviewsCheckbox).toBeChecked();
+  const stored = await optionsPage.evaluate(async () => chrome.storage.sync.get(['openAttachmentPreviews']));
+  expect(stored.openAttachmentPreviews).toBe(true);
 });
 
 test('persists independent click interception and hover preview settings', async ({optionsPage, servers}) => {
@@ -483,6 +504,7 @@ test('exports the current settings as JSON', async ({optionsPage, servers}) => {
     instanceUrl: 'https://example.atlassian.net/',
     hoverDepth: 'deep',
     hoverModifierKey: 'shift',
+    openAttachmentPreviews: true,
   }));
   await optionsPage.reload();
   await openAdvancedSettings(optionsPage);
@@ -499,8 +521,10 @@ test('exports the current settings as JSON', async ({optionsPage, servers}) => {
   expect(exported.settingsRevision).toBe(1);
   expect(exported.minimumExtensionVersion).toBe(CURRENT_EXTENSION_VERSION);
   expect(exported.policy.instanceUrl).toBe('locked');
+  expect(exported.policy.openAttachmentPreviews).toBe('default');
   expect(exported.settings.instanceUrl).toBe('https://example.atlassian.net/');
   expect(exported.settings.openQuickViewOnClick).toBe(false);
+  expect(exported.settings.openAttachmentPreviews).toBe(true);
   expect(exported.settings.hoverActivationMode).toBe('modifier');
   expect(exported.settings.hoverDepth).toBe('deep');
   expect(exported.settings.hoverModifierKey).toBe('shift');
@@ -548,6 +572,7 @@ test('imports the Team Sync-compatible settings envelope', async ({optionsPage, 
         domains: ['https://github.com/*'],
         hoverDepth: 'deep',
         hoverModifierKey: 'shift',
+        openAttachmentPreviews: true,
       },
     }), 'utf8'),
   });
@@ -556,6 +581,7 @@ test('imports the Team Sync-compatible settings envelope', async ({optionsPage, 
   await expect(form.instanceUrlInput).toHaveValue('https://example.atlassian.net/');
   await expect(form.hoverDepthSelect).toHaveValue('deep');
   await expect(form.hoverModifierSelect).toHaveValue('shift');
+  await expect(form.openAttachmentPreviewsCheckbox).toBeChecked();
 });
 
 test('runs Sync Now against draft Team Sync fields without saving the source', async ({optionsPage, servers}) => {
@@ -570,12 +596,14 @@ test('runs Sync Now against draft Team Sync fields without saving the source', a
       domains: target.domains,
       hoverDepth: 'deep',
       hoverModifierKey: 'shift',
+      openAttachmentPreviews: true,
     },
     policy: {
       instanceUrl: 'locked',
       domains: 'default',
       hoverDepth: 'locked',
       hoverModifierKey: 'locked',
+      openAttachmentPreviews: 'default',
     },
   };
 
@@ -596,6 +624,7 @@ test('runs Sync Now against draft Team Sync fields without saving the source', a
 
   await expect(form.hoverDepthSelect).toHaveValue('deep');
   await expect(form.hoverModifierSelect).toHaveValue('shift');
+  await expect(form.openAttachmentPreviewsCheckbox).toBeChecked();
 
   const syncStorage = await readSimpleSyncStorage(optionsPage);
   expect(syncStorage).toBeUndefined();

@@ -144,6 +144,7 @@ async function configureExtension(optionsPage, config) {
           : config.activationMode === 'click' ? 'off'
             : config.hoverModifierKey === 'none' ? 'automatic' : 'modifier'),
     inlineCopyButtons: config.inlineCopyButtons !== false,
+    openAttachmentPreviews: config.openAttachmentPreviews === true,
     displayFields: config.displayFields || {},
     customFields: config.customFields || [],
     tooltipLayout,
