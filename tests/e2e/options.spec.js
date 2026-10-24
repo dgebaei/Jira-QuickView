@@ -89,7 +89,7 @@ test('expands and collapses advanced settings from anywhere in the header', asyn
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(form.hoverDepthSelect).toBeVisible();
 
-  await toggle.getByText('QuickView activation, field layout editor, custom fields, and settings sync.', {exact: true}).click();
+  await toggle.getByText('Hover preview, field layout editor, custom fields, and settings sync.', {exact: true}).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(form.hoverDepthSelect).toBeHidden();
 
