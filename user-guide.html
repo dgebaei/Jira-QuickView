@@ -584,6 +584,7 @@
 <li>Pin keeps the popup open while you move the mouse.</li>
 <li>Quick actions opens Jira-backed shortcuts.</li>
 <li>Close hides the popup. <code>Esc</code> also closes it.</li>
+<li>Keyboard shortcuts opens the shortcut list; <code>Alt+0</code> does the same.</li>
 </ul>
 <p>Business logic and limitations:</p>
 <ul>
@@ -607,6 +608,63 @@
 <li>Start-progress style actions appear only when Jira exposes a matching transition.</li>
 <li>Sprint actions appear only when Jira exposes a sprint field and available active or future sprints.</li>
 </ul>
+<h4 id="keyboard-shortcuts">Keyboard Shortcuts</h4>
+<p>Shortcuts work while QuickView has keyboard focus, not while you are typing in an input, editor, or comment. They do not act on the mail client or other page behind QuickView. <code>Alt</code> is <code>Option</code> on macOS; some operating-system shortcuts may take precedence.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Key</th>
+<th>Action</th>
+<th>Alt + key</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>1</code></td>
+<td>Open assignee search</td>
+<td>Assign to me</td>
+</tr>
+<tr class="even">
+<td><code>2</code></td>
+<td>Current sprint + reassign</td>
+<td>Current sprint + assign to me</td>
+</tr>
+<tr class="odd">
+<td><code>3</code></td>
+<td>Resolve / close with confirmation</td>
+<td>Resolve with saved defaults and confirmation</td>
+</tr>
+<tr class="even">
+<td><code>4</code></td>
+<td>Choose a status transition</td>
+<td>Review a start-progress transition</td>
+</tr>
+<tr class="odd">
+<td><code>5</code></td>
+<td>Focus the new-comment composer</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>6</code></td>
+<td>Copy formatted issue reference</td>
+<td>Copy plain issue URL</td>
+</tr>
+<tr class="odd">
+<td><code>7</code></td>
+<td>Open issue in Jira</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>0</code></td>
+<td>—</td>
+<td>Show keyboard shortcuts</td>
+</tr>
+</tbody>
+</table>
+<p>Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press <code>Enter</code> to apply, or select a result and click <strong>Apply sprint + assignee</strong>. No change is sent until confirmation. If several active sprints are available, choose one; if none is active, the action does not substitute an upcoming sprint. An issue already in the chosen sprint only needs the assignee update.</p>
+<p>Resolve/close uses completion transitions available to the current issue. Choose a resolution when Jira exposes one, and supply any required comment. If the workflow sets resolution automatically, QuickView leaves it alone. Unsupported required transition fields must be completed in Jira using <strong>Open in Jira</strong>.</p>
+<p>To configure <code>Alt+3</code>, complete the regular resolve form and select <strong>Remember transition and resolution</strong> before submitting. Defaults are stored only in this browser, separately by Jira instance, project, and issue type; they are not exported or included in Team Sync. QuickView checks that the saved transition and resolution are still available each time. It never guesses a default resolution. Optionally enable <strong>use “.” only when Jira requires a comment</strong>; this does not store or reuse your actual closing comment. <code>Alt+3</code> prefills the form and focuses confirmation—it does not submit automatically.</p>
+<p><code>Esc</code> cancels the pending workflow and keeps QuickView open; press <code>Esc</code> again to close QuickView. Clicking the workflow backdrop also cancels without saving. Once a request is submitted, Escape cannot undo it; the form remains locked while saving. A failed refresh after a successful save does not resubmit the change.</p>
 <h3 id="54-row-1-issue-type-status-priority-linked-issues-history-and-watchers">5.4 Row 1: Issue Type, Status, Priority, Linked Issues, History, and Watchers</h3>
 <p>Row 1 is the fastest read of the issue.</p>
 <p>Default fields:</p>
