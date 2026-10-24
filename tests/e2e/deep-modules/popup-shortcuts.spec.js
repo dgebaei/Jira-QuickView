@@ -1,0 +1,280 @@
+const path = require('path');
+const {test, expect} = require('@playwright/test');
+const harnessPath = path.resolve(__dirname, '../../output/playwright/deep-modules/harness.js');
+
+test.beforeEach(async ({page}) => {
+  await page.setContent('<!doctype html><html><body><input id="input"><div contenteditable="true" id="editor"></div></body></html>');
+  await page.addScriptTag({path: harnessPath});
+  await page.evaluate(() => {
+    const fixture = {
+      writes: [], presets: {}, searches: [],
+      sprints: [{id: 42, name: 'Sprint 42', state: 'active'}],
+      users: [{accountId: 'other', displayName: 'Other person'}],
+      transitions: [{id: '41', name: 'Resolve', to: {name: 'Done', statusCategory: {key: 'done'}}, fields: {
+        resolution: {required: true, allowedValues: [{id: '1', name: 'Fixed'}, {id: '2', name: 'Duplicate'}]},
+        comment: {required: true},
+      }}],
+      snapshot: {issueKey: 'ABC-1', core: {key: 'ABC-1', fields: {project: {id: '100'}, issuetype: {id: '1'}}}, sections: {}},
+    };
+    const deps = {
+      instanceUrl: 'https://jira.example/',
+      jira: {
+        read: async () => ({transitions: fixture.transitions}),
+        write: async request => { fixture.writes.push(request); if (fixture.writePromise) await fixture.writePromise; },
+      },
+      issueData: {
+        loadFieldContext: async ({fieldId}) => ({context: {editable: fixture.editable !== false, fieldId: fieldId === 'sprint' ? 'customfield_10020' : fieldId, options: fixture.sprints}}),
+        search: async ({query}) => { fixture.searches.push(query); return {kind: 'loaded', items: fixture.users}; },
+        refreshAfterMutation: async () => {
+          if (fixture.refreshFailure) throw new Error('Refresh failed');
+          return {snapshot: fixture.snapshot};
+        },
+      },
+      loadViewer: async () => ({accountId: 'me', displayName: 'Me'}),
+      readSprintsFromIssue: () => fixture.existingSprints || [],
+      loadPreset: async key => fixture.presets[key],
+      savePreset: async (key, value) => { fixture.presets[key] = value; },
+    };
+    fixture.deps = deps;
+    fixture.workflow = window.JiraQuickViewDeepModules.createPopupShortcutWorkflow(deps);
+    fixture.begin = (kind, alternate = false) => fixture.workflow.begin({kind, alternate, sessionId: 'popup-1', issueSnapshot: fixture.snapshot});
+    window.fixture = fixture;
+  });
+});
+
+test('stages sprint and assignee, cancels both, and submits them as one update', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    await f.begin('plan');
+    f.workflow.update({userId: 'other'});
+    const stagedWrites = f.writes.length;
+    f.workflow.reset();
+    const cancelled = f.workflow.view();
+    await f.workflow.submit({sessionId: 'popup-1'});
+    const cancelledWrites = f.writes.length;
+    await f.begin('plan');
+    f.workflow.update({userId: 'other'});
+    const outcome = await f.workflow.submit({sessionId: 'popup-1'});
+    return {stagedWrites, cancelled, cancelledWrites, kind: outcome.kind, writes: f.writes};
+  });
+  expect(result).toEqual({stagedWrites: 0, cancelled: null, cancelledWrites: 0, kind: 'saved', writes: [{
+    method: 'PUT', path: 'https://jira.example/rest/api/2/issue/ABC-1',
+    body: {fields: {assignee: {accountId: 'other'}, customfield_10020: 42}},
+  }]});
+});
+
+test('multiple active sprints require a choice, including assign-to-me mode', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.sprints.push({id: 43, name: 'Parallel sprint', state: 'active'});
+    await f.begin('plan', true);
+    const initial = f.workflow.view();
+    await f.workflow.submit({sessionId: 'popup-1'});
+    const invalidWrites = f.writes.length;
+    f.workflow.update({sprintId: '43'});
+    await f.workflow.submit({sessionId: 'popup-1'});
+    return {sprintId: initial.sprintId, userId: initial.userId, invalidWrites, fields: f.writes[0].body.fields};
+  });
+  expect(result).toEqual({sprintId: '', userId: 'me', invalidWrites: 0, fields: {assignee: {accountId: 'me'}, customfield_10020: 43}});
+});
+
+test('an issue already in the selected sprint only changes assignee', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.existingSprints = [{id: 42}];
+    await f.begin('plan', true);
+    await f.workflow.submit({sessionId: 'popup-1'});
+    return f.writes;
+  });
+  expect(result).toHaveLength(1);
+  expect(result[0].body).toEqual({fields: {assignee: {accountId: 'me'}}});
+});
+
+test('Data Center users use their username instead of a Cloud accountId', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.users = [{name: 'alex', key: 'JIRAUSER1', displayName: 'Alex'}];
+    await f.begin('plan');
+    f.workflow.update({userId: 'alex'});
+    await f.workflow.submit({sessionId: 'popup-1'});
+    return f.writes[0].body;
+  });
+  expect(result).toEqual({fields: {assignee: {name: 'alex'}, customfield_10020: 42}});
+});
+
+for (const reason of ['no-active-sprint', 'not-editable']) {
+  test(`does not write when ${reason}`, async ({page}) => {
+    const result = await page.evaluate(async reason => {
+      const f = window.fixture;
+      if (reason === 'no-active-sprint') f.sprints = [{id: 44, state: 'future'}];
+      else f.editable = false;
+      await f.begin('plan', true);
+      await f.workflow.submit({sessionId: 'popup-1'});
+      return {writes: f.writes.length, error: f.workflow.view().error};
+    }, reason);
+    expect(result.writes).toBe(0);
+    expect(result.error).toBeTruthy();
+  });
+}
+
+test('completion requires resolution and comment, then sends both with the transition', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    await f.begin('resolve');
+    await f.workflow.submit({sessionId: 'popup-1'});
+    const missingResolution = f.workflow.view().error;
+    f.workflow.update({resolutionId: '1'});
+    await f.workflow.submit({sessionId: 'popup-1'});
+    const missingComment = f.workflow.view().error;
+    f.workflow.update({comment: 'Verified fixed'});
+    await f.workflow.submit({sessionId: 'popup-1'});
+    return {missingResolution, missingComment, writes: f.writes};
+  });
+  expect(result.missingResolution).toContain('resolution');
+  expect(result.missingComment).toContain('comment');
+  expect(result.writes).toEqual([{
+    method: 'POST', path: 'https://jira.example/rest/api/2/issue/ABC-1/transitions',
+    body: {transition: {id: '41'}, fields: {resolution: {id: '1'}}, update: {comment: [{add: {body: 'Verified fixed'}}]}},
+  }]);
+});
+
+test('quick-close only uses remembered, still-valid defaults and opt-in required-comment fallback', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    await f.begin('resolve', true);
+    const unconfigured = f.workflow.view();
+    f.workflow.update({resolutionId: '1', comment: 'A real closing comment', remember: true, useDot: true});
+    await f.workflow.submit({sessionId: 'popup-1'});
+    await f.begin('resolve', true);
+    const configured = f.workflow.view();
+    f.transitions[0].fields.comment.required = false;
+    await f.begin('resolve', true);
+    const optional = f.workflow.view();
+    f.transitions[0].fields.resolution.allowedValues = [{id: '99', name: 'Something else'}];
+    await f.begin('resolve', true);
+    return {unconfigured, configured, optional, invalid: f.workflow.view(), writes: f.writes.length};
+  });
+  expect(result.unconfigured.resolutionId).toBe('');
+  expect(result.unconfigured.comment).toBe('');
+  expect(result.configured.resolutionId).toBe('1');
+  expect(result.configured.comment).toBe('.');
+  expect(result.optional.comment).toBe('');
+  expect(result.invalid.resolutionId).toBe('');
+  expect(result.invalid.hint).toContain('No default is guessed');
+  expect(result.writes).toBe(1);
+});
+
+test('workflow-managed resolution is left alone and unsupported required fields block submission', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.transitions[0].fields = {};
+    await f.begin('resolve');
+    await f.workflow.submit({sessionId: 'popup-1'});
+    f.transitions[0].fields = {customfield_1: {required: true, name: 'Root cause'}};
+    await f.begin('resolve');
+    await f.workflow.submit({sessionId: 'popup-1'});
+    return {writes: f.writes, error: f.workflow.view().error};
+  });
+  expect(result.writes).toHaveLength(1);
+  expect(result.writes[0].body).toEqual({transition: {id: '41'}});
+  expect(result.error).toContain('Root cause');
+});
+
+test('write lock rejects duplicate submissions and refresh failure never permits a second write', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    let release;
+    f.writePromise = new Promise(resolve => { release = resolve; });
+    f.refreshFailure = true;
+    await f.begin('plan', true);
+    const first = f.workflow.submit({sessionId: 'popup-1'});
+    const duplicate = await f.workflow.submit({sessionId: 'popup-1'});
+    const switching = await f.begin('resolve');
+    release();
+    const saved = await first;
+    const retry = await f.workflow.submit({sessionId: 'popup-1'});
+    return {duplicate: duplicate.kind, switching: switching.kind, retry: retry.kind, saved, writes: f.writes.length};
+  });
+  expect(result.duplicate).toBe('ignored');
+  expect(result.switching).toBe('ignored');
+  expect(result.retry).toBe('ignored');
+  expect(result.saved.kind).toBe('saved');
+  expect(result.saved.notice).toContain('Refresh failed');
+  expect(result.writes).toBe(1);
+});
+
+test('successful write remains non-retryable when remembering defaults fails', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    const workflow = window.JiraQuickViewDeepModules.createPopupShortcutWorkflow({...f.deps, savePreset: async () => { throw new Error('Storage full'); }});
+    await workflow.begin({kind: 'resolve', sessionId: 'popup-1', issueSnapshot: f.snapshot});
+    workflow.update({resolutionId: '1', comment: 'Done', remember: true});
+    const saved = await workflow.submit({sessionId: 'popup-1'});
+    await workflow.submit({sessionId: 'popup-1'});
+    return {saved, writes: f.writes.length};
+  });
+  expect(result.saved.kind).toBe('saved');
+  expect(result.saved.notice).toContain('Defaults could not be saved');
+  expect(result.writes).toBe(1);
+});
+
+test('multiple completion transitions require a choice and changed transition clears the previous resolution', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.transitions.push({...f.transitions[0], id: '42', name: 'Close'});
+    await f.begin('resolve');
+    const initial = f.workflow.view().transitionId;
+    await f.workflow.submit({sessionId: 'popup-1'});
+    const error = f.workflow.view().error;
+    f.workflow.update({transitionId: '41', resolutionId: '1'});
+    f.workflow.update({transitionId: '42'});
+    return {initial, error, resolution: f.workflow.view().resolutionId, writes: f.writes.length};
+  });
+  expect(result).toEqual({initial: '', error: 'Choose a transition.', resolution: '', writes: 0});
+});
+
+test('cancelled discovery, stale searches and stale sessions cannot change another workflow', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    let release;
+    f.deps.jira.read = () => new Promise(resolve => { release = resolve; });
+    const lateBegin = f.begin('resolve');
+    f.workflow.reset();
+    release({transitions: f.transitions});
+    await lateBegin;
+    const cancelled = f.workflow.view();
+    await f.begin('plan');
+    let releaseSearch;
+    f.deps.issueData.search = () => new Promise(resolve => { releaseSearch = resolve; });
+    const oldSearch = f.workflow.search('old');
+    f.deps.issueData.search = async () => ({kind: 'loaded', items: [{accountId: 'new'}]});
+    await f.workflow.search('new');
+    releaseSearch({kind: 'loaded', items: [{accountId: 'old'}]});
+    await oldSearch;
+    f.workflow.update({userId: 'new'});
+    const staleSubmit = await f.workflow.submit({sessionId: 'popup-2'});
+    return {cancelled, users: f.workflow.view().users, staleSubmit, writes: f.writes.length};
+  });
+  expect(result).toEqual({cancelled: null, users: [{accountId: 'new'}], staleSubmit: {kind: 'ignored'}, writes: 0});
+});
+
+test('digit matching rejects editing, modifiers, IME, repeat and reserved variants; supports macOS Option digits', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const match = window.JiraQuickViewDeepModules.matchPopupShortcut;
+    const base = {key: '3', code: 'Digit3', target: document.body};
+    return {
+      normal: match(base), alt: match({...base, key: '£', altKey: true}),
+      rejected: [
+        {target: document.querySelector('input')}, {target: document.querySelector('#editor')},
+        {repeat: true}, {isComposing: true}, {ctrlKey: true}, {metaKey: true}, {shiftKey: true},
+        {defaultPrevented: true}, {getModifierState: () => true}, {key: '0', code: 'Digit0'},
+        {key: '5', altKey: true}, {key: '7', altKey: true},
+      ].map(change => match({...base, ...change})),
+      help: match({...base, key: '0', code: 'Digit0', altKey: true}),
+    };
+  });
+  expect(result.normal).toEqual({digit: '3', alternate: false});
+  expect(result.alt).toEqual({digit: '3', alternate: true});
+  expect(result.help).toEqual({digit: '0', alternate: true});
+  expect(result.rejected).toEqual(Array(12).fill(null));
+});

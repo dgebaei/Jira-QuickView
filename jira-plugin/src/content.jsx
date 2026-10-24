@@ -13,6 +13,7 @@ import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
+import {createBrowserPopupShortcuts} from 'src/popup-session/browser-popup-shortcuts';
 import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation} from 'options/config.js';
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
@@ -545,6 +546,7 @@ async function mainAsyncLocal() {
       return popupModel.commit(frame, context);
     },
     commitLoading(frame, context) {
+      popupShortcuts.close(true);
       return popupRenderer.renderLoading(frame, context);
     },
     commitVisible(frame, context) {
@@ -2608,6 +2610,52 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
   });
+  const popupShortcuts = createBrowserPopupShortcuts({
+    container: container[0],
+    instanceUrl: INSTANCE_URL,
+    jira,
+    issueData: quickViewIssueData,
+    loadViewer: getCurrentUserInfo,
+    getSession: () => ({sessionId: currentPopupSessionId(), issueSnapshot: currentPopupState()?.issueSnapshot}),
+    readSprintsFromIssue,
+    isBusy: () => !!(getActiveFieldEditState() || popupQuickActions.view().loadingKey ||
+      currentPopupState()?.descriptionEditState?.open || currentPopupState()?.timeTrackingEditState?.saving ||
+      commentLifecycle.view().rowAction || popupShell.view().previewOpen),
+    pin: () => popupShell.dispatch({type: 'pin', announce: false}),
+    beginFieldEdit: startFieldEdit,
+    async quickAction(actionKey) {
+      const result = await popupSession.dispatch({type: 'execute-quick-action', actionKey});
+      if (result.actionOutcome?.kind === 'ignored') snackBar('Already assigned to you, or this action is unavailable.');
+    },
+    async copy(plain) {
+      const issue = currentPopupState().issueData;
+      const url = `${INSTANCE_URL}browse/${encodeURIComponent(issue.key)}`;
+      if (plain) {
+        await navigator.clipboard.writeText(url);
+        snackBar('Copied issue URL');
+      } else await copyIssueReferenceWithFeedback({key: issue.key, summary: issue.fields.summary, url});
+    },
+    openIssue: () => container.find('#_JX_title_link')[0]?.click(),
+    focusComment() {
+      const input = container.find('._JX_comment_input')[0];
+      if (input) input.focus();
+      else snackBar('Comments are unavailable or hidden in your layout.');
+    },
+    async loadPreset(key) {
+      const stored = await storageLocalGet(['jqv.quickClosePresets']);
+      return stored['jqv.quickClosePresets']?.[key] || null;
+    },
+    async savePreset(key, preset) {
+      const stored = await storageLocalGet(['jqv.quickClosePresets']);
+      await storageLocalSet({'jqv.quickClosePresets': {...stored['jqv.quickClosePresets'], [key]: preset}});
+    },
+    async onSaved(result) {
+      if (result.sessionId !== currentPopupSessionId() || !result.refreshedSnapshot?.core) return;
+      await popupSession.dispatch({type: 'render', reason: 'shortcut-saved', issueSnapshot: result.refreshedSnapshot});
+    },
+    announce: snackBar,
+  });
+  popupShortcuts.install();
   // ── Field Editing ─────────────────────────────────────────
   function attachJiraFieldEditingToPopup() {
     const popupView = currentPopupState();
@@ -3411,6 +3459,7 @@ async function mainAsyncLocal() {
 
   // ── Container Lifecycle ────────────────────────────────────
   async function clearPopupSurface() {
+    popupShortcuts.close(true);
     lastHoveredKey = '';
     clearDescriptionStatusTimer();
     const descriptionStateSnapshot = currentPopupState()?.descriptionEditState;

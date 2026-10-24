@@ -45,6 +45,7 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Field chips size to their text, with grey labels and semibold values, so rows wrap less and values are easier to scan
 - Dropdowns show the row under the pointer in grey and the selected value in blue, so the two never look alike
 - QuickView takes keyboard focus when it opens, so `Escape` closes the popup instead of reaching the page behind it (for example, Outlook's reading pane)
+- Popup-scoped number shortcuts speed up assignment, sprint planning, resolution, comments, and copying; `Alt+0` shows the list. Sprint + reassignment is staged together, and resolution always asks for confirmation.
 - Clicking outside an unchanged field editor closes it; Fix Version and Affects Version list only your Jira versions, without a separate "N/A" entry
 - Copy icons no longer multiply after the extension is updated or reloaded, and the Unassigned option no longer shows the current assignee's avatar
 

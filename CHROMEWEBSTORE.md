@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Jira QuickView
 
-> Last Updated: 2026-09-12
+> Last Updated: 2026-10-24
 
 ## Store Listing
 
@@ -17,6 +17,8 @@ Open Jira issue details from links and ticket numbers, then review, edit, commen
 Jira QuickView opens Jira issue details directly from links and recognized ticket numbers on the pages you choose.
 
 Review status, priority, people, versions, sprint, labels, linked issues, descriptions, comments, attachments, history, time tracking, watchers, and linked pull requests. Update supported fields, transition workflows, manage linked issues, add or edit comments, upload images, and copy rich issue links while keeping your current page open.
+
+Work faster with number shortcuts while QuickView has focus. Plan an issue into the current sprint and reassign it in one confirmed update, resolve issues with the required resolution and comment, and show the shortcut list with Alt+0. Quick-close defaults stay in your browser and always require confirmation.
 
 To get started, enter your Jira instance URL, add the pages where Jira QuickView should run, and save. Plain-clicking a genuine Jira issue link opens and pins QuickView by default. Automatic hover preview also works for recognized Jira IDs that are not links. Both behaviors can be configured in Options.
 
@@ -51,6 +53,8 @@ English
 ### Screenshot Notes
 
 The first four screenshots cover the main QuickView, inline editing, related pull requests, and comment composition. The Options screenshot should be refreshed after release to show the final click activation, global copy controls, and Hover Preview layout introduced in 2.8.0.
+
+For the keyboard-shortcuts release, refresh the popup screenshot to include the keyboard-help control and consider a resolve/close confirmation screenshot.
 
 ## Permissions Justification
 
@@ -121,6 +125,7 @@ https://dgebaei.github.io/Jira-QuickView/
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| Unreleased | 2026-10-24 | Popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, and browser-local quick-close defaults | In development |
 | 2.9.2 | 2026-10-15 | Children, linked issues, and external links in one links panel with a combined count, View in Jira links, removable external links, and popup titles clamped to two lines | Ready to submit |
 | 2.9.1 | 2026-10-15 | Click activation on Jira board cards and current-issue keys, no copy icon on Jira dialog Cancel links, single popup frame with an all-round shadow | Ready to submit |
 | 2.9.0 | 2026-10-14 | Calmer neutral popup and Options design, compact field chips, popup keyboard focus with contained Escape, outside-click editor close, real Jira versions only, and copy-icon and assignee-avatar fixes | Ready to submit |
