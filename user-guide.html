@@ -11,39 +11,46 @@
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
-  <main class="page page-narrow">
-    <article class="readme-render">
-<h1 id="jira-quickview-user-guide">Jira QuickView User Guide</h1>
-<blockquote>
-<p>Hover Jira keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect issues, follow linked PRs, comment, transition, and edit fields without opening a new Jira tab.</p>
-</blockquote>
-<p><img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" /> <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" /> <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" /></p>
-<p><a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> · <a href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a> · <a href="https://dgebaei.github.io/Jira-QuickView/user-guide.html">User guide</a> · <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a> · <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a></p>
-<p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
-<p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
-<h3 id="whats-new-in-292">What's new in 2.9.2</h3>
-<ul>
-<li>The links panel now shows children (sub-tasks and epic children), linked issues, and external links in three sections, and its count includes all three.</li>
-<li>External links, such as test cases or Confluence pages, open in a new tab and can be removed from the panel.</li>
-<li><code>View in Jira</code> in the panel header opens the issue's links in Jira; <code>View all</code> opens the children or linked issues as a Jira search.</li>
-<li>Long issue titles in the popup header stop at two lines.</li>
-</ul>
-<h3 id="fixed-in-291">Fixed in 2.9.1</h3>
-<ul>
-<li>With click activation on, clicking an issue key on a Jira board card, or the key at the top of an issue or of the board's detail panel, opens QuickView. Links Jira uses for its own tabs and actions still work as before.</li>
-<li>Copy icons no longer appear beside the Cancel link in Jira dialogs.</li>
-<li>The popup's frame is drawn once, with a soft shadow on every side.</li>
-</ul>
-<h3 id="whats-new-in-290">What's new in 2.9.0</h3>
-<ul>
-<li>The popup and the Options page use a quieter, neutral design: grey tones with one Jira-blue accent, sentence-case headings, and section headings set in their own band.</li>
-<li>Field chips are only as wide as their text. Labels such as "Sprint:" are grey and values are semibold.</li>
-<li>In dropdowns, the row under the pointer is grey and the selected value is blue.</li>
-<li>QuickView takes keyboard focus when it opens, unless you are typing in a field on the page, and returns focus when it closes. <code>Escape</code> then closes QuickView without also acting on the page behind it.</li>
-<li>Clicking elsewhere closes a field editor you have not changed. Version pickers list only the versions defined in Jira.</li>
-<li>Copy icons no longer appear twice or three times after the extension is updated or reloaded.</li>
-</ul>
-<details class="user-guide-toc" open>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Jira QuickView home">
+        <img class="brand-mark" src="favicon.svg" alt="" width="30" height="30">
+        <span class="brand-name">Jira QuickView</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a class="site-nav-link is-current" href="user-guide.html">User guide</a>
+        <a class="site-nav-link" href="index.html#gallery">Gallery</a>
+        <a class="site-nav-link" href="privacy-policy.html">Privacy</a>
+        <a class="site-nav-link" href="https://github.com/dgebaei/Jira-QuickView">GitHub</a>
+      </nav>
+      <a class="header-action" href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download extension</a>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero hero-doc">
+      <div class="container hero-inner">
+        <div class="hero-copy hero-copy-doc">
+          <h1 id="jira-quickview-user-guide">Jira QuickView User Guide</h1>
+          <p class="hero-lede">Hover Jira keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect issues, follow linked PRs, comment, transition, and edit fields without opening a new Jira tab.</p>
+          <div class="hero-actions">
+          <a class="hero-action hero-action-primary" href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a>
+          <a class="hero-action" href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a>
+          <a class="hero-action" href="https://dgebaei.github.io/Jira-QuickView/user-guide.html">User guide</a>
+          <a class="hero-action" href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a>
+          <a class="hero-action" href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a>
+          </div>
+          <div class="hero-badges">
+          <img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" />
+          <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" />
+          <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" />
+          </div>
+        </div>
+      </div>
+    </section>
+    <div class="container doc-layout">
+      <aside class="doc-aside">
+        <details class="user-guide-toc" open>
 <summary>Table of contents</summary>
 
 <div class="user-guide-toc-toolbar">
@@ -138,6 +145,37 @@
 </nav>
 
 </details>
+      </aside>
+      <article class="prose">
+        
+
+
+
+<p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
+<p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
+<h3 id="whats-new-in-292">What's new in 2.9.2</h3>
+<ul>
+<li>The links panel now shows children (sub-tasks and epic children), linked issues, and external links in three sections, and its count includes all three.</li>
+<li>External links, such as test cases or Confluence pages, open in a new tab and can be removed from the panel.</li>
+<li><code>View in Jira</code> in the panel header opens the issue's links in Jira; <code>View all</code> opens the children or linked issues as a Jira search.</li>
+<li>Long issue titles in the popup header stop at two lines.</li>
+</ul>
+<h3 id="fixed-in-291">Fixed in 2.9.1</h3>
+<ul>
+<li>With click activation on, clicking an issue key on a Jira board card, or the key at the top of an issue or of the board's detail panel, opens QuickView. Links Jira uses for its own tabs and actions still work as before.</li>
+<li>Copy icons no longer appear beside the Cancel link in Jira dialogs.</li>
+<li>The popup's frame is drawn once, with a soft shadow on every side.</li>
+</ul>
+<h3 id="whats-new-in-290">What's new in 2.9.0</h3>
+<ul>
+<li>The popup and the Options page use a quieter, neutral design: grey tones with one Jira-blue accent, sentence-case headings, and section headings set in their own band.</li>
+<li>Field chips are only as wide as their text. Labels such as "Sprint:" are grey and values are semibold.</li>
+<li>In dropdowns, the row under the pointer is grey and the selected value is blue.</li>
+<li>QuickView takes keyboard focus when it opens, unless you are typing in a field on the page, and returns focus when it closes. <code>Escape</code> then closes QuickView without also acting on the page behind it.</li>
+<li>Clicking elsewhere closes a field editor you have not changed. Version pickers list only the versions defined in Jira.</li>
+<li>Copy icons no longer appear twice or three times after the extension is updated or reloaded.</li>
+</ul>
+
 
 <h2 id="1-what-jira-quickview-helps-you-do">1. What Jira QuickView Helps You Do</h2>
 <p><img src="screenshots/marketing-hidpi-light/popup-overview.png" alt="Main popup overview" /></p>
@@ -874,8 +912,38 @@
 <li>Add findings as a comment or update the description if Jira allows it.</li>
 </ol>
 
-    </article>
+      </article>
+    </div>
   </main>
+  <footer class="site-footer">
+    <div class="container footer-main">
+      <div class="footer-brand">
+        <a class="brand" href="index.html" aria-label="Jira QuickView home">
+          <img class="brand-mark" src="favicon.svg" alt="" width="26" height="26">
+          <span class="brand-name">Jira QuickView</span>
+        </a>
+        <p>Quick access to Jira issue details from links and ticket numbers.</p>
+      </div>
+      <div class="footer-links">
+        <div>
+          <p class="footer-title">Product</p>
+          <a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download extension</a>
+          <a href="user-guide.html">User guide</a>
+          <a href="index.html#gallery">Gallery</a>
+        </div>
+        <div>
+          <p class="footer-title">Project</p>
+          <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a>
+          <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a>
+          <a href="privacy-policy.html">Privacy policy</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer-base">
+      <p>MIT licensed. Built on Chrome Manifest V3.</p>
+      <p><a href="https://dgebaei.github.io/Jira-QuickView/">dgebaei.github.io/Jira-QuickView</a></p>
+    </div>
+  </footer>
   <script src="site.js"></script>
 </body>
 </html>

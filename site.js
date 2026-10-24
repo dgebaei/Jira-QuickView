@@ -1,12 +1,15 @@
-function enhanceReadmeImages() {
-  const readmeImages = Array.from(document.querySelectorAll('.readme-render img'));
+function enhanceProseImages() {
+  const proseImages = Array.from(document.querySelectorAll('.prose img'));
 
-  readmeImages.forEach(image => {
+  proseImages.forEach(image => {
     const rawSrc = image.getAttribute('src') || '';
     if (!rawSrc || rawSrc.startsWith('http://') || rawSrc.startsWith('https://')) {
       return;
     }
     if (image.closest('.lightbox-trigger') || image.closest('a')) {
+      return;
+    }
+    if (image.closest('.gallery-grid')) {
       return;
     }
 
@@ -53,12 +56,129 @@ function enhanceUserGuideToc() {
   updateToggleLabel();
 }
 
-enhanceUserGuideToc();
-enhanceReadmeImages();
+function initTocSpy() {
+  const links = Array.from(document.querySelectorAll('.toc-link, .user-guide-toc a[href^="#"]'));
+  if (!links.length) {
+    return;
+  }
 
-const lightboxTriggers = Array.from(document.querySelectorAll('.lightbox-trigger'));
+  links.forEach(link => {
+    if (!link.title) {
+      link.title = link.textContent.trim();
+    }
+  });
 
-if (lightboxTriggers.length) {
+  const entries = links
+    .map(link => {
+      const id = decodeURIComponent((link.getAttribute('href') || '').replace(/^#/, ''));
+      const heading = id ? document.getElementById(id) : null;
+      return heading ? { link, heading } : null;
+    })
+    .filter(Boolean);
+
+  if (!entries.length) {
+    return;
+  }
+
+  let activeLink = null;
+  let ticking = false;
+
+  function setActive(link) {
+    if (link === activeLink) {
+      return;
+    }
+
+    if (activeLink) {
+      activeLink.classList.remove('is-active');
+      activeLink.removeAttribute('aria-current');
+    }
+
+    activeLink = link;
+
+    if (!link) {
+      return;
+    }
+
+    link.classList.add('is-active');
+    link.setAttribute('aria-current', 'true');
+
+    const section = link.closest('.user-guide-toc-section');
+    if (section && !section.open) {
+      section.open = true;
+    }
+  }
+
+  function updateActiveHeading() {
+    ticking = false;
+    const threshold = 120;
+    let current = null;
+
+    for (const entry of entries) {
+      const top = entry.heading.getBoundingClientRect().top;
+      if (top <= threshold) {
+        current = entry;
+      } else {
+        break;
+      }
+    }
+
+    if (!current) {
+      current = entries[0];
+    }
+
+    setActive(current.link);
+  }
+
+  function scheduleUpdate() {
+    if (ticking) {
+      return;
+    }
+    ticking = true;
+    window.requestAnimationFrame(updateActiveHeading);
+  }
+
+  window.addEventListener('scroll', scheduleUpdate, { passive: true });
+  window.addEventListener('resize', scheduleUpdate);
+  updateActiveHeading();
+}
+
+function fitTocLabels() {
+  const links = Array.from(document.querySelectorAll('.toc-link, .user-guide-toc a[href^="#"]'));
+
+  links.forEach(link => {
+    const full = link.dataset.fullLabel || link.textContent.trim();
+    link.dataset.fullLabel = full;
+    link.title = full;
+    link.setAttribute('aria-label', full);
+    link.textContent = full;
+
+    if (!link.clientWidth || link.scrollWidth <= link.clientWidth) {
+      return;
+    }
+
+    let low = 0;
+    let high = full.length;
+
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      link.textContent = `${full.slice(0, mid).trimEnd()}…`;
+      if (link.scrollWidth <= link.clientWidth) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    link.textContent = `${full.slice(0, Math.max(1, low)).trimEnd()}…`;
+  });
+}
+
+function initLightbox() {
+  const lightboxTriggers = Array.from(document.querySelectorAll('.lightbox-trigger'));
+  if (!lightboxTriggers.length) {
+    return;
+  }
+
   const lightbox = document.createElement('div');
   lightbox.className = 'lightbox';
   lightbox.setAttribute('data-open', 'false');
@@ -89,6 +209,7 @@ if (lightboxTriggers.length) {
 
   let lastTrigger = null;
   let activeIndex = -1;
+  let inertBackground = [];
 
   function getTriggerImageData(trigger) {
     const image = trigger.querySelector('img');
@@ -133,10 +254,19 @@ if (lightboxTriggers.length) {
     renderLightboxImage(activeIndex + offset);
   }
 
+  function setScrollLock(locked) {
+    document.documentElement.classList.toggle('lightbox-open', locked);
+    document.body.classList.toggle('lightbox-open', locked);
+  }
+
   function closeLightbox() {
     lightbox.setAttribute('data-open', 'false');
     lightbox.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('lightbox-open');
+    setScrollLock(false);
+    inertBackground.forEach(element => {
+      element.inert = false;
+    });
+    inertBackground = [];
     lightboxImage.src = '';
     lightboxImage.alt = '';
     lightboxCaption.textContent = '';
@@ -157,10 +287,14 @@ if (lightboxTriggers.length) {
     }
 
     lastTrigger = trigger;
+    inertBackground = Array.from(document.body.children).filter(element => element !== lightbox && !element.inert);
+    inertBackground.forEach(element => {
+      element.inert = true;
+    });
     renderLightboxImage(triggerIndex);
     lightbox.setAttribute('data-open', 'true');
     lightbox.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('lightbox-open');
+    setScrollLock(true);
     lightbox.querySelector('.lightbox-close')?.focus();
   }
 
@@ -181,7 +315,22 @@ if (lightboxTriggers.length) {
     }
 
     if (event.key === 'Escape') {
+      event.preventDefault();
       closeLightbox();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      const controls = Array.from(lightbox.querySelectorAll('.lightbox-panel button:not(:disabled)'));
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
       return;
     }
 
@@ -199,3 +348,19 @@ if (lightboxTriggers.length) {
 
   updateNavigationState();
 }
+
+enhanceUserGuideToc();
+enhanceProseImages();
+initTocSpy();
+fitTocLabels();
+initLightbox();
+
+window.addEventListener('resize', () => {
+  window.requestAnimationFrame(fitTocLabels);
+});
+
+document.querySelectorAll('.user-guide-toc-section').forEach(section => {
+  section.addEventListener('toggle', () => {
+    window.requestAnimationFrame(fitTocLabels);
+  });
+});
