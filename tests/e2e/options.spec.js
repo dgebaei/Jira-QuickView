@@ -299,20 +299,20 @@ test('keeps native dropdown surfaces aligned with the selected theme', async ({o
   await openAdvancedSettings(optionsPage);
 
   await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'light');
-  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(248, 250, 252)');
-  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(55, 65, 81)');
-  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(219, 234, 254)');
-  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(30, 64, 175)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(251, 247, 239)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(23, 38, 59)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(221, 238, 239)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(15, 97, 106)');
   if (themeScreenshotDir) {
     await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-light.png')});
   }
 
   await optionsPage.getByTestId('options-theme-mode-dark').click();
   await expect(optionsPage.locator('html')).toHaveCSS('color-scheme', 'dark');
-  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(30, 41, 59)');
-  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(237, 243, 249)');
-  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(30, 58, 95)');
-  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(147, 197, 253)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('background-color', 'rgb(21, 34, 53)');
+  await expect(form.hoverDepthSelect.locator('option:not(:checked)').first()).toHaveCSS('color', 'rgb(237, 242, 247)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('background-color', 'rgb(21, 59, 66)');
+  await expect(form.hoverDepthSelect.locator('option:checked')).toHaveCSS('color', 'rgb(155, 230, 234)');
   if (themeScreenshotDir) {
     await optionsPage.locator('.advancedPanelBody').screenshot({path: path.join(themeScreenshotDir, 'options-dropdowns-dark.png')});
   }
