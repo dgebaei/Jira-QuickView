@@ -1814,6 +1814,51 @@ async function createMockJiraServer() {
       return;
     }
 
+    if (pathname.startsWith('/api/v4/') && req.method === 'GET') {
+      if (scenarioIn('pr-gitlab-auth-fails')) {
+        json(res, 401, {message: '401 Unauthorized'});
+        return;
+      }
+      const match = pathname.match(/\/merge_requests\/(\d+)(\/(?:discussions|approvals))?$/);
+      if (match) {
+        const iid = Number(match[1]);
+        if (match[2] === '/approvals') {
+          json(res, 200, {approved: true, approvals_left: 0, approved_by: iid < 3 ? [
+            {user: {id: 2, name: 'Alex Reviewer', username: 'alex'}, approved_at: '2026-10-24T09:15:00Z'},
+            {user: {id: 3, name: 'Casey Commenter', username: 'casey'}, approved_at: '2026-10-24T09:30:00Z'},
+          ] : []});
+          return;
+        }
+        if (match[2] === '/discussions') {
+          json(res, 200, Array.from({length: 3}, (_, index) => ({
+            id: `thread-${index}`, notes: [{resolvable: true, resolved: false}],
+          })));
+          return;
+        }
+        const states = {1: 'opened', 2: 'merged', 3: 'closed', 4: 'opened'};
+        json(res, 200, {
+          iid, state: states[iid], source_project_id: 12,
+          title: iid === 1 ? 'Fix slash command cursor behavior' : `Merge request ${iid}`,
+          source_branch: 'fix/slash-command-end-key', target_branch: iid === 2 ? 'release/2.9' : 'main',
+          sha: iid === 4 ? null : 'a'.repeat(40),
+          created_at: iid === 4 ? null : '2026-10-01T09:00:00Z',
+          updated_at: iid === 4 ? null : '2026-10-24T11:00:00Z',
+          merged_at: iid === 2 ? '2026-10-23T14:32:00Z' : null,
+          merge_user: iid === 2 ? {name: 'Alex Reviewer'} : null,
+          closed_at: iid === 3 ? '2026-10-12T12:00:00Z' : null,
+          closed_by: iid === 3 ? {name: 'Casey Commenter'} : null,
+          detailed_merge_status: iid === 1 ? 'conflict' : 'checking',
+          has_conflicts: iid === 1,
+          head_pipeline: iid === 1 ? {status: 'failed', sha: 'a'.repeat(40), web_url: `${origin}/group/repo/-/pipelines/99`} : null,
+        });
+        return;
+      }
+      if (pathname.includes('/repository/commits/')) {
+        json(res, 200, {id: 'a'.repeat(40), title: 'Fix redirect after session expiry', author_name: 'Morgan Agent', committed_date: '2026-10-24T10:42:00Z'});
+        return;
+      }
+    }
+
     if (pathname === '/rest/dev-status/1.0/issue/detail' && req.method === 'GET') {
       if (scenarioIn('pr-data-fails')) {
         json(res, 500, {errorMessages: ['Dev status unavailable']});
@@ -1823,7 +1868,7 @@ async function createMockJiraServer() {
         json(res, 200, {detail: [{pullRequests: [{id: 'pr-1'}]}]});
         return;
       }
-      json(res, 200, {
+      const response = {
         detail: [{
           pullRequests: [{
             id: 'pr-1',
@@ -1857,7 +1902,14 @@ async function createMockJiraServer() {
             status: 'DECLINED',
           }],
         }],
-      });
+      };
+      if (scenarioIn('pr-gitlab', 'pr-gitlab-auth-fails')) {
+        response.detail[0].pullRequests.forEach((pr, index) => {
+          pr.url = `${origin}/group/repo/-/merge_requests/${index + 1}`;
+        });
+        response.detail[0].pullRequests.push({id: 'pr-4', url: `${origin}/group/repo/-/merge_requests/4`, name: 'No timestamp', author: {name: 'Taylor Author'}, status: 'OPEN'});
+      }
+      json(res, 200, response);
       return;
     }
 

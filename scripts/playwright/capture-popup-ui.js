@@ -29,6 +29,72 @@ const baseTooltipLayout = {
 };
 
 const PRESETS = {
+  'pull-requests': {
+    outputFile: 'pull-requests.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_pr_signal_failure',
+    open: async page => {
+      await page.locator('._JX_pr_signal_failure').waitFor({state: 'visible'});
+      await page.mouse.move(20, 20);
+    },
+  },
+  'pull-requests-details': {
+    outputFile: 'pull-requests-details.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_pr_tooltip:popover-open',
+    extraSelector: '._JX_pr_tooltip:popover-open',
+    open: async page => {
+      await page.locator('._JX_pr_signal_failure').waitFor({state: 'visible'});
+      await page.locator('._JX_pr_time').first().focus();
+    },
+  },
+  'pull-requests-dark': {
+    outputFile: 'pull-requests-dark.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {themeMode: 'dark', tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_pr_signal_failure',
+    open: async page => {
+      await page.locator('._JX_pr_signal_failure').waitFor({state: 'visible'});
+      await page.mouse.move(20, 20);
+    },
+  },
+  'pull-requests-approvals': {
+    outputFile: 'pull-requests-approvals.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_pr_tooltip:popover-open',
+    extraSelector: '._JX_pr_tooltip:popover-open',
+    open: async page => {
+      await page.locator('._JX_pr_signal_approval').first().waitFor({state: 'visible'});
+      await page.locator('._JX_pr_signal_approval').first().focus();
+    },
+  },
+  'pull-requests-unavailable': {
+    outputFile: 'pull-requests-unavailable.png',
+    scenario: 'pr-gitlab-auth-fails',
+    configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_gitlab_connect',
+    open: async () => {},
+  },
+  'pull-requests-details-dark': {
+    outputFile: 'pull-requests-details-dark.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {themeMode: 'dark', tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_pr_tooltip:popover-open',
+    extraSelector: '._JX_pr_tooltip:popover-open',
+    open: async page => {
+      await page.locator('._JX_pr_signal_failure').waitFor({state: 'visible'});
+      await page.locator('._JX_pr_time').first().focus();
+    },
+  },
   'linked-issues-panel': {
     outputFile: 'linked-issues-panel.png',
     configureOverrides: {},
@@ -242,6 +308,7 @@ async function createHarness() {
   await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`, {waitUntil: 'domcontentloaded'});
 
   async function configure(overrides = {}) {
+    await optionsPage.evaluate(themeMode => chrome.storage.sync.set({themeMode}), overrides.themeMode || 'light');
     const tooltipLayout = overrides.tooltipLayout || baseTooltipLayout;
     await configureExtension(optionsPage, buildExtensionConfig({jira, allowedPage}, {
       tooltipLayout,
@@ -270,6 +337,7 @@ async function createHarness() {
   }
 
   return {
+    setScenario: scenario => jira.setScenario(scenario),
     configure,
     openPopup,
     cleanup,
@@ -320,6 +388,7 @@ async function capturePreset(harness, presetName, options) {
 
   const outputPath = options.outputPath || path.join(options.outputDir, preset.outputFile);
   await fs.mkdir(path.dirname(outputPath), {recursive: true});
+  await harness.setScenario(preset.scenario || 'editable');
   await harness.configure(preset.configureOverrides);
 
   const page = await harness.openPopup(preset.route || '/popup-actions');
@@ -340,6 +409,7 @@ async function capturePreset(harness, presetName, options) {
     } else if (options.frame === 'panel') {
       await screenshotRegion(page, [
         {locator: page.locator(preset.targetSelector), description: `${presetName} panel`},
+        ...(preset.extraSelector ? [{locator: page.locator(preset.extraSelector), description: 'PR event details'}] : []),
       ], outputPath, options.padding);
     } else {
       await screenshotRegion(page, [

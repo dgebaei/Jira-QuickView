@@ -36,6 +36,7 @@ import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-render
 import {createBrowserPopupShell} from 'src/popup-session/browser-popup-shell';
 import {createBrowserPopupModel} from 'src/popup-session/browser-popup-model';
 import {createQuickViewIssueData} from 'src/quickview-issue-data';
+import {parseGitLabMergeRequestUrl} from 'src/gitlab-pull-requests';
 import {createWatcherLifecycle} from 'src/watcher-lifecycle';
 const {
   buildDescriptionEditorState,
@@ -379,6 +380,14 @@ async function mainAsyncLocal() {
     customFields,
     instanceUrl: INSTANCE_URL,
     jira,
+    gitlab: {
+      async readPullRequest({url, signal}) {
+        if (!parseGitLabMergeRequestUrl(url) || signal?.aborted) return null;
+        const response = await sendMessage({action: 'getGitLabPullRequest', url});
+        if (response?.error) throw new Error(response.error);
+        return response?.result || null;
+      },
+    },
   });
   installJiraInlineCopyButtons({
     document,
@@ -2955,6 +2964,17 @@ async function mainAsyncLocal() {
   });
 
   async function handlePopupPresentationIntent(intent) {
+    if (intent.type === 'connect-gitlab') {
+      const sessionId = currentPopupSessionId();
+      // Keep the permission request on the original click's user gesture.
+      const response = await sendMessage({action: 'requestGitLabAccess', url: intent.url});
+      if (sessionId !== currentPopupSessionId()) return {kind: 'ignored'};
+      if (!response?.result) {
+        snackBar(response?.error || 'GitLab access was not granted. Basic PR details are still available.');
+        return {kind: 'ignored'};
+      }
+      return popupSession.dispatch({type: 'refresh-pull-requests'});
+    }
     if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
       return popupSession.dispatch(intent);
     }

@@ -68,6 +68,8 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
   let stateRevision = 0;
   let watcherFeedbackTimer = null;
   let linkedSearchTimer = null;
+  const enrichedPullRequestSections = new WeakSet();
+  let pullRequestsRequest = 0;
   let notice = '';
   let noticeTimer = null;
   let quickActionNoticeTimer = null;
@@ -188,7 +190,27 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     };
     const receipt = await surface.render(frame, context);
     if (!context.isCurrent()) return outcome('ignored', {reason: 'stale-render'});
+    const section = state.snapshot?.sections?.pullRequests;
+    if (state.status === 'visible' && section?.items?.length && !enrichedPullRequestSections.has(section)) {
+      enrichedPullRequestSections.add(section);
+      refreshPullRequests().catch(() => {});
+    }
     return outcome('rendered', {receipt});
+  }
+
+  async function refreshPullRequests(force = false) {
+    const section = state.snapshot?.sections?.pullRequests;
+    if (!section?.items?.length || typeof issueData.enrichPullRequests !== 'function') return outcome('ignored');
+    const sessionId = state.sessionId;
+    const requestId = ++pullRequestsRequest;
+    const items = await issueData.enrichPullRequests({items: section.items, signal: state.controller?.signal, force});
+    if (!items || !isCurrent(sessionId) || requestId !== pullRequestsRequest || state.snapshot.sections.pullRequests !== section) {
+      return outcome('ignored', {reason: 'superseded'});
+    }
+    const enriched = {...section, items};
+    enrichedPullRequestSections.add(enriched);
+    state = {...state, snapshot: {...state.snapshot, sections: {...state.snapshot.sections, pullRequests: enriched}}};
+    return scheduleRender('pull-requests-enriched');
   }
 
   async function detachFeatures(previous, reason) {
@@ -330,6 +352,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
 
   async function dispatch(intent = {}) {
     if (disposed || !state.sessionId) return outcome('ignored', {reason: 'inactive'});
+    if (intent.type === 'refresh-pull-requests') return refreshPullRequests(true);
     if (['toggle-history', 'close-history', 'dismiss-history'].includes(intent.type)) {
       const opening = intent.type === 'toggle-history' && state.presentation.activePanel !== 'history';
       const transition = transitionPopupPresentation(state.presentation, {

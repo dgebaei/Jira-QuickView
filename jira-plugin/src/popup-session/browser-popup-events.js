@@ -1,6 +1,9 @@
+import {installPullRequestTooltips} from 'src/popup-session/pull-request-tooltips';
+
 const EVENT_NAMESPACE = '.jiraQuickViewPopupPresentation';
 
 const PRESENTATION_EVENTS = [
+  {selector: '._JX_gitlab_connect', intent: element => ({type: 'connect-gitlab', url: element.getAttribute('data-pr-url') || ''})},
   {selector: '._JX_actions_toggle', intent: () => ({type: 'toggle-actions'})},
   {
     selector: '._JX_action_item',
@@ -92,6 +95,7 @@ export function createBrowserPopupEvents({root, emit}) {
     throw new TypeError('Browser popup events require emit()');
   }
   let installed = false;
+  let hidePullRequestTooltip = () => {};
 
   function publish(intent) {
     if (!intent) return;
@@ -104,6 +108,7 @@ export function createBrowserPopupEvents({root, emit}) {
 
   function install() {
     if (installed) return {kind: 'unchanged'};
+    hidePullRequestTooltip = installPullRequestTooltips(root, EVENT_NAMESPACE);
     PRESENTATION_EVENTS.forEach(definition => {
       root.on(`${definition.event || 'click'}${EVENT_NAMESPACE}`, definition.selector, function (event) {
         event.preventDefault();
@@ -166,6 +171,7 @@ export function createBrowserPopupEvents({root, emit}) {
 
   function dispose() {
     if (!installed) return {kind: 'unchanged'};
+    hidePullRequestTooltip();
     root.off(EVENT_NAMESPACE);
     installed = false;
     return {kind: 'disposed'};

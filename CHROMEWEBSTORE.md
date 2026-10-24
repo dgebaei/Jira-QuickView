@@ -18,13 +18,15 @@ Jira QuickView opens Jira issue details directly from links and recognized ticke
 
 Review status, priority, people, versions, sprint, labels, linked issues, descriptions, comments, attachments, history, time tracking, watchers, and linked pull requests. Update supported fields, transition workflows, manage linked issues, add or edit comments, upload images, and copy rich issue links while keeping your current page open.
 
+Review linked pull requests in a compact table with full author names, target branches, and sortable last-update times. With site access to your GitLab host, see approval counts and approvers, unresolved review threads, current CI status, merge conflicts, and commit or merge details using your existing GitLab login.
+
 Work faster with number shortcuts while QuickView has focus. Plan an issue into the current sprint and reassign it in one confirmed update, resolve issues with the required resolution and comment, and show the shortcut list with Alt+0. Quick-close defaults stay in your browser and always require confirmation.
 
 To get started, enter your Jira instance URL, add the pages where Jira QuickView should run, and save. Plain-clicking a genuine Jira issue link opens and pins QuickView by default. Automatic hover preview also works for recognized Jira IDs that are not links. Both behaviors can be configured in Options.
 
 Choose a light or dark appearance, and organize popup fields and content blocks in the advanced settings.
 
-Jira QuickView uses your existing signed-in Jira browser session and follows your Jira permissions and workflow rules. It does not operate a developer-run backend or send your data to developer analytics services. You control which pages the extension can access.
+Jira QuickView uses your existing signed-in Jira browser session and follows your Jira permissions and workflow rules. Optional GitLab details use your existing GitLab browser session and permissions. It does not operate a developer-run backend or send your data to developer analytics services. You control which sites the extension can access.
 
 Support and documentation: https://dgebaei.github.io/Jira-QuickView/
 
@@ -54,7 +56,7 @@ English
 
 ### Screenshot Notes
 
-The first four screenshots cover the main QuickView, inline editing, related pull requests, and comment composition; the injected issue-popup UI is unchanged. Only the Options screenshot needs refreshing for the approved redesign. Review captures are available under `output/hallmark/after/`; these full-page development captures are not replacements for the required 1280×800 store assets. The existing documentation screenshots are preserved.
+The first four screenshots cover the main QuickView, inline editing, related pull requests, and comment composition. Refresh the Pull Requests screenshot for the compact ID/target/signals/last-update grid and the Options screenshot for the redesigned settings page before store submission. The existing documentation screenshots are preserved.
 
 For the keyboard-shortcuts release, refresh the popup screenshot to include the keyboard-help control and consider a resolve/close confirmation screenshot.
 
@@ -68,7 +70,7 @@ For the keyboard-shortcuts release, refresh the popup screenshot to include the 
 | `scripting` | permissions | Loads Jira QuickView into a page after the user grants access or changes allowed-page settings. |
 | `storage` | permissions | Stores the Jira URL, allowed pages, popup layout, activation preferences, and optional Settings Sync configuration. |
 | `webNavigation` | permissions | Reapplies configured activation when supported pages navigate without a full browser reload. |
-| User-selected website access | optional_host_permissions | Access is requested only for the Jira instance and additional pages the user explicitly saves, so Jira references can be detected and QuickView can communicate with the configured Jira instance. |
+| User-selected website access | optional_host_permissions | Access is requested for the configured Jira instance, additional enabled pages, and linked GitLab hosts when the user chooses Connect. Granted GitLab access allows read-only pull request details using the existing signed-in browser session. No new mandatory host access is required. |
 
 ## Privacy & Data Use
 
@@ -78,15 +80,15 @@ For the keyboard-shortcuts release, refresh the popup screenshot to include the 
 
 | Data Type | Collected? | Transmitted Off-Device? | Purpose | Shared with Third Parties? |
 |-----------|------------|-------------------------|---------|----------------------------|
-| Personally identifiable info | Yes | To the configured Jira instance | Display Jira users, assignees, reporters, watchers, mentions, and authors | No; only the user's configured Jira system processes it |
+| Personally identifiable info | Yes | Requests to the configured Jira instance and authorized GitLab hosts | Display Jira users, assignees, reporters, watchers, mentions, authors, and GitLab commit authors and approvers | No developer-run recipient; only user-authorized systems |
 | Health info | No | No | Not used | No |
 | Financial info | No | No | Not used | No |
-| Authentication info | No | No | The existing browser Jira session is used; credentials are not read or stored | No |
-| Personal communications | Yes | To the configured Jira instance when requested | Display and perform user-initiated comment, description, attachment, and worklog actions | No; only the user's configured Jira system processes it |
+| Authentication info | No | No | Existing browser Jira and GitLab sessions are used; passwords, session-cookie values, and API tokens are not read or stored by the extension | No |
+| Personal communications | Yes | Requests to the configured Jira instance and authorized GitLab hosts | Display and perform user-initiated Jira comment, description, attachment, and worklog actions; read GitLab discussions to count unresolved threads | No developer-run recipient; only user-authorized systems |
 | Location | No | No | Not used | No |
 | Web history | No | No | Not collected | No |
 | User activity | Yes | To the configured Jira instance when an action is requested | Perform user-initiated field, workflow, watcher, link, reaction, and time-tracking changes | No; only the user's configured Jira system processes it |
-| Website content | Yes | Jira issue keys are sent to the configured Jira instance; shared settings are fetched from the configured source | Detect issue references locally and retrieve the requested issue or team configuration | No developer-run recipient; only user-configured systems |
+| Website content | Yes | Jira issue keys are sent to the configured Jira instance; linked MR identifiers are sent to GitLab hosts with granted site access; shared settings are fetched from the configured source | Detect issue references locally and retrieve the requested issue, linked MR details, or team configuration | No developer-run recipient; only user-authorized systems |
 
 ### Data Use Certification
 
@@ -127,7 +129,7 @@ https://dgebaei.github.io/Jira-QuickView/
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| Unreleased | 2026-10-24 | Popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, browser-local quick-close defaults, and documentation and Options redesign with clearer settings sections, light/dark appearance, and a keyboard-accessible screenshot viewer | Draft; refresh screenshots before submission |
+| Unreleased | 2026-10-24 | Compact pull request grid with optional GitLab signals and last-update details; popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, browser-local quick-close defaults, and documentation and Options redesign | Draft; refresh screenshots before submission |
 | 2.9.2 | 2026-10-15 | Children, linked issues, and external links in one links panel with a combined count, View in Jira links, removable external links, and popup titles clamped to two lines | Ready to submit |
 | 2.9.1 | 2026-10-15 | Click activation on Jira board cards and current-issue keys, no copy icon on Jira dialog Cancel links, single popup frame with an all-round shadow | Ready to submit |
 | 2.9.0 | 2026-10-14 | Calmer neutral popup and Options design, compact field chips, popup keyboard focus with contained Escape, outside-click editor close, real Jira versions only, and copy-icon and assignee-avatar fixes | Ready to submit |
@@ -140,7 +142,8 @@ https://dgebaei.github.io/Jira-QuickView/
 
 - Jira capabilities vary by Jira Cloud/Data Center version, installed applications, workflow configuration, and user permissions; unavailable operations remain read-only or hidden.
 - Live Jira verification requires an authorized Jira account and is separate from the deterministic mocked extension suite.
-- The Options store screenshot still shows the previous appearance and must be refreshed before submitting the unreleased redesign. The four popup screenshots remain current.
+- GitLab enrichment requires host access and a working GitLab browser session; unavailable or incomplete signals are shown as unknown. API-token/OAuth configuration is not included.
+- Store screenshots need refreshing for the redesigned Options, compact pull request grid, and keyboard-help control before store submission.
 
 ### Rejection History
 

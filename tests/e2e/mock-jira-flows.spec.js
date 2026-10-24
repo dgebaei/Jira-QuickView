@@ -537,26 +537,115 @@ test('sorts the Pull Requests block from the column headers @mock-only', async (
   const prLinks = page.locator('[data-content-block="pullRequests"] tbody tr td:nth-child(1) a');
 
   await expect(prLinks).toHaveText([
-    '[pr-2] Add inline custom field editing',
-    '[pr-1] Fix slash command cursor behavior',
-    '[pr-3] Prototype release evidence gallery',
+    '#1', '#2', '#3',
   ]);
 
   await page.locator('button._JX_pr_sort[data-sort-column="author"]').click();
   await expect(prLinks).toHaveText([
-    '[pr-2] Add inline custom field editing',
-    '[pr-3] Prototype release evidence gallery',
-    '[pr-1] Fix slash command cursor behavior',
+    '#2', '#3', '#1',
   ]);
 
   await page.locator('button._JX_pr_sort[data-sort-column="author"]').click();
   await expect(prLinks).toHaveText([
-    '[pr-1] Fix slash command cursor behavior',
-    '[pr-3] Prototype release evidence gallery',
-    '[pr-2] Add inline custom field editing',
+    '#1', '#3', '#2',
   ]);
 
   await page.close();
+});
+
+test('shows compact GitLab PR details, signals, and chronological sorting @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  await servers.jira.setScenario('pr-gitlab');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const {page} = await openPopup(extensionApp, servers, target);
+  const block = page.locator('[data-content-block="pullRequests"]');
+  const rows = block.locator('tbody tr');
+  await expect(block.locator('thead th')).toHaveText(['PR', 'Author', 'Target', 'Status', 'Signals', 'Last update']);
+  await expect(rows.locator('td:first-child a')).toHaveText(['!1', '!2', '!3', '!4']);
+  await expect(rows.first()).toContainText('Morgan Agent');
+  await expect(rows.first().locator('td').nth(2)).toHaveText('main');
+  await expect(rows.first().getByLabel('3 unresolved review threads')).toBeVisible();
+  await expect(rows.first().getByLabel('CI failed on the current revision')).toBeVisible();
+  await expect(rows.first().getByLabel('Merge conflicts detected')).toBeVisible();
+  await expect(rows.first().getByLabel('2 approvals', {exact: true})).toBeVisible();
+  await rows.first().getByLabel('2 approvals', {exact: true}).focus();
+  await expect(page.getByRole('tooltip')).toContainText('Alex Reviewer (@alex)');
+  await expect(page.getByRole('tooltip')).toContainText('Casey Commenter (@casey)');
+  await expect(page.getByRole('tooltip')).toContainText('do not imply this PR is ready to merge');
+
+  await rows.first().locator('td:first-child a').focus();
+  await expect(page.getByRole('tooltip')).toContainText('Fix slash command cursor behavior');
+  await expect(page.getByRole('tooltip')).toContainText('fix/slash-command-end-key');
+  await page.keyboard.press('Escape');
+  await expect(block).toBeVisible();
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+
+  await page.locator('._JX_container').focus();
+  await rows.first().getByLabel('2 approvals', {exact: true}).hover();
+  await expect(page.getByRole('tooltip')).toContainText('Alex Reviewer');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(block).toBeVisible();
+
+  await rows.nth(1).locator('._JX_pr_time').focus();
+  await expect(page.getByRole('tooltip')).toContainText('Merged by Alex Reviewer');
+  await page.keyboard.press('Escape');
+  await block.getByRole('button', {name: /Sort by last update oldest first/i}).click();
+  await expect(rows.locator('td:first-child a')).toHaveText(['!3', '!2', '!1', '!4']);
+  await block.getByRole('button', {name: /Sort by last update newest first/i}).click();
+  await expect(rows.locator('td:first-child a')).toHaveText(['!1', '!2', '!3', '!4']);
+  await page.close();
+});
+
+test('retains Jira PRs when GitLab authentication is unavailable @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  await servers.jira.setScenario('pr-gitlab-auth-fails');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const {page} = await openPopup(extensionApp, servers, target);
+  const block = page.locator('[data-content-block="pullRequests"]');
+  await expect(block.locator('tbody tr')).toHaveCount(4);
+  await expect(block.getByRole('button', {name: /Retry GitLab/})).toBeVisible();
+  await expect(block.locator('._JX_pr_signal_success')).toHaveCount(0);
+  await expect(block).toContainText('Morgan Agent');
+  await servers.jira.setScenario('pr-gitlab');
+  await block.getByRole('button', {name: /Retry GitLab/}).click();
+  await expect(block.getByRole('button', {name: /Retry GitLab/})).toHaveCount(0);
+  await expect(block.getByLabel('2 approvals', {exact: true}).first()).toBeVisible();
+  await expect(block.getByLabel('Merge conflicts detected')).toBeVisible();
+  await page.close();
+});
+
+test('GitLab enrichment respects host permission without widening Jira transport @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const worker = extensionApp.context.serviceWorkers()[0];
+  await worker.evaluate(() => {
+    globalThis.gitlabPermissionTest = {contains: chrome.permissions.contains, fetch: globalThis.fetch, requests: 0};
+    chrome.permissions.contains = (_details, callback) => callback(false);
+    globalThis.fetch = (...args) => {
+      if (String(args[0]).startsWith('https://gitlab.example/')) globalThis.gitlabPermissionTest.requests += 1;
+      return globalThis.gitlabPermissionTest.fetch(...args);
+    };
+  });
+  try {
+    const responses = await optionsPage.evaluate(async () => {
+      return Promise.all([
+        chrome.runtime.sendMessage({action: 'getGitLabPullRequest', url: 'https://gitlab.example/group/repo/-/merge_requests/1'}),
+        chrome.runtime.sendMessage({action: 'getGitLabPullRequest', url: 'https://gitlab.example/api/v4/users'}),
+        chrome.runtime.sendMessage({action: 'get', url: 'https://gitlab.example/api/v4/users'}),
+      ]);
+    });
+    expect(responses[0].result.status).toBe('permission-required');
+    expect(responses[1].error).toBe('Invalid GitLab merge request URL');
+    expect(responses[2].error).toBe('URL is outside configured Jira instance');
+    expect(await worker.evaluate(() => globalThis.gitlabPermissionTest.requests)).toBe(0);
+  } finally {
+    await worker.evaluate(() => {
+      chrome.permissions.contains = globalThis.gitlabPermissionTest.contains;
+      globalThis.fetch = globalThis.gitlabPermissionTest.fetch;
+      delete globalThis.gitlabPermissionTest;
+    });
+  }
 });
 
 test('sorts comments from the popup header and persists the preference across popup sessions @mock-only', async ({extensionApp, optionsPage, servers}) => {
