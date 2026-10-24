@@ -11,17 +11,82 @@
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
-  <main class="page page-narrow">
-    <article class="readme-render">
-<h1 id="jira-quickview">Jira QuickView</h1>
-<blockquote>
-<p>Click Jira issue links or hover recognized keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect and update issues without opening another Jira tab.</p>
-</blockquote>
-<p><img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" /> <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" /> <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" /></p>
-<p><a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a> · <a href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a> · <a href="user-guide.html">User guide</a> · <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a> · <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a></p>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Jira QuickView home">
+        <img class="brand-mark" src="favicon.svg" alt="" width="30" height="30">
+        <span class="brand-name">Jira QuickView</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a class="site-nav-link" href="user-guide.html">User guide</a>
+        <a class="site-nav-link" href="index.html#gallery">Gallery</a>
+        <a class="site-nav-link" href="privacy-policy.html">Privacy</a>
+        <a class="site-nav-link" href="https://github.com/dgebaei/Jira-QuickView">GitHub</a>
+      </nav>
+      <a class="header-action" href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download extension</a>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <h1 id="jira-quickview">Jira QuickView</h1>
+          <p class="hero-lede">Click Jira issue links or hover recognized keys on GitHub, Gmail, Outlook, docs, and other enabled pages to inspect and update issues without opening another Jira tab.</p>
+          <div class="hero-actions">
+          <a class="hero-action hero-action-primary" href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download Extension</a>
+          <a class="hero-action" href="https://dgebaei.github.io/Jira-QuickView/">Extension website</a>
+          <a class="hero-action" href="user-guide.html">User guide</a>
+          <a class="hero-action" href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a>
+          <a class="hero-action" href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a>
+          </div>
+          <div class="hero-badges">
+          <img src="https://img.shields.io/badge/Chrome-Extension-1f6feb?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Extension" />
+          <img src="https://img.shields.io/badge/Manifest-V3-0f766e?style=for-the-badge" alt="Manifest V3" />
+          <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="MIT License" />
+          </div>
+        </div>
+        <figure class="hero-figure">
+        <div class="hero-shot-frame">
+          <button type="button" class="lightbox-trigger" aria-label="Open Main product overview in full screen">
+            <img class="hero-shot" src="screenshots/marketing-hidpi-light/popup-overview.png" alt="Main product overview" loading="eager" fetchpriority="high" decoding="async">
+          </button>
+        </div>
+        <figcaption>Main product overview</figcaption>
+      </figure>
+      </div>
+    </section>
+    <div class="container doc-layout">
+      <aside class="doc-aside">
+        <details class="toc" open>
+        <summary>On this page</summary>
+        <nav aria-label="On this page">
+          <ol>
+            <li><a class="toc-link" href="#one-gesture-much-more-context">One gesture, much more context</a></li>
+            <li><a class="toc-link" href="#feature-highlights">Feature highlights</a></li>
+            <li><a class="toc-link" href="#whats-new-in-292">What's new in 2.9.2</a></li>
+            <li><a class="toc-link" href="#fixed-in-291">Fixed in 2.9.1</a></li>
+            <li><a class="toc-link" href="#whats-new-in-290">What's new in 2.9.0</a></li>
+            <li><a class="toc-link" href="#why-it-matters">Why it matters</a></li>
+            <li><a class="toc-link" href="#quick-start">Quick start</a></li>
+            <li><a class="toc-link" href="#where-it-works">Where it works</a></li>
+            <li><a class="toc-link" href="#customize-the-popup">Customize the popup</a></li>
+            <li><a class="toc-link" href="#privacy">Privacy</a></li>
+            <li><a class="toc-link" href="#need-help">Need help?</a></li>
+            <li><a class="toc-link" href="#gallery">Gallery</a></li>
+            <li><a class="toc-link" href="#license">License</a></li>
+          </ol>
+        </nav>
+      </details>
+      </aside>
+      <article class="prose">
+        
+
+
+
 <h2 id="one-gesture-much-more-context">One gesture, much more context</h2>
 <p>Open a Jira notification email in Gmail or Outlook, click the issue link, and triage the ticket directly from your inbox. The same workflow applies on GitHub pull requests, release notes, docs, bug lists, and other enabled pages: inspect the issue, review linked PRs, add comments, transition status, and update fields without breaking context.</p>
-<p><img src="screenshots/marketing-hidpi-light/popup-overview.png" alt="Main product overview" /></p>
+
 <h2 id="feature-highlights">Feature highlights</h2>
 <ul>
 <li>Action Jira email notifications directly from Gmail, Outlook, and other enabled inbox-style pages</li>
@@ -94,20 +159,20 @@
 <li>Use the <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a> to report bugs or request improvements.</li>
 </ul>
 <h2 id="gallery">Gallery</h2>
-<table>
-<thead>
-<tr class="header">
-<th>Children and links</th>
-<th>Multi-key linking</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><img src="screenshots/user-guide/popup-linked-issues.png" alt="Children and linked issues in the links panel" /></td>
-<td><img src="screenshots/user-guide/popup-linked-issues-multi-select.png" alt="Direct multi-key linked issue entry" /></td>
-</tr>
-</tbody>
-</table>
+<div class="gallery-grid">
+        <figure class="gallery-item">
+          <button type="button" class="lightbox-trigger" aria-label="Open Children and linked issues in the links panel in full screen">
+            <img src="screenshots/user-guide/popup-linked-issues.png" alt="Children and linked issues in the links panel" loading="lazy" decoding="async">
+          </button>
+          <figcaption>Children and linked issues in the links panel</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <button type="button" class="lightbox-trigger" aria-label="Open Direct multi-key linked issue entry in full screen">
+            <img src="screenshots/user-guide/popup-linked-issues-multi-select.png" alt="Direct multi-key linked issue entry" loading="lazy" decoding="async">
+          </button>
+          <figcaption>Direct multi-key linked issue entry</figcaption>
+        </figure>
+      </div>
 <table>
 <thead>
 <tr class="header">
@@ -181,8 +246,38 @@
 <h2 id="license">License</h2>
 <p>MIT. See <code>LICENSE.md</code>.</p>
 
-    </article>
+      </article>
+    </div>
   </main>
+  <footer class="site-footer">
+    <div class="container footer-main">
+      <div class="footer-brand">
+        <a class="brand" href="index.html" aria-label="Jira QuickView home">
+          <img class="brand-mark" src="favicon.svg" alt="" width="26" height="26">
+          <span class="brand-name">Jira QuickView</span>
+        </a>
+        <p>Quick access to Jira issue details from links and ticket numbers.</p>
+      </div>
+      <div class="footer-links">
+        <div>
+          <p class="footer-title">Product</p>
+          <a href="https://chromewebstore.google.com/detail/jira-quickview/oddgjhpfjkeckcppcldgjomlnablfkia">Download extension</a>
+          <a href="user-guide.html">User guide</a>
+          <a href="index.html#gallery">Gallery</a>
+        </div>
+        <div>
+          <p class="footer-title">Project</p>
+          <a href="https://github.com/dgebaei/Jira-QuickView">GitHub repository</a>
+          <a href="https://github.com/dgebaei/Jira-QuickView/issues">Issue tracker</a>
+          <a href="privacy-policy.html">Privacy policy</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer-base">
+      <p>MIT licensed. Built on Chrome Manifest V3.</p>
+      <p><a href="https://dgebaei.github.io/Jira-QuickView/">dgebaei.github.io/Jira-QuickView</a></p>
+    </div>
+  </footer>
   <script src="site.js"></script>
 </body>
 </html>
