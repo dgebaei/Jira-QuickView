@@ -714,49 +714,55 @@ function ConfigPage(props) {
 
   return (
     <div className='optionsPage' data-testid='options-root'>
-      {/* ── Hero ─────────────────────────────────────────── */}
-      <header className='heroCard'>
-        <div className='heroLeft'>
-          <div className='heroEyebrow'>Jira QuickView</div>
-          <div className='heroTitleRow'>
-            <h1 className='heroTitle'>Extension Options</h1>
+      {/* ── App bar ──────────────────────────────────────── */}
+      <header className='appBar'>
+        <div className='appBarBrand'>
+          <img
+            className='appBarMark'
+            src='../resources/jira-quickview-48.png'
+            alt=''
+            width='28'
+            height='28'
+          />
+          <span className='appBarWordmark'>Jira QuickView</span>
+          <a
+            className='appBarVersion'
+            data-testid='options-hero-version-link'
+            href={EXTENSION_RELEASE_URL}
+            target='_blank'
+            rel='noopener noreferrer'
+            aria-label={`Open Jira QuickView version ${EXTENSION_VERSION} release on GitHub`}
+            title={`Open Jira QuickView version ${EXTENSION_VERSION} release on GitHub`}
+          >
+            v{EXTENSION_VERSION}
+          </a>
+        </div>
+        <nav className='appBarLinks' aria-label='Jira QuickView resources' data-testid='options-hero-links'>
+          {HERO_LINKS.map(link => (
             <a
-              className='heroVersionLink'
-              data-testid='options-hero-version-link'
-              href={EXTENSION_RELEASE_URL}
+              key={link.key}
+              className='appBarLink'
+              data-testid={`options-hero-link-${link.key}`}
+              href={link.href}
               target='_blank'
               rel='noopener noreferrer'
-              aria-label={`Open Jira QuickView version ${EXTENSION_VERSION} release on GitHub`}
-              title={`Open Jira QuickView version ${EXTENSION_VERSION} release on GitHub`}
             >
-              v{EXTENSION_VERSION}
+              {link.label}
             </a>
-          </div>
-          <p className='heroCopy'>
-            Configure your Jira connection, theme, and which fields appear in the hover popup.
-          </p>
-          <nav className='heroLinks' aria-label='Jira QuickView resources' data-testid='options-hero-links'>
-            {HERO_LINKS.map(link => (
-              <a
-                key={link.key}
-                className='heroLink'
-                data-testid={`options-hero-link-${link.key}`}
-                href={link.href}
-                target='_blank'
-                rel='noopener noreferrer'
-              >
-                {link.label}
-              </a>
-            ))}
-          </nav>
-        </div>
-        <div className='heroRight'>
-          <div className={`statusPill${statusPillIsSaved ? ' statusPillActive' : ''}`} data-testid='options-status-pill'>
-            <span className={`statusPillDot ${statusTone === 'success' || statusPillIsSaved ? 'statusPillDotActive' : ''}`} />
-            {statusMessage}
-          </div>
+          ))}
+        </nav>
+        <div className={`statusPill${statusPillIsSaved ? ' statusPillActive' : ''}`} data-testid='options-status-pill'>
+          <span className={`statusPillDot ${statusTone === 'success' || statusPillIsSaved ? 'statusPillDotActive' : ''}`} />
+          {statusMessage}
         </div>
       </header>
+
+      <section className='pageIntro'>
+        <h1 className='pageTitle'>Extension Options</h1>
+        <p className='pageLede'>
+          Configure your Jira connection, theme, and which fields appear in the hover popup.
+        </p>
+      </section>
 
       {/* ── Settings Grid ───────────────────────────────── */}
       <div className='settingsGrid'>
@@ -764,9 +770,14 @@ function ConfigPage(props) {
         {/* ── BASIC: Connection ─────────────────────────── */}
         <section className='settingsCard'>
           <div className='cardHeader'>
-            <div className='sectionEyebrow'>Basic</div>
-            <h2>Connection</h2>
-            <p>Tell the extension where Jira lives and which pages it should activate on.</p>
+            <div className='sectionIndex' aria-hidden='true'>
+              <span className='sectionNumber'>01</span>
+              <span className='sectionLabel'>Basic</span>
+            </div>
+            <div className='cardHeaderCopy'>
+              <h2>Connection</h2>
+              <p>Tell the extension where Jira lives and which pages it should activate on.</p>
+            </div>
           </div>
           <div className='cardBody'>
             <label className='formField'>
@@ -804,8 +815,14 @@ function ConfigPage(props) {
         {/* ── BASIC: Appearance ──────────────────────────── */}
         <section className='settingsCard'>
           <div className='cardHeader'>
-            <h2>Appearance</h2>
-            <p>Choose how the options page and hover popup look across light and dark environments.</p>
+            <div className='sectionIndex' aria-hidden='true'>
+              <span className='sectionNumber'>02</span>
+              <span className='sectionLabel'>Basic</span>
+            </div>
+            <div className='cardHeaderCopy'>
+              <h2>Appearance</h2>
+              <p>Choose how the options page and hover popup look across light and dark environments.</p>
+            </div>
           </div>
           <div className='cardBody'>
             <span className='fieldLabel'>Color mode</span>
@@ -880,6 +897,7 @@ function ConfigPage(props) {
           aria-controls='advanced-settings-panel'
           aria-label={showAdvanced ? 'Hide advanced settings' : 'Show advanced settings'}
         >
+          <span className='advToggleIndex' aria-hidden='true'>03</span>
           <svg className='advToggleIcon' viewBox='0 0 24 24' aria-hidden='true' focusable='false'>
             <circle cx='12' cy='12' r='3.5' />
             <path d='M12 3v3M12 18v3M4.9 4.9 7 7M17 17l2.1 2.1M3 12h3M18 12h3M4.9 19.1 7 17M17 7l2.1-2.1' />
@@ -899,7 +917,6 @@ function ConfigPage(props) {
           {/* ── Hover Preview ────────────────────────────── */}
           <section className='settingsCard settingsGridFull'>
             <div className='cardHeader'>
-              <div className='sectionEyebrow sectionEyebrowMuted'>Advanced</div>
               <h2>Hover Preview</h2>
               <p>Choose when pointing at Jira IDs opens a preview.</p>
             </div>
@@ -918,9 +935,9 @@ function ConfigPage(props) {
                 <label className='formField'>
                   <span className='fieldLabel'>Depth</span>
                   <select data-testid='options-hover-depth' value={hoverDepth} onChange={event => setHoverDepth(event.target.value)} disabled={hoverActivationMode === 'off'}>
-                    <option value='exact'>Exact — only the hovered element itself</option>
-                    <option value='shallow'>Shallow — hovered element + immediate parent</option>
-                    <option value='deep'>Deep — walk up to 5 ancestor levels (most sensitive)</option>
+                    <option value='exact'>Exact: only the hovered element</option>
+                    <option value='shallow'>Shallow: hovered element plus its parent</option>
+                    <option value='deep'>Deep: up to 5 ancestor levels (most sensitive)</option>
                   </select>
                   <span className='fieldHelp'>How far hover activation searches surrounding page elements for Jira keys.</span>
                 </label>
@@ -928,10 +945,10 @@ function ConfigPage(props) {
                 <label className='formField'>
                   <span className='fieldLabel'>Modifier key</span>
                   <select data-testid='options-hover-modifier' value={hoverModifierKey} onChange={event => setHoverModifierKey(event.target.value)} disabled={hoverActivationMode !== 'modifier'}>
-                    <option value='alt'>Alt — press Alt after hovering</option>
-                    <option value='ctrl'>Ctrl — press Ctrl after hovering</option>
-                    <option value='shift'>Shift — press Shift after hovering</option>
-                    <option value='any'>Any — press Alt, Ctrl, or Shift after hovering</option>
+                    <option value='alt'>Alt: press Alt after hovering</option>
+                    <option value='ctrl'>Ctrl: press Ctrl after hovering</option>
+                    <option value='shift'>Shift: press Shift after hovering</option>
+                    <option value='any'>Any: press Alt, Ctrl, or Shift after hovering</option>
                   </select>
                   <span className='fieldHelp'>Used only when Hover preview is set to With modifier.</span>
                 </label>

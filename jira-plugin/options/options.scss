@@ -1,144 +1,15 @@
-:root {
-  --page-bg: #f7f7f7;
-  --page-text: #1a1a1a;
-  --card-bg: #ffffff;
-  --card-border: rgb(0 0 0 / 10%);
-  --card-shadow: none;
-  --hero-bg: transparent;
-  --hero-text: #1a1a1a;
-  --eyebrow-color: #5c5c5c;
-  --section-title-color: #1a1a1a;
-  --section-desc-color: #5c5c5c;
-  --copy-muted: #5c5c5c;
-  --field-label-color: #262626;
-  --field-help-color: #666666;
-  --input-bg: #ffffff;
-  --input-border: rgb(0 0 0 / 18%);
-  --input-text: #1a1a1a;
-  --input-focus-border: #0c66e4;
-  --input-focus-ring: 0 0 0 3px rgb(12 102 228 / 18%);
-  --group-card-bg: #f7f7f7;
-  --group-card-border: rgb(0 0 0 / 10%);
-  --display-option-bg: #fafafa;
-  --display-option-border: rgb(0 0 0 / 10%);
-  --display-option-hover-bg: #f0f0f0;
-  --display-option-hover-border: rgb(0 0 0 / 18%);
-  --empty-bg: #fefce8;
-  --empty-border: #fde68a;
-  --empty-color: #854d0e;
-  --secondary-bg: #ffffff;
-  --secondary-border: rgb(0 0 0 / 18%);
-  --secondary-color: #1a1a1a;
-  --ghost-bg: #ffffff;
-  --ghost-border: rgb(0 0 0 / 14%);
-  --ghost-color: #262626;
-  --action-copy-color: #5c5c5c;
-  --custom-meta-color: #5c5c5c;
-  --error-bg: #fef2f2;
-  --error-color: #991b1b;
-  --status-bg: #262626;
-  --status-text: #e5e5e5;
-  --status-dot: #fbbf24;
-  --status-success-bg: #dcfce7;
-  --status-success-color: #166534;
-  --tip-bg: #f7f7f7;
-  --tip-border: rgb(0 0 0 / 10%);
-  --tip-text: #262626;
-  --pill-selected-bg: rgb(12 102 228 / 9%);
-  --pill-selected-border: #0c66e4;
-  --pill-selected-text: #0a52b8;
-  --pill-unselected-bg: #ffffff;
-  --pill-unselected-border: rgb(0 0 0 / 12%);
-  --pill-unselected-text: #262626;
-  --zone-border: rgb(12 102 228 / 40%);
-  --zone-bg: rgb(12 102 228 / 6%);
-  --pro-bg: var(--button-fill);
-  --pro-border: transparent;
-  --pro-text: var(--secondary-color);
-  --tooltip-header-bg: #ffffff;
-  --tooltip-header-border: rgb(0 0 0 / 10%);
-  --tooltip-header-text: #262626;
-  --tooltip-row-bg: #fafafa;
-  --tooltip-row-border: rgb(0 0 0 / 10%);
-  --accent: #0c66e4;
-  --accent-hover: #0a52b8;
-  --accent-text: #ffffff;
-  --button-fill: rgb(0 0 0 / 6%);
-  --button-fill-hover: rgb(0 0 0 / 10%);
-  color-scheme: light;
-  color: var(--page-text);
-  font-family: 'Segoe UI Variable Text', 'Aptos', 'Segoe UI', sans-serif;
-}
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: brand · redesign: full
+ * paper: warm #f5f0e6 · accent: teal #136e78 · display: system sans · body: Segoe UI Variable Text
+ * nav: top bar with wordmark, version and resource links · signature: the numbered settings ledger · states: default, hover, focus, active, disabled, loading, error, success
+ * axes: light/grotesk-sans/cool · posture: restrained · contrast: pass · finish-review: subagent, 4 findings resolved · v2.0.0 */
 
-:root[data-jhl-theme='dark'] {
-  --page-bg: #0a0a0a;
-  --page-text: #ededed;
-  --card-bg: #141414;
-  --card-border: rgb(255 255 255 / 10%);
-  --card-shadow: none;
-  --hero-bg: transparent;
-  --hero-text: #f5f5f5;
-  --eyebrow-color: #9e9e9e;
-  --section-title-color: #f5f5f5;
-  --section-desc-color: #a3a3a3;
-  --copy-muted: #a3a3a3;
-  --field-label-color: #e5e5e5;
-  --field-help-color: #8f8f8f;
-  --input-bg: #1a1a1a;
-  --input-border: rgb(255 255 255 / 16%);
-  --input-text: #f0f0f0;
-  --input-focus-border: #579dff;
-  --input-focus-ring: 0 0 0 3px rgb(87 157 255 / 25%);
-  --group-card-bg: #1a1a1a;
-  --group-card-border: rgb(255 255 255 / 10%);
-  --display-option-bg: #1a1a1a;
-  --display-option-border: rgb(255 255 255 / 10%);
-  --display-option-hover-bg: #232323;
-  --display-option-hover-border: rgb(255 255 255 / 18%);
-  --empty-bg: #1c1a0e;
-  --empty-border: #713f12;
-  --empty-color: #fde68a;
-  --secondary-bg: #1a1a1a;
-  --secondary-border: rgb(255 255 255 / 18%);
-  --secondary-color: #f0f0f0;
-  --ghost-bg: #141414;
-  --ghost-border: rgb(255 255 255 / 14%);
-  --ghost-color: #d4d4d4;
-  --action-copy-color: #a3a3a3;
-  --custom-meta-color: #a3a3a3;
-  --error-bg: #450a0a;
-  --error-color: #fca5a5;
-  --status-bg: #232323;
-  --status-text: #bdbdbd;
-  --status-dot: #fbbf24;
-  --status-success-bg: #14532d;
-  --status-success-color: #86efac;
-  --tip-bg: #1a1a1a;
-  --tip-border: rgb(255 255 255 / 10%);
-  --tip-text: #e5e5e5;
-  --pill-selected-bg: rgb(87 157 255 / 16%);
-  --pill-selected-border: #579dff;
-  --pill-selected-text: #a9cbff;
-  --pill-unselected-bg: #1a1a1a;
-  --pill-unselected-border: rgb(255 255 255 / 12%);
-  --pill-unselected-text: #d4d4d4;
-  --zone-border: rgb(87 157 255 / 45%);
-  --zone-bg: rgb(87 157 255 / 8%);
-  --pro-bg: var(--button-fill);
-  --pro-border: transparent;
-  --pro-text: var(--secondary-color);
-  --tooltip-header-bg: #141414;
-  --tooltip-header-border: rgb(255 255 255 / 10%);
-  --tooltip-header-text: #f5f5f5;
-  --tooltip-row-bg: #0f0f0f;
-  --tooltip-row-border: rgb(255 255 255 / 10%);
-  --accent: #579dff;
-  --accent-hover: #85b8ff;
-  --accent-text: #0a0a0a;
-  --button-fill: rgb(255 255 255 / 9%);
-  --button-fill-hover: rgb(255 255 255 / 14%);
-  color-scheme: dark;
-}
+/* Hallmark · pre-emit critique: P4 H4 E3 S4 R4 V4 · weakest: E, two hero cards with no task order, answered with a top bar and a numbered ledger */
+
+/* Hallmark · dismissed 41 · settingsCard and cardHeader legacy fills are overridden by transparent ledger surfaces; visible text inherits the theme ink from body, while the contentBlockToggleSwitch contains no text */
+
+/* Hallmark · answered F24 · the sticky save bar uses a thin boundary and a directional shadow to stay distinguishable from scrolling settings content in both themes */
+@import "../styles/tokens.css";
+@import "../styles/base.css";
 
 body {
   background: var(--page-bg);
@@ -155,7 +26,7 @@ body {
 }
 
 .optionsPage {
-  padding: 24px;
+  padding: var(--space-lg);
 }
 
 /* ── Eyebrow labels ────────────────────────────────────── */
@@ -163,7 +34,7 @@ body {
   color: var(--section-title-color);
   font-size: 10px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 
 .sectionEyebrowMuted {
@@ -177,19 +48,19 @@ body {
   box-shadow: var(--card-shadow);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  gap: var(--space-md);
   align-items: center;
   padding: 0;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-md);
   overflow: hidden;
 }
 
 .heroLeft {
-  padding: 8px 0 12px;
+  padding: var(--space-xs) 0 var(--space-sm);
 }
 
 .heroRight {
-  padding: 8px 0;
+  padding: var(--space-xs) 0;
   display: flex;
   align-items: center;
 }
@@ -198,14 +69,14 @@ body {
   color: var(--eyebrow-color);
   font-size: 11px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-xs);
 }
 
 .heroTitle {
   font-size: 22px;
   font-weight: 600;
   color: var(--hero-text);
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-xs);
   line-height: 1.2;
 }
 
@@ -213,8 +84,8 @@ body {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
 }
 
 .heroTitleRow .heroTitle {
@@ -230,7 +101,7 @@ body {
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
-  padding: 5px 8px;
+  padding: var(--space-2xs) var(--space-xs);
   text-decoration: none;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
@@ -259,8 +130,8 @@ body {
 .heroLinks {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 20px;
-  margin-top: 12px;
+  gap: var(--space-2xs) 20px;
+  margin-top: var(--space-sm);
 }
 
 .heroLink {
@@ -290,11 +161,11 @@ body {
   border-radius: 999px;
   color: var(--status-text);
   display: flex;
-  gap: 8px;
+  gap: var(--space-xs);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
-  padding: 10px 16px;
+  padding: var(--space-xs) var(--space-md);
   white-space: nowrap;
 }
 
@@ -318,7 +189,7 @@ body {
 /* ── Settings Grid ──────────────────────────────────────── */
 .settingsGrid {
   display: grid;
-  gap: 16px;
+  gap: var(--space-md);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -331,25 +202,25 @@ body {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px var(--color-shadow-soft);
   overflow: hidden;
 }
 
 .cardHeader {
   background: var(--group-card-bg);
   border-bottom: 1px solid var(--card-border);
-  padding: 14px 18px;
+  padding: var(--space-md) var(--space-md);
 }
 
 .cardHeader .sectionEyebrow {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 
 .cardHeader h2 {
   color: var(--section-title-color);
   font-size: 14px;
   font-weight: 600;
-  margin: 0 0 2px;
+  margin: 0 0 var(--space-3xs);
 }
 
 .cardHeader p {
@@ -360,7 +231,7 @@ body {
 }
 
 .cardBody {
-  padding: 16px 18px;
+  padding: var(--space-md) var(--space-md);
 }
 
 /* ── Links ──────────────────────────────────────────────── */
@@ -391,13 +262,13 @@ a {
 .cardHeader {
   background: var(--group-card-bg);
   border-bottom: 1px solid var(--card-border);
-  padding: 14px 20px;
+  padding: var(--space-md) 20px;
 }
 
 .cardHeaderWithStatus {
   align-items: center;
   display: flex;
-  gap: 16px;
+  gap: var(--space-md);
   justify-content: space-between;
 }
 
@@ -409,7 +280,7 @@ a {
   color: var(--section-title-color);
   font-size: 15px;
   font-weight: 600;
-  margin: 0 0 2px;
+  margin: 0 0 var(--space-3xs);
 }
 
 .cardHeader p {
@@ -420,7 +291,7 @@ a {
 }
 
 .cardBody {
-  padding: 18px 20px;
+  padding: var(--space-md) 20px;
 }
 
 /* ── Form Fields ─────────────────────────────────────────── */
@@ -430,7 +301,7 @@ a {
 }
 
 .formField + .formField {
-  margin-top: 16px;
+  margin-top: var(--space-md);
 }
 
 .hoverRow .formField + .formField,
@@ -443,14 +314,14 @@ a {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 
 .fieldLabelRow {
   align-items: center;
   display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
 }
 
 .fieldLabelRow .fieldLabel {
@@ -462,7 +333,7 @@ a {
   display: block;
   font-size: 11px;
   line-height: 1.5;
-  margin-top: 5px;
+  margin-top: var(--space-2xs);
 }
 
 input,
@@ -476,7 +347,7 @@ select {
   font: inherit;
   margin: 0;
   min-height: 44px;
-  padding: 10px 12px;
+  padding: var(--space-xs) var(--space-sm);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
 }
@@ -487,7 +358,7 @@ select {
   background-position: right 12px center;
   background-repeat: no-repeat;
   background-size: 10px 6px;
-  padding-right: 34px;
+  padding-right: 32px;
 }
 
 select option {
@@ -496,13 +367,13 @@ select option {
 }
 
 select option:checked {
-  background: var(--pill-selected-bg) linear-gradient(0deg, var(--pill-selected-bg) 0%, var(--pill-selected-bg) 100%);
+  background: var(--pill-selected-bg);
   color: var(--pill-selected-text);
 }
 
 select option:hover,
 select option:focus {
-  background: var(--display-option-hover-bg) linear-gradient(0deg, var(--display-option-hover-bg) 0%, var(--display-option-hover-bg) 100%);
+  background: var(--display-option-hover-bg);
   color: var(--input-text);
 }
 
@@ -535,13 +406,8 @@ button {
   font: inherit;
   font-weight: 600;
   line-height: 1;
-  padding: 10px 16px;
+  padding: var(--space-xs) var(--space-md);
   transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.15s ease, background 0.15s ease;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  button:hover {
-  }
 }
 
 button:active {
@@ -597,8 +463,8 @@ button:disabled {
 /* ── Theme Pill Toggles ──────────────────────────────────── */
 .themePills {
   display: flex;
-  gap: 10px;
-  margin-top: 12px;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
 }
 
 .themePill {
@@ -615,11 +481,6 @@ button:disabled {
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   background: none;
   padding: 0;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .themePill:hover {
-  }
 }
 
 .themePillSelected {
@@ -642,15 +503,15 @@ button:disabled {
   color: var(--tip-text);
   font-size: 12px;
   line-height: 1.5;
-  margin-top: 14px;
-  padding: 12px 14px;
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
 }
 
 /* ── QuickView activation controls ──────────────────────── */
 .hoverRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--space-md);
 }
 
 @media (max-width: 640px) {
@@ -680,11 +541,11 @@ button:disabled {
   cursor: pointer;
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 14px;
+  gap: var(--space-md);
   align-items: center;
   font-weight: inherit;
   line-height: normal;
-  padding: 16px 20px;
+  padding: var(--space-md) 20px;
   text-align: left;
   transform: none;
   width: 100%;
@@ -703,11 +564,11 @@ button:disabled {
 }
 
 .advancedPanelBody {
-  padding: 16px;
+  padding: var(--space-md);
 }
 
 .advancedSettingsGrid {
-  gap: 14px;
+  gap: var(--space-md);
 }
 
 .advancedSettingsGrid .settingsCard {
@@ -719,7 +580,7 @@ button:disabled {
 }
 
 .advancedSettingsGrid .settingsCard .cardBody {
-  padding-top: 14px;
+  padding-top: var(--space-md);
 }
 
 .advToggleIcon {
@@ -743,7 +604,7 @@ button:disabled {
   color: var(--field-label-color);
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 2px;
+  margin-bottom: var(--space-3xs);
 }
 
 .advToggleDescription {
@@ -760,7 +621,7 @@ button:disabled {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  padding: 8px 18px;
+  padding: var(--space-xs) var(--space-md);
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   white-space: nowrap;
 }
@@ -774,7 +635,7 @@ button:disabled {
 /* ── Field Layout Groups ────────────────────────────────── */
 .fieldLayoutGroups {
   display: grid;
-  gap: 12px;
+  gap: var(--space-sm);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -782,18 +643,18 @@ button:disabled {
   background: var(--group-card-bg);
   border: 1px solid var(--group-card-border);
   border-radius: 12px;
-  padding: 14px;
+  padding: var(--space-md);
 }
 
 .fieldGroupHeader {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-xs);
 }
 
 .fieldGroupHeader h3 {
   color: var(--section-title-color);
   font-size: 13px;
   font-weight: 600;
-  margin: 0 0 2px;
+  margin: 0 0 var(--space-3xs);
 }
 
 .fieldGroupHeader p {
@@ -805,7 +666,7 @@ button:disabled {
 
 .displayFields {
   display: grid;
-  gap: 8px;
+  gap: var(--space-xs);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -816,9 +677,9 @@ button:disabled {
   border-radius: 10px;
   cursor: pointer;
   display: flex;
-  gap: 8px;
+  gap: var(--space-xs);
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 var(--space-sm);
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   width: auto;
 }
@@ -844,7 +705,7 @@ button:disabled {
 .customFieldsSection {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-sm);
 }
 
 .customFieldRow {
@@ -853,9 +714,9 @@ button:disabled {
   border: 1px dashed var(--group-card-border);
   border-radius: 12px;
   display: grid;
-  gap: 10px 12px;
+  gap: var(--space-xs) var(--space-sm);
   grid-template-columns: minmax(200px, 1.5fr) 160px auto;
-  padding: 14px;
+  padding: var(--space-md);
 }
 
 .customFieldHeader {
@@ -870,7 +731,7 @@ button:disabled {
   color: var(--custom-meta-color);
   font-size: 11px;
   line-height: 1.5;
-  margin-top: 2px;
+  margin-top: var(--space-3xs);
 }
 
 .customFieldMetaError {
@@ -890,16 +751,16 @@ button:disabled {
   color: var(--empty-color);
   font-size: 13px;
   line-height: 1.5;
-  padding: 14px;
+  padding: var(--space-md);
   text-align: center;
 }
 
 /* ── Settings Sync ──────────────────────────────────────── */
 .syncButtons {
   display: flex;
-  gap: 10px;
+  gap: var(--space-xs);
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: var(--space-sm);
 }
 
 .syncBtn {
@@ -910,7 +771,7 @@ button:disabled {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  padding: 9px 16px;
+  padding: var(--space-xs) var(--space-md);
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   min-width: 180px;
   text-align: center;
@@ -937,7 +798,7 @@ button:disabled {
 .syncProHint {
   color: var(--section-desc-color);
   font-size: 10px;
-  margin-top: 6px;
+  margin-top: var(--space-xs);
 }
 
 .teamSyncSource,
@@ -950,7 +811,7 @@ button:disabled {
 
 .teamSyncSource,
 .teamSyncMessage {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-sm);
 }
 
 .teamSyncStatus {
@@ -961,7 +822,7 @@ button:disabled {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
-  padding: 6px 10px;
+  padding: var(--space-xs) var(--space-xs);
 }
 
 .teamSyncStatus-synced {
@@ -979,7 +840,7 @@ button:disabled {
 
 .teamSyncSourceRow {
   display: grid;
-  gap: 12px;
+  gap: var(--space-sm);
   grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
@@ -1021,13 +882,12 @@ button:disabled {
 .teamSyncHintIcon {
   align-items: center;
   align-self: center;
-  background: var(--group-card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 999px;
+  background: transparent;
+  border: 0;
   color: var(--field-label-color);
   display: inline-flex;
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   height: 16px;
   justify-content: center;
@@ -1046,7 +906,7 @@ button:disabled {
   line-height: 1.5;
   max-width: min(340px, calc(100vw - 64px));
   opacity: 0;
-  padding: 10px 12px;
+  padding: var(--space-xs) var(--space-sm);
   pointer-events: none;
   position: absolute;
   top: calc(100% + 8px);
@@ -1071,15 +931,15 @@ button:disabled {
 .teamSyncActions {
   align-items: flex-start;
   display: grid;
-  gap: 12px;
+  gap: var(--space-sm);
   grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1fr) minmax(0, 1fr);
-  margin-top: 14px;
+  margin-top: var(--space-md);
 }
 
 .teamSyncPrimaryColumn {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-xs);
   grid-column: 1;
   min-width: 0;
 }
@@ -1099,7 +959,7 @@ button:disabled {
 }
 
 .teamSyncInlineMessage {
-  margin: 12px 0 0;
+  margin: var(--space-sm) 0 0;
 }
 
 .teamSyncInlineMessage.teamSyncStatus {
@@ -1107,7 +967,7 @@ button:disabled {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
-  padding: 14px 18px;
+  padding: var(--space-md) var(--space-md);
 }
 
 /* ── Footer Action Bar ──────────────────────────────────── */
@@ -1118,9 +978,9 @@ button:disabled {
   box-shadow: var(--card-shadow);
   display: flex;
   align-items: flex-start;
-  gap: 18px;
+  gap: var(--space-md);
   justify-content: space-between;
-  padding: 18px 22px;
+  padding: var(--space-md) var(--space-lg);
   position: sticky;
   bottom: 16px;
   margin-top: 20px;
@@ -1135,7 +995,7 @@ button:disabled {
 .actionCopy {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-2xs);
 }
 
 .actionCopy strong {
@@ -1152,7 +1012,7 @@ button:disabled {
 .actionControlsRow {
   align-items: center;
   display: flex;
-  gap: 10px;
+  gap: var(--space-xs);
 }
 
 .saveNotice {
@@ -1178,6 +1038,7 @@ button:disabled {
 }
 
 /* ── Save Button Override ───────────────────────────────── */
+
 /* Save is the page's one primary action: neutral while there is nothing to
    save, accent once there is. The status pill already announces unsaved
    changes, so the button does not pulse. */
@@ -1186,7 +1047,7 @@ button:disabled {
   color: var(--secondary-color);
   font-size: 13px;
   font-weight: 600;
-  padding: 11px 22px;
+  padding: var(--space-sm) var(--space-lg);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1209,7 +1070,7 @@ button:disabled {
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 960px) {
   .optionsPage {
-    padding: 18px;
+    padding: var(--space-md);
   }
 
   .settingsGrid {
@@ -1221,7 +1082,7 @@ button:disabled {
   }
 
   .heroRight {
-    padding: 20px 24px;
+    padding: 20px var(--space-lg);
   }
 
   .heroRight {
@@ -1229,7 +1090,7 @@ button:disabled {
   }
 
   .heroLinks {
-    gap: 8px;
+    gap: var(--space-xs);
   }
 
   .advancedPanelHeader {
@@ -1253,12 +1114,12 @@ button:disabled {
 
   .sectionHeadingSplit {
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-sm);
   }
 
   .actionBar {
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space-md);
   }
 
   .cardHeaderWithStatus {
@@ -1304,7 +1165,7 @@ button:disabled {
 @media (max-width: 640px) {
   .heroLink {
     font-size: 11px;
-    padding: 8px 10px;
+    padding: var(--space-xs) var(--space-xs);
   }
 
   .statusPill {
@@ -1362,17 +1223,17 @@ button:disabled {
   background: var(--page-bg);
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 12px;
+  padding: var(--space-sm);
 }
 
 .tooltipLayoutSidebarHeader {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-xs);
 
   h4 {
     font-size: 11px;
     font-weight: 600;
     color: var(--section-title-color);
-    margin: 0 0 2px 0;
+    margin: 0 0 var(--space-3xs) 0;
   }
 
   p {
@@ -1385,20 +1246,20 @@ button:disabled {
 .fieldLibrary {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-xs);
 }
 
 .fieldLibraryEmpty {
   font-size: 11px;
   color: var(--copy-muted);
   font-style: italic;
-  padding: 6px 0;
+  padding: var(--space-xs) 0;
 }
 
 .fieldLibraryItem {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2xs);
 }
 
 .fieldLibraryRemove {
@@ -1408,7 +1269,7 @@ button:disabled {
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  padding: 0 2px;
+  padding: 0 var(--space-3xs);
   opacity: 0;
   transition: opacity 0.15s;
 
@@ -1432,8 +1293,8 @@ button:disabled {
   color: var(--secondary-color);
   cursor: pointer;
   font-size: 11px;
-  margin-top: 6px;
-  padding: 4px 10px;
+  margin-top: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
   width: 100%;
 
   @media (hover: hover) and (pointer: fine) {
@@ -1447,8 +1308,8 @@ button:disabled {
 .fieldLibraryAdd {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--space-2xs);
+  margin-top: var(--space-xs);
 }
 
 .fieldLibraryInput {
@@ -1458,7 +1319,7 @@ button:disabled {
   color: var(--page-text);
   font-family: inherit;
   font-size: 11px;
-  padding: 5px 8px;
+  padding: var(--space-2xs) var(--space-xs);
   width: 100%;
   box-sizing: border-box;
 
@@ -1473,14 +1334,14 @@ button:disabled {
   font-size: 10px;
   line-height: 1.3;
 
-  &--success { color: var(--status-success-color, #16a34a); }
-  &--error { color: var(--error-color, #dc2626); }
+  &--success { color: var(--status-success-color); }
+  &--error { color: var(--error-color); }
   &--neutral { color: var(--copy-muted); }
 }
 
 .fieldLibraryAddActions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-2xs);
   justify-content: flex-end;
 }
 
@@ -1492,7 +1353,7 @@ button:disabled {
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
-  padding: 3px 8px;
+  padding: var(--space-2xs) var(--space-xs);
 
   @media (hover: hover) and (pointer: fine) {
     &:hover {
@@ -1507,12 +1368,12 @@ button:disabled {
 }
 
 .fieldLibraryAddBtnSave {
-  color: var(--status-success-color, #16a34a);
-  border-color: var(--status-success-color, #16a34a);
+  color: var(--status-success-color);
+  border-color: var(--status-success-color);
 
   @media (hover: hover) and (pointer: fine) {
     &:hover:not(:disabled) {
-      background: var(--status-success-bg, #f0fdf4);
+      background: var(--status-success-bg);
     }
   }
 }
@@ -1520,8 +1381,8 @@ button:disabled {
 .fieldPill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-xs);
   background: var(--secondary-bg);
   border: 1px solid var(--secondary-border);
   border-radius: 12px;
@@ -1546,10 +1407,10 @@ button:disabled {
 }
 
 .fieldPillDragging {
-  background: var(--section-title-color);
-  border-color: var(--section-title-color);
-  color: white;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
+  background: var(--pill-selected-bg);
+  border-color: var(--color-accent);
+  color: var(--pill-selected-text);
+  box-shadow: 0 4px 12px var(--color-shadow);
 }
 
 .fieldPillLabel {
@@ -1563,7 +1424,7 @@ button:disabled {
   width: 14px;
   height: 14px;
   padding: 0;
-  margin-left: 2px;
+  margin-left: var(--space-3xs);
   background: transparent;
   border: none;
   border-radius: 50%;
@@ -1586,7 +1447,7 @@ button:disabled {
   background: var(--page-bg);
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 16px;
+  padding: var(--space-md);
 }
 
 .tooltipPreview {
@@ -1594,29 +1455,29 @@ button:disabled {
   border: 1px solid var(--card-border);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px var(--color-shadow-soft);
 }
 
 .tooltipPreviewHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--tooltip-header-bg, #1e293b);
-  border-bottom: 1px solid var(--tooltip-header-border, #334155);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--tooltip-header-bg);
+  border-bottom: 1px solid var(--tooltip-header-border);
 }
 
 .tooltipPreviewLeft {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-xs);
   flex: 1;
   min-width: 0;
 }
 
 .tooltipPreviewPeople {
   display: flex;
-  gap: 4px;
+  gap: var(--space-2xs);
   align-items: center;
 }
 
@@ -1635,21 +1496,21 @@ button:disabled {
 .tooltipPreviewTitle {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-xs);
   min-width: 0;
 }
 
 .tooltipPreviewKey {
   font-size: 13px;
   font-weight: 600;
-  color: var(--tooltip-header-text, #f8fafc);
+  color: var(--tooltip-header-text);
   white-space: nowrap;
 }
 
 .tooltipPreviewTitleText {
   font-size: 13px;
   font-weight: 400;
-  color: var(--tooltip-header-text, #f8fafc);
+  color: var(--tooltip-header-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1658,7 +1519,7 @@ button:disabled {
 .tooltipPreviewActions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-3xs);
 }
 
 .tooltipPreviewAction {
@@ -1670,13 +1531,13 @@ button:disabled {
   font-size: 14px;
   cursor: pointer;
   transition: background 0.15s;
-  color: var(--tooltip-header-text, #f8fafc);
+  color: var(--tooltip-header-text);
   opacity: 0.7;
 
   @media (hover: hover) and (pointer: fine) {
     &:hover {
       opacity: 1;
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--color-rule);
       border-radius: 4px;
     }
   }
@@ -1691,17 +1552,17 @@ button:disabled {
   background: var(--page-bg);
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 12px;
+  padding: var(--space-sm);
 }
 
 .tooltipLayoutBlocksSidebarHeader {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-xs);
 
   h4 {
     font-size: 11px;
     font-weight: 600;
     color: var(--section-title-color);
-    margin: 0 0 2px 0;
+    margin: 0 0 var(--space-3xs) 0;
   }
 
   p {
@@ -1714,21 +1575,21 @@ button:disabled {
 .blocksLibrary {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-xs);
 }
 
 .blocksLibraryEmpty {
   font-size: 11px;
   color: var(--copy-muted);
   text-align: center;
-  padding: 8px 0;
+  padding: var(--space-xs) 0;
 }
 
 .blockPill {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px;
+  padding: var(--space-xs) var(--space-sm);
   background: var(--pill-selected-bg);
   border: 1px solid var(--pill-selected-border);
   border-radius: 12px;
@@ -1752,17 +1613,17 @@ button:disabled {
 }
 
 .tooltipPreviewPersonR {
-  background: #3b82f6;
+  background: var(--color-accent);
 }
 
 .tooltipPreviewPersonA {
-  background: #8b5cf6;
+  background: var(--color-accent-strong);
 }
 
 .tooltipPreviewAvatar {
   width: 24px;
   height: 24px;
-  background: #475569;
+  background: var(--color-ink-2);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1771,12 +1632,12 @@ button:disabled {
 }
 
 .tooltipPreviewSection {
-  padding: 12px 14px;
+  padding: var(--space-sm) var(--space-md);
 }
 
 .tooltipPreviewRow {
-  padding: 8px 10px;
-  margin-bottom: 8px;
+  padding: var(--space-xs) var(--space-xs);
+  margin-bottom: var(--space-xs);
   background: var(--tooltip-row-bg);
   border: 1px dashed var(--tooltip-row-border);
   border-radius: 6px;
@@ -1798,13 +1659,13 @@ button:disabled {
   font-size: 9px;
   font-weight: 600;
   color: var(--copy-muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 
 .tooltipPreviewRowContent {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--space-2xs);
   min-height: 26px;
 }
 
@@ -1815,7 +1676,7 @@ button:disabled {
 }
 
 .tooltipPreviewPeople {
-  padding: 10px 14px;
+  padding: var(--space-xs) var(--space-md);
   background: var(--group-card-bg);
   border-top: 1px solid var(--card-border);
   border-bottom: 1px solid var(--card-border);
@@ -1826,17 +1687,17 @@ button:disabled {
   font-size: 9px;
   font-weight: 600;
   color: var(--copy-muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 
 .tooltipPreviewPeopleContent {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--space-2xs);
 }
 
 .tooltipPreviewContentBlocks {
-  padding: 10px 14px;
+  padding: var(--space-xs) var(--space-md);
 }
 
 .tooltipPreviewContentLabel {
@@ -1844,13 +1705,13 @@ button:disabled {
   font-size: 9px;
   font-weight: 600;
   color: var(--copy-muted);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-xs);
 }
 
 .tooltipPreviewContentList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2xs);
   min-height: 40px;
   border-radius: 6px;
   transition: background-color 0.2s, border-color 0.2s;
@@ -1864,8 +1725,8 @@ button:disabled {
 .contentBlockItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-xs);
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 6px;
@@ -1941,7 +1802,7 @@ button:disabled {
 }
 
 .contentBlockEmpty {
-  padding: 10px;
+  padding: var(--space-xs);
   text-align: center;
   font-size: 11px;
   color: var(--copy-muted);
@@ -1952,7 +1813,7 @@ button:disabled {
 
 .tooltipPreviewContentAvailable {
   border-top: 1px solid var(--card-border);
-  padding-top: 10px;
+  padding-top: var(--space-xs);
 }
 
 .contentBlockAvailableLabel {
@@ -1960,18 +1821,18 @@ button:disabled {
   font-size: 9px;
   font-weight: 600;
   color: var(--copy-muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 
 .contentBlockAvailableList {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-2xs);
 }
 
 .contentBlockItemAvailable {
   display: inline-flex;
-  padding: 4px 8px;
+  padding: var(--space-2xs) var(--space-xs);
   background: var(--secondary-bg);
   border: 1px solid var(--secondary-border);
   border-radius: 12px;
@@ -1992,21 +1853,21 @@ button:disabled {
   font-size: 9px;
   font-weight: 600;
   color: var(--copy-muted);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-xs);
 }
 
 .tooltipPreviewContentToggles {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-xs);
 }
 
 .contentBlockToggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
   cursor: pointer;
-  padding: 4px 0;
+  padding: var(--space-2xs) 0;
 
   input {
     position: absolute;
@@ -2034,7 +1895,7 @@ button:disabled {
     background: white;
     border-radius: 50%;
     transition: transform 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px var(--color-shadow-soft);
   }
 }
 
@@ -2058,9 +1919,9 @@ button:disabled {
   border-radius: 10px;
   cursor: pointer;
   display: flex;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 12px 14px;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
 
   input {
     height: 1px;
@@ -2091,9 +1952,9 @@ button:disabled {
   transition: background-color 120ms ease;
 
   &::after {
-    background: #fff;
+    background: var(--color-paper-2);
     border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+    box-shadow: 0 1px 3px var(--color-shadow);
     content: '';
     height: 16px;
     left: 2px;
@@ -2107,7 +1968,7 @@ button:disabled {
 .inlineCopySettingCopy {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-2xs);
 
   strong {
     color: var(--page-text);
@@ -2118,5 +1979,1010 @@ button:disabled {
     color: var(--copy-muted);
     font-size: 12px;
     line-height: 1.4;
+  }
+}
+
+/* ── Redesign layer ─────────────────────────────────────────
+   The page is a settings ledger: a sticky app bar, one sentence of
+   orientation, then numbered rows. Cards, shadows and pill chrome are
+   removed so the form itself carries the structure. */
+.optionsPage {
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 0 var(--space-xl) var(--space-3xl);
+}
+
+.appBar {
+  align-items: center;
+  backdrop-filter: blur(12px);
+  background: color-mix(in oklab, var(--color-paper) 92%, transparent);
+  border-bottom: 1px solid var(--color-rule);
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin: 0 calc(var(--space-xl) * -1);
+  padding: var(--space-md) var(--space-xl);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky-nav);
+}
+
+.appBarBrand {
+  align-items: center;
+  display: flex;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.appBarMark {
+  border-radius: 6px;
+  flex: 0 0 auto;
+  height: 28px;
+  width: 28px;
+}
+
+.appBarWordmark {
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.appBarVersion {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  margin-left: var(--space-2xs);
+  text-decoration: none;
+  white-space: nowrap;
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      color: var(--color-ink);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  }
+}
+
+.appBarLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs) var(--space-md);
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.appBarLink {
+  color: var(--color-ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      color: var(--color-ink);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+  }
+}
+
+.statusPill {
+  align-items: center;
+  background: transparent;
+  border-radius: 0;
+  color: var(--color-muted);
+  display: inline-flex;
+  font-size: 11.5px;
+  font-weight: 500;
+  gap: var(--space-xs);
+  line-height: 1.4;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.statusPillDot {
+  background: var(--color-amber);
+  border-radius: 2px;
+  flex: 0 0 auto;
+  height: 6px;
+  width: 6px;
+}
+
+.statusPillActive {
+  background: transparent;
+  color: var(--color-success);
+}
+
+.statusPillDotActive {
+  background: var(--color-success);
+}
+
+.pageIntro {
+  border-bottom: 1px solid var(--color-rule);
+  display: grid;
+  gap: var(--space-sm) var(--space-2xl);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  padding: var(--space-2xl) 0 var(--space-xl);
+}
+
+.pageTitle {
+  color: var(--color-ink);
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+.pageLede {
+  align-self: end;
+  color: var(--color-ink-2);
+  font-size: var(--text-md);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+
+/* One ledger, not a card grid. */
+.settingsGrid {
+  display: block;
+}
+
+.settingsCard {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--color-rule);
+  border-radius: 0;
+  box-shadow: none;
+  display: grid;
+  gap: var(--space-sm) var(--space-2xl);
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  overflow: visible;
+  padding: var(--space-xl) 0;
+}
+
+.settingsGrid > .settingsCard:first-child {
+  border-top: 0;
+}
+
+.cardHeader {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.cardHeaderCopy {
+  min-width: 0;
+}
+
+.sectionIndex {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.sectionNumber {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.sectionLabel {
+  color: var(--color-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cardHeader h2 {
+  color: var(--color-ink);
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  margin: 0 0 var(--space-2xs);
+}
+
+.cardHeader p {
+  color: var(--color-ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 45ch;
+}
+
+.cardBody {
+  max-width: 640px;
+  padding: 0;
+  width: 100%;
+}
+
+.formField {
+  display: block;
+  width: 100%;
+}
+
+.formField + .formField {
+  margin-top: var(--space-lg);
+}
+
+.fieldLabel {
+  color: var(--color-ink);
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-bottom: var(--space-xs);
+}
+
+.fieldLabelRow {
+  align-items: center;
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.fieldLabelRow .fieldLabel {
+  margin-bottom: 0;
+}
+
+.fieldHelp {
+  color: var(--color-muted);
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: var(--space-xs);
+  max-width: 62ch;
+}
+
+input,
+textarea,
+select {
+  background-color: var(--color-paper-2);
+  border: 1px solid var(--color-control-edge);
+  border-radius: var(--radius-md);
+  box-sizing: border-box;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13.5px;
+  margin: 0;
+  min-height: 42px;
+  padding: var(--space-xs) var(--space-sm);
+  transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+  width: 100%;
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+select {
+  padding-right: var(--space-xl);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  outline: 2px solid transparent;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  background: var(--color-paper-3);
+  color: var(--color-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.themePills {
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-3xs);
+  margin-top: var(--space-xs);
+  padding: var(--space-2xs);
+}
+
+.themePill {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-2);
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 88px;
+  padding: 0 var(--space-md);
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+
+  &:active {
+    background: var(--color-rule);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+}
+
+.themePillSelected {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: var(--color-paper-2);
+}
+
+.themePillUnselected {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-ink-2);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: color-mix(in oklab, var(--color-ink) 7%, transparent);
+      color: var(--color-ink);
+    }
+  }
+}
+
+.tipBox {
+  background: transparent;
+  border: 0;
+  border-left: 2px solid var(--color-accent-line);
+  border-radius: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  margin-top: var(--space-md);
+  padding: var(--space-3xs) 0 var(--space-3xs) var(--space-sm);
+}
+
+.inlineCopySetting {
+  align-items: start;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--color-rule);
+  cursor: pointer;
+  display: grid;
+  gap: var(--space-sm);
+  grid-template-columns: 36px minmax(0, 1fr);
+  margin-top: 0;
+  padding: var(--space-md) 0;
+
+  &:first-of-type {
+    margin-top: var(--space-md);
+  }
+
+  input {
+    height: 1px;
+    opacity: 0;
+    position: absolute;
+    width: 1px;
+  }
+
+  input:focus-visible + .inlineCopySettingSwitch {
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  input:checked + .inlineCopySettingSwitch {
+    background: var(--color-accent);
+
+    &::after {
+      transform: translateX(16px);
+    }
+  }
+}
+
+.inlineCopySettingSwitch {
+  background: var(--color-rule-strong);
+  border-radius: var(--radius-pill);
+  flex: 0 0 36px;
+  height: 20px;
+  position: relative;
+  transition: background-color var(--dur-micro) var(--ease-out);
+
+  &::after {
+    background: var(--color-paper-2);
+    border-radius: 50%;
+    box-shadow: 0 1px 2px var(--color-shadow);
+    content: '';
+    height: 16px;
+    left: 2px;
+    position: absolute;
+    top: 2px;
+    transition: transform var(--dur-micro) var(--ease-out);
+    width: 16px;
+  }
+}
+
+.inlineCopySettingCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+
+  strong {
+    color: var(--color-ink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  span {
+    color: var(--color-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+
+/* Advanced is a disclosure in the same ledger. */
+.advancedPanel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--color-rule);
+  box-shadow: none;
+  margin: 0;
+  overflow: visible;
+}
+
+.advancedPanelOpen .advancedPanelHeader {
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.advancedPanelHeader {
+  align-items: center;
+  background: transparent;
+  border-radius: 0;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  font-weight: inherit;
+  line-height: normal;
+  padding: var(--space-lg) 0;
+  text-align: left;
+  transform: none;
+  width: 100%;
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: transparent;
+      transform: none;
+
+      .advToggleTitle {
+        color: var(--color-accent);
+      }
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}
+
+.advToggleIndex {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.advToggleIcon {
+  color: var(--color-muted);
+  flex-shrink: 0;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 18px;
+}
+
+.advToggleText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.advToggleTitle {
+  color: var(--color-ink);
+  font-size: var(--text-md);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.advToggleDescription {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.advToggleBtn {
+  background: transparent;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: var(--space-xs) var(--space-md);
+  transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+  white-space: nowrap;
+
+  @media (hover: hover) and (pointer: fine) {
+    .advancedPanelHeader:hover & {
+      background: var(--color-paper-3);
+      border-color: var(--color-rule-strong);
+      color: var(--color-ink);
+    }
+  }
+}
+
+.advancedPanelBody {
+  padding: 0;
+}
+
+.advancedSettingsGrid {
+  display: block;
+}
+
+.advancedSettingsGrid .settingsCard {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--color-rule);
+  border-radius: 0;
+  box-shadow: none;
+  display: grid;
+  gap: var(--space-sm) var(--space-2xl);
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  overflow: visible;
+  padding: var(--space-xl) 0;
+}
+
+.advancedSettingsGrid .settingsCard:first-child {
+  border-top: 0;
+}
+
+.advancedSettingsGrid .settingsCard .cardHeader {
+  background: transparent;
+  padding: 0;
+}
+
+.advancedSettingsGrid .settingsCard .cardBody {
+  max-width: 760px;
+  padding: 0;
+}
+
+.advancedSettingsGrid .hoverRow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.advancedSettingsGrid .hoverRow .formField:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.advancedSettingsGrid .cardHeaderWithStatus {
+  align-items: flex-start;
+  display: block;
+}
+
+.advancedSettingsGrid .cardHeaderWithStatus .teamSyncStatus {
+  display: inline-flex;
+  margin-top: var(--space-xs);
+}
+
+.advancedSettingsGrid .cardHeader h2 {
+  text-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.hoverRow {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tooltipLayoutWrapper,
+.tooltipLayoutEditor > *,
+.tooltipLayoutPreview,
+.tooltipPreview {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.tooltipLayoutEditor {
+  grid-template-columns: minmax(0, 160px) minmax(0, 1fr);
+  gap: var(--space-md);
+}
+
+.tooltipPreviewTitle {
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.tooltipPreviewPeople,
+.tooltipPreviewActions {
+  flex: none;
+}
+
+@media (max-width: 900px) {
+  .tooltipLayoutEditor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fieldGroupCard,
+.customFieldRow,
+.emptyState,
+.tooltipLayoutSidebar,
+.tooltipLayoutPreview {
+  background: var(--color-paper-2);
+  border-color: var(--color-rule);
+  border-radius: var(--radius-md);
+}
+
+.fieldGroupCard {
+  padding: var(--space-md);
+}
+
+.displayFieldOption {
+  background: var(--color-paper-2);
+  border-color: var(--color-rule);
+  border-radius: var(--radius-sm);
+  min-height: 38px;
+  padding: 0 var(--space-sm);
+}
+
+.displayFieldOption:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.teamSyncStatus {
+  background: var(--color-paper-3);
+  border-color: var(--color-rule);
+  border-radius: var(--radius-pill);
+  color: var(--color-muted);
+  font-size: 11px;
+  padding: var(--space-2xs) var(--space-xs);
+}
+
+.teamSyncStatus-synced {
+  background: var(--color-success-soft);
+  border-color: var(--color-success-line);
+  color: var(--color-success);
+}
+
+.teamSyncStatus-error,
+.teamSyncStatus-permissionsRequired {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger-line);
+  color: var(--color-danger-ink);
+}
+
+.syncBtn {
+  background: transparent;
+  white-space: nowrap;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  min-width: 0;
+  padding: var(--space-xs) var(--space-md);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: var(--color-paper-3);
+      color: var(--color-ink);
+    }
+  }
+}
+
+.proButton {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: var(--color-accent-strong);
+      border-color: var(--color-accent-strong);
+      color: var(--color-on-accent);
+    }
+  }
+}
+
+/* Save bar: the page's one primary action, held at the bottom. */
+.actionBar {
+  align-items: center;
+  background: color-mix(in oklab, var(--color-paper) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--color-rule);
+  bottom: 0;
+  box-shadow: 0 -8px 24px var(--color-shadow-soft);
+  display: flex;
+  gap: var(--space-lg);
+  justify-content: space-between;
+  margin: var(--space-xl) calc(var(--space-xl) * -1) 0;
+  padding: var(--space-md) var(--space-xl);
+  position: sticky;
+  transition: box-shadow var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out);
+  z-index: var(--z-sticky);
+}
+
+.actionBarDirty {
+  border-top-color: var(--color-accent);
+}
+
+.actionCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.actionCopy strong {
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.actionCopy span {
+  color: var(--color-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.actionControlsRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  justify-content: flex-end;
+}
+
+.saveNotice {
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.saveNoticeNeutral {
+  color: var(--color-muted);
+}
+
+.saveNoticeSuccess {
+  color: var(--color-success);
+}
+
+.saveNoticeError {
+  color: var(--color-danger);
+}
+
+.ghostButton {
+  background: transparent;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: var(--space-xs) var(--space-md);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: var(--color-paper-3);
+      color: var(--color-ink);
+    }
+  }
+}
+
+.saveBtn {
+  background: var(--color-ink);
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-sm);
+  color: var(--color-paper-2);
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: var(--space-xs) var(--space-lg);
+  transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), opacity var(--dur-micro) var(--ease-out);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: var(--color-accent-strong);
+      border-color: var(--color-accent-strong);
+    }
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none;
+  }
+}
+
+.saveBtnDirty {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      background: var(--color-accent-strong);
+      border-color: var(--color-accent-strong);
+    }
+  }
+}
+
+/* Form controls get the same instant ring everywhere. */
+.optionsPage :focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.optionsPage button:active {
+  transform: translateY(1px);
+}
+
+.optionsPage button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+/* Functional outlines stay distinct from decorative section rules. */
+.optionsPage :is(.ghostButton, .advToggleBtn, .secondaryButton, .fieldLibraryAddBtn, .displayFieldOption) {
+  border-color: var(--color-control-edge);
+}
+
+@media (max-width: 900px) {
+  .appBar {
+    gap: var(--space-sm);
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: var(--space-xs);
+  }
+
+  .appBarLinks {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    order: 3;
+  }
+
+  .statusPill {
+    justify-self: end;
+  }
+
+  .pageIntro {
+    grid-template-columns: 1fr;
+    padding-top: var(--space-xl);
+  }
+
+  .settingsCard,
+  .advancedSettingsGrid .settingsCard {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+    padding: var(--space-lg) 0;
+  }
+
+  .cardHeader p {
+    max-width: 56ch;
+  }
+
+  .hoverRow {
+    grid-template-columns: 1fr;
+  }
+
+  .actionBar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .actionControlsRow {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .optionsPage {
+    padding: 0 var(--space-md) var(--space-2xl);
+  }
+
+  .appBar {
+    margin: 0 calc(var(--space-md) * -1);
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .appBarWordmark {
+    font-size: 13px;
+  }
+
+  .appBarLinks {
+    gap: var(--space-2xs) var(--space-sm);
+  }
+
+  .appBarLink {
+    font-size: 11.5px;
+  }
+
+  .statusPill {
+    font-size: 11px;
+  }
+
+  .pageTitle {
+    font-size: 1.9rem;
+  }
+
+  .themePill {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 var(--space-sm);
+  }
+
+  .themePills {
+    flex-direction: row;
+  }
+
+  .advancedPanelHeader {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .advToggleIndex {
+    display: none;
+  }
+
+  .advToggleBtn {
+    padding: var(--space-xs) var(--space-sm);
+  }
+
+  .actionBar {
+    margin: var(--space-lg) calc(var(--space-md) * -1) 0;
+    padding: var(--space-sm) var(--space-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .optionsPage *,
+  .optionsPage *::before,
+  .optionsPage *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
