@@ -33,7 +33,7 @@
       <div class="container">
         <h1>Privacy Policy</h1>
         <p class="page-lede">What Jira QuickView handles, where that information goes, and what stays in your browser.</p>
-        <p class="page-meta">Effective date: 2026-09-12</p>
+        <p class="page-meta">Effective date: 2026-10-24</p>
       </div>
     </section>
 
@@ -74,8 +74,11 @@
         <p>When you configure a Jira instance and use the extension, Jira QuickView may request and display data from that Jira instance using your existing browser session. Depending on the feature you use, this can include issue metadata, descriptions, linked records, comments, reactions, attachments, avatars, workflow options, worklogs, and custom field values.</p>
         <p>If you use editing features, the extension may also send updates you initiate to your Jira instance, including field edits, comment creation or updates, attachment uploads, workflow transitions, watcher changes, and worklog changes.</p>
 
+        <h3>Linked GitLab merge request data</h3>
+        <p>For GitLab merge requests linked by Jira, the extension can request read-only details from GitLab hosts for which you have granted site access. These details can include branch names, commit authors and messages, creation and merge or close times and users, approval counts and approvers, review discussions, CI status, and merge conflicts. Merge request identifiers are sent only to the associated GitLab host, not to a developer-run service.</p>
+
         <h3>Authentication and session data</h3>
-        <p>The extension uses your existing browser session with Jira. It does not ask you to create or store a separate Jira password inside the extension.</p>
+        <p>The extension uses your existing browser sessions with Jira and, when site access is granted, GitLab. It does not read or store session-cookie values, passwords, or GitLab API tokens. Your browser supplies session authentication with requests to the relevant host.</p>
 
         <h3>Shared settings file data</h3>
         <p>If you enable Settings Sync, Jira QuickView may request a shared JSON configuration file from a Jira attachment on your configured Jira instance or from a direct URL that you or your administrator configured in the extension.</p>
@@ -86,16 +89,16 @@
 
         <h2 id="how-information-is-shared">How Information Is Shared</h2>
         <p>Jira QuickView does not sell personal data. It does not send your data to advertising networks, data brokers, or analytics services run by the developer.</p>
-        <p>Information is transmitted only as needed to your configured Jira instance, using your browser session, to provide the requested feature, and to a user-configured or administrator-provided shared settings URL when you enable Settings Sync URL mode. In the current implementation, pull request information shown in the popup is obtained from Jira issue data returned by Jira, not by separate GitHub API calls from the extension.</p>
+        <p>Information is transmitted only as needed to your configured Jira instance, to linked GitLab hosts with granted site access, and to a user-configured or administrator-provided shared settings URL when you enable Settings Sync URL mode. Linked pull requests are discovered through Jira. Additional GitLab details are requested directly from the corresponding GitLab host using your browser session; the extension does not make separate GitHub API calls.</p>
 
         <h2 id="data-retention">Data Retention</h2>
-        <p>Extension settings remain in Chrome storage until you change them, clear browser storage, or remove the extension. Team Sync source details and last sync metadata remain in Chrome storage until you change them, disconnect Team Sync, clear browser storage, or remove the extension. Jira issue data, images, and popup state are primarily processed in memory during use and are not stored by the developer on a separate server.</p>
+        <p>Extension settings remain in Chrome storage until you change them, clear browser storage, or remove the extension. Team Sync source details and last sync metadata remain in Chrome storage until you change them, disconnect Team Sync, clear browser storage, or remove the extension. Jira issue data, GitLab merge request details, images, and popup state are primarily processed and briefly cached in memory during use and are not stored by the developer on a separate server.</p>
 
         <h2 id="your-choices">Your Choices</h2>
         <p>You can choose which pages or domains the extension is allowed to run on, change or remove the configured Jira instance URL, change or disconnect the Team Sync source at any time, remove the extension at any time, and revoke site access and Chrome permissions through Chrome’s extension settings.</p>
 
         <h2 id="security">Security</h2>
-        <p>Jira QuickView is designed to use the minimum data needed for its features. Requests to Jira are made from your browser to the Jira instance you configured. If you enable Settings Sync URL mode, the extension also requests the shared JSON settings file from the URL you configured. The extension does not use remote code in its current implementation.</p>
+        <p>Jira QuickView is designed to use the minimum data needed for its features. Requests to Jira are made from your browser to the Jira instance you configured. GitLab enrichment uses read-only requests to associated hosts with granted site access. If you enable Settings Sync URL mode, the extension also requests the shared JSON settings file from the URL you configured. The extension does not use remote code in its current implementation.</p>
 
         <h2 id="childrens-privacy">Children’s Privacy</h2>
         <p>Jira QuickView is not directed to children.</p>

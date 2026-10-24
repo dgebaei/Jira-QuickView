@@ -834,19 +834,21 @@
 <li>Attachment visibility follows your Jira permissions.</li>
 </ul>
 <h3 id="510-pull-requests-block">5.10 Pull Requests Block</h3>
-<p><img src="screenshots/marketing-hidpi-light/popup-pull-requests.png" alt="Related pull requests" /></p>
+<p><img src="screenshots/user-guide/pull-requests-grid.png" alt="Compact pull request grid" /></p>
 <p>The Pull Requests block shows development work connected to the Jira issue.</p>
 <p>What you can see:</p>
 <ul>
-<li>Pull request title</li>
-<li>Author</li>
-<li>Branch</li>
-<li>Status</li>
-<li>Link to open the pull request</li>
+<li>Linked PR/MR ID. Hover or focus the ID for its title, repository, and source branch.</li>
+<li>Author avatar and full name, target branch, and status.</li>
+<li>Compact signals for approvals, unresolved review threads, current CI, and merge conflicts when GitLab supplies them. Hover or focus a signal for details; the approval icon includes the count and lists approvers and available approval times.</li>
+<li>A sortable <strong>Last update</strong> column. Open requests use the latest head commit time; merged and closed requests use their merge or close time. If unavailable, the column falls back to a known update or creation time and explains the fallback in its details.</li>
+<li>Hover or focus a last-update value for its event, responsible person when known, exact UTC time, and commit details. Newest-first is the default; click the header for oldest-first. Missing dates remain at the bottom in both directions.</li>
 </ul>
 <p>Business logic and limitations:</p>
 <ul>
-<li>Pull request data comes from Jira development-status APIs.</li>
+<li>Linked pull requests are discovered through Jira development-status data. GitLab details load separately, using your existing GitLab browser session and granted host access, without delaying the initial Jira rows.</li>
+<li>Choose <strong>Connect [GitLab host]</strong> if host access is missing. If authentication fails, sign in to that GitLab instance in the same browser and choose <strong>Retry GitLab</strong>. No API token is configured or stored.</li>
+<li>Unknown signals are not treated as successful checks. Approvals and passing CI do not imply the request is ready to merge. Closed/merged requests hide obsolete warnings, while recorded approvals remain available.</li>
 <li>If Jira does not know about linked pull requests, the block will not show them.</li>
 <li>The current browser page is filtered out when it is the same pull request you are already viewing, which avoids showing a redundant link.</li>
 </ul>
