@@ -56,14 +56,36 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
     }
   }
 
-  async function begin({kind, alternate = false, sessionId, issueSnapshot}) {
+  // Active sprints first, then future ones in planning order (start date, then creation).
+  function plannableSprints(options) {
+    const stateOf = item => String(item?.state || '').toLowerCase();
+    const order = {active: 0, future: 1};
+    const time = item => Date.parse(item?.startDate || '') || Number.MAX_SAFE_INTEGER;
+    return [...new Map((options || [])
+      .filter(item => item.id && stateOf(item) in order)
+      .map(item => [String(item.id), item])).values()]
+      .sort((left, right) => (order[stateOf(left)] - order[stateOf(right)]) ||
+        (time(left) - time(right)) || (Number(left.id) - Number(right.id)));
+  }
+
+  // The next sprint is the first future sprint on the board of a sprint the issue is
+  // already in; other boards of the project are the fallback.
+  function nextSprint(sprints, issue) {
+    const future = sprints.filter(item => String(item.state).toLowerCase() === 'future');
+    const issueSprintIds = new Set(readSprintsFromIssue(issue).map(item => String(item.id)));
+    const boardIds = new Set(sprints.filter(item => issueSprintIds.has(String(item.id)))
+      .flatMap(item => (item.boardRefs || []).map(board => String(board.id))));
+    return future.find(item => (item.boardRefs || []).some(board => boardIds.has(String(board.id)))) || future[0] || null;
+  }
+
+  async function begin({kind, alternate = false, sessionId, issueSnapshot, sprintTarget = 'current'}) {
     if (writing) return {kind: 'ignored'};
     reset();
     const expected = revision;
     const issue = issueSnapshot?.core;
     if (!issue?.key || !sessionId) return {kind: 'ignored'};
     state = {
-      kind, alternate, sessionId, issueSnapshot, issueKey: issue.key,
+      kind, alternate, sprintTarget, sessionId, issueSnapshot, issueKey: issue.key,
       phase: 'loading', error: '', hint: '', sprints: [], sprintId: '',
       users: [], userId: '', query: '', searching: false,
       transitions: [], transitionId: '', resolutionId: '', comment: '',
@@ -81,14 +103,15 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
         if (!sprint?.editable || !sprint.fieldId || !assigneeResult.context?.editable) {
           throw new Error('Jira does not allow editing both sprint and assignee on this issue.');
         }
-        const sprints = [...new Map((sprint.options || [])
-          .filter(item => item.id && String(item.state).toLowerCase() === 'active')
-          .map(item => [String(item.id), item])).values()];
-        if (!sprints.length) throw new Error('No active sprint is available. Open the sprint editor or Jira to choose another sprint.');
+        const sprints = plannableSprints(sprint.options);
+        if (!sprints.length) throw new Error('No active or future sprint is available. Open Jira to plan this issue.');
         if (alternate && !userId(viewer)) throw new Error('Could not identify the current Jira user.');
+        const active = sprints.filter(item => String(item.state).toLowerCase() === 'active');
+        const preselected = sprintTarget === 'next' ? nextSprint(sprints, issue) : (active.length === 1 ? active[0] : null);
         state = {
           ...state, phase: 'editing', sprints, sprintFieldId: sprint.fieldId,
-          sprintId: sprints.length === 1 ? String(sprints[0].id) : '',
+          sprintId: preselected ? String(preselected.id) : '',
+          hint: sprintTarget === 'next' && !preselected ? 'No future sprint is planned; choose a sprint.' : '',
           users: viewer ? [viewer] : [], userId: userId(viewer),
         };
         if (!alternate) await search('');
@@ -143,7 +166,7 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
       const path = `${instanceUrl}rest/api/2/issue/${encodeURIComponent(state.issueKey)}`;
       if (state.kind === 'plan') {
         const user = state.users.find(item => userId(item) === state.userId);
-        if (!state.sprintFieldId || !state.sprints.some(item => String(item.id) === state.sprintId)) throw new Error('Choose an active sprint.');
+        if (!state.sprintFieldId || !state.sprints.some(item => String(item.id) === state.sprintId)) throw new Error('Choose a sprint.');
         if (!user) throw new Error('Choose an assignee.');
         const assignee = user.accountId ? {accountId: user.accountId} : user.name ? {name: user.name} : {key: user.key};
         const fields = {assignee};

@@ -425,17 +425,23 @@ function installAllowedPageCopyButtons(documentRef, instanceUrl, copy, isAlive) 
       // Jira action links such as “View issue” and “Add comment” can point at
       // an issue URL but are not issue references users should copy.
       if (!key || !new RegExp(`\\b${key}\\b`, 'i').test(link.textContent || '')) continue;
-      // A button already after a link this install does not track was left by
-      // another install, typically a content script orphaned by an extension
-      // reload. Replace it so the link never carries two.
+      // A button already after or inside a link this install does not track was
+      // left by another install, typically a content script orphaned by an
+      // extension reload. Replace it so the link never carries two.
       let stale = link.nextElementSibling;
       while (stale?.matches('._JX_inline_copy_button')) {
         const next = stale.nextElementSibling;
         stale.remove();
         stale = next;
       }
+      link.querySelectorAll(':scope > ._JX_inline_copy_button').forEach(button => button.remove());
       const button = makeButton(key);
-      link.after(button);
+      // In a grid or flex row every child is a cell, so a sibling button would
+      // shift the row's columns; there it goes inside the link. Its click
+      // handler already stops the link from navigating.
+      const parentDisplay = link.parentElement ? documentRef.defaultView.getComputedStyle(link.parentElement).display : '';
+      if (/grid|flex/.test(parentDisplay)) link.append(button);
+      else link.after(button);
       references.set(link, {href: link.href, button});
     }
     const walker = documentRef.createTreeWalker(documentRef.body, 4);

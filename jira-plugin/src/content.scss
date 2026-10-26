@@ -22,60 +22,85 @@
   --jx-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+// Shortcut workflows drop down from the toolbar like the shortcut list and use
+// the popup's type scale; still a modal dialog, so focus stays in the form.
 body dialog._JX_shortcuts_dialog {
   background: var(--jx-surface);
   border: 1px solid var(--jx-border-strong);
-  border-radius: 10px;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px oklch(0% 0 none / 16%), 0 2px 6px oklch(0% 0 none / 6%);
   box-sizing: border-box;
   color: var(--jx-ink);
-  font: 14px/1.5 var(--jx-font);
-  inline-size: min(38rem, calc(100% - 2rem));
-  max-block-size: calc(100% - 2rem);
+  font: 13px/1.45 var(--jx-font);
+  inline-size: min(360px, calc(100vw - 16px));
+  inset: auto;
+  margin: 0;
+  max-block-size: calc(100vh - 16px);
   overflow: auto;
   overflow-wrap: anywhere;
-  padding: clamp(16px, 3vw, 24px);
+  padding: 10px 12px 12px;
+  position: fixed;
 
-  &::backdrop { background: oklch(0% 0 none / 40%); }
+  &::backdrop { background: oklch(0% 0 none / 8%); }
 
   h2 {
-    font-size: 18px;
-    margin-block: 0 8px;
+    font: 600 13px/1.4 var(--jx-font);
+    margin: 0;
   }
-  p { margin-block: 8px; }
-  ._JX_shortcuts_context { color: var(--jx-ink-2); }
+  p { margin-block: 4px; }
+
+  // The issue is already in the popup header; one muted line is enough.
+  ._JX_shortcuts_context {
+    color: var(--jx-ink-meta);
+    font-size: 12px;
+    margin-block: 0 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [role='status']:empty { display: none; }
+  [role='status'] {
+    color: var(--jx-ink-2);
+    font-size: 12px;
+  }
 
   form, ._JX_shortcuts_field {
     display: grid;
-    gap: 8px;
+    gap: 4px;
   }
-  form { gap: 16px; }
-  label { font-weight: 600; }
+  form { gap: 10px; }
+  label, ._JX_shortcuts_label {
+    color: var(--jx-ink-2);
+    font-size: 12px;
+    font-weight: 600;
+  }
 
   input:not([type='checkbox']), select, textarea {
     background: var(--jx-surface);
     border: 1px solid var(--jx-border-strong);
-    border-radius: 5px;
+    border-radius: 6px;
     box-sizing: border-box;
     color: inherit;
     font: inherit;
     inline-size: 100%;
-    padding: 8px;
+    padding: 5px 8px;
   }
 
   textarea {
-    min-block-size: 80px;
+    min-block-size: 64px;
     resize: vertical;
   }
 
   button {
     background: var(--jx-surface);
     border: 1px solid var(--jx-border-strong);
-    border-radius: 5px;
+    border-radius: 6px;
     color: inherit;
     cursor: pointer;
-    font: inherit;
-    min-block-size: 32px;
-    padding: 5px 10px;
+    font: 600 12px/1.4 var(--jx-font);
+    min-block-size: 28px;
+    padding: 4px 10px;
 
     &:active { background: var(--jx-fill-pressed); }
     &:disabled {
@@ -84,6 +109,7 @@ body dialog._JX_shortcuts_dialog {
     }
     &[type='submit'] {
       background: var(--jx-accent);
+      border-color: var(--jx-accent);
       color: oklch(100% 0 none);
     }
   }
@@ -95,30 +121,49 @@ body dialog._JX_shortcuts_dialog {
   ._JX_shortcuts_footer {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     justify-content: flex-end;
   }
   ._JX_shortcuts_check {
     align-items: start;
     display: flex;
     font-weight: 400;
-    gap: 8px;
+    gap: 6px;
   }
+
+  // Sprint choices and assignee results read like QuickView's edit pickers:
+  // borderless rows, the current one filled.
+  ._JX_shortcuts_choices,
   [role='listbox'] {
     display: grid;
-    gap: 4px;
+    gap: 1px;
     max-block-size: 180px;
     overflow: auto;
   }
-  [role='option'] { text-align: start; }
+  [role='radio'], [role='option'] {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    display: flex;
+    font-weight: 400;
+    gap: 6px;
+    min-block-size: 26px;
+    padding: 3px 8px;
+    text-align: start;
+  }
+  [role='radio'][aria-checked='true'],
   [role='option'].is-highlighted {
     background: var(--jx-accent-subtle);
-    border-color: var(--jx-accent);
+    font-weight: 600;
   }
+  ._JX_chip_state { margin-left: 0; }
 
   @media (hover: hover) and (pointer: fine) {
     button:not(:disabled):hover { background: var(--jx-fill-hover); }
     button[type='submit']:not(:disabled):hover { background: var(--jx-accent-hover); }
+    [role='radio'][aria-checked='true']:hover,
+    [role='option'].is-highlighted:hover { background: var(--jx-accent-subtle-strong); }
   }
 }
 
@@ -186,6 +231,8 @@ body ._JX_shortcuts_panel {
   th:last-child, td:last-child { padding-inline-end: 0; }
   // The Alt variant is the secondary reading of each row.
   td:last-child { color: var(--jx-ink-2); }
+
+  kbd + kbd { margin-left: 4px; }
 
   kbd {
     background: var(--jx-wash);

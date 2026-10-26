@@ -1,22 +1,34 @@
 import {createPopupShortcutWorkflow} from 'src/popup-shortcut-workflow';
 
+// [key, action, Alt + key action, other key for the same action]. Listed in help order:
+// 8 sits with 2 because both plan a sprint.
 export const POPUP_SHORTCUTS = [
   ['1', 'Reassign', 'Assign to me'],
   ['2', 'Current sprint + reassign', 'Current sprint + assign to me'],
+  ['8', 'Next sprint + reassign', 'Next sprint + assign to me'],
   ['3', 'Resolve / close', 'Resolve with saved defaults'],
   ['4', 'Choose status transition', 'Start progress'],
-  ['5', 'Add comment', ''],
-  ['6', 'Copy formatted issue reference', 'Copy plain issue URL'],
+  ['5', 'Add comment', '', 'C'],
+  ['6', 'Copy formatted issue reference', 'Copy plain issue URL', 'Ctrl+C'],
   ['7', 'Open issue in Jira', ''],
   ['0', '', 'Show keyboard shortcuts'],
 ];
 
 export function matchPopupShortcut(event) {
   if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 ||
-    event.ctrlKey || event.metaKey || event.shiftKey || event.getModifierState?.('AltGraph')) return null;
+    event.getModifierState?.('AltGraph')) return null;
   if (event.target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]')) return null;
+  const key = String(event.key || '');
+  const letter = /^[a-z]$/i.test(key) ? key.toLowerCase() : /^Key[A-Z]$/.test(event.code || '') ? event.code.slice(3).toLowerCase() : '';
+  // Ctrl/Cmd+C copies the issue link, unless text is selected: then it stays the browser's copy.
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && letter === 'c') {
+    const selection = event.target?.ownerDocument?.getSelection?.();
+    return selection && !selection.isCollapsed && String(selection).trim() ? null : {digit: '6', alternate: false};
+  }
+  if (event.ctrlKey || event.metaKey || event.shiftKey) return null;
+  if (!event.altKey && letter === 'c') return {digit: '5', alternate: false};
   // Option on macOS changes event.key; use the physical digit for Alt variants only.
-  const digit = /^[0-7]$/.test(event.key) ? event.key : event.altKey && /^Digit[0-7]$/.test(event.code) ? event.code.slice(-1) : '';
+  const digit = /^[0-8]$/.test(key) ? key : event.altKey && /^Digit[0-8]$/.test(event.code) ? event.code.slice(-1) : '';
   if (!digit || (digit === '0' && !event.altKey) || (event.altKey && ['5', '7'].includes(digit))) return null;
   return {digit, alternate: !!event.altKey};
 }
@@ -54,15 +66,28 @@ export function createBrowserPopupShortcuts(deps) {
     return container.querySelector('._JX_shortcuts_help');
   }
 
-  function positionHelp() {
+  // Help and workflows drop down from the toolbar, right-aligned to the keyboard
+  // button, so they read as part of QuickView rather than a page dialog.
+  function anchorBelowToolbar(node, {grows = false} = {}) {
     const toggle = helpToggle();
-    if (!help || !toggle) return;
+    if (!node || !toggle) return;
     const anchor = toggle.getBoundingClientRect();
-    const panel = help.getBoundingClientRect();
+    const panel = node.getBoundingClientRect();
     const viewport = documentRef.documentElement;
     const below = anchor.bottom + 6;
-    help.style.left = `${Math.max(8, Math.min(anchor.right - panel.width, viewport.clientWidth - panel.width - 8))}px`;
-    help.style.top = `${below + panel.height + 8 <= viewport.clientHeight ? below : Math.max(8, anchor.top - panel.height - 6)}px`;
+    node.style.left = `${Math.max(8, Math.min(anchor.right - panel.width, viewport.clientWidth - panel.width - 8))}px`;
+    if (grows) {
+      // A workflow's height changes as results load: keep its top fixed and let it scroll.
+      const top = Math.max(8, Math.min(below, viewport.clientHeight - 320));
+      node.style.top = `${top}px`;
+      node.style.maxBlockSize = `${viewport.clientHeight - top - 8}px`;
+      return;
+    }
+    node.style.top = `${below + panel.height + 8 <= viewport.clientHeight ? below : Math.max(8, anchor.top - panel.height - 6)}px`;
+  }
+
+  function positionHelp() {
+    anchorBelowToolbar(help);
   }
 
   function closeHelp() {
@@ -88,13 +113,15 @@ export function createBrowserPopupShortcuts(deps) {
     const header = element('tr', '', element('thead', '', table));
     ['Key', 'Action', 'Alt + key'].forEach(text => element('th', text, header, {scope: 'col'}));
     const body = element('tbody', '', table);
-    POPUP_SHORTCUTS.filter(([key]) => key !== '0').forEach(([key, normal, alternate]) => {
+    POPUP_SHORTCUTS.filter(([key]) => key !== '0').forEach(([key, normal, alternate, other]) => {
       const row = element('tr', '', body);
-      element('kbd', key, element('th', '', row, {scope: 'row'}));
+      const keys = element('th', '', row, {scope: 'row'});
+      element('kbd', key, keys);
+      if (other) element('kbd', other, keys);
       element('td', normal || '—', row);
       element('td', alternate || '—', row);
     });
-    element('p', 'Works while QuickView has focus, outside text fields. Alt+2 and Alt+3 confirm first. Alt is Option on macOS.', help);
+    element('p', 'Works while QuickView has focus, outside text fields. Sprint and resolve changes confirm first. Ctrl+C copies the link only when no text is selected. Alt is Option and Ctrl is ⌘ on macOS.', help);
     // Clicks inside must not reach the page-level outside-click dismissal.
     help.addEventListener('click', event => event.stopPropagation());
     help.showPopover();
@@ -154,6 +181,7 @@ export function createBrowserPopupShortcuts(deps) {
       }
     });
     dialog.showModal();
+    anchorBelowToolbar(dialog, {grows: true});
   }
 
   function button(text, parent, handler, attributes = {}) {
@@ -179,6 +207,39 @@ export function createBrowserPopupShortcuts(deps) {
       if (name === 'transitionId') render();
     });
     return select;
+  }
+
+  // Sprints as a compact single-choice list with state dots, like QuickView's own pickers.
+  function sprintChoices(state) {
+    element('div', 'Sprint', form, {class: '_JX_shortcuts_label', id: 'jqv-shortcut-sprint-label'});
+    const group = element('div', '', form, {
+      role: 'radiogroup', 'aria-labelledby': 'jqv-shortcut-sprint-label', class: '_JX_shortcuts_choices', 'data-testid': 'jira-shortcut-sprints',
+    });
+    const choose = id => {
+      workflow.update({sprintId: id});
+      render();
+    };
+    state.sprints.forEach((item, index) => {
+      const id = String(item.id);
+      const sprintState = String(item.state || '').toLowerCase();
+      const checked = state.sprintId === id;
+      const option = button(item.name, group, () => choose(id), {
+        role: 'radio', 'aria-checked': String(checked), 'data-sprint-id': id,
+        tabindex: checked || (!state.sprintId && index === 0) ? '0' : '-1',
+      });
+      element('span', '', option, {
+        class: `_JX_chip_state _JX_chip_state_${sprintState}`, title: `${sprintState[0]?.toUpperCase() || ''}${sprintState.slice(1)} sprint`,
+      });
+    });
+    group.addEventListener('keydown', event => {
+      if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+      event.preventDefault();
+      const options = [...group.querySelectorAll('[role="radio"]')];
+      const current = Math.max(0, options.indexOf(documentRef.activeElement));
+      const next = options[(current + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length];
+      choose(next.getAttribute('data-sprint-id'));
+      form.querySelector(`[data-sprint-id="${next.getAttribute('data-sprint-id')}"]`)?.focus();
+    });
   }
 
   function checkbox(text, name, checked) {
@@ -229,7 +290,7 @@ export function createBrowserPopupShortcuts(deps) {
     if (state.phase === 'loading') { footer(); return; }
     if (state.kind === 'plan') {
       if (!state.sprints.length) { footer(); return; }
-      selectField('Active sprint', 'sprintId', state.sprints, state.sprintId);
+      sprintChoices(state);
       if (state.alternate) {
         element('p', `Assign to: ${state.users[0]?.displayName || state.users[0]?.name || 'you'}`, form);
       } else {
@@ -268,7 +329,7 @@ export function createBrowserPopupShortcuts(deps) {
         renderResults();
       }
       footer('Apply sprint + assignee');
-      if (!state.sprintId) form.querySelector('select').focus();
+      if (!state.sprintId) form.querySelector('[role="radio"]').focus();
       else if (searchInput) searchInput.focus();
       else form.querySelector('[type="submit"]').focus();
     } else {
@@ -309,12 +370,13 @@ export function createBrowserPopupShortcuts(deps) {
     } else render();
   }
 
-  async function showWorkflow(kind, alternate) {
+  async function showWorkflow(kind, alternate, sprintTarget = 'current') {
     if (dialog) return;
     const session = getSession();
-    shell(kind === 'plan' ? 'Current sprint + reassign' : kind === 'resolve' ? 'Resolve / close issue' : 'Start progress');
+    shell(kind === 'plan' ? `${sprintTarget === 'next' ? 'Next' : 'Current'} sprint + ${alternate ? 'assign to me' : 'reassign'}`
+      : kind === 'resolve' ? 'Resolve / close issue' : 'Start progress');
     const openedDialog = dialog;
-    const pending = workflow.begin({...session, kind, alternate});
+    const pending = workflow.begin({...session, kind, alternate, sprintTarget});
     if (dialog === openedDialog) render();
     await pending;
     if (dialog === openedDialog) render();
@@ -333,6 +395,7 @@ export function createBrowserPopupShortcuts(deps) {
       if (digit === '0') showHelp();
       if (digit === '1') await (alternate ? quickAction('assign-to-me') : beginFieldEdit('assignee'));
       if (digit === '2') await showWorkflow('plan', alternate);
+      if (digit === '8') await showWorkflow('plan', alternate, 'next');
       if (digit === '3') await showWorkflow('resolve', alternate);
       if (digit === '4') await (alternate ? showWorkflow('progress', true) : beginFieldEdit('status'));
       if (digit === '5') focusComment();

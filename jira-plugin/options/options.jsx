@@ -26,6 +26,7 @@ import {
   buildOptionsSnapshot,
   fetchFieldCatalog,
   getCustomFieldError,
+  withEmbeddedContentDomains,
 } from 'options/options-utils';
 
 import 'options/options.scss';
@@ -554,10 +555,10 @@ function ConfigPage(props) {
   };
 
   const saveOptions = async () => {
-    const domains = domainsText
+    const domains = withEmbeddedContentDomains(domainsText
       .split(',')
       .map(x => x.trim())
-      .filter(x => !!x);
+      .filter(x => !!x));
     const rawInstanceUrl = String(instanceUrl || '').trim();
     const normalizedInstanceUrl = normalizeInstanceUrl(rawInstanceUrl);
 

@@ -34,7 +34,7 @@ test('Alt+0 and the toolbar button drop down fixed shortcuts; Escape returns foc
   await page.keyboard.press('Alt+0');
   await expect(help).toBeVisible();
   await expect(help.getByRole('heading')).toHaveText('Keyboard shortcuts');
-  await expect(help.getByRole('row')).toHaveCount(8);
+  await expect(help.getByRole('row')).toHaveCount(9);
   await expect(help.locator('._JX_inline_copy_button')).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   await expect(popup).toBeFocused();
@@ -224,7 +224,7 @@ test('Escape cancels a loading workflow and its late response cannot replace sho
     const response = page.context().waitForEvent('response', response => response.url().includes('/transitions?expand='));
     release();
     await response;
-    await expect(help.getByRole('row')).toHaveCount(8);
+    await expect(help.getByRole('row')).toHaveCount(9);
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId('jira-shortcut-submit')).toHaveCount(0);
   } finally { release(); }
@@ -324,6 +324,26 @@ test('4 opens status picker; Alt+4 reviews an in-progress transition before subm
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('jira-popup-field-status')).toContainText('In Progress');
+  await page.close();
+});
+
+test('C focuses comments, Ctrl+C copies the issue link, and Alt+8 plans the next sprint for me @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
+  await page.bringToFront();
+  await page.evaluate(() => navigator.clipboard.writeText('before'));
+  await page.keyboard.press('Control+c');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await popup.focus();
+  await page.keyboard.press('c');
+  await expect(page.locator('._JX_comment_input')).toBeFocused();
+  await popup.focus();
+  await page.keyboard.press('Alt+8');
+  await expect(dialog.getByRole('heading')).toHaveText('Next sprint + assign to me');
+  await expect(dialog.getByRole('radio', {name: /Sprint 43/})).toHaveAttribute('aria-checked', 'true');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
+  await page.getByTestId('jira-shortcut-submit').click();
+  expect((await requestPromise).postDataJSON()).toMatchObject({fields: {assignee: expect.any(Object), customfield_10020: 43}});
+  await expect(dialog).toHaveCount(0);
   await page.close();
 });
 

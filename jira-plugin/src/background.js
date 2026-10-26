@@ -2,7 +2,7 @@
 import regexEscape from 'escape-string-regexp';
 import {parseGitLabMergeRequestUrl, loadGitLabPullRequest} from 'src/gitlab-pull-requests';
 import defaultConfig from 'options/config.js';
-import {normalizeInstanceUrl, resolveInstanceUrl} from 'options/options-utils';
+import {CLAUDE_ARTIFACT_FRAMES, isClaudeHostname, normalizeInstanceUrl, resolveInstanceUrl} from 'options/options-utils';
 import {storageGet, storageSet, storageLocalGet, storageLocalSet, permissionsContains, promisifyChrome} from 'src/chrome';
 import {contentScript, resetDeclarativeMapping, toMatchUrl} from 'options/declarative';
 import {buildJiraSearchRequestUrls, buildPopupIssueMetadataUrl, isEpicLinkField, isSprintField} from 'src/jira-issue-helpers';
@@ -174,6 +174,10 @@ function getRelatedActivationOrigins(tabUrl) {
       'https://docs.google.com/*',
       'https://*.googleusercontent.com/*'
     );
+  }
+
+  if (isClaudeHostname(hostname)) {
+    relatedOrigins.push(CLAUDE_ARTIFACT_FRAMES);
   }
 
   return uniqueList(relatedOrigins);
@@ -1116,8 +1120,9 @@ async function browserOnClicked (tab) {
     await resetDeclarativeMapping();
     await ensureContentScriptReady(tab.id);
     const extraOriginsAdded = domainsToAdd.length > 1;
+    const extraSupport = isClaudeHostname(new URL(tab.url).hostname) ? 'Claude artifact support' : 'Office/Google editor support';
     await showActionFeedback(tab.id, extraOriginsAdded
-      ? origin + ' added successfully with Office/Google editor support.'
+      ? origin + ` added successfully with ${extraSupport}.`
       : origin + ' added successfully.');
     clearActionBadgeLater(tab.id);
   }

@@ -20,12 +20,14 @@ import jquery from 'jquery';
 import {loadGitLabPullRequest, parseGitLabMergeRequestUrl} from 'src/gitlab-pull-requests';
 import {buildPullRequestView} from 'src/popup-session/pull-request-view';
 import {installPopupTooltips} from 'src/popup-session/popup-tooltips';
+import {withEmbeddedContentDomains} from 'options/options-utils';
 
 window.JiraQuickViewDeepModules = {
   loadGitLabPullRequest,
   parseGitLabMergeRequestUrl,
   buildPullRequestView,
   installPopupTooltips,
+  withEmbeddedContentDomains,
   createPopupShortcutWorkflow,
   matchPopupShortcut,
   createBrowserMessageJiraAdapter,

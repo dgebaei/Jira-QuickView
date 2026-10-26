@@ -258,6 +258,57 @@ test('cancelled discovery, stale searches and stale sessions cannot change anoth
   expect(result).toEqual({cancelled: null, users: [{accountId: 'new'}], staleSubmit: {kind: 'ignored'}, writes: 0});
 });
 
+test('future sprints are offered, and the next-sprint target picks the first future sprint on the issue\'s board', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.sprints = [
+      {id: 52, name: 'Other board next', state: 'future', startDate: '2026-11-01T00:00:00Z', boardRefs: [{id: '9'}]},
+      {id: 51, name: 'Sprint 51', state: 'future', startDate: '2026-11-08T00:00:00Z', boardRefs: [{id: '7'}]},
+      {id: 50, name: 'Sprint 50', state: 'future', startDate: '2026-11-02T00:00:00Z', boardRefs: [{id: '7'}]},
+      {id: 42, name: 'Sprint 42', state: 'active', boardRefs: [{id: '7'}]},
+      {id: 30, name: 'Old', state: 'closed', boardRefs: [{id: '7'}]},
+    ];
+    f.existingSprints = [{id: 42, name: 'Sprint 42', state: 'active'}];
+    await f.begin('plan');
+    const current = f.workflow.view();
+    await f.workflow.begin({kind: 'plan', alternate: true, sprintTarget: 'next', sessionId: 'popup-1', issueSnapshot: f.snapshot});
+    const next = f.workflow.view();
+    await f.workflow.submit({sessionId: 'popup-1'});
+    return {
+      offered: current.sprints.map(item => item.name), currentId: current.sprintId, nextId: next.sprintId,
+      fields: f.writes[0].body.fields,
+    };
+  });
+  expect(result).toEqual({
+    offered: ['Sprint 42', 'Other board next', 'Sprint 50', 'Sprint 51'], currentId: '42', nextId: '50',
+    fields: {assignee: {accountId: 'me'}, customfield_10020: 50},
+  });
+});
+
+test('C focuses comments and Ctrl/Cmd+C copies the link unless text is selected', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const match = window.JiraQuickViewDeepModules.matchPopupShortcut;
+    const base = {target: document.body};
+    const noSelection = match({...base, key: 'c', code: 'KeyC', ctrlKey: true});
+    const mac = match({...base, key: 'c', code: 'KeyC', metaKey: true});
+    const range = document.createRange();
+    document.body.append(document.createTextNode('Selected words'));
+    range.selectNodeContents(document.body.lastChild);
+    getSelection().addRange(range);
+    return {
+      comment: match({...base, key: 'c', code: 'KeyC'}), noSelection, mac,
+      withSelection: match({...base, key: 'c', code: 'KeyC', ctrlKey: true}),
+      next: match({...base, key: '8', code: 'Digit8'}), nextAlt: match({...base, key: '•', code: 'Digit8', altKey: true}),
+      inInput: match({target: document.querySelector('input'), key: 'c', code: 'KeyC', ctrlKey: true}),
+      shifted: match({...base, key: 'C', code: 'KeyC', shiftKey: true}),
+    };
+  });
+  expect(result).toEqual({
+    comment: {digit: '5', alternate: false}, noSelection: {digit: '6', alternate: false}, mac: {digit: '6', alternate: false},
+    withSelection: null, next: {digit: '8', alternate: false}, nextAlt: {digit: '8', alternate: true}, inInput: null, shifted: null,
+  });
+});
+
 test('digit matching rejects editing, modifiers, IME, repeat and reserved variants; supports macOS Option digits', async ({page}) => {
   const result = await page.evaluate(() => {
     const match = window.JiraQuickViewDeepModules.matchPopupShortcut;

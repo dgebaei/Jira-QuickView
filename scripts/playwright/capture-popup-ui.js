@@ -181,6 +181,30 @@ const PRESETS = {
       await page.locator('._JX_shortcuts_help').click();
     },
   },
+  'shortcut-plan': {
+    outputFile: 'shortcut-plan.png',
+    scenario: 'shortcut-planning',
+    targetSelector: '._JX_title',
+    waitForSelector: '[data-testid="jira-shortcut-sprints"]',
+    extraSelector: '[data-testid="jira-shortcut-dialog"]',
+    open: async page => {
+      await page.locator('._JX_container').focus();
+      await page.keyboard.press('2');
+      await page.getByTestId('jira-shortcut-assignee').fill('a');
+      await page.locator('[data-testid="jira-shortcut-dialog"] [role="option"]').first().waitFor();
+    },
+  },
+  'shortcut-plan-next': {
+    outputFile: 'shortcut-plan-next.png',
+    scenario: 'shortcut-planning',
+    targetSelector: '._JX_title',
+    waitForSelector: '[data-testid="jira-shortcut-sprints"]',
+    extraSelector: '[data-testid="jira-shortcut-dialog"]',
+    open: async page => {
+      await page.locator('._JX_container').focus();
+      await page.keyboard.press('Alt+8');
+    },
+  },
   'header-shortcuts-help-dark': {
     outputFile: 'header-shortcuts-help-dark.png',
     configureOverrides: {themeMode: 'dark'},

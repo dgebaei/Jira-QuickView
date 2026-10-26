@@ -3953,12 +3953,15 @@ async function mainAsyncLocal() {
   }
 
   if (openQuickViewOnClick) {
-    document.addEventListener('click', function (e) {
+    // On window, capturing: the earliest an extension can see a click. Hosts such
+    // as Claude artifact frames open links from their own document-level
+    // listener and ignore preventDefault, so the click must not reach them.
+    window.addEventListener('click', function (e) {
       if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const clickedIssue = getClickedIssueLink(e.target);
       if (!clickedIssue) return;
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       const rect = clickedIssue.link.getBoundingClientRect();
       const pointerX = Number.isFinite(e.pageX) && e.pageX > 0
         ? e.pageX

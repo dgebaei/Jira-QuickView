@@ -315,6 +315,7 @@ What to know:
 - Wildcards are useful for subdomains, for example `https://*.your-company.com/*`.
 - The extension also asks Chrome for host permissions when you save. If you cancel the browser permission prompt, the settings may not apply.
 - If this is your first save and no Jira URL was stored before, Jira QuickView also adds your Jira instance URL to the allowed pages list.
+- Claude shows artifacts in frames on a separate domain. When you allow `claude.ai`, saving also adds `https://*.frame.claudeusercontent.com/*` so QuickView works inside artifacts.
 
 ### 4.2 Basic: Appearance
 
@@ -619,20 +620,21 @@ Business logic and limitations:
 
 ![Keyboard shortcut list](screenshots/marketing-hidpi-light/popup-actions.png)
 
-The keyboard button in the header, or `Alt+0`, drops down the shortcut list. Press a listed key while it is open to run that shortcut, or `Esc` to close the list. Shortcuts work while QuickView has keyboard focus, not while you are typing in an input, editor, or comment. They do not act on the mail client or other page behind QuickView. `Alt` is `Option` on macOS; some operating-system shortcuts may take precedence.
+The keyboard button in the header, or `Alt+0`, drops down the shortcut list. Press a listed key while it is open to run that shortcut, or `Esc` to close the list. Shortcuts work while QuickView has keyboard focus, not while you are typing in an input, editor, or comment. They do not act on the mail client or other page behind QuickView. `Alt` is `Option` and `Ctrl` is `⌘` on macOS; some operating-system shortcuts may take precedence. `Ctrl+C` copies the issue link only when no text is selected, so copying selected text works as usual.
 
 | Key | Action | Alt + key |
 |---|---|---|
 | `1` | Open assignee search | Assign to me |
 | `2` | Current sprint + reassign | Current sprint + assign to me |
+| `8` | Next sprint + reassign | Next sprint + assign to me |
 | `3` | Resolve / close with confirmation | Resolve with saved defaults and confirmation |
 | `4` | Choose a status transition | Review a start-progress transition |
-| `5` | Focus the new-comment composer | — |
-| `6` | Copy formatted issue reference | Copy plain issue URL |
+| `5` or `C` | Focus the new-comment composer | — |
+| `6` or `Ctrl+C` | Copy formatted issue reference | Copy plain issue URL |
 | `7` | Open issue in Jira | — |
 | `0` | — | Show keyboard shortcuts |
 
-Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press `Enter` to apply, or select a result and click **Apply sprint + assignee**. No change is sent until confirmation. If several active sprints are available, choose one; if none is active, the action does not substitute an upcoming sprint. An issue already in the chosen sprint only needs the assignee update.
+Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press `Enter` to apply, or select a result and click **Apply sprint + assignee**. No change is sent until confirmation. The sprint list shows active and future sprints. `2` preselects the active sprint when there is exactly one; `8` preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.
 
 Resolve/close uses completion transitions available to the current issue. Choose a resolution when Jira exposes one, and supply any required comment. If the workflow sets resolution automatically, QuickView leaves it alone. Unsupported required transition fields must be completed in Jira using **Open in Jira**.
 
