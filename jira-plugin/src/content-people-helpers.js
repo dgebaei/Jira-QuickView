@@ -12,6 +12,15 @@ function buildEditOption(id, label, extra = {}) {
   };
 }
 
+// "Nikola Gašparić" -> "Nikola G.": first name plus initials, for tight cells and
+// chips whose tooltip keeps the full name. Emails and single names stay as they are.
+export function abbreviatePersonName(name) {
+  const text = String(name || '').trim();
+  const words = text.split(/\s+/);
+  if (words.length < 2 || text.includes('@')) return text;
+  return [words[0], ...words.slice(1).filter(word => /^\p{L}/u.test(word)).map(word => `${Array.from(word)[0].toUpperCase()}.`)].join(' ');
+}
+
 export function createContentPeopleHelpers(options) {
   const areSameJiraUser = options?.areSameJiraUser;
 

@@ -650,15 +650,18 @@ test('autosaves dropdown field edits when focus leaves the popover @mock-only', 
   const selectedSprint = page.locator('._JX_edit_option[data-field-key="sprint"].is-selected').first();
   const currentSprintId = await selectedSprint.getAttribute('data-option-id');
   const sprintCount = await sprintOptions.count();
+  let chosenSprint = '';
   for (let index = 0; index < sprintCount; index += 1) {
     const option = sprintOptions.nth(index);
-    if (await option.getAttribute('data-option-id') !== currentSprintId) {
+    const optionId = await option.getAttribute('data-option-id');
+    if (optionId && optionId !== currentSprintId) {
+      chosenSprint = (await option.locator('._JX_edit_option_label').textContent()).trim();
       await option.click();
       break;
     }
   }
   await page.locator('._JX_content_blocks').click({position: {x: 4, y: 4}});
-  await expect(popup.root).toContainText(/Sprint:/i);
+  await expect(popup.field('sprint')).toContainText(chosenSprint);
   await expect(popup.editPopover('sprint')).toHaveCount(0);
 
   await popup.editButton('fixVersions').click();
@@ -884,7 +887,7 @@ test('clears Sprint with a null Jira field value @mock-only', async ({extensionA
 
   await expect.poll(() => sprintUpdatePayloads.length).toBe(1);
   expect(sprintUpdatePayloads[0].fields.customfield_10020).toBeNull();
-  await expect(popup.root).toContainText('Sprint: --');
+  await expect(popup.field('sprint')).toHaveText('--');
   await page.close();
 });
 
@@ -974,21 +977,6 @@ test('updates time tracking estimates through the content block editor @mock-onl
   await page.close();
 });
 
-test('shows grouped quick actions for assignment, transition, and sprint moves', async ({extensionApp, optionsPage, servers}) => {
-  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
-  if (target.mode === 'mock') {
-    await servers.jira.setScenario('editable');
-  }
-  await configureExtension(optionsPage, baseConfig(servers, target));
-
-  const {page} = await openPopup(extensionApp, servers, target);
-  await page.locator('._JX_actions_toggle').click();
-
-  await expect(page.locator('._JX_action_item').first()).toBeVisible();
-
-  await page.close();
-});
-
 test('offers an explicit unassigned option in the assignee editor', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
@@ -1001,40 +989,6 @@ test('offers an explicit unassigned option in the assignee editor', async ({exte
   await page.locator('._JX_assignee_edit_button').click();
   const unassignedOption = page.locator('._JX_edit_option[data-field-key="assignee"][data-option-id="__unassigned__"]');
   await expect(unassignedOption).toBeVisible();
-  await page.close();
-});
-
-test('hides quick actions when the issue is already assigned, already in progress, and has no sprint move targets', async ({extensionApp, optionsPage, servers}) => {
-  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
-  if (target.mode === 'mock') {
-    await servers.jira.setScenario('in-progress-no-sprint-actions');
-  } else {
-    const currentUser = await getCurrentUser(target);
-    await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^/?]+/transitions(?:\\?.*)?$', payload => ({...payload, transitions: []}));
-    await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/agile/1.0/board/[^/]+/sprint(?:\\?.*)?$', payload => ({...payload, values: []}));
-    await patchJsonResponse(extensionApp.context, target.instanceUrl, '/rest/api/2/issue/[^?]+\\?[^#]*fields=.*(?:&.*)?$', payload => ({
-      ...payload,
-      fields: {
-        ...payload.fields,
-        assignee: {
-          displayName: currentUser.displayName || 'You',
-          accountId: currentUser.accountId || '',
-          name: currentUser.name || '',
-          username: currentUser.username || '',
-          key: currentUser.key || '',
-        },
-        status: {
-          ...(payload.fields?.status || {}),
-          name: 'In Progress',
-          statusCategory: {key: 'indeterminate', name: 'In Progress'},
-        },
-      },
-    }));
-  }
-  await configureExtension(optionsPage, baseConfig(servers, target));
-
-  const {page} = await openPopup(extensionApp, servers, target);
-  await expect(page.locator('._JX_actions_toggle')).toHaveCount(0);
   await page.close();
 });
 

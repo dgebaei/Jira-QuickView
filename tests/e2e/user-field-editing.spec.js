@@ -55,7 +55,11 @@ test('renders user-type custom field and allows editing via user search', async 
 
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
-  await expect(popup).toContainText('Reviewer: Alex Reviewer');
+  // Avatar plus "Alex R."; the full name stays in the chip's tooltip.
+  const reviewer = popup.locator('[data-testid="jira-popup-field-customfield_67890"]');
+  await expect(reviewer).toContainText('Reviewer: Alex R.');
+  await expect(reviewer).toHaveAttribute('title', /Reviewer: Alex Reviewer/);
+  await expect(reviewer.locator('img._JX_chip_avatar')).toHaveCount(1);
 
   const editButton = popup.locator('._JX_field_chip_edit[data-field-key="customfield_67890"]');
   await expect(editButton).toHaveCount(1);
@@ -66,7 +70,7 @@ test('renders user-type custom field and allows editing via user search', async 
   await input.fill('Morgan');
   await selectUserOptionAndSubmit(popup, 'customfield_67890', 'Morgan Agent');
 
-  await expect(popup).toContainText('Reviewer: Morgan Agent');
+  await expect(reviewer).toContainText('Reviewer: Morgan A.');
   await page.close();
 });
 
@@ -92,7 +96,7 @@ test('shows empty user custom field as editable placeholder chip', async ({exten
   await input.fill('Alex');
   await selectUserOptionAndSubmit(popup, 'customfield_67890', 'Alex Reviewer');
 
-  await expect(popup).toContainText('Reviewer: Alex Reviewer');
+  await expect(popup).toContainText('Reviewer: Alex R.');
   await page.close();
 });
 

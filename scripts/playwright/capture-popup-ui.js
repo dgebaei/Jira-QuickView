@@ -45,8 +45,8 @@ const PRESETS = {
     scenario: 'pr-gitlab',
     configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
     targetSelector: '._JX_related_table_pr',
-    waitForSelector: '._JX_pr_tooltip:popover-open',
-    extraSelector: '._JX_pr_tooltip:popover-open',
+    waitForSelector: '._JX_tooltip:popover-open',
+    extraSelector: '._JX_tooltip:popover-open',
     open: async page => {
       await page.locator('._JX_pr_signal_failure').waitFor({state: 'visible'});
       await page.locator('._JX_pr_time').first().focus();
@@ -68,11 +68,127 @@ const PRESETS = {
     scenario: 'pr-gitlab',
     configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
     targetSelector: '._JX_related_table_pr',
-    waitForSelector: '._JX_pr_tooltip:popover-open',
-    extraSelector: '._JX_pr_tooltip:popover-open',
+    waitForSelector: '._JX_tooltip:popover-open',
+    extraSelector: '._JX_tooltip:popover-open',
     open: async page => {
       await page.locator('._JX_pr_signal_approval').first().waitFor({state: 'visible'});
       await page.locator('._JX_pr_signal_approval').first().focus();
+    },
+  },
+  'pull-requests-approvals-hover': {
+    outputFile: 'pull-requests-approvals-hover.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '._JX_tooltip:popover-open',
+    extraSelector: '._JX_tooltip:popover-open',
+    open: async page => {
+      await page.locator('._JX_pr_signal_approval').first().hover();
+    },
+  },
+  'pull-requests-title-tooltip': {
+    outputFile: 'pull-requests-title-tooltip.png',
+    scenario: 'pr-gitlab',
+    configureOverrides: {tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
+    targetSelector: '._JX_related_table_pr',
+    waitForSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
+    extraSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
+    open: async page => {
+      await page.locator('._JX_pr_branch').first().hover();
+    },
+  },
+  'header-title-hover': {
+    outputFile: 'header-title-hover.png',
+    targetSelector: '._JX_title',
+    waitForSelector: '._JX_title_edit_button',
+    open: async page => {
+      await page.locator('#_JX_title_link').hover();
+    },
+  },
+  'header-assignee-hover': {
+    outputFile: 'header-assignee-hover.png',
+    targetSelector: '._JX_title',
+    waitForSelector: '._JX_assignee_edit_button',
+    open: async page => {
+      await page.locator('._JX_title_assignee_slot').hover();
+    },
+  },
+  'layout-moved-fields': {
+    outputFile: 'layout-moved-fields.png',
+    configureOverrides: {customFields: [{fieldId: 'customfield_67890', row: 2}], tooltipLayout: {
+      ...baseTooltipLayout,
+      row1: ['issueType', 'status', 'priority', 'affects', 'fixVersions'],
+      row2: ['sprint', 'custom_customfield_67890', 'epicParent'],
+      row3: ['environment', 'labels'],
+    }},
+    targetSelector: '._JX_status',
+    waitForSelector: '._JX_status_row_primary',
+    open: async () => {},
+  },
+  'header-title-tooltip': {
+    outputFile: 'header-title-tooltip.png',
+    targetSelector: '._JX_title',
+    waitForSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
+    extraSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
+    open: async page => {
+      await page.locator('#_JX_title_link').hover();
+    },
+  },
+  'layout-empty-row': {
+    outputFile: 'layout-empty-row.png',
+    configureOverrides: {tooltipLayout: {
+      ...baseTooltipLayout,
+      row1: ['issueType', 'epicParent', 'status', 'sprint', 'priority', 'fixVersions'],
+      row2: [],
+      row3: ['environment', 'labels'],
+    }},
+    targetSelector: '._JX_status',
+    waitForSelector: '._JX_status_row_primary',
+    open: async () => {},
+  },
+  'chip-edit-priority': {
+    outputFile: 'chip-edit-priority.png',
+    targetSelector: '[data-testid="jira-popup-edit-popover-priority"]',
+    waitForSelector: '._JX_edit_option[data-field-key="priority"]',
+    open: async page => {
+      await page.locator('._JX_field_chip_edit[data-field-key="priority"]').click();
+    },
+  },
+  'chip-edit-sprint': {
+    outputFile: 'chip-edit-sprint.png',
+    targetSelector: '[data-testid="jira-popup-edit-popover-sprint"]',
+    waitForSelector: '._JX_edit_option[data-field-key="sprint"]',
+    open: async page => {
+      await page.locator('._JX_field_chip_edit[data-field-key="sprint"]').click();
+    },
+  },
+  'header-title-edit': {
+    outputFile: 'header-title-edit.png',
+    targetSelector: '._JX_title',
+    waitForSelector: '._JX_title_edit_input',
+    extraSelector: '._JX_title_edit_actions',
+    open: async page => {
+      await page.locator('#_JX_title_link').hover();
+      await page.locator('._JX_title_edit_button').click();
+    },
+  },
+  'header-shortcuts-help': {
+    outputFile: 'header-shortcuts-help.png',
+    targetSelector: '._JX_title',
+    waitForSelector: '._JX_shortcuts_panel',
+    extraSelector: '._JX_shortcuts_panel',
+    open: async page => {
+      await page.locator('._JX_shortcuts_help').click();
+    },
+  },
+  'header-shortcuts-help-dark': {
+    outputFile: 'header-shortcuts-help-dark.png',
+    configureOverrides: {themeMode: 'dark'},
+    targetSelector: '._JX_title',
+    waitForSelector: '._JX_shortcuts_panel',
+    extraSelector: '._JX_shortcuts_panel',
+    open: async page => {
+      await page.locator('._JX_shortcuts_help').click();
     },
   },
   'pull-requests-unavailable': {
@@ -88,8 +204,8 @@ const PRESETS = {
     scenario: 'pr-gitlab',
     configureOverrides: {themeMode: 'dark', tooltipLayout: {...baseTooltipLayout, contentBlocks: ['pullRequests']}},
     targetSelector: '._JX_related_table_pr',
-    waitForSelector: '._JX_pr_tooltip:popover-open',
-    extraSelector: '._JX_pr_tooltip:popover-open',
+    waitForSelector: '._JX_tooltip:popover-open',
+    extraSelector: '._JX_tooltip:popover-open',
     open: async page => {
       await page.locator('._JX_pr_signal_failure').waitFor({state: 'visible'});
       await page.locator('._JX_pr_time').first().focus();
@@ -370,13 +486,18 @@ function buildClip(boxes, viewport, padding) {
   };
 }
 
-async function screenshotRegion(page, locators, outputPath, padding) {
+async function screenshotRegion(page, locators, outputPath, padding, boundsLocator = null) {
   const viewport = page.viewportSize() || popupViewport;
   const boxes = [];
   for (const entry of locators) {
     boxes.push(await getBoundingBox(entry.locator, entry.description));
   }
   const clip = buildClip(boxes, viewport, padding);
+  // A panel scrolled inside the popup can extend past it; nothing beyond the popup's edge is visible.
+  if (boundsLocator) {
+    const bounds = await getBoundingBox(boundsLocator, 'popup bounds');
+    clip.height = Math.max(1, Math.min(clip.y + clip.height, bounds.y + bounds.height + padding) - clip.y);
+  }
   await page.screenshot({path: outputPath, clip});
 }
 
@@ -410,7 +531,7 @@ async function capturePreset(harness, presetName, options) {
       await screenshotRegion(page, [
         {locator: page.locator(preset.targetSelector), description: `${presetName} panel`},
         ...(preset.extraSelector ? [{locator: page.locator(preset.extraSelector), description: 'PR event details'}] : []),
-      ], outputPath, options.padding);
+      ], outputPath, options.padding, preset.extraSelector ? null : popupLocator);
     } else {
       await screenshotRegion(page, [
         {locator: popupLocator, description: `${presetName} popup`},

@@ -16,7 +16,7 @@ async function openPopup({extensionApp, optionsPage, servers}, scenario = 'short
   await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
   const popup = page.getByTestId('jira-popup-root');
   await popup.focus();
-  return {page, popup, target, dialog: page.getByTestId('jira-shortcut-dialog')};
+  return {page, popup, target, dialog: page.getByTestId('jira-shortcut-dialog'), help: page.getByTestId('jira-shortcut-help')};
 }
 
 async function screenshot(page, name) {
@@ -26,22 +26,53 @@ async function screenshot(page, name) {
   await page.screenshot({path: path.join(directory, `${name}.png`)});
 }
 
-test('Alt+0 and the toolbar button show fixed shortcuts; Escape returns focus without closing QuickView @mock-only', async ({extensionApp, optionsPage, servers}) => {
-  const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
+test('Alt+0 and the toolbar button drop down fixed shortcuts; Escape returns focus without closing QuickView @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog, help} = await openPopup({extensionApp, optionsPage, servers});
+  const toggle = page.getByTestId('jira-popup-shortcuts-help');
+  await expect(page.getByTestId('jira-popup-actions-toggle')).toHaveCount(0);
+  await expect(page.locator('._JX_title_controls ._JX_control_button')).toHaveClass([/_JX_title_copy/, /_JX_pin_button/, /_JX_shortcuts_help/, /_JX_close_button/]);
   await page.keyboard.press('Alt+0');
-  await expect(dialog).toContainText('Keyboard shortcuts');
-  await expect(dialog.getByRole('row')).toHaveCount(9);
-  await expect(dialog.locator('._JX_inline_copy_button')).toHaveCount(0);
-  await screenshot(page, 'shortcut-help');
-  await page.keyboard.press('Escape');
+  await expect(help).toBeVisible();
+  await expect(help.getByRole('heading')).toHaveText('Keyboard shortcuts');
+  await expect(help.getByRole('row')).toHaveCount(8);
+  await expect(help.locator('._JX_inline_copy_button')).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   await expect(popup).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const [panelBox, toggleBox] = [await help.boundingBox(), await toggle.boundingBox()];
+  expect(panelBox.y).toBeGreaterThanOrEqual(toggleBox.y + toggleBox.height);
+  expect(Math.abs((panelBox.x + panelBox.width) - (toggleBox.x + toggleBox.width))).toBeLessThanOrEqual(1);
+  await screenshot(page, 'shortcut-help');
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
+  await expect(popup).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#_JX_title_link')).toBeVisible();
-  await page.getByTestId('jira-popup-shortcuts-help').click();
-  await expect(dialog).toBeVisible();
+  await toggle.click();
+  await expect(help).toBeVisible();
+  await toggle.click();
+  await expect(help).toBeHidden();
+  await toggle.click();
+  await expect(help).toBeVisible();
+  await page.mouse.click(5, 5);
+  await expect(help).toBeHidden();
+  await popup.focus();
+  await page.keyboard.press('Alt+0');
+  await expect(help).toBeVisible();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  await expect(help).toBeHidden();
+  await page.close();
+});
+
+test('a shortcut pressed while the help is open closes it and runs @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, help} = await openPopup({extensionApp, optionsPage, servers});
+  await page.keyboard.press('Alt+0');
+  await expect(help).toBeVisible();
+  await page.keyboard.press('5');
+  await expect(help).toBeHidden();
+  await expect(page.locator('._JX_comment_input')).toBeFocused();
   await page.close();
 });
 
@@ -64,6 +95,7 @@ test('numbers and Alt numbers leave host inputs and popup comment text alone @mo
   await page.keyboard.press('Alt+0');
   await expect(page.locator('#host-input')).toHaveValue('123');
   await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('jira-shortcut-help')).toBeHidden();
   await popup.focus();
   await page.keyboard.press('Control+3');
   await expect(dialog).toHaveCount(0);
@@ -187,11 +219,13 @@ test('Escape cancels a loading workflow and its late response cannot replace sho
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await page.keyboard.press('Alt+0');
-    await expect(dialog.getByRole('heading')).toHaveText('Keyboard shortcuts');
+    const help = page.getByTestId('jira-shortcut-help');
+    await expect(help.getByRole('heading')).toHaveText('Keyboard shortcuts');
     const response = page.context().waitForEvent('response', response => response.url().includes('/transitions?expand='));
     release();
     await response;
-    await expect(dialog.getByRole('row')).toHaveCount(9);
+    await expect(help.getByRole('row')).toHaveCount(8);
+    await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId('jira-shortcut-submit')).toHaveCount(0);
   } finally { release(); }
   await page.close();
@@ -244,15 +278,20 @@ test('saving blocks repeated Enter and Escape; failure remains safely retryable 
 });
 
 test('shortcut help fits a narrow viewport and follows dark mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
-  const {page, dialog} = await openPopup({extensionApp, optionsPage, servers});
+  const {page, help} = await openPopup({extensionApp, optionsPage, servers});
   await page.setViewportSize({width: 390, height: 700});
   await page.evaluate(() => document.documentElement.setAttribute('data-jhl-theme', 'dark'));
   await page.keyboard.press('Alt+0');
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('heading', {name: 'Keyboard shortcuts'})).toBeInViewport();
-  const dimensions = await dialog.evaluate(element => ({width: element.getBoundingClientRect().width, scroll: element.scrollWidth, client: element.clientWidth}));
-  expect(dimensions.width).toBeLessThan(390);
+  await expect(help).toBeVisible();
+  await expect(help.getByRole('heading', {name: 'Keyboard shortcuts'})).toBeInViewport();
+  const dimensions = await help.evaluate(element => ({
+    left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
+    scroll: element.scrollWidth, client: element.clientWidth, background: getComputedStyle(element).backgroundColor,
+  }));
+  expect(dimensions.left).toBeGreaterThanOrEqual(0);
+  expect(dimensions.right).toBeLessThanOrEqual(390);
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client);
+  expect(dimensions.background).not.toBe('rgb(255, 255, 255)');
   await screenshot(page, 'shortcut-help-narrow-dark');
   await page.keyboard.press('Escape');
   await page.close();

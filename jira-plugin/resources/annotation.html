@@ -78,24 +78,20 @@
             <a class="_JX_copyable_link" id="_JX_title_link" data-ticket="{{ticketKey}}" data-title="{{ticketTitle}}" href="{{url}}" target="_blank" rel="noopener noreferrer" title="{{urlHoverTitle}}">{{urlTitle}}</a>
             {{/isEditing}}
             {{#isEditing}}
+            <span class="_JX_title_edit_sizer" aria-hidden="true">{{urlTitle}}</span>
             <div class="_JX_title_edit_row">
-                <div class="_JX_title_edit_form">
-                    <div class="_JX_edit_input_shell _JX_title_edit_input_shell">
-                        {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-testid="jira-popup-edit-input-summary" data-field-key="summary" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
-                        {{^useTextarea}}<input class="_JX_edit_input _JX_title_edit_input" data-testid="jira-popup-edit-input-summary" data-field-key="summary" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#inputDisabled}}disabled{{/inputDisabled}}>{{/useTextarea}}
-                        {{#showActionButtons}}
-                        <div class="_JX_title_edit_actions">
-                            <button class="_JX_control_button _JX_title_edit_action _JX_edit_discard" data-testid="jira-popup-edit-discard-summary" type="button" data-field-key="summary" title="Discard title changes" aria-label="Discard title changes" {{#discardDisabled}}disabled{{/discardDisabled}}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>
-                            </button>
-                            <button class="_JX_control_button _JX_title_edit_action _JX_edit_save" data-testid="jira-popup-edit-save-summary" type="button" data-field-key="summary" title="Save title changes" aria-label="Save title changes" {{#saveDisabled}}disabled{{/saveDisabled}}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg>
-                            </button>
-                        </div>
-                        {{/showActionButtons}}
-                    </div>
-                    {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
+                <textarea class="_JX_edit_input _JX_title_edit_input" data-testid="jira-popup-edit-input-summary" data-field-key="summary" aria-label="Issue title" placeholder="{{inputPlaceholder}}" rows="1" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>
+                {{#showActionButtons}}
+                <div class="_JX_title_edit_actions">
+                    <button class="_JX_control_button _JX_title_edit_action _JX_edit_discard" data-testid="jira-popup-edit-discard-summary" type="button" data-field-key="summary" title="Discard (Esc)" aria-label="Discard title changes" {{#discardDisabled}}disabled{{/discardDisabled}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>
+                    </button>
+                    <button class="_JX_control_button _JX_title_edit_action _JX_edit_save" data-testid="jira-popup-edit-save-summary" type="button" data-field-key="summary" title="Save (Enter)" aria-label="Save title changes" {{#saveDisabled}}disabled{{/saveDisabled}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg>
+                    </button>
                 </div>
+                {{/showActionButtons}}
+                {{#editError}}<div class="_JX_edit_error _JX_title_edit_error">{{editError}}</div>{{/editError}}
             </div>
             {{/isEditing}}
             {{#isEditable}}
@@ -108,29 +104,13 @@
         </div>
         {{/titleView}}
         <div class="_JX_title_controls">
-            <button class="_JX_control_button _JX_shortcuts_help" type="button" title="Keyboard shortcuts (Alt+0)" aria-label="Keyboard shortcuts" aria-keyshortcuts="Alt+0" data-testid="jira-popup-shortcuts-help">⌨</button>
             <button class="_JX_control_button _JX_title_copy _JX_copy_link" type="button" title="Copy issue link" aria-label="Copy issue link" data-url="{{copyUrl}}" data-ticket="{{copyTicket}}" data-title="{{copyTitle}}">
                 <svg width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><path d="M10 19h8V8h-8v11zM8 7.992C8 6.892 8.902 6 10.009 6h7.982C19.101 6 20 6.893 20 7.992v11.016c0 1.1-.902 1.992-2.009 1.992H10.01A2.001 2.001 0 0 1 8 19.008V7.992z"></path><path d="M5 16V4.992C5 3.892 5.902 3 7.009 3H15v13H5zm2 0h8V5H7v11z"></path></g></svg>
             </button>
             <button class="_JX_control_button _JX_pin_button" type="button" title="Pin tooltip" aria-label="Pin tooltip">
                 <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"></path></svg>
             </button>
-            {{#hasQuickActions}}
-            <div class="_JX_actions">
-                <button class="_JX_control_button _JX_actions_toggle{{#actionsOpen}} is-open{{/actionsOpen}}" data-testid="jira-popup-actions-toggle" type="button" title="Quick actions" aria-label="Quick actions" aria-haspopup="menu" aria-expanded="{{#actionsOpen}}true{{/actionsOpen}}{{^actionsOpen}}false{{/actionsOpen}}">
-                    <svg class="_JX_actions_toggle_icon" width="16" height="16" viewBox="0 0 24 24" focusable="false" role="presentation"><g fill="currentColor"><circle cx="6" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="18" cy="12" r="1.8"></circle></g></svg>
-                    <svg class="_JX_actions_toggle_chevron" width="12" height="12" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"></path></svg>
-                </button>
-                {{#actionsOpen}}
-                <div class="_JX_actions_menu" role="menu">
-                    {{#quickActions}}
-                    {{#showDividerBefore}}<div class="_JX_action_divider" role="separator" aria-hidden="true"></div>{{/showDividerBefore}}
-                    <button class="_JX_action_item{{#disabled}} is-disabled{{/disabled}}{{#isLoading}} is-loading{{/isLoading}}" type="button" role="menuitem" data-action-key="{{key}}" {{disabledAttr}}>{{labelText}}</button>
-                    {{/quickActions}}
-                </div>
-                {{/actionsOpen}}
-            </div>
-            {{/hasQuickActions}}
+            <button class="_JX_control_button _JX_shortcuts_help" type="button" title="Keyboard shortcuts (Alt+0)" aria-label="Keyboard shortcuts" aria-keyshortcuts="Alt+0" aria-haspopup="dialog" aria-expanded="false" data-testid="jira-popup-shortcuts-help">⌨</button>
             <button class="_JX_control_button _JX_close_button" type="button" title="Close (Esc)" aria-label="Close tooltip">
                 <svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12 5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"></path></svg>
             </button>
@@ -144,71 +124,7 @@
             <div class="_JX_status_row _JX_status_row_primary">
             <div class="_JX_status_row_main">
                 {{#row1Chips}}
-                {{#isEditable}}
-                <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
-                    {{#linkUrl}}
-                    {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/isEditing}}
-                    {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/isEditing}}
-                    {{/linkUrl}}
-                    {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
-                    {{^hideInlineEditButton}}
-                    <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                        {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
-                        {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
-                    </button>
-                    {{/hideInlineEditButton}}
-                    {{#isEditing}}
-                    <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
-                        <div class="_JX_edit_field_label">{{editLabel}}</div>
-                        <div class="_JX_edit_input_shell">
-                            {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
-                            {{^useTextarea}}<input class="_JX_edit_input" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#showDropdown}}role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="jira-popup-edit-listbox-{{fieldKey}}" {{#highlightedOptionDomId}}aria-activedescendant="{{highlightedOptionDomId}}"{{/highlightedOptionDomId}}{{/showDropdown}} {{#inputDisabled}}disabled{{/inputDisabled}}>{{/useTextarea}}
-                            {{^showActionButtons}}<button class="_JX_edit_cancel" data-testid="jira-popup-edit-cancel-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
-                        </div>
-                        {{#showSelectedValues}}
-                        <div class="_JX_edit_selected_values">
-                            {{#selectedValues}}
-                            <span class="_JX_edit_selected_chip" title="{{title}}">
-                                <span class="_JX_edit_selected_label">{{label}}</span>
-                                <button class="_JX_edit_selected_remove" data-testid="jira-popup-edit-remove-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{removeTitle}}" aria-label="{{removeTitle}}" {{#removeDisabled}}disabled{{/removeDisabled}}><svg width="12" height="12" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg></button>
-                            </span>
-                            {{/selectedValues}}
-                        </div>
-                        {{/showSelectedValues}}
-                        {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
-                        {{#showDropdown}}<div class="_JX_edit_dropdown" id="jira-popup-edit-listbox-{{fieldKey}}" role="listbox">
-                            {{#hasOptions}}
-                            {{#options}}
-                            <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}{{#isHighlighted}} is-highlighted{{/isHighlighted}}" id="{{optionDomId}}" data-testid="jira-popup-edit-option-{{fieldKey}}" type="button" role="option" aria-selected="{{#isSelected}}true{{/isSelected}}{{^isSelected}}false{{/isSelected}}" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
-                                {{#isMultiSelect}}<span class="_JX_edit_option_check" aria-hidden="true">{{#isSelected}}<span class="_JX_edit_option_selected_indicator">✓</span><span class="_JX_edit_option_remove_indicator">×</span>{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                                {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
-                                {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
-                                <span class="_JX_edit_option_text">
-                                    <span class="_JX_edit_option_label">{{label}}</span>
-                                    {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
-                                </span>
-                            </button>
-                            {{/options}}
-                            {{/hasOptions}}
-                            {{^hasOptions}}
-                            <div class="_JX_edit_empty">{{editEmptyText}}</div>
-                            {{/hasOptions}}
-                        </div>{{/showDropdown}}
-                        {{#showActionButtons}}
-                        <div class="_JX_edit_actions">
-                            <button class="_JX_edit_discard" data-testid="jira-popup-edit-discard-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
-                            <button class="_JX_edit_save" data-testid="jira-popup-edit-save-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
-                        </div>
-                        {{/showActionButtons}}
-                        {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
-                    </div>
-                    {{/isEditing}}
-                </div>
-                {{/isEditable}}
-                {{^isEditable}}
-                {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" title="{{chipTitle}}">{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}">{{/iconUrl}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
-                {{/isEditable}}
+                {{> statusChip}}
                 {{/row1Chips}}
             </div>
             {{#hasRow1Meta}}
@@ -510,104 +426,7 @@
         {{#secondaryStatusRows}}
         <div class="_JX_status_row{{#rowClass}} {{rowClass}}{{/rowClass}}">
             {{#chips}}
-            {{#isEditable}}
-            <div class="_JX_field_chip _JX_field_chip_editable_group{{#isEditing}} is-editing{{/isEditing}}">
-                {{#isLabelsComposite}}
-                <span class="_JX_field_chip_content _JX_labels_chip_content">
-                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link _JX_field_chip_label" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
-                    {{^labelsView.headerLinkUrl}}<span class="_JX_field_chip_label">{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
-                    <span class="_JX_field_chip_label">: </span>
-                    {{#labelsView.hasLabels}}
-                    {{#labelsView.labels}}
-                    <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
-                    {{/labelsView.labels}}
-                    {{/labelsView.hasLabels}}
-                    {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
-                </span>
-                {{/isLabelsComposite}}
-                {{^isLabelsComposite}}
-                {{#linkUrl}}
-                {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/isEditing}}
-                {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/isEditing}}
-                {{/linkUrl}}
-                {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
-                {{/isLabelsComposite}}
-                <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
-                    {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
-                    {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
-                </button>
-                {{#isEditing}}
-                <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
-                    <div class="_JX_edit_field_label">{{editLabel}}</div>
-                    <div class="_JX_edit_input_shell">
-                        {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
-                        {{^useTextarea}}<input class="_JX_edit_input" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#showDropdown}}role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="jira-popup-edit-listbox-{{fieldKey}}" {{#highlightedOptionDomId}}aria-activedescendant="{{highlightedOptionDomId}}"{{/highlightedOptionDomId}}{{/showDropdown}} {{#inputDisabled}}disabled{{/inputDisabled}}>{{/useTextarea}}
-                        {{^showActionButtons}}<button class="_JX_edit_cancel" data-testid="jira-popup-edit-cancel-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
-                    </div>
-                    {{#showSelectedValues}}
-                    <div class="_JX_edit_selected_values">
-                        {{#selectedValues}}
-                        <span class="_JX_edit_selected_chip" title="{{title}}">
-                            <span class="_JX_edit_selected_label">{{label}}</span>
-                            <button class="_JX_edit_selected_remove" data-testid="jira-popup-edit-remove-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{removeTitle}}" aria-label="{{removeTitle}}" {{#removeDisabled}}disabled{{/removeDisabled}}><svg width="12" height="12" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg></button>
-                        </span>
-                        {{/selectedValues}}
-                    </div>
-                    {{/showSelectedValues}}
-                    {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
-                    {{#showDropdown}}<div class="_JX_edit_dropdown" id="jira-popup-edit-listbox-{{fieldKey}}" role="listbox">
-                        {{#hasOptions}}
-                        {{#options}}
-                        {{#isGroupLabel}}<div class="_JX_edit_group_label">{{label}}</div>{{/isGroupLabel}}
-                        {{^isGroupLabel}}
-                        <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}{{#isHighlighted}} is-highlighted{{/isHighlighted}}" id="{{optionDomId}}" data-testid="jira-popup-edit-option-{{fieldKey}}" type="button" role="option" aria-selected="{{#isSelected}}true{{/isSelected}}{{^isSelected}}false{{/isSelected}}" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
-                            {{#isMultiSelect}}<span class="_JX_edit_option_check" aria-hidden="true">{{#isSelected}}<span class="_JX_edit_option_selected_indicator">✓</span><span class="_JX_edit_option_remove_indicator">×</span>{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
-                            {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
-                            {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
-                            <span class="_JX_edit_option_text">
-                                <span class="_JX_edit_option_label">{{label}}</span>
-                                {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
-                            </span>
-                        </button>
-                        {{/isGroupLabel}}
-                        {{/options}}
-                        {{/hasOptions}}
-                        {{^hasOptions}}
-                        <div class="_JX_edit_empty">{{editEmptyText}}</div>
-                        {{/hasOptions}}
-                    </div>{{/showDropdown}}
-                    {{#showActionButtons}}
-                    <div class="_JX_edit_actions">
-                        <button class="_JX_edit_discard" data-testid="jira-popup-edit-discard-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
-                        <button class="_JX_edit_save" data-testid="jira-popup-edit-save-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
-                    </div>
-                    {{/showActionButtons}}
-                    {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
-                </div>
-                {{/isEditing}}
-            </div>
-            {{/isEditable}}
-            {{^isEditable}}
-            {{#isLabelsComposite}}
-            <span class="_JX_field_chip"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>
-                <span class="_JX_field_chip_content _JX_labels_chip_content">
-                    {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link _JX_field_chip_label" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
-                    {{^labelsView.headerLinkUrl}}<span class="_JX_field_chip_label">{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
-                    <span class="_JX_field_chip_label">: </span>
-                    {{#labelsView.hasLabels}}
-                    {{#labelsView.labels}}
-                    <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
-                    {{/labelsView.labels}}
-                    {{/labelsView.hasLabels}}
-                    {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
-                </span>
-            </span>
-            {{/isLabelsComposite}}
-            {{^isLabelsComposite}}
-            {{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</a>{{/linkUrl}}
-            {{^linkUrl}}<span class="_JX_field_chip{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{textValue}}</span>{{/linkUrl}}
-            {{/isLabelsComposite}}
-            {{/isEditable}}
+            {{> statusChip}}
             {{/chips}}
         </div>
         {{/secondaryStatusRows}}
@@ -846,17 +665,17 @@
                 {{#prs}}
                 <tr>
                     <td>
-                        <a class="_JX_pr_id" href="{{linkUrl}}" target="_blank" rel="noopener noreferrer" data-pr-details="{{detailId}}" aria-describedby="{{detailId}}">{{idText}}</a>
-                        <span id="{{detailId}}" class="_JX_pr_tooltip" popover="manual" role="tooltip" hidden>{{linkTitle}}</span>
+                        <a class="_JX_pr_title" href="{{linkUrl}}" target="_blank" rel="noopener noreferrer" data-pr-details="{{detailId}}" aria-describedby="{{detailId}}"><span class="_JX_pr_id">{{idText}}</span> {{titleText}}</a>
+                        <span id="{{detailId}}" class="_JX_tooltip" popover="manual" role="tooltip" hidden>{{#linkDetails}}<span>{{text}}</span>{{/linkDetails}}</span>
                     </td>
                     <td>
                         <div class="_JX_related_table_user" title="{{authorView.titleText}}">
                             {{#authorView.avatarUrl}}<img class="_JX_related_table_user_avatar" src="{{authorView.avatarUrl}}" alt="">{{/authorView.avatarUrl}}
                             {{^authorView.avatarUrl}}<span class="_JX_related_table_user_avatar _JX_related_table_user_avatar_placeholder">{{authorView.initials}}</span>{{/authorView.avatarUrl}}
-                            <span class="_JX_related_table_user_name">{{authorView.displayName}}</span>
+                            <span class="_JX_related_table_user_name">{{authorView.shortName}}</span>
                         </div>
                     </td>
-                    <td><span class="_JX_pr_target" title="{{branchTitle}}">{{branchText}}</span></td>
+                    <td><span class="_JX_pr_branch" title="{{branchTitle}}">{{branchText}}</span></td>
                     <td><div class="_JX_PR_STATUS _JX_PR_{{status}}">{{statusText}}</div></td>
                     <td>
                         <span class="_JX_pr_signals">
@@ -873,7 +692,7 @@
                                     {{#isUnknown}}<circle cx="10" cy="10" r="7"/><path d="M8 7a2 2 0 1 1 3 2c-1 0-1 1-1 2m0 2v1"/>{{/isUnknown}}
                                 </svg>{{#count}}<span>{{count}}</span>{{/count}}
                             </a>
-                            <span id="{{detailId}}" class="_JX_pr_tooltip" popover="manual" role="tooltip" hidden>{{#details}}<span>{{text}}</span>{{/details}}</span>
+                            <span id="{{detailId}}" class="_JX_tooltip" popover="manual" role="tooltip" hidden>{{#details}}<span>{{text}}</span>{{/details}}</span>
                             </span>
                         {{/signals}}
                         {{^hasSignals}}<span class="_JX_pr_empty">—</span>{{/hasSignals}}
@@ -881,7 +700,7 @@
                     </td>
                     <td class="_JX_pr_time_cell">
                         <time class="_JX_pr_time" datetime="{{timeIso}}" tabindex="0" data-pr-details="{{timeDetailId}}" aria-label="{{timeLabel}}" aria-describedby="{{timeDetailId}}">{{timeText}}</time>
-                        <span id="{{timeDetailId}}" class="_JX_pr_tooltip" popover="manual" role="tooltip" hidden>{{#timeDetails}}<span>{{text}}</span>{{/timeDetails}}</span>
+                        <span id="{{timeDetailId}}" class="_JX_tooltip" popover="manual" role="tooltip" hidden>{{#timeDetails}}<span>{{text}}</span>{{/timeDetails}}</span>
                     </td>
                 </tr>
                 {{/prs}}

@@ -68,7 +68,6 @@ test('falls back to a read-only popup when Jira is viewable anonymously', async 
   await hoverIssueKey(page, '#popup-key');
   const popup = page.locator('._JX_container');
   await expect(popup).toContainText(resolvedTarget.primaryIssueKey);
-  await expect(page.locator('._JX_actions_toggle')).toHaveCount(0);
   await expect(page.locator('button[data-field-key="priority"]')).toHaveCount(0);
   await page.close();
 });

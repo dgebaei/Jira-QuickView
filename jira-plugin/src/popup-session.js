@@ -455,8 +455,6 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
         actionKey: intent.actionKey,
         requirements: intent.requirements || {},
       });
-      const transition = transitionPopupPresentation(state.presentation, {type: 'close-actions'});
-      if (transition.kind !== 'ignored') state = {...state, presentation: transition.presentation};
       await scheduleRender('quick-action-pending');
       const actionOutcome = await pending;
       if (!isCurrent(sessionId)) return outcome('ignored', {reason: 'superseded'});

@@ -115,22 +115,6 @@ body dialog._JX_shortcuts_dialog {
     background: var(--jx-accent-subtle);
     border-color: var(--jx-accent);
   }
-  table {
-    border-collapse: collapse;
-    inline-size: 100%;
-    text-align: start;
-  }
-  caption {
-    color: var(--jx-ink-2);
-    padding-block-end: 12px;
-    text-align: start;
-  }
-  td, th {
-    border-block-end: 1px solid var(--jx-border);
-    padding: 8px;
-    text-align: start;
-  }
-  th:first-child { white-space: nowrap; }
 
   @media (hover: hover) and (pointer: fine) {
     button:not(:disabled):hover { background: var(--jx-fill-hover); }
@@ -138,10 +122,102 @@ body dialog._JX_shortcuts_dialog {
   }
 }
 
-html[data-jhl-theme='dark'] body dialog._JX_shortcuts_dialog {
+// Shortcut reference dropped down from the toolbar button; browser-popup-shortcuts
+// positions it. It sits in the page body, so every property a host page might
+// style on h2/table/th/p is set here.
+body ._JX_shortcuts_panel {
+  background: var(--jx-surface);
+  border: 1px solid var(--jx-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px oklch(0% 0 none / 14%), 0 2px 6px oklch(0% 0 none / 6%);
+  box-sizing: border-box;
+  color: var(--jx-ink);
+  font: 12px/1.4 var(--jx-font);
+  inline-size: max-content;
+  inset: auto;
+  margin: 0;
+  max-block-size: calc(100vh - 16px);
+  max-inline-size: calc(100vw - 16px);
+  overflow: auto;
+  padding: 8px 10px 9px;
+  position: fixed;
+  text-align: start;
+
+  ._JX_shortcuts_panel_heading {
+    align-items: center;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    margin-block-end: 4px;
+  }
+
+  h2 {
+    color: var(--jx-ink);
+    font: 600 12px/1.4 var(--jx-font);
+    margin: 0;
+  }
+
+  table {
+    border: 0;
+    border-collapse: collapse;
+    inline-size: auto;
+    margin: 0;
+  }
+
+  th, td {
+    background: none;
+    border: 0;
+    color: var(--jx-ink);
+    font: 400 12px/1.4 var(--jx-font);
+    padding: 3px 14px 3px 0;
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  thead th {
+    border-block-end: 1px solid var(--jx-border);
+    color: var(--jx-ink-meta);
+    font-size: 11px;
+    font-weight: 600;
+    padding-block: 2px 4px;
+  }
+
+  tbody tr:first-child > * { padding-block-start: 5px; }
+  th:last-child, td:last-child { padding-inline-end: 0; }
+  // The Alt variant is the secondary reading of each row.
+  td:last-child { color: var(--jx-ink-2); }
+
+  kbd {
+    background: var(--jx-wash);
+    border: 1px solid var(--jx-border-strong);
+    border-radius: 4px;
+    box-shadow: inset 0 -1px 0 var(--jx-border);
+    box-sizing: border-box;
+    color: var(--jx-ink);
+    display: inline-block;
+    font: 600 11px/1 var(--jx-font);
+    min-inline-size: 18px;
+    padding: 2px 4px;
+    text-align: center;
+  }
+
+  // Wraps to the table's width instead of widening the panel.
+  p {
+    color: var(--jx-ink-meta);
+    font: 400 11px/1.4 var(--jx-font);
+    inline-size: 0;
+    margin: 6px 0 0;
+    min-inline-size: 100%;
+  }
+}
+
+html[data-jhl-theme='dark'] body dialog._JX_shortcuts_dialog,
+html[data-jhl-theme='dark'] body ._JX_shortcuts_panel {
   --jx-surface: oklch(22% 0 none);
   --jx-ink: oklch(94% 0 none);
   --jx-ink-2: oklch(76% 0 none);
+  --jx-ink-meta: oklch(70% 0 none);
+  --jx-wash: oklch(100% 0 none / 6%);
   --jx-border: oklch(100% 0 none / 12%);
   --jx-border-strong: oklch(100% 0 none / 25%);
   --jx-fill-hover: oklch(100% 0 none / 8%);
@@ -249,7 +325,8 @@ body ._JX {
       align-items: center;
       flex: 0 0 auto;
       margin-left: -3px;
-      margin-right: 6px;
+      // Room for the assignee pencil badge, which overhangs the avatar by 12px.
+      margin-right: 10px;
       min-width: 20px;
     }
 
@@ -279,7 +356,8 @@ body ._JX {
       align-items: center;
       flex: 0 0 auto;
       gap: 6px;
-      margin-left: 8px;
+      margin-left: auto;
+      padding-left: 8px;
     }
 
     &_user_placeholder {
@@ -297,59 +375,109 @@ body ._JX {
       position: relative;
     }
 
+    // Shrink-wrapped so the overlaid pencil lands on the end of the text.
     &_summary_slot {
       align-items: center;
       display: flex;
-      flex: 1 1 auto;
-      gap: 3px;
+      flex: 0 1 auto;
       min-width: 0;
       position: relative;
     }
 
+    // Editing must not change the header's height: a hidden copy of the
+    // displayed title sizes the slot, and the editor overlays exactly that box.
     &_summary_slot.is-editing {
-      align-items: center;
+      flex: 1 1 auto;
+      min-height: 21px;
       z-index: 30;
     }
 
+    &_edit_sizer {
+      -webkit-box-orient: vertical;
+      display: -webkit-box;
+      flex: 1 1 auto;
+      font-size: 14px;
+      font-weight: 600;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      line-height: 1.3;
+      min-width: 0;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      visibility: hidden;
+      word-break: break-word;
+    }
+
     &_edit_row {
-      align-items: center;
-      display: flex;
-      flex: 1 1 auto;
-      min-width: 0;
+      inset: 0;
+      position: absolute;
     }
 
-    &_edit_form {
-      display: flex;
-      flex: 1 1 auto;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 0;
-    }
-
-    &_edit_input_shell {
-      align-items: center;
-      gap: 6px;
-      margin-right: 10px;
-    }
-
-    // Chained with ._JX_edit_input so it outranks the generic rule further down.
+    // Two 15px lines plus padding and border fit the two-line title's 36.4px;
+    // longer text scrolls inside. Chained with ._JX_edit_input to outrank the generic rule.
     &_edit_input._JX_edit_input {
+      box-sizing: border-box;
+      display: block;
       font-size: 13px;
-      line-height: 14px;
-      min-height: 24px;
+      height: 100%;
+      line-height: 15px;
+      min-height: 0;
+      overflow: hidden auto;
       padding: 2px 6px;
+      resize: none;
+      scrollbar-width: none;
+      width: 100%;
     }
 
+    // Jira-style: compact buttons float under the field instead of taking header width.
     &_edit_actions {
-      display: inline-flex;
-      flex: 0 0 auto;
-      gap: 6px;
+      display: flex;
+      gap: 4px;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
     }
 
-    &_edit_action {
-      min-width: 0;
-      padding: 7px 10px;
-      width: auto;
+    // Toolbar-sized, and opaque in every state: they float over the chips, so the
+    // generic translucent hover and opacity-based disabled styles would show through.
+    &_edit_action._JX_control_button {
+      box-shadow: 0 2px 6px oklch(0% 0 none / 12%), 0 1px 2px oklch(0% 0 none / 8%);
+      height: 30px;
+      min-width: 30px;
+      padding: 0;
+      width: 30px;
+
+      &:disabled { opacity: 1; }
+    }
+
+    &_edit_action._JX_edit_discard {
+      background: var(--jx-surface);
+
+      &:disabled { color: var(--jx-ink-3); }
+    }
+
+    &_edit_action._JX_edit_save:disabled {
+      background: color-mix(in oklch, var(--jx-accent) 40%, var(--jx-surface));
+      border-color: transparent;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &_edit_action._JX_edit_discard:not(:disabled):hover {
+        background: color-mix(in oklch, var(--jx-surface), black 9%);
+      }
+    }
+
+    &_edit_error._JX_edit_error {
+      background: var(--jx-surface);
+      border: 1px solid var(--jx-border-strong);
+      border-radius: 6px;
+      box-shadow: 0 2px 6px oklch(0% 0 none / 12%);
+      left: 0;
+      margin: 0;
+      padding: 4px 8px;
+      position: absolute;
+      right: 64px;
+      top: calc(100% + 4px);
     }
 
     @media (hover: hover) and (pointer: fine) {
@@ -358,13 +486,24 @@ body ._JX {
       }
     }
 
+    // Overlays the end of the title like the chip pencils, so the title keeps
+    // the width. The title bar's wash is mixed in to keep the overlay opaque.
     &_summary_slot ._JX_title_edit_button {
-      flex: 0 0 auto;
-      height: 30px;
-      margin-left: 0;
-      margin-top: 0;
-      min-width: 30px;
-      width: 30px;
+      --jx-title-edit-bg: color-mix(in oklch, var(--jx-surface), black 3%);
+      background: var(--jx-title-edit-bg);
+      box-shadow: -8px 0 8px var(--jx-title-edit-bg);
+      height: 24px;
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 24px;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &_summary_slot ._JX_title_edit_button:hover {
+        background: color-mix(in oklch, var(--jx-surface), black 11%);
+      }
     }
 
     &_summary_slot ._JX_title_edit_button svg {
@@ -376,8 +515,23 @@ body ._JX {
       z-index: 30;
     }
 
+    // A badge on the avatar's right edge, centered on it, rather than a column of
+    // its own, so the title starts right after the avatars. The -1px matches the
+    // avatar's -2px top margin.
     &_assignee_slot ._JX_assignee_edit_button {
-      margin-left: 2px;
+      background: var(--jx-surface);
+      box-shadow: 0 1px 3px oklch(0% 0 none / 18%);
+      position: absolute;
+      right: -12px;
+      top: calc(50% - 1px);
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &_assignee_slot ._JX_assignee_edit_button:hover {
+        background: color-mix(in oklch, var(--jx-surface), black 9%);
+      }
     }
 
     &_copy {
@@ -441,96 +595,7 @@ body ._JX {
     }
   }
 
-  &_actions {
-    position: relative;
-    flex: 0 0 auto;
-  }
-
-  &_actions_toggle {
-    padding-right: 6px;
-
-    &.is-open {
-      background: var(--jx-accent-subtle);
-      border-color: var(--jx-accent-border);
-      box-shadow: 0 0 0 3px color-mix(in oklch, var(--jx-accent) 14%, transparent);
-      color: var(--jx-ink);
-    }
-
-    &.is-open ._JX_actions_toggle_chevron {
-      transform: rotate(180deg);
-    }
-  }
-
-  &_actions_toggle_chevron {
-    opacity: 0.72;
-    transition: transform 120ms ease;
-  }
-
-  &_actions_menu {
-    background: var(--jx-surface);
-    border: 1px solid var(--jx-border-strong);
-    border-radius: 10px;
-    box-shadow: 0 14px 32px rgb(0 0 0 / 10%), 0 2px 6px rgb(0 0 0 / 5%);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 220px;
-    padding: 8px;
-    position: absolute;
-    right: 0;
-    top: calc(100% + 8px);
-    z-index: 3;
-
-    &::before {
-      background: var(--jx-surface);
-      border-left: 1px solid var(--jx-border-strong);
-      border-top: 1px solid var(--jx-border-strong);
-      content: '';
-      height: 10px;
-      position: absolute;
-      right: 11px;
-      top: -6px;
-      transform: rotate(45deg);
-      width: 10px;
-    }
-  }
-
-  &_action_divider {
-    border-top: 1px solid var(--jx-border);
-    margin: 6px 4px;
-  }
-
-  &_action_item {
-    appearance: none;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    color: var(--jx-ink);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.3;
-    padding: 9px 11px;
-    text-align: left;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-
-    @media (hover: hover) and (pointer: fine) {
-      &:hover {
-        background: var(--jx-fill-hover);
-        border-color: var(--jx-border-strong);
-        color: var(--jx-ink);
-      }
-    }
-
-    &.is-loading,
-    &.is-disabled,
-    &:disabled {
-      background: var(--jx-fill-hover);
-      border-color: transparent;
-      color: var(--jx-ink-3);
-      cursor: wait;
-    }
-  }  &_subtitle {
+  &_subtitle {
     border-top: none;
     padding-left: 36px;
   }
@@ -562,10 +627,14 @@ body ._JX {
       flex-wrap: nowrap;
       justify-content: space-between;
       gap: 10px;
-      // A faint rule between configured rows: enough to show where a row that
-      // wraps ends, light enough not to box each row in.
-      border-bottom: 1px solid var(--jx-border-faint);
-      padding-bottom: 8px;
+    }
+
+    // A faint rule between configured rows: enough to show where a row that
+    // wraps ends, light enough not to box each row in. Drawn only between rows
+    // that render, so an empty configured row leaves no double rule behind.
+    &_row + ._JX_status_row {
+      border-top: 1px solid var(--jx-border-faint);
+      padding-top: 8px;
     }
 
     &_row_main {
@@ -1676,11 +1745,6 @@ body ._JX {
     }
   }
 
-  &_status_row_lower {
-    border-top: 1px solid var(--jx-border-faint);
-    padding-top: 8px;
-  }
-
   &_time_tracking {
     display: flex;
     flex-direction: column;
@@ -2306,12 +2370,13 @@ body ._JX {
       padding-inline-end: 10px;
     }
 
-    th:nth-child(1) { inline-size: 12%; }
-    th:nth-child(2) { inline-size: 25%; }
+    // The title takes whatever the fixed columns leave.
+    th:nth-child(2) { inline-size: 92px; }
+    // Branch wraps after the arrow; Signals wraps past two icons.
     th:nth-child(3) { inline-size: 16%; }
-    th:nth-child(4) { inline-size: 13%; }
-    th:nth-child(5) { inline-size: 18%; }
-    th:nth-child(6) { inline-size: 16%; }
+    th:nth-child(4) { inline-size: 64px; }
+    th:nth-child(5) { inline-size: 60px; }
+    th:nth-child(6) { inline-size: 64px; }
 
     th:last-child,
     td:last-child {
@@ -2340,11 +2405,15 @@ body ._JX {
     cursor: help;
   }
 
-  &_pr_target {
-    display: block;
-    overflow: clip;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  // Two lines, then an ellipsis; the details popover and title attribute carry the rest.
+  &_pr_title,
+  &_pr_branch {
+    -webkit-box-orient: vertical;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
   }
 
   &_pr_signals {
@@ -2384,7 +2453,8 @@ body ._JX {
   &_container a._JX_pr_signal_unknown,
   &_pr_empty { color: var(--jx-ink-3); }
 
-  &_pr_tooltip {
+  // Every popup tooltip: PR details and the native titles popup-tooltips.js takes over.
+  &_tooltip {
     background: var(--jx-surface);
     border: 1px solid var(--jx-border-strong);
     border-radius: 6px;
@@ -2400,8 +2470,11 @@ body ._JX {
     text-align: start;
     white-space: pre-line;
 
-    > span { display: block; }
-    > span:first-child { font-weight: 600; }
+    // Each line sets its own color: host CSS that forces [role='tooltip']
+    // (Outlook dark mode, with !important) would otherwise reach it by inheritance.
+    > span { color: var(--jx-ink); display: block; }
+    // PR details lead with a heading line; plain titles do not.
+    &:not(.is-plain) > span:first-child { font-weight: 600; }
   }
 
   &_gitlab_connections {
@@ -2421,7 +2494,7 @@ body ._JX {
     padding: 2px 6px;
   }
 
-  &_pr_id,
+  &_pr_title,
   &_pr_time,
   &_pr_signal,
   &_gitlab_connect {
@@ -3308,7 +3381,7 @@ body ._JX {
     font-size: 12px;
     gap: 4px;
     line-height: 18px;
-    padding: 2px 10px;
+    padding: 1px 8px;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3338,6 +3411,73 @@ body ._JX {
     max-width: min(360px, calc(100vw - 96px));
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // One line per chip: long values (sprint, parent, account) stop at an ellipsis
+  // and the chip's tooltip carries the full text.
+  &_field_chip_content,
+  &_field_chip:not(._JX_field_chip_editable_group) {
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &_field_chip:not(._JX_field_chip_editable_group) {
+    display: inline-block;
+  }
+
+  // Issue type and priority: Jira's icon alone, the name in the tooltip.
+  &_field_chip_icon_only {
+    padding-inline: 5px;
+
+    ._JX_status_icon { margin-right: 0; }
+  }
+
+  // Photo and initials share one box: overflow hidden makes the initials'
+  // baseline its bottom edge, like an image, so both center on the 18px line.
+  &_chip_avatar {
+    block-size: 16px;
+    border-radius: 50%;
+    display: inline-block;
+    inline-size: 16px;
+    margin-right: 4px;
+    object-fit: cover;
+    overflow: hidden;
+    vertical-align: -4px;
+  }
+
+  &_chip_avatar_placeholder {
+    background: var(--jx-fill-pressed);
+    color: var(--jx-ink-2);
+    font-size: 8px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  // Sprint state as a dot: filled green active, hollow future, grey closed.
+  &_chip_state {
+    block-size: 7px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    display: inline-block;
+    inline-size: 7px;
+    margin-left: 6px;
+    vertical-align: 1px;
+  }
+
+  &_chip_state_active { background: oklch(62% 0.17 145deg); }
+  &_chip_state_future { border: 1.5px solid var(--jx-ink-3); }
+  &_chip_state_closed { background: var(--jx-ink-3); }
+
+  &_visually_hidden {
+    block-size: 1px;
+    clip-path: inset(50%);
+    inline-size: 1px;
+    overflow: hidden;
+    position: absolute;
     white-space: nowrap;
   }
 
@@ -3412,6 +3552,8 @@ body ._JX {
     border-radius: 10px;
     box-shadow: 0 14px 30px rgb(0 0 0 / 11%);
     color: var(--jx-ink);
+    // The popover sits inside its chip; don't inherit the chip value's 600.
+    font-weight: 400;
     left: 0;
     min-width: 260px;
     max-width: min(360px, calc(100vw - 48px));
@@ -4029,10 +4171,10 @@ body ._JX {
 
 html[data-jhl-theme='dark'] body ._JX {
   // Top-layer popovers do not inherit the container's legacy inversion.
-  &_pr_tooltip {
-    background: oklch(23% 0 none);
-    border-color: oklch(44% 0 none);
-    color: oklch(92% 0 none);
+  &_tooltip {
+    --jx-ink: oklch(92% 0 none);
+    --jx-surface: oklch(23% 0 none);
+    --jx-border-strong: oklch(44% 0 none);
   }
 
   &_container {

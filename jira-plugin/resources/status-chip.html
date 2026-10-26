@@ -1,0 +1,101 @@
+{{! One field chip, shared by every status row so any field works in any row. }}
+{{#isEditable}}
+<div class="_JX_field_chip _JX_field_chip_editable_group{{#chipIconOnly}} _JX_field_chip_icon_only{{/chipIconOnly}}{{#isEditing}} is-editing{{/isEditing}}">
+    {{#isLabelsComposite}}
+    <span class="_JX_field_chip_content _JX_labels_chip_content">
+        {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link _JX_field_chip_label" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+        {{^labelsView.headerLinkUrl}}<span class="_JX_field_chip_label">{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+        <span class="_JX_field_chip_label">: </span>
+        {{#labelsView.hasLabels}}
+        {{#labelsView.labels}}
+        <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
+        {{/labelsView.labels}}
+        {{/labelsView.hasLabels}}
+        {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
+    </span>
+    {{/isLabelsComposite}}
+    {{^isLabelsComposite}}
+    {{#linkUrl}}
+    {{^isEditing}}<a class="_JX_field_chip_link _JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}{{#chipIconOnly}}<span class="_JX_visually_hidden">{{textLabel}} {{textValue}}</span>{{/chipIconOnly}}{{^chipIconOnly}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{#chipAvatar}}{{#avatarSrc}}<img class="_JX_chip_avatar" src="{{avatarSrc}}" alt="">{{/avatarSrc}}{{^avatarSrc}}<span class="_JX_chip_avatar _JX_chip_avatar_placeholder" aria-hidden="true">{{avatarInitials}}</span>{{/avatarSrc}}{{/chipAvatar}}{{textValue}}{{#chipState}}<span class="_JX_chip_state _JX_chip_state_{{stateKey}}" title="{{stateLabel}}"></span>{{/chipState}}{{/chipIconOnly}}</a>{{/isEditing}}
+    {{#isEditing}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}{{#chipIconOnly}}<span class="_JX_visually_hidden">{{textLabel}} {{textValue}}</span>{{/chipIconOnly}}{{^chipIconOnly}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{#chipAvatar}}{{#avatarSrc}}<img class="_JX_chip_avatar" src="{{avatarSrc}}" alt="">{{/avatarSrc}}{{^avatarSrc}}<span class="_JX_chip_avatar _JX_chip_avatar_placeholder" aria-hidden="true">{{avatarInitials}}</span>{{/avatarSrc}}{{/chipAvatar}}{{textValue}}{{#chipState}}<span class="_JX_chip_state _JX_chip_state_{{stateKey}}" title="{{stateLabel}}"></span>{{/chipState}}{{/chipIconOnly}}</span>{{/isEditing}}
+    {{/linkUrl}}
+    {{^linkUrl}}<span class="_JX_field_chip_content{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" data-testid="jira-popup-field-{{fieldKey}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}{{#chipIconOnly}}<span class="_JX_visually_hidden">{{textLabel}} {{textValue}}</span>{{/chipIconOnly}}{{^chipIconOnly}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{#chipAvatar}}{{#avatarSrc}}<img class="_JX_chip_avatar" src="{{avatarSrc}}" alt="">{{/avatarSrc}}{{^avatarSrc}}<span class="_JX_chip_avatar _JX_chip_avatar_placeholder" aria-hidden="true">{{avatarInitials}}</span>{{/avatarSrc}}{{/chipAvatar}}{{textValue}}{{#chipState}}<span class="_JX_chip_state _JX_chip_state_{{stateKey}}" title="{{stateLabel}}"></span>{{/chipState}}{{/chipIconOnly}}</span>{{/linkUrl}}
+    {{/isLabelsComposite}}
+    {{^hideInlineEditButton}}
+    <button class="_JX_field_chip_edit" data-testid="jira-popup-edit-button-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="{{editTitle}}" aria-label="{{editTitle}}">
+        {{^isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.51 2.51a.996.996 0 0 0 1.41 0z"></path></svg>{{/isEditing}}
+        {{#isEditing}}<svg width="14" height="14" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg>{{/isEditing}}
+    </button>
+    {{/hideInlineEditButton}}
+    {{#isEditing}}
+    <div class="_JX_edit_popover{{#isRightAligned}} _JX_edit_popover_right{{/isRightAligned}}" data-testid="jira-popup-edit-popover-{{fieldKey}}" data-field-key="{{fieldKey}}">
+        <div class="_JX_edit_field_label">{{editLabel}}</div>
+        <div class="_JX_edit_input_shell">
+            {{#useTextarea}}<textarea class="_JX_edit_input _JX_edit_textarea" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" placeholder="{{inputPlaceholder}}" {{#inputDisabled}}disabled{{/inputDisabled}}>{{inputValue}}</textarea>{{/useTextarea}}
+            {{^useTextarea}}<input class="_JX_edit_input" data-testid="jira-popup-edit-input-{{fieldKey}}" data-field-key="{{fieldKey}}" value="{{inputValue}}" placeholder="{{inputPlaceholder}}" autocomplete="off" {{#showDropdown}}role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="jira-popup-edit-listbox-{{fieldKey}}" {{#highlightedOptionDomId}}aria-activedescendant="{{highlightedOptionDomId}}"{{/highlightedOptionDomId}}{{/showDropdown}} {{#inputDisabled}}disabled{{/inputDisabled}}>{{/useTextarea}}
+            {{^showActionButtons}}<button class="_JX_edit_cancel" data-testid="jira-popup-edit-cancel-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" title="Cancel edit">Cancel</button>{{/showActionButtons}}
+        </div>
+        {{#showSelectedValues}}
+        <div class="_JX_edit_selected_values">
+            {{#selectedValues}}
+            <span class="_JX_edit_selected_chip" title="{{title}}">
+                <span class="_JX_edit_selected_label">{{label}}</span>
+                <button class="_JX_edit_selected_remove" data-testid="jira-popup-edit-remove-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{removeTitle}}" aria-label="{{removeTitle}}" {{#removeDisabled}}disabled{{/removeDisabled}}><svg width="12" height="12" viewBox="0 0 24 24" focusable="false" role="presentation"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.29-6.3z"></path></svg></button>
+            </span>
+            {{/selectedValues}}
+        </div>
+        {{/showSelectedValues}}
+        {{#loadingText}}<div class="_JX_edit_hint">{{loadingText}}</div>{{/loadingText}}
+        {{#showDropdown}}<div class="_JX_edit_dropdown" id="jira-popup-edit-listbox-{{fieldKey}}" role="listbox">
+            {{#hasOptions}}
+            {{#options}}
+            {{#isGroupLabel}}<div class="_JX_edit_group_label">{{label}}</div>{{/isGroupLabel}}
+            {{^isGroupLabel}}
+            <button class="_JX_edit_option{{#isSelected}} is-selected{{/isSelected}}{{#isHighlighted}} is-highlighted{{/isHighlighted}}" id="{{optionDomId}}" data-testid="jira-popup-edit-option-{{fieldKey}}" type="button" role="option" aria-selected="{{#isSelected}}true{{/isSelected}}{{^isSelected}}false{{/isSelected}}" data-field-key="{{fieldKey}}" data-option-id="{{id}}" title="{{title}}">
+                {{#isMultiSelect}}<span class="_JX_edit_option_check" aria-hidden="true">{{#isSelected}}<span class="_JX_edit_option_selected_indicator">✓</span><span class="_JX_edit_option_remove_indicator">×</span>{{/isSelected}}{{^isSelected}}&nbsp;{{/isSelected}}</span>{{/isMultiSelect}}
+                {{#avatarUrl}}<img class="_JX_edit_option_avatar" src="{{avatarUrl}}" alt="">{{/avatarUrl}}{{^avatarUrl}}{{#initials}}<span class="_JX_edit_option_avatar _JX_edit_option_avatar_placeholder">{{initials}}</span>{{/initials}}{{/avatarUrl}}
+                {{#iconUrl}}<img class="_JX_edit_option_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}
+                <span class="_JX_edit_option_text">
+                    <span class="_JX_edit_option_label">{{label}}{{#sprintState}}<span class="_JX_chip_state _JX_chip_state_{{sprintState}}" title="{{sprintStateLabel}}"></span>{{/sprintState}}</span>
+                    {{#metaText}}<span class="_JX_edit_option_meta">{{metaText}}</span>{{/metaText}}
+                </span>
+            </button>
+            {{/isGroupLabel}}
+            {{/options}}
+            {{/hasOptions}}
+            {{^hasOptions}}
+            <div class="_JX_edit_empty">{{editEmptyText}}</div>
+            {{/hasOptions}}
+        </div>{{/showDropdown}}
+        {{#showActionButtons}}
+        <div class="_JX_edit_actions">
+            <button class="_JX_edit_discard" data-testid="jira-popup-edit-discard-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
+            <button class="_JX_edit_save" data-testid="jira-popup-edit-save-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
+        </div>
+        {{/showActionButtons}}
+        {{#editError}}<div class="_JX_edit_error">{{editError}}</div>{{/editError}}
+    </div>
+    {{/isEditing}}
+</div>
+{{/isEditable}}
+{{^isEditable}}
+{{#isLabelsComposite}}
+<span class="_JX_field_chip"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>
+    <span class="_JX_field_chip_content _JX_labels_chip_content">
+        {{#labelsView.headerLinkUrl}}<a class="_JX_field_chip_inline_link _JX_labels_chip_link _JX_field_chip_label" target="_blank" rel="noopener noreferrer" href="{{labelsView.headerLinkUrl}}" title="{{labelsView.headerLinkTitle}}">{{labelsView.headerText}}</a>{{/labelsView.headerLinkUrl}}
+        {{^labelsView.headerLinkUrl}}<span class="_JX_field_chip_label">{{labelsView.headerText}}</span>{{/labelsView.headerLinkUrl}}
+        <span class="_JX_field_chip_label">: </span>
+        {{#labelsView.hasLabels}}
+        {{#labelsView.labels}}
+        <a class="_JX_field_chip_inline_link _JX_labels_chip_link" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}" title="{{linkTitle}}">{{text}}</a>{{#showSeparator}}<span>, </span>{{/showSeparator}}
+        {{/labelsView.labels}}
+        {{/labelsView.hasLabels}}
+        {{^labelsView.hasLabels}}<span>--</span>{{/labelsView.hasLabels}}
+    </span>
+</span>
+{{/isLabelsComposite}}
+{{^isLabelsComposite}}
+{{#linkUrl}}<a class="_JX_field_chip _JX_field_chip_link{{#chipIconOnly}} _JX_field_chip_icon_only{{/chipIconOnly}}{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}" target="_blank" rel="noopener noreferrer" href="{{linkUrl}}"{{#renderLinkTitle}} title="{{renderLinkTitle}}"{{/renderLinkTitle}}>{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}{{#chipIconOnly}}<span class="_JX_visually_hidden">{{textLabel}} {{textValue}}</span>{{/chipIconOnly}}{{^chipIconOnly}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{#chipAvatar}}{{#avatarSrc}}<img class="_JX_chip_avatar" src="{{avatarSrc}}" alt="">{{/avatarSrc}}{{^avatarSrc}}<span class="_JX_chip_avatar _JX_chip_avatar_placeholder" aria-hidden="true">{{avatarInitials}}</span>{{/avatarSrc}}{{/chipAvatar}}{{textValue}}{{#chipState}}<span class="_JX_chip_state _JX_chip_state_{{stateKey}}" title="{{stateLabel}}"></span>{{/chipState}}{{/chipIconOnly}}</a>{{/linkUrl}}
+{{^linkUrl}}<span class="_JX_field_chip{{#chipIconOnly}} _JX_field_chip_icon_only{{/chipIconOnly}}{{#truncateText}} _JX_field_chip_truncate{{/truncateText}}"{{#renderContentTitle}} title="{{renderContentTitle}}"{{/renderContentTitle}}>{{#iconUrl}}<img class="_JX_status_icon" src="{{iconUrl}}" alt="">{{/iconUrl}}{{#chipIconOnly}}<span class="_JX_visually_hidden">{{textLabel}} {{textValue}}</span>{{/chipIconOnly}}{{^chipIconOnly}}{{#textLabel}}<span class="_JX_field_chip_label">{{textLabel}}</span> {{/textLabel}}{{#chipAvatar}}{{#avatarSrc}}<img class="_JX_chip_avatar" src="{{avatarSrc}}" alt="">{{/avatarSrc}}{{^avatarSrc}}<span class="_JX_chip_avatar _JX_chip_avatar_placeholder" aria-hidden="true">{{avatarInitials}}</span>{{/avatarSrc}}{{/chipAvatar}}{{textValue}}{{#chipState}}<span class="_JX_chip_state _JX_chip_state_{{stateKey}}" title="{{stateLabel}}"></span>{{/chipState}}{{/chipIconOnly}}</span>{{/linkUrl}}
+{{/isLabelsComposite}}
+{{/isEditable}}

@@ -534,7 +534,7 @@ test('sorts the Pull Requests block from the column headers @mock-only', async (
   await configureExtension(optionsPage, baseConfig(servers, target));
 
   const {page} = await openPopup(extensionApp, servers, target);
-  const prLinks = page.locator('[data-content-block="pullRequests"] tbody tr td:nth-child(1) a');
+  const prLinks = page.locator('[data-content-block="pullRequests"] tbody tr ._JX_pr_id');
 
   await expect(prLinks).toHaveText([
     '#1', '#2', '#3',
@@ -558,12 +558,33 @@ test('shows compact GitLab PR details, signals, and chronological sorting @mock-
   await servers.jira.setScenario('pr-gitlab');
   await configureExtension(optionsPage, baseConfig(servers, target));
   const {page} = await openPopup(extensionApp, servers, target);
+  // Outlook's dark mode forces every [role="tooltip"] text color with !important.
+  await page.addStyleTag({content: 'body.owa-dark-fix [role="tooltip"] { color: rgb(200, 200, 200) !important; }'});
+  await page.evaluate(() => document.body.classList.add('owa-dark-fix'));
+  const hostColoredLines = () => page.getByRole('tooltip').locator('span').evaluateAll(spans =>
+    spans.filter(span => getComputedStyle(span).color === 'rgb(200, 200, 200)').length);
   const block = page.locator('[data-content-block="pullRequests"]');
   const rows = block.locator('tbody tr');
-  await expect(block.locator('thead th')).toHaveText(['PR', 'Author', 'Target', 'Status', 'Signals', 'Last update']);
-  await expect(rows.locator('td:first-child a')).toHaveText(['!1', '!2', '!3', '!4']);
-  await expect(rows.first()).toContainText('Morgan Agent');
-  await expect(rows.first().locator('td').nth(2)).toHaveText('main');
+  await expect(block.locator('thead th')).toHaveText(['Title', 'Author', 'Branch', 'Status', 'Signals', 'Updated']);
+  await expect(rows.locator('._JX_pr_id')).toHaveText(['!1', '!2', '!3', '!4']);
+  await expect(rows.first().locator('._JX_pr_title')).toHaveText('!1 Fix slash command cursor behavior');
+  await expect(rows.first().locator('._JX_related_table_user_name')).toHaveText('Morgan A.');
+  await expect(rows.first().locator('._JX_related_table_user')).toHaveAttribute('title', 'Author: Morgan Agent');
+  await expect(rows.first().locator('td').nth(2)).toHaveText('fix/slash-command-end-key → main');
+  await expect(rows.nth(1).locator('td').nth(2)).toHaveText('fix/slash-command-end-key → release/2.9');
+  expect(await rows.first().locator('._JX_pr_title').evaluate(node => getComputedStyle(node).webkitLineClamp)).toBe('2');
+
+  // Native titles render in the same popover style, with the browser's own tooltip suppressed.
+  const branch = rows.first().locator('._JX_pr_branch');
+  const titleTooltip = page.getByTestId('jira-popup-tooltip');
+  await branch.hover();
+  await expect(titleTooltip).toBeVisible();
+  await expect(titleTooltip.locator('span')).toHaveText(['Source: fix/slash-command-end-key', 'Target: main']);
+  await expect(branch).not.toHaveAttribute('title');
+  expect(await hostColoredLines()).toBe(0);
+  await block.locator('._JX_section_title span').first().hover();
+  await expect(titleTooltip).toBeHidden();
+  await expect(branch).toHaveAttribute('title', 'Source: fix/slash-command-end-key\nTarget: main');
   await expect(rows.first().getByLabel('3 unresolved review threads')).toBeVisible();
   await expect(rows.first().getByLabel('CI failed on the current revision')).toBeVisible();
   await expect(rows.first().getByLabel('Merge conflicts detected')).toBeVisible();
@@ -572,10 +593,12 @@ test('shows compact GitLab PR details, signals, and chronological sorting @mock-
   await expect(page.getByRole('tooltip')).toContainText('Alex Reviewer (@alex)');
   await expect(page.getByRole('tooltip')).toContainText('Casey Commenter (@casey)');
   await expect(page.getByRole('tooltip')).toContainText('do not imply this PR is ready to merge');
+  expect(await hostColoredLines()).toBe(0);
 
   await rows.first().locator('td:first-child a').focus();
-  await expect(page.getByRole('tooltip')).toContainText('Fix slash command cursor behavior');
-  await expect(page.getByRole('tooltip')).toContainText('fix/slash-command-end-key');
+  await expect(page.getByRole('tooltip').locator('span').first()).toHaveText('Fix slash command cursor behavior');
+  await expect(page.getByRole('tooltip')).toContainText('fix/slash-command-end-key → main');
+  expect(await hostColoredLines()).toBe(0);
   await page.keyboard.press('Escape');
   await expect(block).toBeVisible();
   await expect(page.getByRole('tooltip')).toHaveCount(0);
@@ -591,9 +614,9 @@ test('shows compact GitLab PR details, signals, and chronological sorting @mock-
   await expect(page.getByRole('tooltip')).toContainText('Merged by Alex Reviewer');
   await page.keyboard.press('Escape');
   await block.getByRole('button', {name: /Sort by last update oldest first/i}).click();
-  await expect(rows.locator('td:first-child a')).toHaveText(['!3', '!2', '!1', '!4']);
+  await expect(rows.locator('._JX_pr_id')).toHaveText(['!3', '!2', '!1', '!4']);
   await block.getByRole('button', {name: /Sort by last update newest first/i}).click();
-  await expect(rows.locator('td:first-child a')).toHaveText(['!1', '!2', '!3', '!4']);
+  await expect(rows.locator('._JX_pr_id')).toHaveText(['!1', '!2', '!3', '!4']);
   await page.close();
 });
 
@@ -606,7 +629,7 @@ test('retains Jira PRs when GitLab authentication is unavailable @mock-only', as
   await expect(block.locator('tbody tr')).toHaveCount(4);
   await expect(block.getByRole('button', {name: /Retry GitLab/})).toBeVisible();
   await expect(block.locator('._JX_pr_signal_success')).toHaveCount(0);
-  await expect(block).toContainText('Morgan Agent');
+  await expect(block).toContainText('Morgan A.');
   await servers.jira.setScenario('pr-gitlab');
   await block.getByRole('button', {name: /Retry GitLab/}).click();
   await expect(block.getByRole('button', {name: /Retry GitLab/})).toHaveCount(0);
@@ -1577,7 +1600,7 @@ test('copies the Jira issue link and previews attachment images', async ({extens
   await page.close();
 });
 
-test('supports quick actions and inline edits against mocked Jira APIs', async ({extensionApp, optionsPage, servers}) => {
+test('supports assign-to-me and inline edits against mocked Jira APIs', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   if (target.mode === 'mock') {
     await servers.jira.setScenario('editable');
@@ -1587,10 +1610,9 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
   const {page} = await openPopup(extensionApp, servers, target);
   const popup = page.locator('._JX_container');
 
-  await page.locator('._JX_actions_toggle').click();
-  const assignToMe = page.locator('._JX_action_item[data-action-key="assign-to-me"]');
   if (target.mode === 'mock') {
-    await assignToMe.click();
+    await popup.focus();
+    await page.keyboard.press('Alt+1');
     await expect(popup).toContainText('Assigned to you');
     await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
 
@@ -1619,14 +1641,9 @@ test('supports quick actions and inline edits against mocked Jira APIs', async (
     await expect(popup).toContainText('Status moved to In Progress');
     await expect(popup).toContainText('In Progress');
   } else {
-    const actionItems = page.locator('._JX_action_item');
-    test.skip(await actionItems.count() < 1, 'No quick actions are available for this live Jira issue.');
     await expect(page.locator('._JX_field_chip_edit[data-field-key="priority"]')).toHaveCount(1);
     await expect(page.locator('._JX_field_chip_edit[data-field-key="labels"]')).toHaveCount(1);
     await expect(page.locator('._JX_field_chip_edit[data-field-key="status"]')).toHaveCount(1);
-    if (await assignToMe.count()) {
-      await expect(assignToMe).toContainText(/Assign to me/i);
-    }
   }
 
   await page.close();
