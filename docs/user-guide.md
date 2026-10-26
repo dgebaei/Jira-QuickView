@@ -624,21 +624,21 @@ The keyboard button in the header, or `Alt+0`, drops down the shortcut list. Pre
 
 | Key | Action | Alt + key |
 |---|---|---|
-| `1` | Open assignee search | Assign to me |
-| `2` | Current sprint + reassign | Current sprint + assign to me |
-| `8` | Next sprint + reassign | Next sprint + assign to me |
-| `3` | Resolve / close with confirmation | Resolve with saved defaults and confirmation |
-| `4` | Choose a status transition | Review a start-progress transition |
-| `5` or `C` | Focus the new-comment composer | — |
-| `6` or `Ctrl+C` | Copy formatted issue reference | Copy plain issue URL |
-| `7` | Open issue in Jira | — |
+| `1` or `A` | Open assignee search | Assign to me |
+| `2` or `S` | Open the sprint picker | — |
+| `3` | Open the status picker | Resolve / close, with saved defaults and confirmation |
+| `4` | Current sprint + reassign | Current sprint + assign to me |
+| `5` | Next sprint + reassign | Next sprint + assign to me |
+| `6` or `C` | Focus the new-comment composer | — |
+| `7` or `Ctrl+C` | Copy formatted issue reference | Copy plain issue URL |
+| `8` | Open issue in Jira | — |
 | `0` | — | Show keyboard shortcuts |
 
-Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press `Enter` to apply, or select a result and click **Apply sprint + assignee**. No change is sent until confirmation. The sprint list shows active and future sprints. `2` preselects the active sprint when there is exactly one; `8` preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.
+Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press `Enter` to apply, or select a result and click **Apply sprint + assignee**. No change is sent until confirmation. The sprint list shows active and future sprints. `4` preselects the active sprint when there is exactly one; `5` preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.
 
 Resolve/close uses completion transitions available to the current issue. Choose a resolution when Jira exposes one, and supply any required comment. If the workflow sets resolution automatically, QuickView leaves it alone. Unsupported required transition fields must be completed in Jira using **Open in Jira**.
 
-To configure `Alt+3`, complete the regular resolve form and select **Remember transition and resolution** before submitting. Defaults are stored only in this browser, separately by Jira instance, project, and issue type; they are not exported or included in Team Sync. QuickView checks that the saved transition and resolution are still available each time. It never guesses a default resolution. Optionally enable **use “.” only when Jira requires a comment**; this does not store or reuse your actual closing comment. `Alt+3` prefills the form and focuses confirmation—it does not submit automatically.
+To set up `Alt+3` defaults, complete the resolve form once and select **Remember transition and resolution** before submitting. Defaults are stored only in this browser, separately by Jira instance, project, and issue type; they are not exported or included in Team Sync. QuickView checks that the saved transition and resolution are still available each time. It never guesses a default resolution. Optionally enable **use “.” only when Jira requires a comment**; this does not store or reuse your actual closing comment. `Alt+3` prefills the form and focuses confirmation—it does not submit automatically.
 
 `Esc` cancels the pending workflow and keeps QuickView open; press `Esc` again to close QuickView. Clicking the workflow backdrop also cancels without saving. Once a request is submitted, Escape cannot undo it; the form remains locked while saving. A failed refresh after a successful save does not resubmit the change.
 

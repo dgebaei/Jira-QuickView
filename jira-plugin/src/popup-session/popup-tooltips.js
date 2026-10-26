@@ -1,7 +1,7 @@
-// One tooltip style for the whole popup. PR cells point at prepared detail
-// popovers (data-pr-details); every other element's native title is shown in a
-// shared popover. The title is set aside while hovered so the browser's own
-// tooltip, which looks different on every platform, never appears.
+// PR cells point at prepared detail popovers (data-pr-details). A native title
+// gets the same styled popover only when the popup cuts its text off, so the
+// tooltip reveals something; every other title keeps the browser's own, quieter
+// tooltip. While the styled one shows, the title is set aside so both never appear.
 // Native popovers escape the popup's scrolling/clipping ancestors. Positioning is
 // measured rather than requiring a CSS-anchor polyfill on older Chrome versions.
 const TITLE_DELAY_MS = 400;
@@ -77,10 +77,17 @@ export function installPopupTooltips(root, namespace) {
     return shared;
   }
 
+  function cutsOff(element) {
+    const style = windowRef.getComputedStyle(element);
+    return (style.overflowX !== 'visible' && element.scrollWidth > element.clientWidth + 1) ||
+      (style.overflowY !== 'visible' && element.scrollHeight > element.clientHeight + 1);
+  }
+
   function showTitle(trigger) {
     if (typeof documentRef.body.showPopover !== 'function' || trigger.closest(detailsSelector)) return;
     if (activeTrigger === trigger) return;
     hide();
+    if (![trigger, ...trigger.querySelectorAll('*')].some(cutsOff)) return;
     // Every titled ancestor too: the browser would fall back to the nearest one.
     const container = trigger.closest('._JX_container');
     for (let node = trigger; node && node !== container.parentNode; node = node.parentElement) {

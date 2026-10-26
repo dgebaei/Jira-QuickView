@@ -36,7 +36,20 @@ export function createBrowserPopupRenderer({
   projectState,
   template,
   partials = {},
+  toast = null,
 }) {
+  let shownNotice = '';
+
+  // Notices float as toasts; a re-render that keeps the same notice leaves it alone.
+  function syncNotice({actionNoticeText = '', actionNoticeKind = 'success'}) {
+    const key = actionNoticeText ? `${actionNoticeKind}:${actionNoticeText}` : '';
+    if (!toast || key === shownNotice) return;
+    // A progress notice ("Saving…") lasts until its outcome replaces it.
+    if (!key && shownNotice.startsWith('info:')) toast.hide();
+    shownNotice = key;
+    if (key) toast.show(actionNoticeText, actionNoticeKind === 'info' ? {kind: 'info', timeout: 0} : {kind: actionNoticeKind});
+  }
+
   async function renderLoading(frame, context = {}) {
     if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
       return {kind: 'stale'};
@@ -92,6 +105,7 @@ export function createBrowserPopupRenderer({
       return element.length ? {selector, left: element.scrollLeft(), top: element.scrollTop()} : null;
     }).filter(Boolean);
     container.html(Mustache.render(template, displayData, partials));
+    syncNotice(displayData);
     reorderContentBlocks(container, contentBlockOrder);
     savedScrollPositions.forEach(({selector, left, top}) => {
       const element = container.find(selector);

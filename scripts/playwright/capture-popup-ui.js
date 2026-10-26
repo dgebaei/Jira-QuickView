@@ -94,6 +94,7 @@ const PRESETS = {
     waitForSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
     extraSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
     open: async page => {
+      // The first branch is clamped to two lines, so it gets the styled tooltip.
       await page.locator('._JX_pr_branch').first().hover();
     },
   },
@@ -124,15 +125,6 @@ const PRESETS = {
     targetSelector: '._JX_status',
     waitForSelector: '._JX_status_row_primary',
     open: async () => {},
-  },
-  'header-title-tooltip': {
-    outputFile: 'header-title-tooltip.png',
-    targetSelector: '._JX_title',
-    waitForSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
-    extraSelector: '[data-testid="jira-popup-tooltip"]:popover-open',
-    open: async page => {
-      await page.locator('#_JX_title_link').hover();
-    },
   },
   'layout-empty-row': {
     outputFile: 'layout-empty-row.png',
@@ -189,9 +181,29 @@ const PRESETS = {
     extraSelector: '[data-testid="jira-shortcut-dialog"]',
     open: async page => {
       await page.locator('._JX_container').focus();
-      await page.keyboard.press('2');
+      await page.keyboard.press('4');
       await page.getByTestId('jira-shortcut-assignee').fill('a');
       await page.locator('[data-testid="jira-shortcut-dialog"] [role="option"]').first().waitFor();
+    },
+  },
+  'action-toast': {
+    outputFile: 'action-toast.png',
+    targetSelector: '._JX_annotation',
+    waitForSelector: '[data-testid="jira-toast"]:popover-open',
+    open: async page => {
+      await page.locator('._JX_container').focus();
+      await page.keyboard.press('Alt+1');
+    },
+  },
+  'shortcut-sprint': {
+    outputFile: 'shortcut-sprint.png',
+    scenario: 'shortcut-planning',
+    targetSelector: '._JX_status',
+    waitForSelector: '[data-testid="jira-popup-edit-popover-sprint"]',
+    extraSelector: '[data-testid="jira-popup-edit-popover-sprint"]',
+    open: async page => {
+      await page.locator('._JX_container').focus();
+      await page.keyboard.press('s');
     },
   },
   'shortcut-plan-next': {
@@ -202,7 +214,7 @@ const PRESETS = {
     extraSelector: '[data-testid="jira-shortcut-dialog"]',
     open: async page => {
       await page.locator('._JX_container').focus();
-      await page.keyboard.press('Alt+8');
+      await page.keyboard.press('Alt+5');
     },
   },
   'header-shortcuts-help-dark': {

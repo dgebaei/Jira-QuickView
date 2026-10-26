@@ -285,7 +285,7 @@ test('future sprints are offered, and the next-sprint target picks the first fut
   });
 });
 
-test('C focuses comments and Ctrl/Cmd+C copies the link unless text is selected', async ({page}) => {
+test('A reassigns, S changes the sprint, C focuses comments, and Ctrl/Cmd+C copies the link unless text is selected', async ({page}) => {
   const result = await page.evaluate(() => {
     const match = window.JiraQuickViewDeepModules.matchPopupShortcut;
     const base = {target: document.body};
@@ -296,16 +296,16 @@ test('C focuses comments and Ctrl/Cmd+C copies the link unless text is selected'
     range.selectNodeContents(document.body.lastChild);
     getSelection().addRange(range);
     return {
-      comment: match({...base, key: 'c', code: 'KeyC'}), noSelection, mac,
+      comment: match({...base, key: 'c', code: 'KeyC'}), sprint: match({...base, key: 's', code: 'KeyS'}), assignee: match({...base, key: 'a', code: 'KeyA'}), noSelection, mac,
       withSelection: match({...base, key: 'c', code: 'KeyC', ctrlKey: true}),
-      next: match({...base, key: '8', code: 'Digit8'}), nextAlt: match({...base, key: '•', code: 'Digit8', altKey: true}),
+      next: match({...base, key: '5', code: 'Digit5'}), nextAlt: match({...base, key: '∞', code: 'Digit5', altKey: true}),
       inInput: match({target: document.querySelector('input'), key: 'c', code: 'KeyC', ctrlKey: true}),
       shifted: match({...base, key: 'C', code: 'KeyC', shiftKey: true}),
     };
   });
   expect(result).toEqual({
-    comment: {digit: '5', alternate: false}, noSelection: {digit: '6', alternate: false}, mac: {digit: '6', alternate: false},
-    withSelection: null, next: {digit: '8', alternate: false}, nextAlt: {digit: '8', alternate: true}, inInput: null, shifted: null,
+    comment: {digit: '6', alternate: false}, sprint: {digit: '2', alternate: false}, assignee: {digit: '1', alternate: false}, noSelection: {digit: '7', alternate: false}, mac: {digit: '7', alternate: false},
+    withSelection: null, next: {digit: '5', alternate: false}, nextAlt: {digit: '5', alternate: true}, inInput: null, shifted: null,
   });
 });
 
@@ -319,7 +319,7 @@ test('digit matching rejects editing, modifiers, IME, repeat and reserved varian
         {target: document.querySelector('input')}, {target: document.querySelector('#editor')},
         {repeat: true}, {isComposing: true}, {ctrlKey: true}, {metaKey: true}, {shiftKey: true},
         {defaultPrevented: true}, {getModifierState: () => true}, {key: '0', code: 'Digit0'},
-        {key: '5', altKey: true}, {key: '7', altKey: true},
+        {key: '2', altKey: true}, {key: '6', altKey: true}, {key: '8', altKey: true}, {key: '9', code: 'Digit9'},
       ].map(change => match({...base, ...change})),
       help: match({...base, key: '0', code: 'Digit0', altKey: true}),
     };
@@ -327,5 +327,5 @@ test('digit matching rejects editing, modifiers, IME, repeat and reserved varian
   expect(result.normal).toEqual({digit: '3', alternate: false});
   expect(result.alt).toEqual({digit: '3', alternate: true});
   expect(result.help).toEqual({digit: '0', alternate: true});
-  expect(result.rejected).toEqual(Array(12).fill(null));
+  expect(result.rejected).toEqual(Array(14).fill(null));
 });

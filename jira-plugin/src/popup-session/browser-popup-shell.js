@@ -97,7 +97,7 @@ export function createBrowserPopupShell({
       top: currentPosition.top - scrollTop,
     });
     pinned = true;
-    if (shouldAnnounce) announce('Ticket Pinned! Hit esc to close !');
+    if (shouldAnnounce) announce('Pinned. Press Esc to close.');
     return outcome('pinned');
   }
 

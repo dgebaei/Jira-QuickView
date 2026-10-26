@@ -1,17 +1,23 @@
 import {createPopupShortcutWorkflow} from 'src/popup-shortcut-workflow';
 
-// [key, action, Alt + key action, other key for the same action]. Listed in help order:
-// 8 sits with 2 because both plan a sprint.
-export const POPUP_SHORTCUTS = [
-  ['1', 'Reassign', 'Assign to me'],
-  ['2', 'Current sprint + reassign', 'Current sprint + assign to me'],
-  ['8', 'Next sprint + reassign', 'Next sprint + assign to me'],
-  ['3', 'Resolve / close', 'Resolve with saved defaults'],
-  ['4', 'Choose status transition', 'Start progress'],
-  ['5', 'Add comment', '', 'C'],
-  ['6', 'Copy formatted issue reference', 'Copy plain issue URL', 'Ctrl+C'],
-  ['7', 'Open issue in Jira', ''],
-  ['0', '', 'Show keyboard shortcuts'],
+// [key, action, Alt + key action, other key for the same action], numbered in
+// help order and grouped: one field, sprint planning, then the issue itself.
+// Alt+0 toggles the help.
+export const POPUP_SHORTCUT_GROUPS = [
+  [
+    ['1', 'Reassign', 'Assign to me', 'A'],
+    ['2', 'Change sprint', '', 'S'],
+    ['3', 'Change status', 'Resolve / close'],
+  ],
+  [
+    ['4', 'Current sprint + reassign', 'Current sprint + assign to me'],
+    ['5', 'Next sprint + reassign', 'Next sprint + assign to me'],
+  ],
+  [
+    ['6', 'Add comment', '', 'C'],
+    ['7', 'Copy issue reference', 'Copy plain issue URL', 'Ctrl+C'],
+    ['8', 'Open in Jira', ''],
+  ],
 ];
 
 export function matchPopupShortcut(event) {
@@ -23,13 +29,15 @@ export function matchPopupShortcut(event) {
   // Ctrl/Cmd+C copies the issue link, unless text is selected: then it stays the browser's copy.
   if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && letter === 'c') {
     const selection = event.target?.ownerDocument?.getSelection?.();
-    return selection && !selection.isCollapsed && String(selection).trim() ? null : {digit: '6', alternate: false};
+    return selection && !selection.isCollapsed && String(selection).trim() ? null : {digit: '7', alternate: false};
   }
   if (event.ctrlKey || event.metaKey || event.shiftKey) return null;
-  if (!event.altKey && letter === 'c') return {digit: '5', alternate: false};
+  if (!event.altKey && letter === 'a') return {digit: '1', alternate: false};
+  if (!event.altKey && letter === 's') return {digit: '2', alternate: false};
+  if (!event.altKey && letter === 'c') return {digit: '6', alternate: false};
   // Option on macOS changes event.key; use the physical digit for Alt variants only.
   const digit = /^[0-8]$/.test(key) ? key : event.altKey && /^Digit[0-8]$/.test(event.code) ? event.code.slice(-1) : '';
-  if (!digit || (digit === '0' && !event.altKey) || (event.altKey && ['5', '7'].includes(digit))) return null;
+  if (!digit || (digit === '0' && !event.altKey) || (event.altKey && ['2', '6', '8'].includes(digit))) return null;
   return {digit, alternate: !!event.altKey};
 }
 
@@ -112,14 +120,16 @@ export function createBrowserPopupShortcuts(deps) {
     const table = element('table', '', help);
     const header = element('tr', '', element('thead', '', table));
     ['Key', 'Action', 'Alt + key'].forEach(text => element('th', text, header, {scope: 'col'}));
-    const body = element('tbody', '', table);
-    POPUP_SHORTCUTS.filter(([key]) => key !== '0').forEach(([key, normal, alternate, other]) => {
-      const row = element('tr', '', body);
-      const keys = element('th', '', row, {scope: 'row'});
-      element('kbd', key, keys);
-      if (other) element('kbd', other, keys);
-      element('td', normal || '—', row);
-      element('td', alternate || '—', row);
+    POPUP_SHORTCUT_GROUPS.forEach(group => {
+      const body = element('tbody', '', table);
+      group.forEach(([key, normal, alternate, other]) => {
+        const row = element('tr', '', body);
+        const keys = element('th', '', row, {scope: 'row'});
+        element('kbd', key, keys);
+        if (other) element('kbd', other, keys);
+        element('td', normal, row);
+        element('td', alternate || '—', row);
+      });
     });
     element('p', 'Works while QuickView has focus, outside text fields. Sprint and resolve changes confirm first. Ctrl+C copies the link only when no text is selected. Alt is Option and Ctrl is ⌘ on macOS.', help);
     // Clicks inside must not reach the page-level outside-click dismissal.
@@ -250,9 +260,10 @@ export function createBrowserPopupShortcuts(deps) {
     input.addEventListener('change', () => workflow.update({[name]: input.checked}));
   }
 
-  function footer(submitLabel) {
+  // Open in Jira only where the dialog cannot finish the job itself.
+  function footer(submitLabel, inJira = false) {
     const actions = element('div', '', form, {class: '_JX_shortcuts_footer'});
-    button('Open in Jira', actions, openIssue);
+    if (inJira) button('Open in Jira', actions, openIssue);
     button('Cancel (Esc)', actions, () => close());
     if (submitLabel) button(submitLabel, actions, null, {type: 'submit', 'data-testid': 'jira-shortcut-submit'});
   }
@@ -289,7 +300,7 @@ export function createBrowserPopupShortcuts(deps) {
     status.textContent = state.error || state.hint || (state.phase === 'loading' ? 'Loading…' : '');
     if (state.phase === 'loading') { footer(); return; }
     if (state.kind === 'plan') {
-      if (!state.sprints.length) { footer(); return; }
+      if (!state.sprints.length) { footer('', true); return; }
       sprintChoices(state);
       if (state.alternate) {
         element('p', `Assign to: ${state.users[0]?.displayName || state.users[0]?.name || 'you'}`, form);
@@ -333,7 +344,7 @@ export function createBrowserPopupShortcuts(deps) {
       else if (searchInput) searchInput.focus();
       else form.querySelector('[type="submit"]').focus();
     } else {
-      if (!state.transitions.length) { footer(); return; }
+      if (!state.transitions.length) { footer('', true); return; }
       selectField('Transition', 'transitionId', state.transitions.map(item => ({...item, name: `${item.name} → ${item.to.name}`})), state.transitionId);
       if (state.hasResolution) {
         const resolution = selectField(`Resolution${state.resolutionRequired ? ' (required)' : ''}`, 'resolutionId', state.resolutions, state.resolutionId);
@@ -348,7 +359,7 @@ export function createBrowserPopupShortcuts(deps) {
         checkbox('For Alt+3, use “.” only when Jira requires a comment', 'useDot', state.useDot);
       }
       if (state.unsupported.length) element('p', `Complete in Jira: ${state.unsupported.join(', ')}.`, form);
-      footer(state.unsupported.length ? '' : state.kind === 'resolve' ? 'Resolve issue' : 'Start progress');
+      footer(state.unsupported.length ? '' : 'Resolve issue', !!state.unsupported.length);
       if (state.alternate && state.transitionId && !state.unsupported.length) form.querySelector('[type="submit"]').focus();
       else form.querySelector('select').focus();
     }
@@ -366,7 +377,7 @@ export function createBrowserPopupShortcuts(deps) {
     if (result.kind === 'saved') {
       close();
       await onSaved(result);
-      announce(result.notice);
+      announce(result.notice, 'success');
     } else render();
   }
 
@@ -374,7 +385,7 @@ export function createBrowserPopupShortcuts(deps) {
     if (dialog) return;
     const session = getSession();
     shell(kind === 'plan' ? `${sprintTarget === 'next' ? 'Next' : 'Current'} sprint + ${alternate ? 'assign to me' : 'reassign'}`
-      : kind === 'resolve' ? 'Resolve / close issue' : 'Start progress');
+      : 'Resolve / close issue');
     const openedDialog = dialog;
     const pending = workflow.begin({...session, kind, alternate, sprintTarget});
     if (dialog === openedDialog) render();
@@ -394,13 +405,14 @@ export function createBrowserPopupShortcuts(deps) {
       if (!getSession()?.issueSnapshot?.core) return;
       if (digit === '0') showHelp();
       if (digit === '1') await (alternate ? quickAction('assign-to-me') : beginFieldEdit('assignee'));
-      if (digit === '2') await showWorkflow('plan', alternate);
-      if (digit === '8') await showWorkflow('plan', alternate, 'next');
-      if (digit === '3') await showWorkflow('resolve', alternate);
-      if (digit === '4') await (alternate ? showWorkflow('progress', true) : beginFieldEdit('status'));
-      if (digit === '5') focusComment();
-      if (digit === '6') await copy(alternate);
-      if (digit === '7') openIssue();
+      if (digit === '2') await beginFieldEdit('sprint');
+      // Closing prefills the remembered defaults; the dialog still confirms.
+      if (digit === '3') await (alternate ? showWorkflow('resolve', true) : beginFieldEdit('status'));
+      if (digit === '4') await showWorkflow('plan', alternate);
+      if (digit === '5') await showWorkflow('plan', alternate, 'next');
+      if (digit === '6') focusComment();
+      if (digit === '7') await copy(alternate);
+      if (digit === '8') openIssue();
     } catch (error) { announce(error.message || 'Action unavailable'); }
     finally { if (request === invocation) invoking = false; }
   }

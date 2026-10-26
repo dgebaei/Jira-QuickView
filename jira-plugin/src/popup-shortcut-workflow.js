@@ -119,12 +119,11 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
         // Fresh, expanded metadata: cached status options do not include transition-screen fields.
         const [result, preset] = await Promise.all([
           jira.read({path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(issue.key)}/transitions`, query: {expand: 'transitions.fields'}}),
-          alternate && kind === 'resolve' ? loadPreset(presetKey(issue)) : null,
+          alternate ? loadPreset(presetKey(issue)) : null,
         ]);
         if (expected !== revision) return {kind: 'ignored'};
-        const category = kind === 'resolve' ? 'done' : 'indeterminate';
-        const transitions = (result.transitions || []).filter(item => item.id && item.to?.statusCategory?.key === category);
-        if (!transitions.length) throw new Error(`No ${kind === 'resolve' ? 'completion' : 'in-progress'} transition is available. Open Jira to review this workflow.`);
+        const transitions = (result.transitions || []).filter(item => item.id && item.to?.statusCategory?.key === 'done');
+        if (!transitions.length) throw new Error('No completion transition is available. Open Jira to review this workflow.');
         const preferred = transitions.find(item => String(item.id) === preset?.transitionId);
         const selected = preferred || (transitions.length === 1 ? transitions[0] : null);
         const resolution = selected?.fields?.resolution;
@@ -135,7 +134,7 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
           resolutionId: validPreset ? preset.resolutionId : '',
           comment: validPreset && preset.useDot && selected?.fields?.comment?.required ? '.' : '',
           useDot: validPreset && !!preset.useDot,
-          hint: alternate && kind === 'resolve' && !validPreset
+          hint: alternate && !validPreset
             ? 'Choose and remember quick-close defaults below. No default is guessed.' : '',
         };
       }

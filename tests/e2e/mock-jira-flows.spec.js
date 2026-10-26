@@ -574,9 +574,17 @@ test('shows compact GitLab PR details, signals, and chronological sorting @mock-
   await expect(rows.nth(1).locator('td').nth(2)).toHaveText('fix/slash-command-end-key → release/2.9');
   expect(await rows.first().locator('._JX_pr_title').evaluate(node => getComputedStyle(node).webkitLineClamp)).toBe('2');
 
-  // Native titles render in the same popover style, with the browser's own tooltip suppressed.
-  const branch = rows.first().locator('._JX_pr_branch');
+  // A title whose text is fully visible keeps the browser's own tooltip.
+  const author = rows.first().locator('._JX_related_table_user');
   const titleTooltip = page.getByTestId('jira-popup-tooltip');
+  await author.hover();
+  await page.waitForTimeout(600);
+  await expect(titleTooltip).toHaveCount(0);
+  await expect(author).toHaveAttribute('title', 'Author: Morgan Agent');
+
+  // Cut-off text gets the styled tooltip, with the browser's own suppressed.
+  const branch = rows.first().locator('._JX_pr_branch');
+  expect(await branch.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
   await branch.hover();
   await expect(titleTooltip).toBeVisible();
   await expect(titleTooltip.locator('span')).toHaveText(['Source: fix/slash-command-end-key', 'Target: main']);
@@ -1009,7 +1017,7 @@ test('edits multiline Environment text without treating bare Enter as save @mock
 
   await textarea.fill('Linux\nFirefox');
   await page.locator('._JX_edit_save[data-field-key="environment"]').click();
-  await expect(popup.root).toContainText('Environment updated');
+  await expect(page.getByTestId('jira-toast')).toContainText('Environment updated');
   await expect(popup.root).toContainText('Environment: Linux Firefox');
   expect(currentEnvironment).toBe('Linux\nFirefox');
   await page.close();
@@ -1098,7 +1106,7 @@ test('supports editing non-custom Jira fields added through popup layout configu
   await doneOption.click();
   await popup.editInput('resolution').press('Enter');
 
-  await expect(popup.root).toContainText('Resolution updated');
+  await expect(page.getByTestId('jira-toast')).toContainText('Resolution updated');
   await expect(popup.root).toContainText('Resolution: Done');
 
   await page.close();
@@ -1613,19 +1621,19 @@ test('supports assign-to-me and inline edits against mocked Jira APIs', async ({
   if (target.mode === 'mock') {
     await popup.focus();
     await page.keyboard.press('Alt+1');
-    await expect(popup).toContainText('Assigned to you');
+    await expect(page.getByTestId('jira-toast')).toContainText('Assigned to you');
     await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
 
     await page.locator('._JX_field_chip_edit[data-field-key="issuetype"]').click();
     await page.locator('._JX_edit_option[data-field-key="issuetype"][data-option-id="2"]').click();
     await page.locator('._JX_edit_input[data-field-key="issuetype"]').press('Enter');
-    await expect(popup).toContainText('Issue type set to Task');
+    await expect(page.getByTestId('jira-toast')).toContainText('Issue type set to Task');
     await expect(popup).toContainText('Task');
 
     await page.locator('._JX_field_chip_edit[data-field-key="priority"]').click();
     await page.locator('._JX_edit_option[data-field-key="priority"][data-option-id="1"]').click();
     await page.locator('._JX_edit_input[data-field-key="priority"]').press('Enter');
-    await expect(popup).toContainText('Priority set to Highest');
+    await expect(page.getByTestId('jira-toast')).toContainText('Priority set to Highest');
     await expect(popup).toContainText('Highest');
 
     await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
@@ -1633,12 +1641,12 @@ test('supports assign-to-me and inline edits against mocked Jira APIs', async ({
     await labelInput.fill('release-candidate');
     await labelInput.press('Enter');
     await page.locator('._JX_edit_save[data-field-key="labels"]').click();
-    await expect(popup).toContainText('Labels updated');
+    await expect(page.getByTestId('jira-toast')).toContainText('Labels updated');
     await expect(popup).toContainText('release-candidate');
 
     await page.locator('._JX_field_chip_edit[data-field-key="status"]').click();
     await page.locator('._JX_edit_option[data-field-key="status"][data-option-id="31"]').click();
-    await expect(popup).toContainText('Status moved to In Progress');
+    await expect(page.getByTestId('jira-toast')).toContainText('Status moved to In Progress');
     await expect(popup).toContainText('In Progress');
   } else {
     await expect(page.locator('._JX_field_chip_edit[data-field-key="priority"]')).toHaveCount(1);
@@ -1668,7 +1676,7 @@ test('toggles the top filtered multi-select option with Enter in mocked mode @mo
   await expect(saveLabels).toBeEnabled();
   await saveLabels.click();
 
-  await expect(popup.root).toContainText('Labels updated');
+  await expect(page.getByTestId('jira-toast')).toContainText('Labels updated');
   await expect(popup.root).toContainText('release-candidate');
 
   await page.close();
@@ -1980,7 +1988,7 @@ test('silently pins the popup when starting a new comment so pointer exit does n
   await commentInput.fill('Draft comment that should stay open');
 
   await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
-  await expect(page.locator('body')).not.toContainText('Ticket Pinned! Hit esc to close !');
+  await expect(page.locator('body')).not.toContainText('Pinned. Press Esc to close.');
 
   await page.mouse.move(5, 5);
   await page.waitForTimeout(400);
@@ -2086,7 +2094,7 @@ test('silently pins the popup when editing a comment so pointer exit does not di
   await editInput.fill('Edited comment draft that should stay open');
 
   await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
-  await expect(page.locator('body')).not.toContainText('Ticket Pinned! Hit esc to close !');
+  await expect(page.locator('body')).not.toContainText('Pinned. Press Esc to close.');
 
   await page.mouse.move(5, 5);
   await page.waitForTimeout(400);

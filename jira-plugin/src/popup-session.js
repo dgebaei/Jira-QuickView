@@ -130,7 +130,8 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     quickActionNoticeTimer = null;
   }
 
-  function setNotice(value, sessionId, duration = 5000) {
+  // Notices last as long as their toast (snack.js), so a repeat shows again.
+  function setNotice(value, sessionId, duration = 2000) {
     notice = String(value || '');
     if (noticeTimer) clearTimeout(noticeTimer);
     noticeTimer = null;
@@ -470,7 +471,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
           quickActions.dispatch({type: 'clearNotice', notice: actionOutcome.notice}).then(() => {
             return scheduleRender('quick-action-notice-cleared');
           }).catch(() => {});
-        }, 5000);
+        }, 2000);
       }
       return {...rendered, actionOutcome};
     }
@@ -544,7 +545,7 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     if (intent.type === 'render') {
       const sessionId = state.sessionId;
       if (Object.prototype.hasOwnProperty.call(intent, 'notice')) {
-        setNotice(intent.notice, sessionId, intent.noticeDuration ?? 5000);
+        setNotice(intent.notice, sessionId, intent.noticeDuration ?? 2000);
       }
       const nextSnapshot = intent.issueSnapshot;
       const nextIssueKey = normalizeIssueKey(nextSnapshot?.issueKey || nextSnapshot?.core?.key);

@@ -4,7 +4,7 @@ import debounce from 'lodash/debounce';
 import regexEscape from 'escape-string-regexp';
 import {waitForDocument} from 'src/utils';
 import {sendMessage, storageGet, storageSet, storageLocalGet, storageLocalSet} from 'src/chrome';
-import {snackBar} from 'src/snack';
+import {hideToast, showToast} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
 import {createContentHistoryHelpers} from 'src/content-history-helpers';
 import {createPopupProjectView} from 'src/popup-session/project-view';
@@ -124,7 +124,7 @@ function normalizeJiraProjectsResponse(response) {
 if (!window.__JX_runtimeMessageListenerInstalled) {
   chrome.runtime.onMessage.addListener(function (msg) {
     if (msg.action === 'message') {
-      snackBar(msg.message);
+      showToast(msg.message);
     }
   });
   window.__JX_runtimeMessageListenerInstalled = true;
@@ -139,7 +139,7 @@ async function showTip(tipName, tipMessage) {
   ui_tips_shown_local.push(tipName);
   const ui_tips_shown = (await storageGet({['ui_tips_shown']: []})).ui_tips_shown;
   if (ui_tips_shown.indexOf(tipName) === -1) {
-    snackBar(tipMessage);
+    showToast(tipMessage);
     ui_tips_shown.push(tipName);
     storageSet({'ui_tips_shown': ui_tips_shown});
   }
@@ -196,7 +196,7 @@ function notifyJiraConnectionFailure(instanceUrl, error) {
     host = '';
   }
 
-  snackBar(`Could not reach Jira${host ? ` at ${host}` : ''}. Check your VPN or network connection.`, 1500);
+  showToast(`Could not reach Jira${host ? ` at ${host}` : ''}. Check your VPN or network connection.`, {kind: 'error'});
   return true;
 }
 
@@ -407,7 +407,7 @@ async function mainAsyncLocal() {
         }
         await copyIssueReferenceWithFeedback({...reference, summary});
       } catch (error) {
-        snackBar('Could not copy issue. Please try again.');
+        showToast('Could not copy issue. Please try again.', {kind: 'error'});
         throw error;
       }
     },
@@ -463,7 +463,6 @@ async function mainAsyncLocal() {
     const currentPopup = currentPopupState();
     if (!currentPopup?.key) return;
     const {
-      showSnackBar = false,
       nextTimeTrackingEditState,
       preserveHistory = false,
     } = refreshOptions;
@@ -495,9 +494,8 @@ async function mainAsyncLocal() {
       type: 'render',
       reason: 'issue-refreshed',
       issueSnapshot: issueOutcome.snapshot,
-      notice: showSnackBar ? '' : successMessage,
+      notice: successMessage,
     });
-    if (showSnackBar && successMessage) snackBar(successMessage);
   }
 
   async function handleDraftAttachmentUploaded(uploadedAttachment) {
@@ -1638,7 +1636,7 @@ async function mainAsyncLocal() {
       issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
     });
     if (outcome.kind === 'unsupported') {
-      snackBar(outcome.notice);
+      showToast(outcome.notice);
     }
   }
 
@@ -1682,7 +1680,7 @@ async function mainAsyncLocal() {
         notice: outcome.notice,
       });
       if (outcome.failure) {
-        snackBar(outcome.notice);
+        showToast(outcome.notice, {kind: 'error'});
       }
       return;
     }
@@ -1718,8 +1716,8 @@ async function mainAsyncLocal() {
       issueSnapshot: outcome.refreshedSnapshot || currentPopupState()?.issueSnapshot,
       ...(outcome.kind === 'mutationCommitted' ? {notice: outcome.notice} : {}),
     });
-    if (outcome.kind === 'failed') snackBar(outcome.failure?.message || 'Comment operation failed');
-    else if (outcome.failure) snackBar(outcome.notice);
+    if (outcome.kind === 'failed') showToast(outcome.failure?.message || 'Comment operation failed', {kind: 'error'});
+    else if (outcome.failure) showToast(outcome.notice, {kind: 'error'});
   }
 
   function cancelCommentSession() {
@@ -2679,7 +2677,7 @@ async function mainAsyncLocal() {
   $(document.body).append(container);
   $(document.body).append(previewOverlay);
   popupShell = createBrowserPopupShell({
-    announce: snackBar,
+    announce: message => showToast(message),
     close: ({reason}) => hideContainer(reason),
     container,
     media: {displayUrl: getDisplayImageUrl},
@@ -2703,6 +2701,7 @@ async function mainAsyncLocal() {
     shell: popupShell,
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
+    toast: {show: showToast, hide: hideToast},
     partials: {statusChip: statusChipTemplate},
   });
   const popupShortcuts = createBrowserPopupShortcuts({
@@ -2730,21 +2729,21 @@ async function mainAsyncLocal() {
           watchers: !!watcherLifecycle.view().open,
         },
       });
-      if (result.actionOutcome?.kind === 'ignored') snackBar('Already assigned to you, or this action is unavailable.');
+      if (result.actionOutcome?.kind === 'ignored') showToast('Already assigned to you, or this action is unavailable.');
     },
     async copy(plain) {
       const issue = currentPopupState().issueData;
       const url = `${INSTANCE_URL}browse/${encodeURIComponent(issue.key)}`;
       if (plain) {
         await navigator.clipboard.writeText(url);
-        snackBar('Copied issue URL');
+        showToast('Copied issue URL', {kind: 'success'});
       } else await copyIssueReferenceWithFeedback({key: issue.key, summary: issue.fields.summary, url});
     },
     openIssue: () => container.find('#_JX_title_link')[0]?.click(),
     focusComment() {
       const input = container.find('._JX_comment_input')[0];
       if (input) input.focus();
-      else snackBar('Comments are unavailable or hidden in your layout.');
+      else showToast('Comments are unavailable or hidden in your layout.');
     },
     async loadPreset(key) {
       const stored = await storageLocalGet(['jqv.quickClosePresets']);
@@ -2758,7 +2757,7 @@ async function mainAsyncLocal() {
       if (result.sessionId !== currentPopupSessionId() || !result.refreshedSnapshot?.core) return;
       await popupSession.dispatch({type: 'render', reason: 'shortcut-saved', issueSnapshot: result.refreshedSnapshot});
     },
-    announce: snackBar,
+    announce: (message, kind = 'error') => showToast(message, {kind}),
   });
   popupShortcuts.install();
   // ── Field Editing ─────────────────────────────────────────
@@ -2933,7 +2932,7 @@ async function mainAsyncLocal() {
         });
 
         if (successMessage) {
-          snackBar(errorMessage ? `${successMessage}. ${errorMessage}` : successMessage);
+          showToast(errorMessage ? `${successMessage}. ${errorMessage}` : successMessage, {kind: errorMessage ? 'error' : 'success'});
         }
         return;
       } catch (refreshError) {
@@ -2946,7 +2945,7 @@ async function mainAsyncLocal() {
           },
         });
         await renderIssuePopup(currentPopupState());
-        snackBar(successMessage ? `${successMessage}. Refresh failed.` : 'Saved changes but failed to refresh the popup');
+        showToast(successMessage ? `${successMessage}. Refresh failed.` : 'Saved changes but failed to refresh the popup', {kind: 'error'});
         return;
       }
     }
@@ -2960,7 +2959,7 @@ async function mainAsyncLocal() {
       },
     });
     await renderIssuePopup(currentPopupState());
-    snackBar(errorMessage || 'Time tracking update failed');
+    showToast(errorMessage || 'Time tracking update failed', {kind: 'error'});
   }
   new draggable({
     handle: '._JX_title, ._JX_status',
@@ -2970,7 +2969,7 @@ async function mainAsyncLocal() {
   // ── Clipboard & Copy ──────────────────────────────────────
   async function copyIssueReferenceWithFeedback(reference) {
     const result = await copyIssueReference(reference);
-    snackBar(result === 'text' ? 'Copied as text' : 'Copied!');
+    showToast(result === 'text' ? 'Copied as text' : 'Copied!', {kind: 'success'});
   }
 
   // ── Event Handlers ────────────────────────────────────────
@@ -2986,7 +2985,7 @@ async function mainAsyncLocal() {
       key: e.currentTarget.getAttribute('data-ticket') || '',
       summary: e.currentTarget.getAttribute('data-title') || '',
       url: e.currentTarget.getAttribute('data-url') || e.currentTarget.getAttribute('href') || '',
-    }).catch(() => snackBar('There was an error!'));
+    }).catch(() => showToast('Could not copy the link.', {kind: 'error'}));
   });
 
   async function handlePopupPresentationIntent(intent) {
@@ -2996,7 +2995,7 @@ async function mainAsyncLocal() {
       const response = await sendMessage({action: 'requestGitLabAccess', url: intent.url});
       if (sessionId !== currentPopupSessionId()) return {kind: 'ignored'};
       if (!response?.result) {
-        snackBar(response?.error || 'GitLab access was not granted. Basic PR details are still available.');
+        showToast(response?.error || 'GitLab access was not granted. Basic PR details are still available.', {kind: 'error'});
         return {kind: 'ignored'};
       }
       return popupSession.dispatch({type: 'refresh-pull-requests'});
@@ -4024,7 +4023,7 @@ async function mainAsyncLocal() {
           e.clientY >= rect.top - margin && e.clientY <= rect.bottom + margin;
     }
     if (isOverContainer) {
-      showTip('tooltip_drag', 'Tip: You can pin the tooltip by dragging the title !');
+      showTip('tooltip_drag', 'Tip: drag the title to pin QuickView.');
       return;
     }
     if (isInPaddedZone) {
