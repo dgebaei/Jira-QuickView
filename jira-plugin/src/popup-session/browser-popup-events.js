@@ -1,14 +1,9 @@
-import {installPullRequestTooltips} from 'src/popup-session/pull-request-tooltips';
+import {installPopupTooltips} from 'src/popup-session/popup-tooltips';
 
 const EVENT_NAMESPACE = '.jiraQuickViewPopupPresentation';
 
 const PRESENTATION_EVENTS = [
   {selector: '._JX_gitlab_connect', intent: element => ({type: 'connect-gitlab', url: element.getAttribute('data-pr-url') || ''})},
-  {selector: '._JX_actions_toggle', intent: () => ({type: 'toggle-actions'})},
-  {
-    selector: '._JX_action_item',
-    intent: element => ({type: 'execute-quick-action', actionKey: element.getAttribute('data-action-key') || ''}),
-  },
   {selector: '._JX_pin_button', intent: () => ({type: 'pin'})},
   {selector: '._JX_close_button', intent: () => ({type: 'close-popup'})},
   {
@@ -95,7 +90,7 @@ export function createBrowserPopupEvents({root, emit}) {
     throw new TypeError('Browser popup events require emit()');
   }
   let installed = false;
-  let hidePullRequestTooltip = () => {};
+  let disposeTooltips = () => {};
 
   function publish(intent) {
     if (!intent) return;
@@ -108,7 +103,7 @@ export function createBrowserPopupEvents({root, emit}) {
 
   function install() {
     if (installed) return {kind: 'unchanged'};
-    hidePullRequestTooltip = installPullRequestTooltips(root, EVENT_NAMESPACE);
+    disposeTooltips = installPopupTooltips(root, EVENT_NAMESPACE);
     PRESENTATION_EVENTS.forEach(definition => {
       root.on(`${definition.event || 'click'}${EVENT_NAMESPACE}`, definition.selector, function (event) {
         event.preventDefault();
@@ -129,7 +124,6 @@ export function createBrowserPopupEvents({root, emit}) {
     root.on(`click${EVENT_NAMESPACE}`, function (event) {
       const target = event.target;
       const closest = selector => typeof target?.closest === 'function' && target.closest(selector);
-      if (!closest('._JX_actions')) publish({type: 'dismiss-actions'});
       if (!closest('._JX_history_flyout, ._JX_history_toggle')) publish({type: 'dismiss-history'});
       if (!closest('._JX_container') && !closest(PRESENTATION_CLICK_SELECTOR)) publish({type: 'dismiss-popup'});
     });
@@ -171,7 +165,7 @@ export function createBrowserPopupEvents({root, emit}) {
 
   function dispose() {
     if (!installed) return {kind: 'unchanged'};
-    hidePullRequestTooltip();
+    disposeTooltips();
     root.off(EVENT_NAMESPACE);
     installed = false;
     return {kind: 'disposed'};

@@ -257,13 +257,15 @@ function buildSprintOptions(issue, sprints) {
       return stateDelta || String(left.name).localeCompare(String(right.name));
     })
     .map(sprint => {
-      const state = String(sprint.state || '').toUpperCase();
-      const label = state ? `${sprint.name} (${state})` : sprint.name;
+      // The state is drawn as a dot next to the name; typing it still filters.
+      const state = String(sprint.state || '').toLowerCase();
       return {
         id: String(sprint.id),
-        label,
+        label: sprint.name,
+        sprintState: state,
+        sprintStateLabel: state ? `${state[0].toUpperCase()}${state.slice(1)} sprint` : '',
         rawValue: copyValue(sprint),
-        searchText: label.toLowerCase(),
+        searchText: `${sprint.name} ${state}`.toLowerCase(),
         ...sprintGroupMeta(sprint, issue, issueBoardIds),
       };
     });

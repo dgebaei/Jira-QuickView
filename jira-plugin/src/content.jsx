@@ -8,7 +8,7 @@ import {snackBar} from 'src/snack';
 import {createContentAttachmentHelpers} from 'src/content-attachment-helpers';
 import {createContentHistoryHelpers} from 'src/content-history-helpers';
 import {createPopupProjectView} from 'src/popup-session/project-view';
-import {createContentPeopleHelpers} from 'src/content-people-helpers';
+import {abbreviatePersonName, createContentPeopleHelpers} from 'src/content-people-helpers';
 import {MENTION_CONTEXT_WINDOW} from 'src/comment-mention-constants';
 import {createContentCommentHelpers} from 'src/content-comment-helpers';
 import {positionMentionMenuAtCaret} from 'src/mention-menu-positioning';
@@ -332,7 +332,8 @@ async function mainAsyncLocal() {
     }));
   }
 
-  const annotationTemplate = await fetch(chrome.runtime.getURL('resources/annotation.html')).then(response => response.text());
+  const [annotationTemplate, statusChipTemplate] = await Promise.all(['resources/annotation.html', 'resources/status-chip.html']
+    .map(resource => fetch(chrome.runtime.getURL(resource)).then(response => response.text())));
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
   const emptyDescriptionEditState = () => ({
     errorMessage: '',
@@ -2061,11 +2062,24 @@ async function mainAsyncLocal() {
       }).catch(() => null);
       const field = fieldOutcome?.field;
       if (field?.supported && (hasDisplayValue || field.visibleWhenEmpty)) {
-        const baseChip = buildFilterChip(field.text, field.jqlClause, {linkLabel: field.linkLabel});
-        chipsByRow[row].push(buildEditableFieldChip(fieldId, baseChip, state, {
+        let baseChip = buildFilterChip(field.text, field.jqlClause, {linkLabel: field.linkLabel});
+        // A single user reads as avatar plus "Patrik B."; the tooltip keeps the full name.
+        if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue) && rawValue.displayName &&
+          (rawValue.accountId || rawValue.key || rawValue.name)) {
+          const person = people.buildUserView(rawValue);
+          const valueLine = `${fieldName}: ${person.displayName}`;
+          baseChip = {
+            ...baseChip,
+            chipAvatar: {avatarSrc: person.avatarUrl, avatarInitials: person.initials},
+            chipTitle: valueLine,
+            linkTitle: baseChip.linkTitle ? `${valueLine}\n${baseChip.linkTitle}` : '',
+            text: `${fieldName}: ${abbreviatePersonName(person.displayName)}`,
+          };
+        }
+        chipsByRow[row].push({...buildEditableFieldChip(fieldId, baseChip, state, {
           canEdit: field.editable,
           editTitle: `Edit ${fieldName}`
-        }));
+        }), customFieldId: fieldId});
         continue;
       }
       if (!hasDisplayValue) {
@@ -2079,6 +2093,7 @@ async function mainAsyncLocal() {
           chipsByRow[row].push({
             ...chip,
             chipTitle: appendTooltipText(chip.chipTitle || chip.linkTitle || '', nonEditableReason),
+            customFieldId: fieldId,
             linkTitle: appendTooltipText(chip.linkTitle || '', nonEditableReason)
           });
         }
@@ -2688,6 +2703,7 @@ async function mainAsyncLocal() {
     shell: popupShell,
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
+    partials: {statusChip: statusChipTemplate},
   });
   const popupShortcuts = createBrowserPopupShortcuts({
     container: container[0],
@@ -2703,7 +2719,17 @@ async function mainAsyncLocal() {
     pin: () => popupShell.dispatch({type: 'pin', announce: false}),
     beginFieldEdit: startFieldEdit,
     async quickAction(actionKey) {
-      const result = await popupSession.dispatch({type: 'execute-quick-action', actionKey});
+      // Refresh whatever the open panels show, so they reflect the action.
+      const result = await popupSession.dispatch({
+        type: 'execute-quick-action',
+        actionKey,
+        requirements: {
+          history: !!currentPopupState()?.historyOpen,
+          linkedIssues: !!linkedIssueLifecycle.view().open,
+          pullRequests: showPullRequests,
+          watchers: !!watcherLifecycle.view().open,
+        },
+      });
       if (result.actionOutcome?.kind === 'ignored') snackBar('Already assigned to you, or this action is unavailable.');
     },
     async copy(plain) {
@@ -2975,19 +3001,8 @@ async function mainAsyncLocal() {
       }
       return popupSession.dispatch({type: 'refresh-pull-requests'});
     }
-    if (intent.type === 'toggle-actions' || intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
+    if (intent.type === 'sort-children' || intent.type === 'sort-pull-requests') {
       return popupSession.dispatch(intent);
-    }
-    if (intent.type === 'execute-quick-action') {
-      return popupSession.dispatch({
-        ...intent,
-        requirements: {
-          history: !!currentPopupState()?.historyOpen,
-          linkedIssues: !!linkedIssueLifecycle.view().open,
-          pullRequests: showPullRequests,
-          watchers: !!watcherLifecycle.view().open,
-        },
-      });
     }
     if (intent.type === 'toggle-comment-sort') {
       const outcome = await popupSession.dispatch(intent);
@@ -3028,7 +3043,6 @@ async function mainAsyncLocal() {
     if (['toggle-history', 'close-history', 'dismiss-history'].includes(intent.type)) {
       return popupSession.dispatch(intent);
     }
-    if (intent.type === 'dismiss-actions') return popupSession.dispatch({type: 'close-actions'});
     if (intent.type === 'pin') return popupShell.dispatch({type: 'pin', announce: true});
     if (intent.type === 'pin-after-drag') return popupShell.dispatch({type: 'pin', announce: true});
     if (intent.type === 'open-preview' || intent.type === 'close-preview') return popupShell.dispatch(intent);
@@ -3111,6 +3125,12 @@ async function mainAsyncLocal() {
       return;
     }
     e.stopPropagation();
+    // The title editor wraps like the title, but a summary is one line: pasted breaks become spaces.
+    if (e.currentTarget.classList.contains('_JX_title_edit_input') && /[\r\n]/.test(e.currentTarget.value)) {
+      const caret = e.currentTarget.selectionStart;
+      e.currentTarget.value = e.currentTarget.value.replace(/\r\n?|\n/g, ' ');
+      e.currentTarget.setSelectionRange(caret, caret);
+    }
     const fieldKey = e.currentTarget.getAttribute('data-field-key') || '';
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView?.fieldKey === fieldKey) {
@@ -3132,6 +3152,8 @@ async function mainAsyncLocal() {
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView?.fieldKey !== fieldKey || !['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) return;
     if (e.key === 'Enter' && fieldView.selectionMode === 'text' && fieldView.editorType === 'textarea' && !(e.ctrlKey || e.metaKey)) return;
+    // The wrapping title editor has no options list; arrows move between its lines.
+    if (e.key.startsWith('Arrow') && e.currentTarget.classList.contains('_JX_title_edit_input')) return;
     e.preventDefault();
     dispatchJiraFieldEditing({
       type: 'key',

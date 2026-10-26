@@ -18,7 +18,7 @@ Jira QuickView opens Jira issue details directly from links and recognized ticke
 
 Review status, priority, people, versions, sprint, labels, linked issues, descriptions, comments, attachments, history, time tracking, watchers, and linked pull requests. Update supported fields, transition workflows, manage linked issues, add or edit comments, upload images, and copy rich issue links while keeping your current page open.
 
-Review linked pull requests in a compact table with full author names, target branches, and sortable last-update times. With site access to your GitLab host, see approval counts and approvers, unresolved review threads, current CI status, merge conflicts, and commit or merge details using your existing GitLab login.
+Review linked pull requests in a compact table with titles, authors, source → target branches, and sortable last-update times. With site access to your GitLab host, see approval counts and approvers, unresolved review threads, current CI status, merge conflicts, and commit or merge details using your existing GitLab login.
 
 Work faster with number shortcuts while QuickView has focus. Plan an issue into the current sprint and reassign it in one confirmed update, resolve issues with the required resolution and comment, and show the shortcut list with Alt+0. Quick-close defaults stay in your browser and always require confirmation.
 

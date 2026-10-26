@@ -10,10 +10,10 @@ test.beforeEach(async ({page}) => {
 
 test('focused PR details survive focus-driven scrolling and consume Escape before the popup', async ({page}) => {
   const result = await page.evaluate(() => {
-    const {installPullRequestTooltips, jquery} = window.JiraQuickViewDeepModules;
+    const {installPopupTooltips, jquery} = window.JiraQuickViewDeepModules;
     document.body.innerHTML = '<a href="#" data-pr-details="details">!1</a><span id="details" popover="manual" role="tooltip" hidden>Approved by Alex</span>';
     const root = jquery(document.body);
-    const dispose = installPullRequestTooltips(root, '.prTest');
+    const dispose = installPopupTooltips(root, '.prTest');
     let popupEscapes = 0;
     root.on('keydown.prTest', () => { popupEscapes += 1; });
     const trigger = document.querySelector('a');
@@ -562,51 +562,6 @@ test('popup session owns mutually exclusive panel transitions', async ({page}) =
   });
 });
 
-test('popup session owns quick-action menu visibility', async ({page}) => {
-  const result = await page.evaluate(async () => {
-    const {createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
-    const surface = createFixturePopupSurface();
-    const popup = createPopupSession({
-      issueData: {async openIssue(request) {
-        return {
-          kind: 'loaded',
-          snapshot: {issueKey: request.issueKey, core: {key: request.issueKey, fields: {}}, sections: {}},
-          failures: {},
-        };
-      }},
-      fieldEditing: {attach() {}, detach() {}, view() { return {}; }},
-      comments: {async attach() {}, async detach() {}, view() { return {}; }},
-      quickActions: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
-      watchers: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
-      linkedIssues: {async attach() {}, detach() {}, async dispatch() {}, view() { return {}; }},
-      surface,
-    });
-    await popup.activate({issueKey: 'ABC-1'});
-    const opened = await popup.dispatch({type: 'toggle-actions'});
-    const closed = await popup.dispatch({type: 'close-actions'});
-    const unchanged = await popup.dispatch({type: 'close-actions'});
-    return {
-      outcomes: [opened.presentation.actionsOpen, closed.presentation.actionsOpen],
-      unchanged: {kind: unchanged.kind, reason: unchanged.reason},
-      frames: surface.getFrames().filter(frame => frame.kind !== 'loading').map(frame => ({
-        kind: frame.kind,
-        reason: frame.reason || '',
-        actionsOpen: frame.presentation.actionsOpen,
-      })),
-    };
-  });
-
-  expect(result).toEqual({
-    outcomes: [true, false],
-    unchanged: {kind: 'ignored', reason: 'actions-unchanged'},
-    frames: [
-      {kind: 'visible', reason: '', actionsOpen: false},
-      {kind: 'update', reason: 'actions-opened', actionsOpen: true},
-      {kind: 'update', reason: 'actions-closed', actionsOpen: false},
-    ],
-  });
-});
-
 test('popup session owns watcher panel loading and feature render scheduling', async ({page}) => {
   const result = await page.evaluate(async () => {
     const {createDeferred, createFixturePopupSurface, createPopupSession} = window.JiraQuickViewDeepModules;
@@ -727,7 +682,6 @@ test('browser popup events translate presentation DOM interactions into semantic
     const {createBrowserPopupEvents, jquery: $} = window.JiraQuickViewDeepModules;
     document.body.innerHTML = `
       <div class="_JX_container">
-      <div class="_JX_actions"><button class="_JX_actions_toggle">Actions</button><button class="_JX_action_item" data-action-key="assign-to-me">Assign</button></div>
       <button class="_JX_pin_button">Pin</button>
       <button class="_JX_close_button">Close popup</button>
       <button class="_JX_children_sort" data-sort-column="status">Children</button>
@@ -769,8 +723,6 @@ test('browser popup events translate presentation DOM interactions into semantic
       emit(intent) { intents.push(intent); },
     });
     events.install();
-    $('._JX_actions_toggle').trigger('click');
-    $('._JX_action_item').trigger('click');
     $('._JX_pin_button').trigger('click');
     $('._JX_close_button').trigger('click');
     $('._JX_children_sort').trigger('click');
@@ -811,8 +763,6 @@ test('browser popup events translate presentation DOM interactions into semantic
 
   expect(result).toEqual({
     direct: [
-      {type: 'toggle-actions'},
-      {type: 'execute-quick-action', actionKey: 'assign-to-me'},
       {type: 'pin'},
       {type: 'close-popup'},
       {type: 'sort-children', column: 'status'},
@@ -847,14 +797,12 @@ test('browser popup events translate presentation DOM interactions into semantic
     dismissals: [
       {type: 'dismiss-watchers'},
       {type: 'dismiss-linkedIssues'},
-      {type: 'dismiss-actions'},
       {type: 'dismiss-history'},
       {type: 'dismiss-popup'},
     ],
     afterDispose: [
       {type: 'dismiss-watchers'},
       {type: 'dismiss-linkedIssues'},
-      {type: 'dismiss-actions'},
       {type: 'dismiss-history'},
       {type: 'dismiss-popup'},
     ],

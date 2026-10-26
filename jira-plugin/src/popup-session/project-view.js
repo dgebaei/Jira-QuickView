@@ -1,5 +1,12 @@
 import {buildLinkedIssuesPanelView} from 'src/content-linked-issues-helpers';
+import {abbreviatePersonName} from 'src/content-people-helpers';
 import {buildPullRequestView} from 'src/popup-session/pull-request-view';
+
+// Circular arrow: one iteration of a repeating cycle. Stroke matches --jx-ink-2.
+const SPRINT_ICON_URL = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#5c5c5c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M13.2 9.3A5.3 5.3 0 1 1 11.9 4"/><path d="M12.6 1.6v2.9H9.7"/></svg>'
+)}`;
 
 export function createPopupProjectView(options) {
   const configuration = options?.configuration || {};
@@ -48,10 +55,11 @@ export function createPopupProjectView(options) {
     if (!chip) {
       return chip;
     }
+    // Chips are one line and ellipsize long values, so every chip carries its full text somewhere.
     return {
       ...chip,
-      renderLinkTitle: chip.linkTitle || chip.chipTitle || '',
-      renderContentTitle: chip.chipTitle || chip.linkTitle || '',
+      renderLinkTitle: chip.linkTitle || chip.chipTitle || chip.text || '',
+      renderContentTitle: chip.chipTitle || chip.linkTitle || chip.text || '',
     };
   }
 
@@ -147,9 +155,11 @@ export function createPopupProjectView(options) {
       : sprintList;
   }
 
+  // A single sprint's state is drawn as a dot; several sprints name theirs inline.
   function formatSprintText(sprints) {
-    return getVisibleSprintsForDisplay(sprints)
-      .map(sprint => sprint.state ? `${sprint.name} (${sprint.state})` : sprint.name)
+    const visible = getVisibleSprintsForDisplay(sprints);
+    return visible
+      .map(sprint => visible.length > 1 && sprint.state ? `${sprint.name} (${String(sprint.state).toLowerCase()})` : sprint.name)
       .filter(Boolean)
       .join(', ');
   }
@@ -277,6 +287,22 @@ export function createPopupProjectView(options) {
     };
   }
 
+  // The PR grid gives its width to titles; the cell title keeps the full name.
+  function abbreviateUserCellView(view) {
+    return {...view, shortName: abbreviatePersonName(view.displayName)};
+  }
+
+  // A chip whose label became an icon still names its field in the tooltip:
+  // the value line comes first, then what the link does.
+  function withValueTitle(chip, valueLine) {
+    return {...chip, chipTitle: valueLine, linkTitle: chip.linkTitle ? `${valueLine}\n${chip.linkTitle}` : ''};
+  }
+
+  // Jira's own type and priority icons identify the value; the name moves to the tooltip.
+  function iconOnlyChip(chip, valueLine) {
+    return chip.iconUrl ? {...withValueTitle(chip, valueLine), chipIconOnly: true} : chip;
+  }
+
   function normalizeChildrenSortState(sort) {
     return {
       column: ['type', 'key', 'status', 'assignee'].includes(sort?.column)
@@ -290,7 +316,7 @@ export function createPopupProjectView(options) {
 
   function normalizePullRequestsSortState(sort) {
     return {
-      column: ['id', 'author', 'target', 'status', 'updated'].includes(sort?.column)
+      column: ['id', 'author', 'branch', 'status', 'updated'].includes(sort?.column)
         ? sort.column
         : 'updated',
       direction: sort?.direction === 'asc' ? 'asc' : 'desc'
@@ -348,7 +374,7 @@ export function createPopupProjectView(options) {
       case 'author':
         result = compareNaturalText(left?.authorView?.displayName, right?.authorView?.displayName);
         break;
-      case 'target':
+      case 'branch':
         result = compareNaturalText(left?.branchText, right?.branchText);
         break;
       case 'status':
@@ -380,7 +406,6 @@ export function createPopupProjectView(options) {
       pullRequests,
       pullRequestsSort,
       lastActionSuccess,
-      actionsOpen,
       quickActionView = {},
       historyOpen,
       historyView = {},
@@ -471,11 +496,11 @@ export function createPopupProjectView(options) {
     const buildRow1Chip = (fieldKey) => {
       switch (fieldKey) {
         case 'issueType':
-          return buildEditableFieldChip('issuetype', buildFilterChip(
+          return buildEditableFieldChip('issuetype', iconOnlyChip(buildFilterChip(
             issueTypeName || 'No type',
             issueTypeName ? `${scopeJqlToProject(projectKey, `issuetype = ${encodeJqlValue(issueTypeName)}`)}` : '',
             {iconUrl: issueData.fields.issuetype?.iconUrl || '', linkLabel: issueTypeName}
-          ), state, {
+          ), `Issue type: ${issueTypeName || '--'}`), state, {
             canEdit: issueTypeEditable,
             editTitle: 'Edit issue type'
           });
@@ -489,11 +514,11 @@ export function createPopupProjectView(options) {
             editTitle: 'Change status'
           });
         case 'priority':
-          return buildEditableFieldChip('priority', buildFilterChip(
+          return buildEditableFieldChip('priority', iconOnlyChip(buildFilterChip(
             `Priority: ${priorityName || '--'}`,
             priorityName ? `${scopeJqlToProject(projectKey, `priority = ${encodeJqlValue(priorityName)}`)}` : '',
             {iconUrl: issueData.fields.priority?.iconUrl || '', linkLabel: priorityName}
-          ), state, {
+          ), `Priority: ${priorityName || '--'}`), state, {
             canEdit: priorityEditable,
             editTitle: 'Edit priority'
           });
@@ -520,14 +545,24 @@ export function createPopupProjectView(options) {
 
     const buildRow2Chip = (fieldKey) => {
       switch (fieldKey) {
-        case 'sprint':
-          return buildEditableFieldChip('sprint', buildFilterChip(
-            `Sprint: ${formatSprintText(sprints) || '--'}`,
+        case 'sprint': {
+          // The icon stands in for the "Sprint:" label and a dot for "(ACTIVE)".
+          const sprintText = formatSprintText(sprints);
+          const sprintState = visibleSprints.length === 1 ? String(visibleSprints[0]?.state || '').toLowerCase() : '';
+          const chip = withValueTitle(buildFilterChip(
+            sprintText || '--',
             sprintJql,
-            {linkLabel: visibleSprints.length > 1 ? 'listed sprints' : (formatSprintText(sprints) || '')}
-          ), state, {
-            canEdit: !!sprintCapability?.editable
+            {
+              chipState: sprintState ? {stateKey: sprintState, stateLabel: `${sprintState[0].toUpperCase()}${sprintState.slice(1)} sprint`} : null,
+              iconUrl: SPRINT_ICON_URL,
+              linkLabel: visibleSprints.length > 1 ? 'listed sprints' : (sprintText || ''),
+            }
+          ), `Sprint: ${sprintText || '--'}${sprintState ? ` (${sprintState})` : ''}`);
+          return buildEditableFieldChip('sprint', chip, state, {
+            canEdit: !!sprintCapability?.editable,
+            editTitle: 'Edit sprint'
           });
+        }
         case 'affects':
           return buildEditableFieldChip('versions', buildFilterChip(
             `Affects: ${formatFixVersionText(affectsVersions) || '--'}`,
@@ -590,9 +625,24 @@ export function createPopupProjectView(options) {
       const match = text.match(/^([^:[\]]{1,40}:)\s([\s\S]*)$/);
       return {...chip, textLabel: match ? match[1] : '', textValue: match ? match[2] : text};
     };
-    const row1Chips = layoutRow1.map(buildRow1Chip).filter(Boolean).concat(customFieldChips[1]).map(withChipTextParts);
-    const row2Chips = layoutRow2.map(buildRow2Chip).filter(Boolean).concat(customFieldChips[2]);
-    const row3Chips = layoutRow3.map(buildRow3Chip).filter(Boolean).concat(customFieldChips[3]);
+    // The layout editor lets any field sit in any row and stores custom fields as
+    // "custom_<fieldId>" at their position, so chips follow the layout's order.
+    // A custom field missing from the layout keeps its configured row, at the end.
+    const buildLayoutChip = fieldKey => buildRow1Chip(fieldKey) || buildRow2Chip(fieldKey) || buildRow3Chip(fieldKey);
+    const layoutKeys = new Set([...layoutRow1, ...layoutRow2, ...layoutRow3]);
+    const customChipsById = new Map();
+    [1, 2, 3].forEach(row => (customFieldChips[row] || []).forEach(chip => {
+      customChipsById.set(chip.customFieldId, [...(customChipsById.get(chip.customFieldId) || []), chip]);
+    }));
+    const buildRowChips = (layoutRow, row) => layoutRow
+      .flatMap(key => String(key).startsWith('custom_')
+        ? customChipsById.get(String(key).slice('custom_'.length)) || []
+        : [buildLayoutChip(key)])
+      .filter(Boolean)
+      .concat((customFieldChips[row] || []).filter(chip => !layoutKeys.has(`custom_${chip.customFieldId}`)));
+    const row1Chips = buildRowChips(layoutRow1, 1).map(normalizeSecondaryStatusChip).filter(Boolean).map(withChipTextParts);
+    const row2Chips = buildRowChips(layoutRow2, 2);
+    const row3Chips = buildRowChips(layoutRow3, 3);
     const secondaryStatusRows = [
       {
         rowClass: '',
@@ -652,19 +702,14 @@ export function createPopupProjectView(options) {
       buildRelatedTableSortHeader(normalizedChildrenSort, 'assignee', 'Assignee')
     ];
     const prSortHeaders = [
-      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'id', 'PR', 'PR ID'),
+      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'id', 'Title', 'PR ID'),
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'author', 'Author'),
-      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'target', 'Target', 'target branch'),
+      buildRelatedTableSortHeader(normalizedPullRequestsSort, 'branch', 'Branch', 'source branch'),
       buildRelatedTableSortHeader(normalizedPullRequestsSort, 'status', 'Status'),
       {label: 'Signals', isStatic: true},
-      {...buildRelatedTableSortHeader(normalizedPullRequestsSort, 'updated', 'Last update'),
+      {...buildRelatedTableSortHeader(normalizedPullRequestsSort, 'updated', 'Updated'),
         title: `Sort by last update ${normalizedPullRequestsSort.column === 'updated' && normalizedPullRequestsSort.direction === 'desc' ? 'oldest first' : 'newest first'}. Open: latest commit; merged: merge time; closed: close time. Uses updated/created time when unavailable.`},
     ];
-    const quickActionData = {
-      actionsOpen: !!actionsOpen && !!quickActionView.hasQuickActions,
-      hasQuickActions: !!quickActionView.hasQuickActions,
-      quickActions: quickActionView.actions || [],
-    };
     const reporterView = displayFields.reporter && issueData.fields.reporter
       ? buildUserAvatarView(issueData.fields.reporter, 'Reporter', '--')
       : null;
@@ -815,7 +860,6 @@ export function createPopupProjectView(options) {
         ? '_JX_action_notice_info'
         : (quickActionView.errorMessage ? '_JX_action_notice_error' : '_JX_action_notice_success'),
       hasActionNotice: !!(titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess),
-      ...quickActionData
     };
     if (issueData.fields.comment?.comments?.[0]?.id) {
       displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
@@ -829,7 +873,7 @@ export function createPopupProjectView(options) {
         .map((pr, index) => ({
           id: pr.id,
           url: pr.url,
-          authorView: buildRelatedUserCellView(pr?.author, 'Author', formatPullRequestAuthor(pr)),
+          authorView: abbreviateUserCellView(buildRelatedUserCellView(pr?.author, 'Author', formatPullRequestAuthor(pr))),
           ...buildPullRequestView(pr, index),
         }))
         .sort((left, right) => comparePullRequestRows(left, right, normalizedPullRequestsSort.column, normalizedPullRequestsSort.direction));

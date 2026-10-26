@@ -747,6 +747,7 @@ test('Sprint editing owns resolved field ids, board grouping, selection, and the
         kind: begun.kind,
         labels: begun.view.edit?.options.map(option => option.label),
         groupLabels: begun.view.edit?.options.filter(option => option.isGroupLabel).map(option => option.label),
+        states: begun.view.edit?.options.filter(option => option.sprintState).map(option => option.sprintState),
         selectedOptionId: begun.view.edit?.selectedOptionId,
       },
       selected: {kind: selected.kind, selectedOptionId: selected.view.edit?.selectedOptionId},
@@ -758,12 +759,13 @@ test('Sprint editing owns resolved field ids, board grouping, selection, and the
   expect(result).toEqual({
     begun: {
       kind: 'changed',
-      labels: ['No sprint', 'ABC board', 'Current (ACTIVE)', 'Next (FUTURE)', 'Platform', 'Platform Future (FUTURE)'],
+      labels: ['No sprint', 'ABC board', 'Current', 'Next', 'Platform', 'Platform Future'],
       groupLabels: ['ABC board', 'Platform'],
+      states: ['active', 'future', 'future'],
       selectedOptionId: '41',
     },
     selected: {kind: 'changed', selectedOptionId: '42'},
-    saved: {kind: 'saved', notice: 'Sprint set to Next (FUTURE)'},
+    saved: {kind: 'saved', notice: 'Sprint set to Next'},
     writeBody: {fields: {customfield_10020: 42}},
   });
 });
@@ -833,7 +835,7 @@ test('Sprint option failure leaves the interface retryable', async ({page}) => {
 
   expect(result).toEqual({
     failed: {kind: 'ignored', failure: 'Boards unavailable', edit: null},
-    retried: {kind: 'changed', labels: ['No sprint', 'Next (FUTURE)']},
+    retried: {kind: 'changed', labels: ['No sprint', 'Next']},
     boardRequests: 2,
   });
 });

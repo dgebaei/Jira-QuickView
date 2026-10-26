@@ -12,15 +12,11 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
-### What's new in 3.0 beta
+### What's new in 3.0
 
-The [3.0.0-beta.1 GitHub prerelease](https://github.com/dgebaei/Jira-QuickView/releases/tag/3.0.0-beta.1) combines opt-in Jira image attachment previews, popup-scoped keyboard triage, a compact pull request grid with optional GitLab signals, and redesigned Options and documentation. No new Chrome permissions are required.
+Version 3.0 combines opt-in Jira image attachment previews, popup-scoped keyboard triage, a pull request grid with titles and source → target branches plus optional GitLab signals, compact field chips, a roomier header, and redesigned Options and documentation. No new Chrome permissions are required.
 
-The beta is **not distributed through the stable Chrome Web Store listing**. Download `jira-plugin-build.zip` from the release, extract it, and use **chrome://extensions → Developer mode → Load unpacked** to select the folder containing `manifest.json`. Disable the stable extension while testing to prevent duplicate actions. Settings belong to each installation; use export/import if needed. To return to stable, disable or remove the beta and re-enable the store extension.
-
-Attachment previews are off by default; enable **Options → Appearance → Preview Jira image attachments in QuickView**. Press **Alt+0** while QuickView has focus to review shortcuts. GitLab details need a working browser login and granted access to the linked host; unavailable signals are unknown, not proof that a merge is ready. Remembered quick-close defaults stay local to this browser and are not exported or shared by Team Sync.
-
-Live Gmail/Outlook and GitLab verification, plus platform-specific Alt/Option behavior, remain beta testing tasks. Screenshots elsewhere in this guide may show an earlier Options or popup appearance.
+Attachment previews are off by default; enable **Options → Appearance → Preview Jira image attachments in QuickView**. The keyboard button in the popup header, or **Alt+0** while QuickView has focus, drops down the shortcut list. The Quick actions menu was removed; its actions are on the shortcuts. GitLab details need a working browser login and granted access to the linked host; unavailable signals are unknown, not proof that a merge is ready. Remembered quick-close defaults stay local to this browser and are not exported or shared by Team Sync.
 
 ### What's new in 2.9.2
 
@@ -94,7 +90,7 @@ Live Gmail/Outlook and GitLab verification, plus platform-specific Alt/Option be
       <li><a href="#51-where-the-popup-appears">5.1 Where the Popup Appears</a></li>
       <li><a href="#511-copy-issue-links-inside-jira">5.1.1 Copy Issue Links Inside Jira</a></li>
       <li><a href="#52-header-reporter-assignee-summary-and-actions">5.2 Header: Reporter, Assignee, Summary, and Actions</a></li>
-      <li><a href="#53-quick-actions-menu">5.3 Quick Actions Menu</a></li>
+      <li><a href="#53-keyboard-shortcuts">5.3 Keyboard Shortcuts</a></li>
       <li>
         <a href="#54-row-1-issue-type-status-priority-linked-issues-history-and-watchers">5.4 Row 1: Issue Type, Status, Priority, Linked Issues, History, and Watchers</a>
         <ul>
@@ -396,7 +392,7 @@ What to know:
 - Drag content blocks into the content area to show them in the popup.
 - Remove a field or block if it is not useful for your team.
 - Description is treated as the core issue content and is always represented in the content area by the current layout editor.
-- Reporter, assignee, summary, copy, pin, quick actions, and close live in the popup header. They are explained in the popup section of this guide.
+- Reporter, assignee, summary, copy, pin, keyboard shortcuts, and close live in the popup header. They are explained in the popup section of this guide.
 
 ### 4.6 Advanced: Organizing Row Fields
 
@@ -599,50 +595,31 @@ If the copy action is missing, confirm that `Show copy buttons beside Jira issue
 
 ### 5.2 Header: Reporter, Assignee, Summary, and Actions
 
-![Popup quick actions in context](screenshots/marketing-hidpi-light/popup-actions.png)
+![Popup header with the keyboard shortcut list](screenshots/marketing-hidpi-light/popup-actions.png)
 
 The header is the top part of the popup. It keeps the most common actions close together.
 
 Header items:
 
 - Reporter avatar shows who reported the issue.
-- Assignee avatar shows who owns the issue. If Jira allows editing, you can click the edit control and search assignable users.
+- Assignee avatar shows who owns the issue. If Jira allows editing, hover it and click the pencil on its edge to search assignable users.
 - Summary link opens the full Jira issue in a new tab.
-- Summary edit lets you rename the issue when Jira allows the `summary` field to be changed.
+- Summary edit lets you rename the issue when Jira allows the `summary` field to be changed. Hover the title for the pencil; the editor keeps the header's height, `Enter` saves, and `Esc` discards.
 - Copy copies the issue link.
 - Pin keeps the popup open while you move the mouse.
-- Quick actions opens Jira-backed shortcuts.
+- Keyboard shortcuts drops down the shortcut list; `Alt+0` does the same.
 - Close hides the popup. `Esc` also closes it.
-- Keyboard shortcuts opens the shortcut list; `Alt+0` does the same.
 
 Business logic and limitations:
 
 - Assignee search uses Jira assignable-user logic for the specific issue, so it should match who can actually be assigned.
 - Summary editing appears only when Jira edit metadata says the summary field supports `set`.
-- Quick actions appear only when at least one action is available.
 
-### 5.3 Quick Actions Menu
+### 5.3 Keyboard Shortcuts
 
-![Quick actions menu](screenshots/marketing-hidpi-light/popup-actions.png)
+![Keyboard shortcut list](screenshots/marketing-hidpi-light/popup-actions.png)
 
-Quick actions are shortcuts for common Jira updates.
-
-Examples:
-
-- Assign the issue to yourself.
-- Move the issue to the next useful workflow state, such as starting progress.
-- Move the issue to an active or upcoming sprint when Jira exposes a valid sprint field.
-
-Business logic and limitations:
-
-- Quick actions are not hardcoded guesses. They are built from the current issue, current user, Jira transitions, and available sprint data.
-- `Assign to me` appears only when the current assignee is not already you and Jira can resolve your user identity.
-- Start-progress style actions appear only when Jira exposes a matching transition.
-- Sprint actions appear only when Jira exposes a sprint field and available active or future sprints.
-
-#### Keyboard Shortcuts
-
-Shortcuts work while QuickView has keyboard focus, not while you are typing in an input, editor, or comment. They do not act on the mail client or other page behind QuickView. `Alt` is `Option` on macOS; some operating-system shortcuts may take precedence.
+The keyboard button in the header, or `Alt+0`, drops down the shortcut list. Press a listed key while it is open to run that shortcut, or `Esc` to close the list. Shortcuts work while QuickView has keyboard focus, not while you are typing in an input, editor, or comment. They do not act on the mail client or other page behind QuickView. `Alt` is `Option` on macOS; some operating-system shortcuts may take precedence.
 
 | Key | Action | Alt + key |
 |---|---|---|
@@ -864,10 +841,10 @@ The Pull Requests block shows development work connected to the Jira issue.
 
 What you can see:
 
-- Linked PR/MR ID. Hover or focus the ID for its title, repository, and source branch.
-- Author avatar and full name, target branch, and status.
+- Linked PR/MR ID and title, cut at two lines. Hover or focus it for the full title, repository, and branches.
+- Author avatar and short name (full name on hover), `source → target` branches, and status.
 - Compact signals for approvals, unresolved review threads, current CI, and merge conflicts when GitLab supplies them. Hover or focus a signal for details; the approval icon includes the count and lists approvers and available approval times.
-- A sortable **Last update** column. Open requests use the latest head commit time; merged and closed requests use their merge or close time. If unavailable, the column falls back to a known update or creation time and explains the fallback in its details.
+- A sortable **Updated** column. Open requests use the latest head commit time; merged and closed requests use their merge or close time. If unavailable, the column falls back to a known update or creation time and explains the fallback in its details.
 - Hover or focus a last-update value for its event, responsible person when known, exact UTC time, and commit details. Newest-first is the default; click the header for oldest-first. Missing dates remain at the bottom in both directions.
 
 Business logic and limitations:
@@ -986,11 +963,9 @@ Remember that wildcard patterns use `*`. Do not write raw regex syntax unless yo
 
 ## 7. Suggested Daily Workflows
 
-![Quick actions workflow](screenshots/marketing-hidpi-light/popup-actions.png)
-
 ### Triage from email
 
-![Quick actions workflow](screenshots/marketing-hidpi-light/popup-actions.png)
+![Keyboard shortcuts for triage](screenshots/marketing-hidpi-light/popup-actions.png)
 
 1. Open a Jira notification in Gmail or Outlook.
 2. Hover the issue key.

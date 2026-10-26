@@ -735,8 +735,8 @@ async function main() {
     });
 
     capturePopupShot(stage.origin, () => {
-      agentBrowser('click', '._JX_actions_toggle');
-      agentBrowser('wait', '._JX_action_item');
+      agentBrowser('click', '._JX_shortcuts_help');
+      agentBrowser('wait', '._JX_shortcuts_panel');
       agentBrowser('screenshot', screenshotPath('popup-actions.png'));
     });
 

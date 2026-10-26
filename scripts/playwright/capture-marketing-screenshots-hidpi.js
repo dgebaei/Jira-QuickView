@@ -89,21 +89,21 @@ const FIXTURE_STORIES = {
     ],
   },
   actions: {
-    heading: 'Trigger Jira actions from the hover card.',
-    lede: 'Run Jira-backed quick actions like assign to me, workflow transitions, and pinned popup controls directly from the preview.',
+    heading: 'Triage Jira from the keyboard.',
+    lede: 'Number keys reassign, plan into the current sprint, resolve, transition, comment, and copy while QuickView has focus. The keyboard button drops down the list.',
     bullets: [
-      {title: 'Workflow Aware', body: 'Actions come from Jira capabilities and transitions, not hardcoded shortcuts.'},
+      {title: 'Workflow Aware', body: 'Transitions, resolutions, and sprints come from Jira, and writes ask for confirmation first.'},
       {title: 'Faster Triage', body: 'Move an issue forward while you are still reading the pull request or release note.'},
-      {title: 'No Tab Hop', body: 'Open the action menu, apply the change, and keep working where you already are.'},
-      {title: 'Pinned Context', body: 'Keep the popup open while you inspect related code, docs, and comments.'},
+      {title: 'No Tab Hop', body: 'Press a number, confirm the change, and keep working where you already are.'},
+      {title: 'Pinned Context', body: 'Shortcuts pin the popup so it stays open while you work.'},
     ],
-    panelTitle: 'Action Menu',
-    panelBadge: 'Workflow',
+    panelTitle: 'Keyboard Shortcuts',
+    panelBadge: 'Alt+0',
     panelBlocks: [
       {
-        label: 'Transition Review',
+        label: 'Number Keys',
         meta: 'Jira backed',
-        body: 'Use <span id="popup-key">JRACLOUD-97846</span> to test assign, copy, pin, and next-step workflow actions without opening the full issue page.',
+        body: 'Open <span id="popup-key">JRACLOUD-97846</span>, press 1 to reassign, 2 to plan into the sprint, or 3 to resolve, without opening the full issue page.',
       },
       {
         label: 'What It Replaces',
@@ -746,8 +746,8 @@ async function capturePopupOverview(context, serviceWorker, fixtureOrigin) {
 
 async function capturePopupActions(context, serviceWorker, fixtureOrigin) {
   const page = await openStyledPopupPage(context, serviceWorker, fixtureOrigin, 'actions');
-  await page.locator('._JX_actions_toggle').click();
-  await page.locator('._JX_action_item').first().waitFor();
+  await page.locator('._JX_shortcuts_help').click();
+  await page.locator('._JX_shortcuts_panel').waitFor();
   await savePopupCompositionScreenshot(page, 'popup-actions.png');
   await page.close();
 }
@@ -793,7 +793,7 @@ async function capturePopupCommentEdit(context, serviceWorker, fixtureOrigin) {
 
 async function capturePopupPullRequests(context, serviceWorker, fixtureOrigin) {
   const page = await openStyledPopupPage(context, serviceWorker, fixtureOrigin, 'pullRequests');
-  await page.locator('text=Fix slash command cursor behavior').waitFor();
+  await page.locator('._JX_pr_title', {hasText: 'Fix slash command cursor behavior'}).waitFor();
   await scrollPopupContentBlock(page, 'pullRequests');
   await savePopupCompositionScreenshot(page, 'popup-pull-requests.png');
   await page.close();

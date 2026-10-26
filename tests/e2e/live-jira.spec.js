@@ -113,7 +113,7 @@ test('uses authenticated storage state on an allowed live Jira issue @live', asy
   await page.close();
 });
 
-test('shows live edit controls and quick actions only on the allowed issue scope @live', async ({extensionApp, optionsPage}) => {
+test('shows live edit controls only on the allowed issue scope @live', async ({extensionApp, optionsPage}) => {
   const config = requireLiveAuthConfig();
   const issueKey = getAllowedLiveIssue(config, 0);
   const page = await openLivePopupForIssue(extensionApp, optionsPage, config, issueKey);
@@ -121,12 +121,6 @@ test('shows live edit controls and quick actions only on the allowed issue scope
   await expect(page.locator('._JX_assignee_edit_button')).toHaveCount(1);
   await expect(page.locator('._JX_field_chip_edit[data-field-key="priority"]')).toHaveCount(1);
   await expect(page.locator('._JX_field_chip_edit[data-field-key="labels"]')).toHaveCount(1);
-
-  const actionsToggle = page.locator('._JX_actions_toggle');
-  if (await actionsToggle.count()) {
-    await actionsToggle.click();
-    await expect(page.locator('._JX_action_item')).toHaveCount(await page.locator('._JX_action_item').count());
-  }
 
   await page.close();
 });
@@ -193,10 +187,8 @@ test('updates assignee on an allowed live Jira issue and restores it @live', asy
     await rehydrateLivePopupAfterReload(extensionApp, page, issueKey);
   }
 
-  const assignToMeAction = page.locator('._JX_action_item[data-action-key="assign-to-me"]');
-  await page.locator('._JX_actions_toggle').click();
-  await expect(assignToMeAction).toBeVisible();
-  await assignToMeAction.click();
+  await popup.focus();
+  await page.keyboard.press('Alt+1');
   await expect(popup).toContainText(/Assigned to you|Assigned/i);
   await expect.poll(async () => String((await getLiveIssue(issueKey, config))?.fields?.assignee?.accountId || ''), {timeout: 10000}).toBe(String(currentUser?.accountId || ''));
 

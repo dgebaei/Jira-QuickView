@@ -23,11 +23,15 @@ export function matchPopupShortcut(event) {
 
 // Owns the browser interaction; workflow owns validation, cancellation and writes.
 // The native dialog lives outside replaceable popup markup so background renders cannot drop a draft.
+// The help is a non-modal popover anchored to the toolbar button, so focus stays
+// in QuickView and a digit pressed while it is open runs that shortcut.
 export function createBrowserPopupShortcuts(deps) {
   const {container, getSession, isBusy, pin, beginFieldEdit, quickAction, copy, openIssue, focusComment, onSaved, announce} = deps;
   const documentRef = container.ownerDocument;
   const workflow = createPopupShortcutWorkflow(deps);
   let dialog = null;
+  let help = null;
+  let helpObserver = null;
   let form = null;
   let status = null;
   let results = null;
@@ -46,7 +50,66 @@ export function createBrowserPopupShortcuts(deps) {
     return node;
   }
 
+  function helpToggle() {
+    return container.querySelector('._JX_shortcuts_help');
+  }
+
+  function positionHelp() {
+    const toggle = helpToggle();
+    if (!help || !toggle) return;
+    const anchor = toggle.getBoundingClientRect();
+    const panel = help.getBoundingClientRect();
+    const viewport = documentRef.documentElement;
+    const below = anchor.bottom + 6;
+    help.style.left = `${Math.max(8, Math.min(anchor.right - panel.width, viewport.clientWidth - panel.width - 8))}px`;
+    help.style.top = `${below + panel.height + 8 <= viewport.clientHeight ? below : Math.max(8, anchor.top - panel.height - 6)}px`;
+  }
+
+  function closeHelp() {
+    if (!help) return;
+    helpObserver?.disconnect();
+    helpObserver = null;
+    if (help.matches(':popover-open')) help.hidePopover();
+    help.remove();
+    help = null;
+    helpToggle()?.setAttribute('aria-expanded', 'false');
+  }
+
+  function showHelp() {
+    if (dialog || help) return;
+    help = element('div', '', documentRef.body, {
+      class: '_JX_shortcuts_panel', popover: 'manual', role: 'dialog',
+      'aria-labelledby': 'jqv-shortcuts-help-title', 'data-testid': 'jira-shortcut-help',
+    });
+    const heading = element('div', '', help, {class: '_JX_shortcuts_panel_heading'});
+    element('h2', 'Keyboard shortcuts', heading, {id: 'jqv-shortcuts-help-title'});
+    element('kbd', 'Alt+0', heading, {title: 'Toggles this list'});
+    const table = element('table', '', help);
+    const header = element('tr', '', element('thead', '', table));
+    ['Key', 'Action', 'Alt + key'].forEach(text => element('th', text, header, {scope: 'col'}));
+    const body = element('tbody', '', table);
+    POPUP_SHORTCUTS.filter(([key]) => key !== '0').forEach(([key, normal, alternate]) => {
+      const row = element('tr', '', body);
+      element('kbd', key, element('th', '', row, {scope: 'row'}));
+      element('td', normal || '—', row);
+      element('td', alternate || '—', row);
+    });
+    element('p', 'Works while QuickView has focus, outside text fields. Alt+2 and Alt+3 confirm first. Alt is Option on macOS.', help);
+    // Clicks inside must not reach the page-level outside-click dismissal.
+    help.addEventListener('click', event => event.stopPropagation());
+    help.showPopover();
+    positionHelp();
+    helpToggle()?.setAttribute('aria-expanded', 'true');
+    // Background renders replace the toolbar; keep the new button's state and the anchor.
+    helpObserver = new MutationObserver(() => {
+      helpToggle()?.setAttribute('aria-expanded', 'true');
+      positionHelp();
+    });
+    helpObserver.observe(container, {childList: true, subtree: true});
+  }
+
   function close(force = false) {
+    closeHelp();
     if (workflow.busy() && !force) return;
     invocation += 1;
     invoking = false;
@@ -257,27 +320,10 @@ export function createBrowserPopupShortcuts(deps) {
     if (dialog === openedDialog) render();
   }
 
-  function showHelp() {
-    if (dialog) return;
-    shell('Keyboard shortcuts');
-    const table = element('table', '', form);
-    element('caption', 'Available while QuickView has focus, outside text fields.', table);
-    const header = element('tr', '', element('thead', '', table));
-    ['Key', 'Action', 'Alt + key'].forEach(text => element('th', text, header, {scope: 'col'}));
-    const body = element('tbody', '', table);
-    POPUP_SHORTCUTS.forEach(([key, normal, alternate]) => {
-      const row = element('tr', '', body);
-      element('th', key, row, {scope: 'row'});
-      element('td', normal || '—', row);
-      element('td', alternate || '—', row);
-    });
-    element('p', 'Esc cancels the pending workflow; press Esc again to close QuickView. Alt+2 and Alt+3 require confirmation. Alt is Option on macOS.', form);
-    button('Close', form, () => close());
-    dialog.querySelector('h2').focus({preventScroll: true});
-    dialog.scrollTop = 0;
-  }
-
   async function invoke({digit, alternate}) {
+    const helpWasOpen = !!help;
+    closeHelp();
+    if (digit === '0' && helpWasOpen) return;
     if (invoking || dialog || isBusy() || workflow.busy()) return;
     const request = ++invocation;
     invoking = true;
@@ -305,6 +351,12 @@ export function createBrowserPopupShortcuts(deps) {
       }
       return;
     }
+    if (help && event.key === 'Escape' && !event.isComposing) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeHelp();
+      return;
+    }
     if (!container.contains(documentRef.activeElement) || !container.contains(event.target) || !getSession()?.issueSnapshot?.core) return;
     const shortcut = matchPopupShortcut(event);
     if (!shortcut) return;
@@ -314,8 +366,9 @@ export function createBrowserPopupShortcuts(deps) {
   }
 
   function click(event) {
-    if (!event.target.closest?.('._JX_shortcuts_help')) return;
-    if (!container.contains(event.target)) return;
+    const onToggle = !!event.target.closest?.('._JX_shortcuts_help') && container.contains(event.target);
+    if (help && !onToggle && !help.contains(event.target)) closeHelp();
+    if (!onToggle) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     invoke({digit: '0', alternate: true}).catch(error => announce(error.message));
@@ -325,6 +378,8 @@ export function createBrowserPopupShortcuts(deps) {
     if (installed) return;
     documentRef.addEventListener('keydown', keydown, true);
     documentRef.addEventListener('click', click, true);
+    documentRef.addEventListener('scroll', positionHelp, true);
+    documentRef.defaultView?.addEventListener('resize', closeHelp);
     installed = true;
   }
 

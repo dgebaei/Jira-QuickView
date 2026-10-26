@@ -35,6 +35,7 @@ export function createBrowserPopupRenderer({
   shell,
   projectState,
   template,
+  partials = {},
 }) {
   async function renderLoading(frame, context = {}) {
     if (typeof context.isCurrent === 'function' && !context.isCurrent()) {
@@ -90,7 +91,7 @@ export function createBrowserPopupRenderer({
       const element = container.find(selector);
       return element.length ? {selector, left: element.scrollLeft(), top: element.scrollTop()} : null;
     }).filter(Boolean);
-    container.html(Mustache.render(template, displayData));
+    container.html(Mustache.render(template, displayData, partials));
     reorderContentBlocks(container, contentBlockOrder);
     savedScrollPositions.forEach(({selector, left, top}) => {
       const element = container.find(selector);

@@ -146,9 +146,11 @@ async function capturePopupScreens(page, outputPrefix) {
   await popup.waitFor({state: 'visible'});
   await page.screenshot({path: path.join(screenshotDir, `${outputPrefix}-overview.png`), fullPage: true});
 
-  await page.locator('._JX_actions_toggle').click();
+  await page.locator('._JX_shortcuts_help').click();
+  await page.locator('._JX_shortcuts_panel').waitFor();
   await page.screenshot({path: path.join(screenshotDir, `${outputPrefix}-actions.png`), fullPage: true});
 
+  await page.keyboard.press('Escape');
   await page.locator('._JX_field_chip_edit[data-field-key="labels"]').click();
   const labelInput = page.locator('._JX_edit_input[data-field-key="labels"]');
   await labelInput.fill('release');
