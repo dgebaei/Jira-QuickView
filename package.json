@@ -1,6 +1,6 @@
 {
   "name": "jira-quickview",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Jira QuickView, quick access to Jira issue details from links and ticket numbers!",
   "scripts": {
     "analyze": "webpack --mode=production --bail --profile --json > stats.json || webpack-bundle-analyzer stats.json",
