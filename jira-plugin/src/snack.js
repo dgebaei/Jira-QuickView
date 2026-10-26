@@ -1,40 +1,53 @@
-/*global chrome */
-import {waitForDocument} from 'src/utils';
+// One toast for every QuickView message. While a popup is open it floats just
+// under the popup's header, next to what was edited; otherwise it sits at the
+// bottom of the viewport. As a popover it is in the top layer, so neither the
+// page nor the popup can stack over it.
+let toast = null;
+let hideTimer = null;
 
-waitForDocument(() => require('src/snack.scss'));
-
-let activeSnackElement = null;
-let activeSnackTimer = null;
-
-function getOrCreateSnack() {
-  const $ = require('jquery');
-  if (activeSnackElement && activeSnackElement.length) {
-    return activeSnackElement;
-  }
-
-  activeSnackElement = $(`
-      <div class="_JX_snack">
-          <div class="_JX_snack_icon">
-            <img src="${chrome.runtime.getURL('resources/jiralink128.png')}" class="_JX_snack_icon_img" />
-          </div>
-          <div class="_JX_snack_message"></div>
-      </div>
-  `);
-  $(document.body).append(activeSnackElement);
-  return activeSnackElement;
+function toastElement() {
+  if (toast?.isConnected) return toast;
+  toast = document.createElement('div');
+  toast.className = '_JX_toast';
+  toast.setAttribute('data-testid', 'jira-toast');
+  if (typeof toast.showPopover === 'function') toast.setAttribute('popover', 'manual');
+  toast.hidden = true;
+  document.body.append(toast);
+  return toast;
 }
 
-export function snackBar(message, timeout = 6000) {
-  const content = getOrCreateSnack();
-  content.find('._JX_snack_message').text(message || '');
-  content.addClass('_JX_snack_show');
+function place(node) {
+  const header = [...document.querySelectorAll('._JX_container ._JX_title')].find(item => item.getClientRects().length);
+  const popup = header?.closest('._JX_annotation')?.getBoundingClientRect();
+  const viewport = document.documentElement;
+  const width = node.offsetWidth;
+  const center = popup ? popup.left + popup.width / 2 : viewport.clientWidth / 2;
+  node.style.insetInlineStart = `${Math.max(8, Math.min(center - width / 2, viewport.clientWidth - width - 8))}px`;
+  node.style.insetBlockStart = popup
+    ? `${header.getBoundingClientRect().bottom + 8}px`
+    : `${viewport.clientHeight - node.offsetHeight - 20}px`;
+}
 
-  if (activeSnackTimer) {
-    clearTimeout(activeSnackTimer);
-  }
+export function hideToast() {
+  clearTimeout(hideTimer);
+  hideTimer = null;
+  if (!toast?.isConnected) return;
+  if (toast.matches(':popover-open')) toast.hidePopover();
+  toast.hidden = true;
+}
 
-  activeSnackTimer = setTimeout(function () {
-    content.removeClass('_JX_snack_show');
-    activeSnackTimer = null;
-  }, timeout);
+// kind: 'success' and 'error' carry a mark; 'info' is neutral. A timeout of 0
+// keeps a progress message until the next toast replaces it.
+export function showToast(message, {kind = 'info', timeout = 2000} = {}) {
+  if (!message) return;
+  const node = toastElement();
+  clearTimeout(hideTimer);
+  node.className = `_JX_toast _JX_toast_${kind}`;
+  node.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  node.textContent = message;
+  node.hidden = false;
+  if (node.matches(':popover-open')) node.hidePopover();
+  node.showPopover?.();
+  place(node);
+  if (timeout) hideTimer = setTimeout(hideToast, timeout);
 }

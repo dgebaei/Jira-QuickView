@@ -34,7 +34,7 @@ test('Alt+0 and the toolbar button drop down fixed shortcuts; Escape returns foc
   await page.keyboard.press('Alt+0');
   await expect(help).toBeVisible();
   await expect(help.getByRole('heading')).toHaveText('Keyboard shortcuts');
-  await expect(help.getByRole('row')).toHaveCount(8);
+  await expect(help.getByRole('row')).toHaveCount(9);
   await expect(help.locator('._JX_inline_copy_button')).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   await expect(popup).toBeFocused();
@@ -70,7 +70,7 @@ test('a shortcut pressed while the help is open closes it and runs @mock-only', 
   const {page, help} = await openPopup({extensionApp, optionsPage, servers});
   await page.keyboard.press('Alt+0');
   await expect(help).toBeVisible();
-  await page.keyboard.press('5');
+  await page.keyboard.press('6');
   await expect(help).toBeHidden();
   await expect(page.locator('._JX_comment_input')).toBeFocused();
   await page.close();
@@ -78,7 +78,7 @@ test('a shortcut pressed while the help is open closes it and runs @mock-only', 
 
 test('numbers and Alt numbers leave host inputs and popup comment text alone @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('5');
+  await page.keyboard.press('6');
   const comment = page.locator('._JX_comment_input');
   await expect(comment).toBeFocused();
   await page.keyboard.type('1234567');
@@ -102,11 +102,11 @@ test('numbers and Alt numbers leave host inputs and popup comment text alone @mo
   await page.close();
 });
 
-test('2 stages both changes, supports assignee search, and Escape or backdrop cancels without writes @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('4 stages both changes, supports assignee search, and Escape or backdrop cancels without writes @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
   const writes = [];
   page.context().on('request', request => { if (['PUT', 'POST'].includes(request.method()) && /\/issue\/[^/]+(?:\/assignee)?$/.test(new URL(request.url()).pathname)) writes.push(request); });
-  await page.keyboard.press('2');
+  await page.keyboard.press('4');
   const search = page.getByTestId('jira-shortcut-assignee');
   await expect(search).toBeFocused();
   await search.fill('Alex');
@@ -116,7 +116,7 @@ test('2 stages both changes, supports assignee search, and Escape or backdrop ca
   await expect(dialog).toHaveCount(0);
   await expect(popup).toBeFocused();
   expect(writes).toHaveLength(0);
-  await page.keyboard.press('2');
+  await page.keyboard.press('4');
   await expect(search).toBeFocused();
   await page.mouse.click(2, 2);
   await expect(dialog).toHaveCount(0);
@@ -124,9 +124,9 @@ test('2 stages both changes, supports assignee search, and Escape or backdrop ca
   await page.close();
 });
 
-test('2 confirms sprint and typed assignee with one PUT and refreshes the popup @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('4 confirms sprint and typed assignee with one PUT and refreshes the popup @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('2');
+  await page.keyboard.press('4');
   const search = page.getByTestId('jira-shortcut-assignee');
   await expect(search).toBeFocused();
   await search.fill('Alex');
@@ -140,9 +140,9 @@ test('2 confirms sprint and typed assignee with one PUT and refreshes the popup 
   await page.close();
 });
 
-test('Alt+2 stages assign-to-me and only sends after confirmation @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('Alt+4 stages assign-to-me and only sends after confirmation @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('Alt+2');
+  await page.keyboard.press('Alt+4');
   await expect(dialog).toContainText('Assign to:');
   await expect(page.getByTestId('jira-shortcut-submit')).toBeFocused();
   const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
@@ -153,11 +153,11 @@ test('Alt+2 stages assign-to-me and only sends after confirmation @mock-only', a
   await page.close();
 });
 
-test('3 requires resolution and comment, remembers explicit defaults; Alt+3 prefills but does not submit @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('Alt+3 requires resolution and comment, remembers explicit defaults, then prefills them but does not submit @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog, target} = await openPopup({extensionApp, optionsPage, servers}, 'shortcut-resolution');
   const transitions = [];
   page.context().on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/transitions')) transitions.push(request.postDataJSON()); });
-  await page.keyboard.press('3');
+  await page.keyboard.press('Alt+3');
   const resolution = page.getByTestId('jira-shortcut-resolutionId');
   await expect(resolution).toBeVisible();
   await expect(resolution).toHaveValue('');
@@ -182,7 +182,7 @@ test('3 requires resolution and comment, remembers explicit defaults; Alt+3 pref
   await page.keyboard.press('Alt+3');
   await expect(resolution).toHaveValue('1');
   await expect(page.getByTestId('jira-shortcut-comment')).toHaveValue('.');
-  await expect(page.locator('._JX_snack ._JX_inline_copy_button')).toHaveCount(0);
+  await expect(page.locator('._JX_toast ._JX_inline_copy_button')).toHaveCount(0);
   await expect(page.getByTestId('jira-shortcut-submit')).toBeFocused();
   expect(transitions).toHaveLength(1);
   await screenshot(page, 'quick-close-defaults');
@@ -213,7 +213,7 @@ test('Escape cancels a loading workflow and its late response cannot replace sho
     await route.continue();
   });
   try {
-    await page.keyboard.press('3');
+    await page.keyboard.press('Alt+3');
     await requested;
     await expect(dialog).toContainText('Loading');
     await page.keyboard.press('Escape');
@@ -224,7 +224,7 @@ test('Escape cancels a loading workflow and its late response cannot replace sho
     const response = page.context().waitForEvent('response', response => response.url().includes('/transitions?expand='));
     release();
     await response;
-    await expect(help.getByRole('row')).toHaveCount(8);
+    await expect(help.getByRole('row')).toHaveCount(9);
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId('jira-shortcut-submit')).toHaveCount(0);
   } finally { release(); }
@@ -233,7 +233,7 @@ test('Escape cancels a loading workflow and its late response cannot replace sho
 
 test('readonly issues explain unavailable completion without offering a submit button @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, dialog} = await openPopup({extensionApp, optionsPage, servers}, 'readonly');
-  await page.keyboard.press('3');
+  await page.keyboard.press('Alt+3');
   await expect(dialog).toContainText('No completion transition is available');
   await expect(dialog.getByRole('button', {name: 'Open in Jira'})).toBeVisible();
   await expect(page.getByTestId('jira-shortcut-submit')).toHaveCount(0);
@@ -258,7 +258,7 @@ test('saving blocks repeated Enter and Escape; failure remains safely retryable 
     await route.fulfill({status: 400, contentType: 'application/json', body: JSON.stringify({errorMessages: ['Workflow rejected update']})});
   });
   try {
-    await page.keyboard.press('Alt+2');
+    await page.keyboard.press('Alt+4');
     await expect(page.getByTestId('jira-shortcut-submit')).toBeFocused();
     await page.keyboard.press('Enter');
     await requested;
@@ -297,9 +297,14 @@ test('shortcut help fits a narrow viewport and follows dark mode @mock-only', as
   await page.close();
 });
 
-test('1 opens existing assignee picker; Alt+1 assigns to me @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('1 and A open the assignee picker; Alt+1 assigns to me @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup} = await openPopup({extensionApp, optionsPage, servers});
   await page.keyboard.press('1');
+  await expect(page.getByTestId('jira-popup-edit-input-assignee')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('jira-popup-edit-input-assignee')).toHaveCount(0);
+  await popup.focus();
+  await page.keyboard.press('a');
   await expect(page.getByTestId('jira-popup-edit-input-assignee')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('jira-popup-edit-input-assignee')).toHaveCount(0);
@@ -307,37 +312,61 @@ test('1 opens existing assignee picker; Alt+1 assigns to me @mock-only', async (
   const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url().endsWith('/assignee'));
   await page.keyboard.press('Alt+1');
   await requestPromise;
-  await expect(page.locator('._JX_action_notice')).toContainText('Assigned to you');
+  await expect(page.getByTestId('jira-toast')).toContainText('Assigned to you');
   await page.close();
 });
 
-test('4 opens status picker; Alt+4 reviews an in-progress transition before submitting @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('3 opens status picker; Alt+3 opens resolve / close @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('4');
+  await page.keyboard.press('3');
   await expect(page.getByTestId('jira-popup-edit-input-status')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('jira-popup-edit-input-status')).toHaveCount(0);
   await popup.focus();
-  await page.keyboard.press('Alt+4');
-  await expect(dialog).toContainText('Start progress');
-  await expect(page.getByTestId('jira-shortcut-submit')).toBeFocused();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('Alt+3');
+  await expect(dialog.getByRole('heading')).toHaveText('Resolve / close issue');
+  await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByTestId('jira-popup-field-status')).toContainText('In Progress');
   await page.close();
 });
 
-test('6 copies a reference, Alt+6 copies the URL, and 7 opens Jira in a tab @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('C focuses comments, S opens the sprint picker, Ctrl+C copies the issue link, and Alt+5 plans the next sprint for me @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
+  await page.bringToFront();
+  await page.evaluate(() => navigator.clipboard.writeText('before'));
+  await page.keyboard.press('Control+c');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await popup.focus();
+  await page.keyboard.press('c');
+  await expect(page.locator('._JX_comment_input')).toBeFocused();
+  await popup.focus();
+  await page.keyboard.press('s');
+  await expect(page.getByTestId('jira-popup-edit-input-sprint')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('jira-popup-edit-popover-sprint')).toHaveCount(0);
+  await popup.focus();
+  await page.keyboard.press('Alt+5');
+  await expect(dialog.getByRole('heading')).toHaveText('Next sprint + assign to me');
+  await expect(dialog.getByRole('button', {name: 'Open in Jira'})).toHaveCount(0);
+  await expect(dialog.getByRole('radio', {name: /Sprint 43/})).toHaveAttribute('aria-checked', 'true');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
+  await page.getByTestId('jira-shortcut-submit').click();
+  expect((await requestPromise).postDataJSON()).toMatchObject({fields: {assignee: expect.any(Object), customfield_10020: 43}});
+  await expect(dialog).toHaveCount(0);
+  await page.close();
+});
+
+test('7 copies a reference, Alt+7 copies the URL, and 8 opens Jira in a tab @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, target} = await openPopup({extensionApp, optionsPage, servers});
   await page.bringToFront();
   const url = `${target.instanceUrl}/browse/${target.primaryIssueKey}`;
-  await page.keyboard.press('6');
+  await page.keyboard.press('7');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
   await popup.focus();
-  await page.keyboard.press('Alt+6');
+  await page.keyboard.press('Alt+7');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
   const opened = page.context().waitForEvent('page');
-  await page.keyboard.press('7');
+  await page.keyboard.press('8');
   const jira = await opened;
   await expect(jira).toHaveURL(url);
   await jira.close();

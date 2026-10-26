@@ -193,7 +193,7 @@ test('selects the top filtered single-select option with Enter @mock-only', asyn
   await expect(topResult).toHaveClass(/is-highlighted/);
   await popup.editInput('assignee').press('Enter');
 
-  await expect(popup.root).toContainText('Assignee set to Morgan Agent');
+  await expect(page.getByTestId('jira-toast')).toContainText('Assignee set to Morgan Agent');
   await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
 
   await page.close();
@@ -235,7 +235,7 @@ test('navigates dropdown options immediately and after filtering @mock-only', as
   await expect(assigneeInput).toHaveAttribute('aria-activedescendant', filteredResultId);
   await assigneeInput.press('Enter');
 
-  await expect(popup.root).toContainText('Assignee set to Morgan Agent');
+  await expect(page.getByTestId('jira-toast')).toContainText('Assignee set to Morgan Agent');
   await page.close();
 });
 

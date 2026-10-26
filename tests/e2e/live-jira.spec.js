@@ -189,7 +189,7 @@ test('updates assignee on an allowed live Jira issue and restores it @live', asy
 
   await popup.focus();
   await page.keyboard.press('Alt+1');
-  await expect(popup).toContainText(/Assigned to you|Assigned/i);
+  await expect(page.getByTestId('jira-toast')).toContainText('Assigned to you');
   await expect.poll(async () => String((await getLiveIssue(issueKey, config))?.fields?.assignee?.accountId || ''), {timeout: 10000}).toBe(String(currentUser?.accountId || ''));
 
   if (currentAssigneeAccountId) {

@@ -127,7 +127,7 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
     return (await item.getType('text/html')).text();
   });
   expect(copiedHtml).toContain(`[${target.primaryIssueKey}] Pressing END removes non-command text`);
-  await expect(page.locator('._JX_snack')).toContainText('Copied!');
+  await expect(page.getByTestId('jira-toast')).toContainText('Copied!');
 
   await page.close();
 });

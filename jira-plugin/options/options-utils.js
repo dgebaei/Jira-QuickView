@@ -5,6 +5,31 @@ export const BUILT_IN_FIELD_IDS = new Set([
   'project', 'id'
 ]);
 
+// Claude renders each artifact in a frame on its own subdomain of
+// frame.claudeusercontent.com. QuickView only joins a frame whose own address is
+// allowed, so enabling claude.ai alone never reaches artifact content.
+export const CLAUDE_ARTIFACT_FRAMES = 'https://*.frame.claudeusercontent.com/*';
+
+export function isClaudeHostname(hostname) {
+  const host = String(hostname || '').toLowerCase();
+  return host === 'claude.ai' || host.endsWith('.claude.ai');
+}
+
+function allowedDomainHostname(domain) {
+  const match = String(domain || '').trim().toLowerCase().match(/^(?:[a-z*]+:\/\/)?([^/:?#]+)/);
+  return match ? match[1].replace(/^\*\./, '') : '';
+}
+
+// Adds the domains an allowed site embeds its content from, unless an entry
+// already covers them (any scheme, or the wider claudeusercontent.com).
+export function withEmbeddedContentDomains(domains) {
+  const list = [...(domains || [])];
+  const hosts = list.map(allowedDomainHostname);
+  const coversFrames = hosts.some(host => host === 'frame.claudeusercontent.com' || host === 'claudeusercontent.com');
+  if (hosts.some(isClaudeHostname) && !coversFrames) list.push(CLAUDE_ARTIFACT_FRAMES);
+  return list;
+}
+
 export function normalizeInstanceUrl(instanceUrl) {
   let normalized = String(instanceUrl || '').trim();
   if (!normalized) {

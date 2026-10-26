@@ -888,7 +888,7 @@ test('browser popup shell owns pinning, preview identity, hide scheduling, and v
     pinned: {
       outcome: 'pinned',
       className: 'container-pinned',
-      announcements: ['Ticket Pinned! Hit esc to close !'],
+      announcements: ['Pinned. Press Esc to close.'],
     },
     preview: {
       outcome: 'preview-opened',

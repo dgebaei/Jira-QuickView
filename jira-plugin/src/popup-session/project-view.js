@@ -856,10 +856,7 @@ export function createPopupProjectView(options) {
       activityIndicators: [],
       loaderGifUrl,
       actionNoticeText: titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess,
-      actionNoticeClass: titleStatusText
-        ? '_JX_action_notice_info'
-        : (quickActionView.errorMessage ? '_JX_action_notice_error' : '_JX_action_notice_success'),
-      hasActionNotice: !!(titleStatusText || quickActionView.errorMessage || quickActionView.notice || lastActionSuccess),
+      actionNoticeKind: titleStatusText ? 'info' : (quickActionView.errorMessage ? 'error' : 'success'),
     };
     if (issueData.fields.comment?.comments?.[0]?.id) {
       displayData.commentUrl = `${displayData.url}#comment-${issueData.fields.comment.comments[0].id}`;
