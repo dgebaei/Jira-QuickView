@@ -133,6 +133,7 @@ https://dgebaei.github.io/Jira-QuickView/
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 3.0.1 | 2026-10-26 | Copy buttons no longer shift grid/flex rows; claude.ai also enables Claude artifact frames; issue-link clicks in artifact frames open QuickView only; compact shortcut workflows with future sprints; new shortcuts 8/Alt+8 (next sprint), C (comment), Ctrl/Cmd+C (copy link) | Submit after 3.0.0 review completes |
 | 3.0.0 | 2026-10-26 | Keyboard triage with a shortcut dropdown (Quick actions menu removed); pull request grid with titles, short authors, source → target branches, and optional GitLab signals; compact header and field chips (icon-only type/priority, sprint state dot, user avatars, one tooltip style); any field in any row in layout order; opt-in Jira image attachment previews; redesigned Options and docs | Submitted via release workflow |
 | 3.0.0-beta.1 | 2026-10-24 | Opt-in Jira image attachment link previews; compact pull request grid with optional GitLab signals and last-update details; popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, browser-local quick-close defaults, and documentation and Options redesign | GitHub prerelease only; not submitted to the store |
 | 2.9.2 | 2026-10-15 | Children, linked issues, and external links in one links panel with a combined count, View in Jira links, removable external links, and popup titles clamped to two lines | Ready to submit |
