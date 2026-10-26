@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Jira QuickView
 
-> Last Updated: 2026-10-24
+> Last Updated: 2026-10-26
 
 ## Store Listing
 
@@ -109,7 +109,7 @@ https://dgebaei.github.io/Jira-QuickView/privacy-policy.html
 **Visibility**: Public  
 **Regions**: All regions
 
-**3.0 beta distribution**: GitHub prerelease only, installed unpacked. No beta store item is configured, and the existing stable listing is unchanged. The release workflow intentionally skips prereleases for Chrome Web Store submission. Store screenshot refreshes listed above remain prerequisites for a future store release, not for this GitHub beta.
+**3.0 distribution**: 3.0.0 is submitted through the release workflow from the `3.0.0` GitHub release. The 3.0.0-beta.1 prerelease was GitHub-only. Store screenshots listed above as needing a refresh are uploaded by hand in the developer dashboard.
 
 ## Developer Info
 
@@ -133,6 +133,7 @@ https://dgebaei.github.io/Jira-QuickView/
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 3.0.0 | 2026-10-26 | Keyboard triage with a shortcut dropdown (Quick actions menu removed); pull request grid with titles, short authors, source → target branches, and optional GitLab signals; compact header and field chips (icon-only type/priority, sprint state dot, user avatars, one tooltip style); any field in any row in layout order; opt-in Jira image attachment previews; redesigned Options and docs | Submitted via release workflow |
 | 3.0.0-beta.1 | 2026-10-24 | Opt-in Jira image attachment link previews; compact pull request grid with optional GitLab signals and last-update details; popup-scoped number shortcuts, staged sprint + reassignment, resolution confirmation, browser-local quick-close defaults, and documentation and Options redesign | GitHub prerelease only; not submitted to the store |
 | 2.9.2 | 2026-10-15 | Children, linked issues, and external links in one links panel with a combined count, View in Jira links, removable external links, and popup titles clamped to two lines | Ready to submit |
 | 2.9.1 | 2026-10-15 | Click activation on Jira board cards and current-issue keys, no copy icon on Jira dialog Cancel links, single popup frame with an all-round shadow | Ready to submit |
