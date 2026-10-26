@@ -64,7 +64,7 @@
           <ol>
             <li><a class="toc-link" href="#one-gesture-much-more-context">One gesture, much more context</a></li>
             <li><a class="toc-link" href="#feature-highlights">Feature highlights</a></li>
-            <li><a class="toc-link" href="#whats-new-in-30-beta">What's new in 3.0 beta</a></li>
+            <li><a class="toc-link" href="#whats-new-in-30">What's new in 3.0</a></li>
             <li><a class="toc-link" href="#whats-new-in-292">What's new in 2.9.2</a></li>
             <li><a class="toc-link" href="#fixed-in-291">Fixed in 2.9.1</a></li>
             <li><a class="toc-link" href="#whats-new-in-290">What's new in 2.9.0</a></li>
@@ -93,30 +93,24 @@
 <li>Action Jira email notifications directly from Gmail, Outlook, and other enabled inbox-style pages</li>
 <li>Rich popup for issue metadata, linked Jira issues, description, attachments, comments, and linked pull requests</li>
 <li>Children, linked issues, and external links in one panel, with key/summary search, multi-key entry, status and assignee context, and confirmed removal</li>
-<li>Compact linked PR grid with author names, target branches, sortable last-update details, and optional GitLab approval, review, CI, and conflict signals</li>
+<li>Compact linked PR grid with titles, authors, source → target branches, sortable last-update details, and optional GitLab approval, review, CI, and conflict signals</li>
 <li>Opt-in Jira image attachment previews from links on allowed pages, including Gmail and Outlook redirect wrappers</li>
 <li>Inline editing for supported Jira fields and supported custom field types</li>
 <li>Configurable layout with Jira custom fields placed directly into the popup rows</li>
 <li>Comment drafting with mentions and support for comment reactions</li>
-<li>Jira-backed quick actions and workflow transitions</li>
+<li>Number shortcuts for assignment, sprint planning, resolve/close, status, comments, and copying, with a shortcut list under the keyboard button</li>
 <li>Copy rich issue links beside Jira references in Jira and on allowed pages</li>
 </ul>
-<h2 id="whats-new-in-30-beta">What's new in 3.0 beta</h2>
-<p><strong><a href="https://github.com/dgebaei/Jira-QuickView/releases/tag/3.0.0-beta.1">3.0.0-beta.1</a> is a GitHub prerelease for manual testing.</strong> The Chrome Web Store remains on the stable release; installing the beta is optional.</p>
+<h2 id="whats-new-in-30">What's new in 3.0</h2>
 <ul>
 <li>Preview Jira image attachment links without leaving allowed pages. Enable <strong>Options → Appearance → Preview Jira image attachments in QuickView</strong>; it is off by default. Non-images and failed previews fall back to Jira.</li>
-<li>Use number shortcuts while QuickView has focus: assignment, sprint planning, resolve/close, status, comments, copying, and opening Jira. Press <strong>Alt+0</strong> for help. Sprint/assignment and resolve flows require confirmation before writing.</li>
-<li>Review a compact pull request grid with last-update sorting and details. GitLab enrichment uses your existing signed-in session and requires site access; unavailable signals remain unknown rather than showing success.</li>
+<li>Use number shortcuts while QuickView has focus: assignment, sprint planning, resolve/close, status, comments, copying, and opening Jira. The keyboard button (or <strong>Alt+0</strong>) drops down the shortcut list. Sprint/assignment and resolve flows require confirmation before writing. The Quick actions menu is gone; its actions are on the shortcuts.</li>
+<li>Review linked pull requests by title, short author name, and source → target branch, with last-update sorting and details. GitLab enrichment uses your existing signed-in session and requires site access; unavailable signals remain unknown rather than showing success.</li>
+<li>A roomier header: the title and assignee pencils overlay the text, and editing the title keeps the header's height.</li>
+<li>Compact field chips: icon-only issue type and priority, a sprint icon with an active/future dot, avatar and short name for user fields, and long values that ellipsize with the full text in one consistent tooltip style.</li>
+<li>Any field can sit in any row of the layout editor, in the order you place it, and empty rows leave no gap.</li>
 <li>Configure the extension in redesigned light/dark Options, and browse refreshed documentation with keyboard-accessible screenshot viewing.</li>
 </ul>
-<h3 id="try-the-beta">Try the beta</h3>
-<ol type="1">
-<li>Download <code>jira-plugin-build.zip</code> from the <a href="https://github.com/dgebaei/Jira-QuickView/releases/tag/3.0.0-beta.1">beta release</a> and extract it into a separate folder.</li>
-<li>Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, choose <strong>Load unpacked</strong>, and select the folder containing <code>manifest.json</code>.</li>
-<li>Disable the stable Jira QuickView extension while testing to avoid duplicate popups and actions. Configure the beta separately, or export and import your settings.</li>
-<li>To return to stable, disable or remove the unpacked beta and re-enable the store extension.</li>
-</ol>
-<p>Live Gmail/Outlook attachment behavior, authenticated GitLab enrichment, and OS-specific Alt/Option shortcut handling still need manual verification. Report problems in the <a href="https://github.com/dgebaei/Jira-QuickView/issues">issue tracker</a>, including the beta version and browser/platform.</p>
 <h2 id="whats-new-in-292">What's new in 2.9.2</h2>
 <ul>
 <li>The links panel shows children (sub-tasks and epic children), linked issues, and external links in three sections; the count on the link button includes all three</li>
@@ -194,13 +188,13 @@
 <table>
 <thead>
 <tr class="header">
-<th>Quick actions</th>
+<th>Keyboard shortcuts</th>
 <th>Inline editing</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><img src="screenshots/marketing-hidpi-light/popup-actions.png" alt="Quick actions" /></td>
+<td><img src="screenshots/marketing-hidpi-light/popup-actions.png" alt="Keyboard shortcuts" /></td>
 <td><img src="screenshots/marketing-hidpi-light/popup-inline-editor.png" alt="Inline editing" /></td>
 </tr>
 </tbody>
