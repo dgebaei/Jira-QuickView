@@ -2753,7 +2753,9 @@ async function mainAsyncLocal() {
       if (result.sessionId !== currentPopupSessionId() || !result.refreshedSnapshot?.core) return;
       await popupSession.dispatch({type: 'render', reason: 'shortcut-saved', issueSnapshot: result.refreshedSnapshot});
     },
-    announce: (message, kind = 'error') => showToast(message, {kind}),
+    announce(message, kind = 'error') {
+      if (kind !== 'error' || !notifyJiraConnectionFailure(INSTANCE_URL, message)) showToast(message, {kind});
+    },
   });
   popupShortcuts.install();
   // ── Field Editing ─────────────────────────────────────────

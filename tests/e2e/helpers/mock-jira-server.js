@@ -25,6 +25,13 @@ const EXTRA_ATTACHMENT_FIXTURES = {
     mimeType: 'text/plain',
   },
 };
+// In Jira's own order, which is not release order.
+const PROJECT_VERSIONS = [
+  {id: '301', name: '2026.03', released: true, releaseDate: '2026-03-31'},
+  {id: '302', name: '2026.05', released: false, startDate: '2026-05-01'},
+  {id: '401', name: '2026.04', released: false, startDate: '2026-04-01'},
+  {id: '402', name: '2026.06', released: false, startDate: '2026-06-01'},
+];
 const ISSUE_LINK_TYPES = [
   {id: '10000', name: 'Blocks', outward: 'blocks', inward: 'is blocked by'},
   {id: '10001', name: 'Cloners', outward: 'clones', inward: 'is cloned by'},
@@ -1672,6 +1679,12 @@ async function createMockJiraServer() {
       if (Array.isArray(fields.fixVersions)) {
         state.issue.fixVersions = fields.fixVersions.map(entry => ({id: String(entry.id), name: entry.id === '402' ? '2026.06' : '2026.04'}));
       }
+      (body?.update?.fixVersions || []).forEach(operation => {
+        const version = PROJECT_VERSIONS.find(item => item.id === String(operation.add?.id || ''));
+        if (version && !state.issue.fixVersions.some(item => item.id === version.id)) {
+          state.issue.fixVersions = [...state.issue.fixVersions, {id: version.id, name: version.name}];
+        }
+      });
       if (fields.parent?.key) {
         const match = state.issueSearchCatalog.find(issue => issue.key === fields.parent.key);
         state.issue.parent = match
@@ -1795,12 +1808,7 @@ async function createMockJiraServer() {
     }
 
     if (pathname === '/rest/api/2/project/JRACLOUD/versions' && req.method === 'GET') {
-      json(res, 200, [
-        {id: '301', name: '2026.03', released: true, releaseDate: '2026-03-31'},
-        {id: '302', name: '2026.05', released: false, startDate: '2026-05-01'},
-        {id: '401', name: '2026.04', released: false, startDate: '2026-04-01'},
-        {id: '402', name: '2026.06', released: false, startDate: '2026-06-01'},
-      ]);
+      json(res, 200, PROJECT_VERSIONS);
       return;
     }
 
