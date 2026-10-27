@@ -18,6 +18,7 @@ import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation}
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {describeJiraConnectionFailure, getJiraHttpStatus} from 'src/jira-connection-errors';
 import {
   buildAttachmentPreviewUrls,
   guessAttachmentMimeType,
@@ -131,7 +132,6 @@ if (!window.__JX_runtimeMessageListenerInstalled) {
 }
 
 let ui_tips_shown_local = [];
-const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
 async function showTip(tipName, tipMessage) {
   if (ui_tips_shown_local.indexOf(tipName) !== -1) {
     return;
@@ -179,24 +179,15 @@ async function uploadAttachment(url, file) {
 
 // ── Connection Error Detection ──────────────────────────────────
 
-function isJiraConnectionFailure(error) {
-  const message = String(error?.message || error?.inner || error || '');
-  return CONNECTION_ERROR_PATTERN.test(message);
-}
+// Long enough to read a sentence that tells the user what to fix.
+const CONNECTION_TOAST_TIMEOUT_MS = 6000;
 
 function notifyJiraConnectionFailure(instanceUrl, error) {
-  if (!isJiraConnectionFailure(error)) {
+  const message = describeJiraConnectionFailure(error, instanceUrl);
+  if (!message) {
     return false;
   }
-
-  let host = '';
-  try {
-    host = new URL(instanceUrl).hostname;
-  } catch (ex) {
-    host = '';
-  }
-
-  showToast(`Could not reach Jira${host ? ` at ${host}` : ''}. Check your VPN or network connection.`, {kind: 'error'});
+  showToast(message, {kind: 'error', timeout: CONNECTION_TOAST_TIMEOUT_MS});
   return true;
 }
 
@@ -403,11 +394,16 @@ async function mainAsyncLocal() {
         if (!summary) {
           const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
           summary = outcome.snapshot?.core?.summary;
-          if (!summary) throw new Error('Could not load issue title');
+          if (!summary) throw issueDataError(outcome.failures?.core, 'Could not load issue title');
         }
         await copyIssueReferenceWithFeedback({...reference, summary});
       } catch (error) {
-        showToast('Could not copy issue. Please try again.', {kind: 'error'});
+        if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
+          const reason = getJiraHttpStatus(error) === 404
+            ? `Jira has no issue ${reference.key}, or you cannot view it.`
+            : 'Please try again.';
+          showToast(`Could not copy ${reference.key}. ${reason}`, {kind: 'error'});
+        }
         throw error;
       }
     },

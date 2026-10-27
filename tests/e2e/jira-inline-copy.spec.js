@@ -132,6 +132,24 @@ test('copies an issue reference from the Jira Cloud issue header @mock-only', as
   await page.close();
 });
 
+test('says why an inline copy failed when Jira rejects the session @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Inline Jira UI coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('unauthorized');
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {hoverActivationMode: 'off'}, target));
+  const page = await extensionApp.context.newPage();
+  await page.goto(servers.allowedPage.origin);
+  await page.locator('#issue-link a').evaluate((link, href) => { link.href = href; }, `${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await injectContentScript(extensionApp, page);
+
+  const copyButton = page.getByTestId(`jira-inline-copy-${target.primaryIssueKey}`).first();
+  await copyButton.click();
+  await expect(page.getByTestId('jira-toast')).toContainText(`Not signed in to Jira at ${new URL(target.instanceUrl).hostname}`);
+  await expect(copyButton).toBeEnabled();
+  await page.close();
+});
+
 test('keeps one copy button for an issue link inside a Jira comment @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Jira comment markup is deterministic in mocked mode only.');

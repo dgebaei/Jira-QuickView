@@ -39,7 +39,7 @@ test('surfaces a connection error when Jira is unreachable', async ({extensionAp
   await page.close();
 });
 
-test('does not render a popup when the user is not logged in and Jira returns 401', async ({extensionApp, optionsPage, servers}) => {
+test('explains a 401 instead of rendering a popup when the user is not signed in to Jira', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   if (target.mode === 'mock') {
     await servers.jira.setScenario('unauthorized');
@@ -50,6 +50,7 @@ test('does not render a popup when the user is not logged in and Jira returns 40
   const {page} = await openAllowedPage(extensionApp, servers, target);
 
   await hoverIssueKey(page, '#popup-key');
+  await expect(page.getByTestId('jira-toast')).toContainText(`Not signed in to Jira at ${new URL(target.instanceUrl).hostname}`);
   await expect(page.locator('._JX_container')).toBeEmpty();
   await page.close();
 });
