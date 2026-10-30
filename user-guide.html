@@ -614,7 +614,7 @@
 <tr class="even">
 <td><code>2</code> or <code>S</code></td>
 <td>Open the sprint picker</td>
-<td>—</td>
+<td>Move to the current sprint</td>
 </tr>
 <tr class="odd">
 <td><code>3</code></td>
@@ -623,37 +623,43 @@
 </tr>
 <tr class="even">
 <td><code>4</code></td>
-<td>Current sprint + reassign</td>
-<td>Current sprint + assign to me</td>
+<td>Open the fix version picker</td>
+<td>Add the next unreleased fix version</td>
 </tr>
 <tr class="odd">
 <td><code>5</code></td>
+<td>Current sprint + reassign</td>
+<td>Current sprint + assign to me</td>
+</tr>
+<tr class="even">
+<td><code>6</code></td>
 <td>Next sprint + reassign</td>
 <td>Next sprint + assign to me</td>
 </tr>
-<tr class="even">
-<td><code>6</code> or <code>C</code></td>
+<tr class="odd">
+<td><code>7</code> or <code>C</code></td>
 <td>Focus the new-comment composer</td>
 <td>—</td>
 </tr>
-<tr class="odd">
-<td><code>7</code> or <code>Ctrl+C</code></td>
+<tr class="even">
+<td><code>8</code> or <code>Ctrl+C</code></td>
 <td>Copy formatted issue reference</td>
 <td>Copy plain issue URL</td>
 </tr>
-<tr class="even">
-<td><code>8</code></td>
+<tr class="odd">
+<td><code>9</code></td>
 <td>Open issue in Jira</td>
 <td>—</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>0</code></td>
 <td>—</td>
 <td>Show keyboard shortcuts</td>
 </tr>
 </tbody>
 </table>
-<p>Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press <code>Enter</code> to apply, or select a result and click <strong>Apply sprint + assignee</strong>. No change is sent until confirmation. The sprint list shows active and future sprints. <code>4</code> preselects the active sprint when there is exactly one; <code>5</code> preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.</p>
+<p>Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes. The assignee field starts with the current assignee selected, so <code>Enter</code> applies the sprint and keeps them. To pick someone else, start typing, use the arrow keys to select a result, and press <code>Enter</code>, or select a result and click <strong>Apply sprint + assignee</strong>. No change is sent until confirmation. The sprint list shows active and future sprints. <code>5</code> preselects the active sprint when there is exactly one; <code>6</code> preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.</p>
+<p><code>Alt+2</code> and <code>Alt+4</code> save at once, without a confirmation step. <code>Alt+2</code> moves the issue to the active sprint on its board; when several sprints are active and the issue's board does not settle it, the sprint picker opens instead. <code>Alt+4</code> adds the first unreleased fix version in the project's release order (the order on Jira's Releases page) and keeps any fix versions the issue already has. Both say so when the issue is already there.</p>
 <p>Resolve/close uses completion transitions available to the current issue. Choose a resolution when Jira exposes one, and supply any required comment. If the workflow sets resolution automatically, QuickView leaves it alone. Unsupported required transition fields must be completed in Jira using <strong>Open in Jira</strong>.</p>
 <p>To set up <code>Alt+3</code> defaults, complete the resolve form once and select <strong>Remember transition and resolution</strong> before submitting. Defaults are stored only in this browser, separately by Jira instance, project, and issue type; they are not exported or included in Team Sync. QuickView checks that the saved transition and resolution are still available each time. It never guesses a default resolution. Optionally enable <strong>use “.” only when Jira requires a comment</strong>; this does not store or reuse your actual closing comment. <code>Alt+3</code> prefills the form and focuses confirmation—it does not submit automatically.</p>
 <p><code>Esc</code> cancels the pending workflow and keeps QuickView open; press <code>Esc</code> again to close QuickView. Clicking the workflow backdrop also cancels without saving. Once a request is submitted, Escape cannot undo it; the form remains locked while saving. A failed refresh after a successful save does not resubmit the change.</p>
@@ -850,7 +856,7 @@
 <p>What you can do:</p>
 <ul>
 <li>Read existing comments.</li>
-<li>Add a new comment.</li>
+<li>Add a new comment. <code>Ctrl+Enter</code> (<code>⌘+Enter</code> on macOS) saves it, in the composer and while editing a comment.</li>
 <li>Type <code>@</code> to mention someone.</li>
 <li>Copy a direct comment link.</li>
 <li>Edit or delete your own comments when Jira allows it.</li>
