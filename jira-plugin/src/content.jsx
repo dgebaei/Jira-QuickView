@@ -18,6 +18,7 @@ import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation}
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {describeJiraConnectionFailure, getJiraHttpStatus} from 'src/jira-connection-errors';
 import {
   buildAttachmentPreviewUrls,
   guessAttachmentMimeType,
@@ -131,7 +132,6 @@ if (!window.__JX_runtimeMessageListenerInstalled) {
 }
 
 let ui_tips_shown_local = [];
-const CONNECTION_ERROR_PATTERN = /(failed to fetch|networkerror|network request failed|load failed|err_|timed?\s*out)/i;
 async function showTip(tipName, tipMessage) {
   if (ui_tips_shown_local.indexOf(tipName) !== -1) {
     return;
@@ -179,24 +179,15 @@ async function uploadAttachment(url, file) {
 
 // ── Connection Error Detection ──────────────────────────────────
 
-function isJiraConnectionFailure(error) {
-  const message = String(error?.message || error?.inner || error || '');
-  return CONNECTION_ERROR_PATTERN.test(message);
-}
+// Long enough to read a sentence that tells the user what to fix.
+const CONNECTION_TOAST_TIMEOUT_MS = 6000;
 
 function notifyJiraConnectionFailure(instanceUrl, error) {
-  if (!isJiraConnectionFailure(error)) {
+  const message = describeJiraConnectionFailure(error, instanceUrl);
+  if (!message) {
     return false;
   }
-
-  let host = '';
-  try {
-    host = new URL(instanceUrl).hostname;
-  } catch (ex) {
-    host = '';
-  }
-
-  showToast(`Could not reach Jira${host ? ` at ${host}` : ''}. Check your VPN or network connection.`, {kind: 'error'});
+  showToast(message, {kind: 'error', timeout: CONNECTION_TOAST_TIMEOUT_MS});
   return true;
 }
 
@@ -403,11 +394,16 @@ async function mainAsyncLocal() {
         if (!summary) {
           const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
           summary = outcome.snapshot?.core?.summary;
-          if (!summary) throw new Error('Could not load issue title');
+          if (!summary) throw issueDataError(outcome.failures?.core, 'Could not load issue title');
         }
         await copyIssueReferenceWithFeedback({...reference, summary});
       } catch (error) {
-        showToast('Could not copy issue. Please try again.', {kind: 'error'});
+        if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
+          const reason = getJiraHttpStatus(error) === 404
+            ? `Jira has no issue ${reference.key}, or you cannot view it.`
+            : 'Please try again.';
+          showToast(`Could not copy ${reference.key}. ${reason}`, {kind: 'error'});
+        }
         throw error;
       }
     },
@@ -2757,7 +2753,9 @@ async function mainAsyncLocal() {
       if (result.sessionId !== currentPopupSessionId() || !result.refreshedSnapshot?.core) return;
       await popupSession.dispatch({type: 'render', reason: 'shortcut-saved', issueSnapshot: result.refreshedSnapshot});
     },
-    announce: (message, kind = 'error') => showToast(message, {kind}),
+    announce(message, kind = 'error') {
+      if (kind !== 'error' || !notifyJiraConnectionFailure(INSTANCE_URL, message)) showToast(message, {kind});
+    },
   });
   popupShortcuts.install();
   // ── Field Editing ─────────────────────────────────────────
@@ -2965,7 +2963,12 @@ async function mainAsyncLocal() {
     handle: '._JX_title, ._JX_status',
     cancel: 'a, button, input, textarea, img, ._JX_description, ._JX_comments, ._JX_comment_body, ._JX_description_text, ._JX_related_table, ._JX_history_flyout, ._JX_watchers_panel, ._JX_linked_issues_panel'
   }, container);
-  
+  // A drag handle cancels mousedown and blurs whatever had focus, so the browser never
+  // moves focus into QuickView; keep it there so keyboard shortcuts keep working.
+  container.on('mousedown', function () {
+    if (!this.contains(document.activeElement)) this.focus({preventScroll: true});
+  });
+
   // ── Clipboard & Copy ──────────────────────────────────────
   async function copyIssueReferenceWithFeedback(reference) {
     const result = await copyIssueReference(reference);
@@ -3309,6 +3312,13 @@ async function mainAsyncLocal() {
       commentLifecycle.dispatch({type: 'chooseMention', lane: 'compose', index: mentionView.selectedIndex}).catch(() => {});
       renderCommentComposeLifecycleView({applyValue: true});
     }
+  });
+
+  // After the mention keys, like the comment editor: an open suggestion list takes Enter first.
+  $(document.body).on('keydown', '._JX_comment_input', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter' || e.isComposing || e.isDefaultPrevented()) return;
+    e.preventDefault();
+    handleCommentSave().catch(() => {});
   });
 
   $(document.body).on('mousedown', '._JX_comment_compose ._JX_comment_mention_option', function (e) {

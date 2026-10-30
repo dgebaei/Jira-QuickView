@@ -1,5 +1,8 @@
+const REFRESH_WARNING = ' Refresh failed; reopen QuickView to see the saved change.';
+
 // Staged mutations: opening, searching, selecting and cancelling never write to Jira.
-export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadViewer, loadPreset, savePreset, readSprintsFromIssue = () => []}) {
+// apply() is the exception: a one-key change with a single obvious target.
+export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadViewer, loadPreset, savePreset, getSession, readSprintsFromIssue = () => []}) {
   let revision = 0;
   let searchRevision = 0;
   let writing = false;
@@ -68,14 +71,29 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
         (time(left) - time(right)) || (Number(left.id) - Number(right.id)));
   }
 
-  // The next sprint is the first future sprint on the board of a sprint the issue is
-  // already in; other boards of the project are the fallback.
-  function nextSprint(sprints, issue) {
-    const future = sprints.filter(item => String(item.state).toLowerCase() === 'future');
+  function sprintsInState(sprints, sprintState) {
+    return sprints.filter(item => String(item.state).toLowerCase() === sprintState);
+  }
+
+  function onIssueBoard(sprints, issue) {
     const issueSprintIds = new Set(readSprintsFromIssue(issue).map(item => String(item.id)));
     const boardIds = new Set(sprints.filter(item => issueSprintIds.has(String(item.id)))
       .flatMap(item => (item.boardRefs || []).map(board => String(board.id))));
-    return future.find(item => (item.boardRefs || []).some(board => boardIds.has(String(board.id)))) || future[0] || null;
+    return item => (item.boardRefs || []).some(board => boardIds.has(String(board.id)));
+  }
+
+  // The next sprint is the first future sprint on the board of a sprint the issue is
+  // already in; other boards of the project are the fallback.
+  function nextSprint(sprints, issue) {
+    const future = sprintsInState(sprints, 'future');
+    return future.find(onIssueBoard(sprints, issue)) || future[0] || null;
+  }
+
+  // The current sprint is the active one on the issue's board. Without a board to go
+  // by, only a single active sprint is unambiguous.
+  function currentSprint(sprints, issue) {
+    const active = sprintsInState(sprints, 'active');
+    return active.find(onIssueBoard(sprints, issue)) || (active.length === 1 ? active[0] : null);
   }
 
   async function begin({kind, alternate = false, sessionId, issueSnapshot, sprintTarget = 'current'}) {
@@ -108,13 +126,17 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
         if (alternate && !userId(viewer)) throw new Error('Could not identify the current Jira user.');
         const active = sprints.filter(item => String(item.state).toLowerCase() === 'active');
         const preselected = sprintTarget === 'next' ? nextSprint(sprints, issue) : (active.length === 1 ? active[0] : null);
+        // Reassign starts from the current assignee, so confirming keeps them; typing searches.
+        const assignee = userId(issue.fields?.assignee) ? issue.fields.assignee : null;
+        const initial = alternate ? viewer : assignee;
         state = {
           ...state, phase: 'editing', sprints, sprintFieldId: sprint.fieldId,
           sprintId: preselected ? String(preselected.id) : '',
           hint: sprintTarget === 'next' && !preselected ? 'No future sprint is planned; choose a sprint.' : '',
-          users: viewer ? [viewer] : [], userId: userId(viewer),
+          users: initial ? [initial] : [], userId: userId(initial),
+          query: !alternate && assignee ? String(assignee.displayName || assignee.name || assignee.key || '') : '',
         };
-        if (!alternate) await search('');
+        if (!initial) await search('');
       } else {
         // Fresh, expanded metadata: cached status options do not include transition-screen fields.
         const [result, preset] = await Promise.all([
@@ -206,16 +228,8 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
         });
       } catch (error) { warning = ' Defaults could not be saved.'; }
     }
-    let refreshedSnapshot = null;
-    try {
-      const result = await issueData.refreshAfterMutation({
-        issueKey: captured.issueKey, priorSnapshot: captured.issueSnapshot,
-        mutation: {kind: 'issueChanged'},
-        requirements: {children: true, reactions: true},
-      });
-      refreshedSnapshot = result.snapshot?.core ? result.snapshot : null;
-      if (!refreshedSnapshot) warning += ' Refresh failed; reopen QuickView to see the saved change.';
-    } catch (error) { warning += ' Refresh failed; reopen QuickView to see the saved change.'; }
+    const refreshedSnapshot = await refresh(captured.issueKey, captured.issueSnapshot);
+    if (!refreshedSnapshot) warning += REFRESH_WARNING;
     writing = false;
     if (expected !== revision) return {kind: 'ignored'};
     const notice = `Saved ${captured.issueKey}.${warning}`;
@@ -223,5 +237,68 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
     return {kind: 'saved', sessionId: captured.sessionId, refreshedSnapshot, notice};
   }
 
-  return {begin, reset, search, submit, update, view, busy: () => writing};
+  async function refresh(issueKey, priorSnapshot) {
+    try {
+      const result = await issueData.refreshAfterMutation({
+        issueKey, priorSnapshot,
+        mutation: {kind: 'issueChanged'},
+        requirements: {children: true, reactions: true},
+      });
+      return result.snapshot?.core ? result.snapshot : null;
+    } catch (error) { return null; }
+  }
+
+  async function editableContext(issueKey, fieldId, readonlyMessage) {
+    const outcome = await issueData.loadFieldContext({issueKey, fieldId, includeOptions: true});
+    const failure = outcome.failures?.fieldContext || outcome.failures?.options;
+    if (failure) throw new Error(failure.message);
+    if (!outcome.context?.editable) {
+      throw new Error(Object.values(outcome.failures || {})[0]?.message || readonlyMessage);
+    }
+    return outcome.context;
+  }
+
+  async function apply({kind, sessionId, issueSnapshot}) {
+    const issue = issueSnapshot?.core;
+    if (writing || !issue?.key || !sessionId) return {kind: 'ignored'};
+    let body;
+    let notice;
+    if (kind === 'current-sprint') {
+      const context = await editableContext(issue.key, 'sprint', 'Jira does not allow changing the sprint of this issue.');
+      const sprints = plannableSprints(context.options);
+      if (!context.fieldId || !sprintsInState(sprints, 'active').length) throw new Error('No sprint is active right now.');
+      const sprint = currentSprint(sprints, issue);
+      if (!sprint) return {kind: 'choose', notice: 'Several sprints are active. Choose one.'};
+      if (readSprintsFromIssue(issue).some(item => String(item.id) === String(sprint.id))) {
+        return {kind: 'unchanged', notice: `${issue.key} is already in ${sprint.name}`};
+      }
+      body = {fields: {[context.fieldId]: Number(sprint.id)}};
+      notice = `Moved ${issue.key} to ${sprint.name}`;
+    } else if (kind === 'next-fix-version') {
+      const context = await editableContext(issue.key, 'fixVersions', 'Jira does not allow changing the fix versions of this issue.');
+      // Jira lists versions in the project's release order.
+      const version = (context.options || []).find(item => item?.id && !item.released && !item.archived);
+      if (!version) throw new Error('This project has no unreleased version.');
+      if ((issue.fields?.fixVersions || []).some(item => String(item.id) === String(version.id))) {
+        return {kind: 'unchanged', notice: `${issue.key} already has fix version ${version.name}`};
+      }
+      // add, not set: a version someone else added since the popup loaded stays.
+      body = {update: {fixVersions: [{add: {id: String(version.id)}}]}};
+      notice = `Added fix version ${version.name} to ${issue.key}`;
+    } else return {kind: 'ignored'};
+
+    if (writing || (getSession && getSession()?.sessionId !== sessionId)) return {kind: 'ignored'};
+    writing = true;
+    try {
+      await jira.write({method: 'PUT', path: `${instanceUrl}rest/api/2/issue/${encodeURIComponent(issue.key)}`, body});
+    } catch (error) {
+      writing = false;
+      throw error;
+    }
+    const refreshedSnapshot = await refresh(issue.key, issueSnapshot);
+    writing = false;
+    return {kind: 'saved', sessionId, refreshedSnapshot, notice: refreshedSnapshot ? notice : `${notice}.${REFRESH_WARNING}`};
+  }
+
+  return {apply, begin, reset, search, submit, update, view, busy: () => writing};
 }

@@ -34,7 +34,7 @@ test('Alt+0 and the toolbar button drop down fixed shortcuts; Escape returns foc
   await page.keyboard.press('Alt+0');
   await expect(help).toBeVisible();
   await expect(help.getByRole('heading')).toHaveText('Keyboard shortcuts');
-  await expect(help.getByRole('row')).toHaveCount(9);
+  await expect(help.getByRole('row')).toHaveCount(10);
   await expect(help.locator('._JX_inline_copy_button')).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   await expect(popup).toBeFocused();
@@ -70,7 +70,7 @@ test('a shortcut pressed while the help is open closes it and runs @mock-only', 
   const {page, help} = await openPopup({extensionApp, optionsPage, servers});
   await page.keyboard.press('Alt+0');
   await expect(help).toBeVisible();
-  await page.keyboard.press('6');
+  await page.keyboard.press('7');
   await expect(help).toBeHidden();
   await expect(page.locator('._JX_comment_input')).toBeFocused();
   await page.close();
@@ -78,7 +78,7 @@ test('a shortcut pressed while the help is open closes it and runs @mock-only', 
 
 test('numbers and Alt numbers leave host inputs and popup comment text alone @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('6');
+  await page.keyboard.press('7');
   const comment = page.locator('._JX_comment_input');
   await expect(comment).toBeFocused();
   await page.keyboard.type('1234567');
@@ -102,11 +102,11 @@ test('numbers and Alt numbers leave host inputs and popup comment text alone @mo
   await page.close();
 });
 
-test('4 stages both changes, supports assignee search, and Escape or backdrop cancels without writes @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('5 stages both changes, supports assignee search, and Escape or backdrop cancels without writes @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
   const writes = [];
   page.context().on('request', request => { if (['PUT', 'POST'].includes(request.method()) && /\/issue\/[^/]+(?:\/assignee)?$/.test(new URL(request.url()).pathname)) writes.push(request); });
-  await page.keyboard.press('4');
+  await page.keyboard.press('5');
   const search = page.getByTestId('jira-shortcut-assignee');
   await expect(search).toBeFocused();
   await search.fill('Alex');
@@ -116,7 +116,7 @@ test('4 stages both changes, supports assignee search, and Escape or backdrop ca
   await expect(dialog).toHaveCount(0);
   await expect(popup).toBeFocused();
   expect(writes).toHaveLength(0);
-  await page.keyboard.press('4');
+  await page.keyboard.press('5');
   await expect(search).toBeFocused();
   await page.mouse.click(2, 2);
   await expect(dialog).toHaveCount(0);
@@ -124,9 +124,9 @@ test('4 stages both changes, supports assignee search, and Escape or backdrop ca
   await page.close();
 });
 
-test('4 confirms sprint and typed assignee with one PUT and refreshes the popup @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('5 confirms sprint and typed assignee with one PUT and refreshes the popup @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('4');
+  await page.keyboard.press('5');
   const search = page.getByTestId('jira-shortcut-assignee');
   await expect(search).toBeFocused();
   await search.fill('Alex');
@@ -140,9 +140,9 @@ test('4 confirms sprint and typed assignee with one PUT and refreshes the popup 
   await page.close();
 });
 
-test('Alt+4 stages assign-to-me and only sends after confirmation @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('Alt+5 stages assign-to-me and only sends after confirmation @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
-  await page.keyboard.press('Alt+4');
+  await page.keyboard.press('Alt+5');
   await expect(dialog).toContainText('Assign to:');
   await expect(page.getByTestId('jira-shortcut-submit')).toBeFocused();
   const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
@@ -224,7 +224,7 @@ test('Escape cancels a loading workflow and its late response cannot replace sho
     const response = page.context().waitForEvent('response', response => response.url().includes('/transitions?expand='));
     release();
     await response;
-    await expect(help.getByRole('row')).toHaveCount(9);
+    await expect(help.getByRole('row')).toHaveCount(10);
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId('jira-shortcut-submit')).toHaveCount(0);
   } finally { release(); }
@@ -258,7 +258,7 @@ test('saving blocks repeated Enter and Escape; failure remains safely retryable 
     await route.fulfill({status: 400, contentType: 'application/json', body: JSON.stringify({errorMessages: ['Workflow rejected update']})});
   });
   try {
-    await page.keyboard.press('Alt+4');
+    await page.keyboard.press('Alt+5');
     await expect(page.getByTestId('jira-shortcut-submit')).toBeFocused();
     await page.keyboard.press('Enter');
     await requested;
@@ -330,7 +330,7 @@ test('3 opens status picker; Alt+3 opens resolve / close @mock-only', async ({ex
   await page.close();
 });
 
-test('C focuses comments, S opens the sprint picker, Ctrl+C copies the issue link, and Alt+5 plans the next sprint for me @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('C focuses comments, S opens the sprint picker, Ctrl+C copies the issue link, and Alt+6 plans the next sprint for me @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
   await page.bringToFront();
   await page.evaluate(() => navigator.clipboard.writeText('before'));
@@ -345,7 +345,7 @@ test('C focuses comments, S opens the sprint picker, Ctrl+C copies the issue lin
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('jira-popup-edit-popover-sprint')).toHaveCount(0);
   await popup.focus();
-  await page.keyboard.press('Alt+5');
+  await page.keyboard.press('Alt+6');
   await expect(dialog.getByRole('heading')).toHaveText('Next sprint + assign to me');
   await expect(dialog.getByRole('button', {name: 'Open in Jira'})).toHaveCount(0);
   await expect(dialog.getByRole('radio', {name: /Sprint 43/})).toHaveAttribute('aria-checked', 'true');
@@ -356,19 +356,116 @@ test('C focuses comments, S opens the sprint picker, Ctrl+C copies the issue lin
   await page.close();
 });
 
-test('7 copies a reference, Alt+7 copies the URL, and 8 opens Jira in a tab @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('8 copies a reference, Alt+8 copies the URL, and 9 opens Jira in a tab @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const {page, popup, target} = await openPopup({extensionApp, optionsPage, servers});
   await page.bringToFront();
   const url = `${target.instanceUrl}/browse/${target.primaryIssueKey}`;
-  await page.keyboard.press('7');
+  await page.keyboard.press('8');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
   await popup.focus();
-  await page.keyboard.press('Alt+7');
+  await page.keyboard.press('Alt+8');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
   const opened = page.context().waitForEvent('page');
-  await page.keyboard.press('8');
+  await page.keyboard.press('9');
   const jira = await opened;
   await expect(jira).toHaveURL(url);
   await jira.close();
+  await page.close();
+});
+
+test('Alt+2 moves the issue to the current sprint at once and then reports it is already there @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
+  const endpoint = `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`;
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === endpoint);
+  await page.keyboard.press('Alt+2');
+  expect((await requestPromise).postDataJSON()).toEqual({fields: {customfield_10020: 42}});
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('jira-toast')).toContainText(`Moved ${target.primaryIssueKey} to Sprint 42`);
+  await expect(popup).toContainText('Sprint 42');
+  await popup.focus();
+  await page.keyboard.press('Alt+2');
+  await expect(page.getByTestId('jira-toast')).toContainText(`${target.primaryIssueKey} is already in Sprint 42`);
+  await page.close();
+});
+
+test('4 opens the fix version picker; Alt+4 adds the next unreleased version @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, target} = await openPopup({extensionApp, optionsPage, servers});
+  await page.keyboard.press('4');
+  await expect(page.getByTestId('jira-popup-edit-input-fixVersions')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('jira-popup-edit-input-fixVersions')).toHaveCount(0);
+  await popup.focus();
+  const endpoint = `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`;
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === endpoint);
+  await page.keyboard.press('Alt+4');
+  expect((await requestPromise).postDataJSON()).toEqual({update: {fixVersions: [{add: {id: '302'}}]}});
+  await expect(page.getByTestId('jira-toast')).toContainText(`Added fix version 2026.05 to ${target.primaryIssueKey}`);
+  await expect(popup).toContainText('2026.05');
+  await expect(popup).toContainText('2026.04');
+  await page.close();
+});
+
+test('5 starts from the current assignee, selected: Enter keeps them, typing searches someone else @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
+  await page.keyboard.press('5');
+  const search = page.getByTestId('jira-shortcut-assignee');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('Alex Reviewer');
+  expect(await search.evaluate(input => [input.selectionStart, input.selectionEnd])).toEqual([0, 'Alex Reviewer'.length]);
+  await expect(dialog.getByRole('option', {name: 'Alex Reviewer'})).toHaveAttribute('aria-selected', 'true');
+  await screenshot(page, 'plan-prefilled-assignee');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
+  await search.press('Enter');
+  expect((await requestPromise).postDataJSON()).toEqual({fields: {assignee: {accountId: 'user-alex'}, customfield_10020: 42}});
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('._JX_title_user_assignee')).toHaveAttribute('title', /Alex Reviewer/);
+  await page.keyboard.press('5');
+  await expect(search).toHaveValue('Alex Reviewer');
+  await page.keyboard.type('Morg');
+  await expect(search).toHaveValue('Morg');
+  await expect(dialog.getByRole('option', {name: /Morgan Agent/})).toBeVisible();
+  await expect(dialog.getByRole('option', {name: 'Alex Reviewer'})).toHaveCount(0);
+  await page.close();
+});
+
+test('clicking the title bar or status row keeps focus in QuickView so shortcuts still work @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
+  // The title bar and status row are drag handles; dragging cancels mousedown's focus change.
+  for (const [start, region] of [['body', '._JX_title'], ['body', '._JX_status'], ['button', '._JX_title'], ['button', '._JX_status']]) {
+    await page.evaluate(start => {
+      if (start === 'body') document.activeElement?.blur();
+      else document.querySelector('._JX_title_controls ._JX_control_button').focus();
+    }, start);
+    const box = await page.locator(region).first().boundingBox();
+    await page.mouse.click(box.x + 3, box.y + box.height / 2);
+    await expect(popup, `${region} from ${start}`).toBeFocused();
+    await page.keyboard.press('5');
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
+  const title = await page.locator('._JX_title').boundingBox();
+  const before = await popup.boundingBox();
+  await page.mouse.move(title.x + 3, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + 63, title.y + title.height / 2 + 40, {steps: 5});
+  await page.mouse.up();
+  const after = await popup.boundingBox();
+  expect(Math.round(after.x - before.x)).toBe(60);
+  await expect(popup).toBeFocused();
+  await page.close();
+});
+
+test('Ctrl+Enter in the new comment field saves the comment @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page} = await openPopup({extensionApp, optionsPage, servers});
+  await page.keyboard.press('7');
+  const comment = page.locator('._JX_comment_input');
+  await expect(comment).toBeFocused();
+  await comment.fill('Saved from the keyboard');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'POST' && /\/comment$/.test(new URL(request.url()).pathname));
+  await comment.press('Control+Enter');
+  expect((await requestPromise).postDataJSON()).toMatchObject({body: 'Saved from the keyboard'});
+  await expect(page.locator('._JX_comment').last()).toContainText('Saved from the keyboard');
+  await expect(comment).toHaveValue('');
   await page.close();
 });

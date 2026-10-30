@@ -9,6 +9,11 @@ test.beforeEach(async ({page}) => {
     const fixture = {
       writes: [], presets: {}, searches: [],
       sprints: [{id: 42, name: 'Sprint 42', state: 'active'}],
+      versions: [
+        {id: '301', name: '2026.03', released: true},
+        {id: '302', name: '2026.05', released: false},
+        {id: '401', name: '2026.04', released: false},
+      ],
       users: [{accountId: 'other', displayName: 'Other person'}],
       transitions: [{id: '41', name: 'Resolve', to: {name: 'Done', statusCategory: {key: 'done'}}, fields: {
         resolution: {required: true, allowedValues: [{id: '1', name: 'Fixed'}, {id: '2', name: 'Duplicate'}]},
@@ -23,7 +28,10 @@ test.beforeEach(async ({page}) => {
         write: async request => { fixture.writes.push(request); if (fixture.writePromise) await fixture.writePromise; },
       },
       issueData: {
-        loadFieldContext: async ({fieldId}) => ({context: {editable: fixture.editable !== false, fieldId: fieldId === 'sprint' ? 'customfield_10020' : fieldId, options: fixture.sprints}}),
+        loadFieldContext: async ({fieldId}) => ({context: {
+          editable: fixture.editable !== false, fieldId: fieldId === 'sprint' ? 'customfield_10020' : fieldId,
+          options: fieldId === 'fixVersions' ? fixture.versions : fixture.sprints,
+        }}),
         search: async ({query}) => { fixture.searches.push(query); return {kind: 'loaded', items: fixture.users}; },
         refreshAfterMutation: async () => {
           if (fixture.refreshFailure) throw new Error('Refresh failed');
@@ -38,6 +46,8 @@ test.beforeEach(async ({page}) => {
     fixture.deps = deps;
     fixture.workflow = window.JiraQuickViewDeepModules.createPopupShortcutWorkflow(deps);
     fixture.begin = (kind, alternate = false) => fixture.workflow.begin({kind, alternate, sessionId: 'popup-1', issueSnapshot: fixture.snapshot});
+    fixture.apply = kind => fixture.workflow.apply({kind, sessionId: 'popup-1', issueSnapshot: fixture.snapshot})
+      .catch(error => ({kind: 'error', message: error.message}));
     window.fixture = fixture;
   });
 });
@@ -61,6 +71,25 @@ test('stages sprint and assignee, cancels both, and submits them as one update',
     method: 'PUT', path: 'https://jira.example/rest/api/2/issue/ABC-1',
     body: {fields: {assignee: {accountId: 'other'}, customfield_10020: 42}},
   }]});
+});
+
+test('reassign starts from the current assignee: confirming keeps them, and typing searches', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.snapshot.core.fields.assignee = {name: 'filip', key: 'JIRAUSER9', displayName: 'Filip Višić'};
+    await f.begin('plan');
+    const {query, users, userId} = f.workflow.view();
+    const searchesBeforeTyping = f.searches.length;
+    await f.workflow.submit({sessionId: 'popup-1'});
+    await f.begin('plan');
+    await f.workflow.search('oth');
+    return {query, users, userId, searchesBeforeTyping, write: f.writes[0].body, typed: f.workflow.view().users};
+  });
+  expect(result).toEqual({
+    query: 'Filip Višić', users: [{name: 'filip', key: 'JIRAUSER9', displayName: 'Filip Višić'}], userId: 'filip',
+    searchesBeforeTyping: 0, write: {fields: {assignee: {name: 'filip'}, customfield_10020: 42}},
+    typed: [{accountId: 'other', displayName: 'Other person'}],
+  });
 });
 
 test('multiple active sprints require a choice, including assign-to-me mode', async ({page}) => {
@@ -285,6 +314,55 @@ test('future sprints are offered, and the next-sprint target picks the first fut
   });
 });
 
+test('Alt+2 moves straight to the current sprint, prefers the issue\'s board, and never guesses between boards', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    const single = await f.apply('current-sprint');
+    f.existingSprints = [{id: 42}];
+    const already = await f.apply('current-sprint');
+    f.sprints = [
+      {id: 42, name: 'Sprint 42', state: 'active', boardRefs: [{id: '7'}]},
+      {id: 44, name: 'Other team', state: 'active', boardRefs: [{id: '9'}]},
+      {id: 50, name: 'Sprint 50', state: 'future', boardRefs: [{id: '9'}]},
+    ];
+    f.existingSprints = [];
+    const ambiguous = await f.apply('current-sprint');
+    f.existingSprints = [{id: 50}];
+    const byBoard = await f.apply('current-sprint');
+    f.editable = false;
+    const readonly = await f.apply('current-sprint');
+    return {single, already, ambiguous, byBoard, readonly, writes: f.writes};
+  });
+  expect(result.single).toMatchObject({kind: 'saved', sessionId: 'popup-1', notice: 'Moved ABC-1 to Sprint 42'});
+  expect(result.already).toEqual({kind: 'unchanged', notice: 'ABC-1 is already in Sprint 42'});
+  expect(result.ambiguous).toEqual({kind: 'choose', notice: 'Several sprints are active. Choose one.'});
+  expect(result.byBoard).toMatchObject({kind: 'saved', notice: 'Moved ABC-1 to Other team'});
+  expect(result.readonly).toEqual({kind: 'error', message: 'Jira does not allow changing the sprint of this issue.'});
+  expect(result.writes).toEqual([
+    {method: 'PUT', path: 'https://jira.example/rest/api/2/issue/ABC-1', body: {fields: {customfield_10020: 42}}},
+    {method: 'PUT', path: 'https://jira.example/rest/api/2/issue/ABC-1', body: {fields: {customfield_10020: 44}}},
+  ]);
+});
+
+test('Alt+4 adds the first unreleased version in Jira order without replacing the others', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.snapshot.core.fields.fixVersions = [{id: '401', name: '2026.04'}];
+    const added = await f.apply('next-fix-version');
+    f.snapshot.core.fields.fixVersions = [{id: '302', name: '2026.05'}];
+    const already = await f.apply('next-fix-version');
+    f.versions = [{id: '301', name: '2026.03', released: true}];
+    const none = await f.apply('next-fix-version');
+    return {added, already, none, writes: f.writes};
+  });
+  expect(result.added).toMatchObject({kind: 'saved', notice: 'Added fix version 2026.05 to ABC-1'});
+  expect(result.already).toEqual({kind: 'unchanged', notice: 'ABC-1 already has fix version 2026.05'});
+  expect(result.none).toEqual({kind: 'error', message: 'This project has no unreleased version.'});
+  expect(result.writes).toEqual([
+    {method: 'PUT', path: 'https://jira.example/rest/api/2/issue/ABC-1', body: {update: {fixVersions: [{add: {id: '302'}}]}}},
+  ]);
+});
+
 test('A reassigns, S changes the sprint, C focuses comments, and Ctrl/Cmd+C copies the link unless text is selected', async ({page}) => {
   const result = await page.evaluate(() => {
     const match = window.JiraQuickViewDeepModules.matchPopupShortcut;
@@ -298,14 +376,14 @@ test('A reassigns, S changes the sprint, C focuses comments, and Ctrl/Cmd+C copi
     return {
       comment: match({...base, key: 'c', code: 'KeyC'}), sprint: match({...base, key: 's', code: 'KeyS'}), assignee: match({...base, key: 'a', code: 'KeyA'}), noSelection, mac,
       withSelection: match({...base, key: 'c', code: 'KeyC', ctrlKey: true}),
-      next: match({...base, key: '5', code: 'Digit5'}), nextAlt: match({...base, key: '∞', code: 'Digit5', altKey: true}),
+      next: match({...base, key: '6', code: 'Digit6'}), nextAlt: match({...base, key: '§', code: 'Digit6', altKey: true}),
       inInput: match({target: document.querySelector('input'), key: 'c', code: 'KeyC', ctrlKey: true}),
       shifted: match({...base, key: 'C', code: 'KeyC', shiftKey: true}),
     };
   });
   expect(result).toEqual({
-    comment: {digit: '6', alternate: false}, sprint: {digit: '2', alternate: false}, assignee: {digit: '1', alternate: false}, noSelection: {digit: '7', alternate: false}, mac: {digit: '7', alternate: false},
-    withSelection: null, next: {digit: '5', alternate: false}, nextAlt: {digit: '5', alternate: true}, inInput: null, shifted: null,
+    comment: {digit: '7', alternate: false}, sprint: {digit: '2', alternate: false}, assignee: {digit: '1', alternate: false}, noSelection: {digit: '8', alternate: false}, mac: {digit: '8', alternate: false},
+    withSelection: null, next: {digit: '6', alternate: false}, nextAlt: {digit: '6', alternate: true}, inInput: null, shifted: null,
   });
 });
 
@@ -319,13 +397,20 @@ test('digit matching rejects editing, modifiers, IME, repeat and reserved varian
         {target: document.querySelector('input')}, {target: document.querySelector('#editor')},
         {repeat: true}, {isComposing: true}, {ctrlKey: true}, {metaKey: true}, {shiftKey: true},
         {defaultPrevented: true}, {getModifierState: () => true}, {key: '0', code: 'Digit0'},
-        {key: '2', altKey: true}, {key: '6', altKey: true}, {key: '8', altKey: true}, {key: '9', code: 'Digit9'},
+        {key: '7', code: 'Digit7', altKey: true}, {key: '9', code: 'Digit9', altKey: true},
       ].map(change => match({...base, ...change})),
       help: match({...base, key: '0', code: 'Digit0', altKey: true}),
+      accepted: [
+        {key: '™', code: 'Digit2', altKey: true}, {key: '¢', code: 'Digit4', altKey: true},
+        {key: '•', code: 'Digit8', altKey: true}, {key: '9', code: 'Digit9'},
+      ].map(change => match({...base, ...change})),
     };
   });
   expect(result.normal).toEqual({digit: '3', alternate: false});
   expect(result.alt).toEqual({digit: '3', alternate: true});
   expect(result.help).toEqual({digit: '0', alternate: true});
-  expect(result.rejected).toEqual(Array(14).fill(null));
+  expect(result.rejected).toEqual(Array(12).fill(null));
+  expect(result.accepted).toEqual([
+    {digit: '2', alternate: true}, {digit: '4', alternate: true}, {digit: '8', alternate: true}, {digit: '9', alternate: false},
+  ]);
 });

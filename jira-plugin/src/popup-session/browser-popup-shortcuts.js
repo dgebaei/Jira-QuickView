@@ -6,17 +6,18 @@ import {createPopupShortcutWorkflow} from 'src/popup-shortcut-workflow';
 export const POPUP_SHORTCUT_GROUPS = [
   [
     ['1', 'Reassign', 'Assign to me', 'A'],
-    ['2', 'Change sprint', '', 'S'],
+    ['2', 'Change sprint', 'Move to current sprint', 'S'],
     ['3', 'Change status', 'Resolve / close'],
+    ['4', 'Change fix version', 'Add next unreleased version'],
   ],
   [
-    ['4', 'Current sprint + reassign', 'Current sprint + assign to me'],
-    ['5', 'Next sprint + reassign', 'Next sprint + assign to me'],
+    ['5', 'Current sprint + reassign', 'Current sprint + assign to me'],
+    ['6', 'Next sprint + reassign', 'Next sprint + assign to me'],
   ],
   [
-    ['6', 'Add comment', '', 'C'],
-    ['7', 'Copy issue reference', 'Copy plain issue URL', 'Ctrl+C'],
-    ['8', 'Open in Jira', ''],
+    ['7', 'Add comment', '', 'C'],
+    ['8', 'Copy issue reference', 'Copy plain issue URL', 'Ctrl+C'],
+    ['9', 'Open in Jira', ''],
   ],
 ];
 
@@ -29,15 +30,15 @@ export function matchPopupShortcut(event) {
   // Ctrl/Cmd+C copies the issue link, unless text is selected: then it stays the browser's copy.
   if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && letter === 'c') {
     const selection = event.target?.ownerDocument?.getSelection?.();
-    return selection && !selection.isCollapsed && String(selection).trim() ? null : {digit: '7', alternate: false};
+    return selection && !selection.isCollapsed && String(selection).trim() ? null : {digit: '8', alternate: false};
   }
   if (event.ctrlKey || event.metaKey || event.shiftKey) return null;
   if (!event.altKey && letter === 'a') return {digit: '1', alternate: false};
   if (!event.altKey && letter === 's') return {digit: '2', alternate: false};
-  if (!event.altKey && letter === 'c') return {digit: '6', alternate: false};
+  if (!event.altKey && letter === 'c') return {digit: '7', alternate: false};
   // Option on macOS changes event.key; use the physical digit for Alt variants only.
-  const digit = /^[0-8]$/.test(key) ? key : event.altKey && /^Digit[0-8]$/.test(event.code) ? event.code.slice(-1) : '';
-  if (!digit || (digit === '0' && !event.altKey) || (event.altKey && ['2', '6', '8'].includes(digit))) return null;
+  const digit = /^[0-9]$/.test(key) ? key : event.altKey && /^Digit[0-9]$/.test(event.code) ? event.code.slice(-1) : '';
+  if (!digit || (digit === '0' && !event.altKey) || (event.altKey && ['7', '9'].includes(digit))) return null;
   return {digit, alternate: !!event.altKey};
 }
 
@@ -131,7 +132,7 @@ export function createBrowserPopupShortcuts(deps) {
         element('td', alternate || '—', row);
       });
     });
-    element('p', 'Works while QuickView has focus, outside text fields. Sprint and resolve changes confirm first. Ctrl+C copies the link only when no text is selected. Alt is Option and Ctrl is ⌘ on macOS.', help);
+    element('p', 'Works while QuickView has focus, outside text fields. Sprint planning and resolve confirm first; Alt+1, Alt+2 and Alt+4 apply at once. Ctrl+C copies the link only when no text is selected. Alt is Option and Ctrl is ⌘ on macOS.', help);
     // Clicks inside must not reach the page-level outside-click dismissal.
     help.addEventListener('click', event => event.stopPropagation());
     help.showPopover();
@@ -167,6 +168,7 @@ export function createBrowserPopupShortcuts(deps) {
   function shell(title) {
     const session = getSession();
     activeSessionId = session.sessionId;
+    highlight = 0;
     dialog = element('dialog', '', documentRef.body, {
       class: '_JX_shortcuts_dialog', 'aria-labelledby': 'jqv-shortcuts-title', 'data-testid': 'jira-shortcut-dialog',
     });
@@ -341,8 +343,11 @@ export function createBrowserPopupShortcuts(deps) {
       }
       footer('Apply sprint + assignee');
       if (!state.sprintId) form.querySelector('[role="radio"]').focus();
-      else if (searchInput) searchInput.focus();
-      else form.querySelector('[type="submit"]').focus();
+      else if (searchInput) {
+        // Selected, so typing replaces the prefilled assignee.
+        searchInput.focus();
+        searchInput.select();
+      } else form.querySelector('[type="submit"]').focus();
     } else {
       if (!state.transitions.length) { footer('', true); return; }
       selectField('Transition', 'transitionId', state.transitions.map(item => ({...item, name: `${item.name} → ${item.to.name}`})), state.transitionId);
@@ -393,6 +398,19 @@ export function createBrowserPopupShortcuts(deps) {
     if (dialog === openedDialog) render();
   }
 
+  // Alt+2 and Alt+4 have one obvious target, so they write without a dialog.
+  async function applyNow(kind) {
+    const result = await workflow.apply({...getSession(), kind});
+    if (result.kind === 'choose') {
+      announce(result.notice, 'info');
+      await beginFieldEdit('sprint');
+    } else if (result.kind === 'unchanged') announce(result.notice, 'info');
+    else if (result.kind === 'saved') {
+      await onSaved(result);
+      announce(result.notice, 'success');
+    }
+  }
+
   async function invoke({digit, alternate}) {
     const helpWasOpen = !!help;
     closeHelp();
@@ -405,14 +423,15 @@ export function createBrowserPopupShortcuts(deps) {
       if (!getSession()?.issueSnapshot?.core) return;
       if (digit === '0') showHelp();
       if (digit === '1') await (alternate ? quickAction('assign-to-me') : beginFieldEdit('assignee'));
-      if (digit === '2') await beginFieldEdit('sprint');
+      if (digit === '2') await (alternate ? applyNow('current-sprint') : beginFieldEdit('sprint'));
       // Closing prefills the remembered defaults; the dialog still confirms.
       if (digit === '3') await (alternate ? showWorkflow('resolve', true) : beginFieldEdit('status'));
-      if (digit === '4') await showWorkflow('plan', alternate);
-      if (digit === '5') await showWorkflow('plan', alternate, 'next');
-      if (digit === '6') focusComment();
-      if (digit === '7') await copy(alternate);
-      if (digit === '8') openIssue();
+      if (digit === '4') await (alternate ? applyNow('next-fix-version') : beginFieldEdit('fixVersions'));
+      if (digit === '5') await showWorkflow('plan', alternate);
+      if (digit === '6') await showWorkflow('plan', alternate, 'next');
+      if (digit === '7') focusComment();
+      if (digit === '8') await copy(alternate);
+      if (digit === '9') openIssue();
     } catch (error) { announce(error.message || 'Action unavailable'); }
     finally { if (request === invocation) invoking = false; }
   }

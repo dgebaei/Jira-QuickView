@@ -16,6 +16,7 @@ import {createBrowserCommentPresentation} from 'src/popup-session/browser-commen
 import {createDeferred, createMockJiraAdapter} from './mock-jira-adapter';
 import {createFixturePopupSurface} from './fixture-popup-surface';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {describeJiraConnectionFailure} from 'src/jira-connection-errors';
 import jquery from 'jquery';
 import {loadGitLabPullRequest, parseGitLabMergeRequestUrl} from 'src/gitlab-pull-requests';
 import {buildPullRequestView} from 'src/popup-session/pull-request-view';
@@ -23,6 +24,7 @@ import {installPopupTooltips} from 'src/popup-session/popup-tooltips';
 import {withEmbeddedContentDomains} from 'options/options-utils';
 
 window.JiraQuickViewDeepModules = {
+  describeJiraConnectionFailure,
   loadGitLabPullRequest,
   parseGitLabMergeRequestUrl,
   buildPullRequestView,
