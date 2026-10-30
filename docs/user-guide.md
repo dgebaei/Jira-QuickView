@@ -635,7 +635,7 @@ The keyboard button in the header, or `Alt+0`, drops down the shortcut list. Pre
 | `9` | Open issue in Jira | — |
 | `0` | — | Show keyboard shortcuts |
 
-Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes: search for an assignee, use the arrow keys to select a result, and press `Enter` to apply, or select a result and click **Apply sprint + assignee**. No change is sent until confirmation. The sprint list shows active and future sprints. `5` preselects the active sprint when there is exactly one; `6` preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.
+Actions pin QuickView so it stays open while you work. The combined sprint/assignee action stages both changes. The assignee field starts with the current assignee selected, so `Enter` applies the sprint and keeps them. To pick someone else, start typing, use the arrow keys to select a result, and press `Enter`, or select a result and click **Apply sprint + assignee**. No change is sent until confirmation. The sprint list shows active and future sprints. `5` preselects the active sprint when there is exactly one; `6` preselects the next future sprint on the board of the issue's current sprint. Choose another sprint from the list at any time. An issue already in the chosen sprint only needs the assignee update.
 
 `Alt+2` and `Alt+4` save at once, without a confirmation step. `Alt+2` moves the issue to the active sprint on its board; when several sprints are active and the issue's board does not settle it, the sprint picker opens instead. `Alt+4` adds the first unreleased fix version in the project's release order (the order on Jira's Releases page) and keeps any fix versions the issue already has. Both say so when the issue is already there.
 
@@ -869,7 +869,7 @@ The Comments block lets you read and participate in Jira discussion from the pop
 What you can do:
 
 - Read existing comments.
-- Add a new comment.
+- Add a new comment. `Ctrl+Enter` (`⌘+Enter` on macOS) saves it, in the composer and while editing a comment.
 - Type `@` to mention someone.
 - Copy a direct comment link.
 - Edit or delete your own comments when Jira allows it.
