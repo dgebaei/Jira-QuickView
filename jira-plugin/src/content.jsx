@@ -2963,7 +2963,12 @@ async function mainAsyncLocal() {
     handle: '._JX_title, ._JX_status',
     cancel: 'a, button, input, textarea, img, ._JX_description, ._JX_comments, ._JX_comment_body, ._JX_description_text, ._JX_related_table, ._JX_history_flyout, ._JX_watchers_panel, ._JX_linked_issues_panel'
   }, container);
-  
+  // A drag handle cancels mousedown and blurs whatever had focus, so the browser never
+  // moves focus into QuickView; keep it there so keyboard shortcuts keep working.
+  container.on('mousedown', function () {
+    if (!this.contains(document.activeElement)) this.focus({preventScroll: true});
+  });
+
   // ── Clipboard & Copy ──────────────────────────────────────
   async function copyIssueReferenceWithFeedback(reference) {
     const result = await copyIssueReference(reference);
@@ -3307,6 +3312,13 @@ async function mainAsyncLocal() {
       commentLifecycle.dispatch({type: 'chooseMention', lane: 'compose', index: mentionView.selectedIndex}).catch(() => {});
       renderCommentComposeLifecycleView({applyValue: true});
     }
+  });
+
+  // After the mention keys, like the comment editor: an open suggestion list takes Enter first.
+  $(document.body).on('keydown', '._JX_comment_input', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter' || e.isComposing || e.isDefaultPrevented()) return;
+    e.preventDefault();
+    handleCommentSave().catch(() => {});
   });
 
   $(document.body).on('mousedown', '._JX_comment_compose ._JX_comment_mention_option', function (e) {

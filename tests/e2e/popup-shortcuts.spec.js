@@ -404,3 +404,68 @@ test('4 opens the fix version picker; Alt+4 adds the next unreleased version @mo
   await expect(popup).toContainText('2026.04');
   await page.close();
 });
+
+test('5 starts from the current assignee, selected: Enter keeps them, typing searches someone else @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, dialog, target} = await openPopup({extensionApp, optionsPage, servers});
+  await page.keyboard.press('5');
+  const search = page.getByTestId('jira-shortcut-assignee');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('Alex Reviewer');
+  expect(await search.evaluate(input => [input.selectionStart, input.selectionEnd])).toEqual([0, 'Alex Reviewer'.length]);
+  await expect(dialog.getByRole('option', {name: 'Alex Reviewer'})).toHaveAttribute('aria-selected', 'true');
+  await screenshot(page, 'plan-prefilled-assignee');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
+  await search.press('Enter');
+  expect((await requestPromise).postDataJSON()).toEqual({fields: {assignee: {accountId: 'user-alex'}, customfield_10020: 42}});
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('._JX_title_user_assignee')).toHaveAttribute('title', /Alex Reviewer/);
+  await page.keyboard.press('5');
+  await expect(search).toHaveValue('Alex Reviewer');
+  await page.keyboard.type('Morg');
+  await expect(search).toHaveValue('Morg');
+  await expect(dialog.getByRole('option', {name: /Morgan Agent/})).toBeVisible();
+  await expect(dialog.getByRole('option', {name: 'Alex Reviewer'})).toHaveCount(0);
+  await page.close();
+});
+
+test('clicking the title bar or status row keeps focus in QuickView so shortcuts still work @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
+  // The title bar and status row are drag handles; dragging cancels mousedown's focus change.
+  for (const [start, region] of [['body', '._JX_title'], ['body', '._JX_status'], ['button', '._JX_title'], ['button', '._JX_status']]) {
+    await page.evaluate(start => {
+      if (start === 'body') document.activeElement?.blur();
+      else document.querySelector('._JX_title_controls ._JX_control_button').focus();
+    }, start);
+    const box = await page.locator(region).first().boundingBox();
+    await page.mouse.click(box.x + 3, box.y + box.height / 2);
+    await expect(popup, `${region} from ${start}`).toBeFocused();
+    await page.keyboard.press('5');
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
+  const title = await page.locator('._JX_title').boundingBox();
+  const before = await popup.boundingBox();
+  await page.mouse.move(title.x + 3, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + 63, title.y + title.height / 2 + 40, {steps: 5});
+  await page.mouse.up();
+  const after = await popup.boundingBox();
+  expect(Math.round(after.x - before.x)).toBe(60);
+  await expect(popup).toBeFocused();
+  await page.close();
+});
+
+test('Ctrl+Enter in the new comment field saves the comment @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page} = await openPopup({extensionApp, optionsPage, servers});
+  await page.keyboard.press('7');
+  const comment = page.locator('._JX_comment_input');
+  await expect(comment).toBeFocused();
+  await comment.fill('Saved from the keyboard');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'POST' && /\/comment$/.test(new URL(request.url()).pathname));
+  await comment.press('Control+Enter');
+  expect((await requestPromise).postDataJSON()).toMatchObject({body: 'Saved from the keyboard'});
+  await expect(page.locator('._JX_comment').last()).toContainText('Saved from the keyboard');
+  await expect(comment).toHaveValue('');
+  await page.close();
+});

@@ -73,6 +73,25 @@ test('stages sprint and assignee, cancels both, and submits them as one update',
   }]});
 });
 
+test('reassign starts from the current assignee: confirming keeps them, and typing searches', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const f = window.fixture;
+    f.snapshot.core.fields.assignee = {name: 'filip', key: 'JIRAUSER9', displayName: 'Filip Višić'};
+    await f.begin('plan');
+    const {query, users, userId} = f.workflow.view();
+    const searchesBeforeTyping = f.searches.length;
+    await f.workflow.submit({sessionId: 'popup-1'});
+    await f.begin('plan');
+    await f.workflow.search('oth');
+    return {query, users, userId, searchesBeforeTyping, write: f.writes[0].body, typed: f.workflow.view().users};
+  });
+  expect(result).toEqual({
+    query: 'Filip Višić', users: [{name: 'filip', key: 'JIRAUSER9', displayName: 'Filip Višić'}], userId: 'filip',
+    searchesBeforeTyping: 0, write: {fields: {assignee: {name: 'filip'}, customfield_10020: 42}},
+    typed: [{accountId: 'other', displayName: 'Other person'}],
+  });
+});
+
 test('multiple active sprints require a choice, including assign-to-me mode', async ({page}) => {
   const result = await page.evaluate(async () => {
     const f = window.fixture;

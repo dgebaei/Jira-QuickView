@@ -168,6 +168,7 @@ export function createBrowserPopupShortcuts(deps) {
   function shell(title) {
     const session = getSession();
     activeSessionId = session.sessionId;
+    highlight = 0;
     dialog = element('dialog', '', documentRef.body, {
       class: '_JX_shortcuts_dialog', 'aria-labelledby': 'jqv-shortcuts-title', 'data-testid': 'jira-shortcut-dialog',
     });
@@ -342,8 +343,11 @@ export function createBrowserPopupShortcuts(deps) {
       }
       footer('Apply sprint + assignee');
       if (!state.sprintId) form.querySelector('[role="radio"]').focus();
-      else if (searchInput) searchInput.focus();
-      else form.querySelector('[type="submit"]').focus();
+      else if (searchInput) {
+        // Selected, so typing replaces the prefilled assignee.
+        searchInput.focus();
+        searchInput.select();
+      } else form.querySelector('[type="submit"]').focus();
     } else {
       if (!state.transitions.length) { footer('', true); return; }
       selectField('Transition', 'transitionId', state.transitions.map(item => ({...item, name: `${item.name} → ${item.to.name}`})), state.transitionId);

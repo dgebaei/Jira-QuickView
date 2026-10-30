@@ -126,13 +126,17 @@ export function createPopupShortcutWorkflow({instanceUrl, jira, issueData, loadV
         if (alternate && !userId(viewer)) throw new Error('Could not identify the current Jira user.');
         const active = sprints.filter(item => String(item.state).toLowerCase() === 'active');
         const preselected = sprintTarget === 'next' ? nextSprint(sprints, issue) : (active.length === 1 ? active[0] : null);
+        // Reassign starts from the current assignee, so confirming keeps them; typing searches.
+        const assignee = userId(issue.fields?.assignee) ? issue.fields.assignee : null;
+        const initial = alternate ? viewer : assignee;
         state = {
           ...state, phase: 'editing', sprints, sprintFieldId: sprint.fieldId,
           sprintId: preselected ? String(preselected.id) : '',
           hint: sprintTarget === 'next' && !preselected ? 'No future sprint is planned; choose a sprint.' : '',
-          users: viewer ? [viewer] : [], userId: userId(viewer),
+          users: initial ? [initial] : [], userId: userId(initial),
+          query: !alternate && assignee ? String(assignee.displayName || assignee.name || assignee.key || '') : '',
         };
-        if (!alternate) await search('');
+        if (!initial) await search('');
       } else {
         // Fresh, expanded metadata: cached status options do not include transition-screen fields.
         const [result, preset] = await Promise.all([
