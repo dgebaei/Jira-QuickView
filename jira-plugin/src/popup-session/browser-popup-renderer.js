@@ -116,9 +116,9 @@ export function createBrowserPopupRenderer({
 
     commentPresentation.render({applyValue: true, restoreFocus: true});
     if (shell.view().pinned) {
-      await shell.dispatch({type: 'reposition', anchor: {x: state.pointerX, y: state.pointerY}});
+      await shell.dispatch({type: 'reposition', anchor: {x: state.pointerX, y: state.pointerY, center: state.centered}});
     } else {
-      container.css(shell.position({x: state.pointerX, y: state.pointerY}));
+      container.css(shell.position({x: state.pointerX, y: state.pointerY, center: state.centered}));
     }
 
     const activeFieldEditState = fieldEditing.view(state);
