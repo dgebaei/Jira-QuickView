@@ -4165,6 +4165,121 @@ body ._JX {
     font-size: 14px;
   }
 
+  &_attachment_file {
+    position: relative;
+  }
+
+  // A round x in the thumbnail's corner or at the end of a file row, shown on
+  // hover or keyboard focus like the other row removals.
+  &_attachment_delete {
+    align-items: center;
+    appearance: none;
+    background: var(--jx-surface);
+    block-size: 22px;
+    border: 1px solid var(--jx-border-strong);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px oklch(0% 0 none / 18%);
+    color: var(--jx-ink-2);
+    cursor: pointer;
+    display: inline-flex;
+    flex: 0 0 auto;
+    inline-size: 22px;
+    justify-content: center;
+    opacity: 0;
+    padding: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: #fbe9e7;
+        border-color: #ffd2cc;
+        color: #ae2e24;
+      }
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--jx-focus);
+      outline-offset: 1px;
+    }
+  }
+
+  &_thumb ._JX_attachment_delete {
+    inset-block-start: 4px;
+    inset-inline-end: 4px;
+    position: absolute;
+  }
+
+  // Over the row's open arrow, so rows with and without delete keep one width.
+  &_attachment_file ._JX_attachment_delete {
+    inset-block-start: 50%;
+    inset-inline-end: 6px;
+    position: absolute;
+    translate: 0 -50%;
+  }
+
+  &_thumb:hover ._JX_attachment_delete,
+  &_thumb:focus-within ._JX_attachment_delete,
+  &_attachment_file:hover ._JX_attachment_delete,
+  &_attachment_file:focus-within ._JX_attachment_delete {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    &_attachment_delete {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  &_attachment_delete_confirmation {
+    align-items: center;
+    background: #fff7f5;
+    border: 1px solid #ffd2cc;
+    border-radius: 6px;
+    box-sizing: border-box;
+    color: #5d1f17;
+    cursor: default;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    gap: 6px;
+    inset: 0;
+    justify-content: center;
+    padding: 6px;
+    position: absolute;
+    text-align: center;
+    z-index: 1;
+
+    button {
+      cursor: pointer !important;
+      padding: 3px 9px;
+    }
+  }
+
+  &_attachment_file ._JX_attachment_delete_confirmation {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 3px 5px 3px 10px;
+    text-align: start;
+  }
+
+  &_attachment_delete_question {
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &_attachment_delete_actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+
   &_preview_overlay {
     align-items: center;
     background: rgba(0, 0, 0, 0.84);

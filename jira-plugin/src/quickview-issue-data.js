@@ -344,6 +344,7 @@ export function createQuickViewIssueData(options = {}) {
     }
 
     const sections = {
+      attachmentPermissions: unavailableSection({data: null}),
       children: unavailableSection({items: [], jql: ''}),
       history: unavailableSection({data: null}),
       linkedIssues: unavailableSection({detailsByKey: {}, items: [], linkTypes: []}),
@@ -362,6 +363,9 @@ export function createQuickViewIssueData(options = {}) {
     if (requirements.remoteLinks === true) plans.push({name: 'remoteLinks', load: () => optionalSections.loadRemoteLinks(normalizedIssueKey, signal)});
     if (requirements.watchers === true) plans.push({name: 'watchers', load: () => optionalSections.loadWatchers(normalizedIssueKey, signal)});
     if (requirements.viewer === true) plans.push({name: 'viewer', load: () => optionalSections.loadViewer(signal)});
+    if (requirements.attachmentPermissions === true) {
+      plans.push({name: 'attachmentPermissions', load: () => optionalSections.loadAttachmentPermissions(normalizedIssueKey, signal)});
+    }
     if (requirements.reactions === true) {
       const commentIds = (core?.fields?.comment?.comments || []).map(comment => comment?.id).filter(Boolean);
       plans.push({name: 'reactions', load: () => optionalSections.loadReactions(commentIds, signal)});
@@ -438,6 +442,8 @@ export function createQuickViewIssueData(options = {}) {
           supported: result.value.supported !== false,
           failure: null,
         };
+      } else if (result.name === 'attachmentPermissions') {
+        sections.attachmentPermissions = dataSection(result.value);
       } else if (result.name === 'viewer') {
         viewer = {status: result.value?.id ? 'ready' : 'empty', user: copyValue(result.value), failure: null};
       }

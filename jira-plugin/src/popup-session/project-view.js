@@ -18,6 +18,7 @@ export function createPopupProjectView(options) {
   const showPullRequests = !!configuration.showPullRequests;
   const tooltipLayout = configuration.tooltipLayout || {};
   const attachmentPresentation = options?.attachments;
+  const areSameJiraUser = options?.areSameJiraUser || (() => false);
   const buildCustomFieldChips = options?.buildCustomFieldChips;
   const buildEditableFieldChip = options?.buildEditableFieldChip;
   const buildFilterChip = options?.buildFilterChip;
@@ -426,6 +427,28 @@ export function createPopupProjectView(options) {
     const commentsTotal = commentsForDisplay.length;
     const attachments = issueData.fields.attachment || [];
     const attachmentViews = attachmentPresentation.buildSectionAttachments(attachments);
+    // Jira's "Delete Own Attachments" covers what you uploaded and "Delete All
+    // Attachments" (usually admins) the rest. Until those permissions load, offer
+    // delete on your own uploads only, like comments.
+    const viewer = state.issueSnapshot?.viewer?.user || null;
+    const deletePermissions = state.issueSnapshot?.sections?.attachmentPermissions?.data || null;
+    const canDeleteAttachment = attachment => {
+      if (deletePermissions?.deleteAll) return true;
+      if (deletePermissions && !deletePermissions.deleteOwn) return false;
+      return areSameJiraUser(attachment.author, viewer);
+    };
+    const attachmentDelete = state.attachmentDeleteState || {};
+    const withDeleteControls = attachment => {
+      const isPendingDelete = attachmentDelete.pendingId === attachment.id;
+      return {
+        ...attachment,
+        canDelete: canDeleteAttachment(attachment),
+        deleteConfirmText: isPendingDelete ? 'Deleting…' : 'Delete',
+        deleteDisabledAttr: attachmentDelete.pendingId ? 'disabled' : '',
+        isConfirmingDelete: attachmentDelete.confirmingId === attachment.id,
+        isPendingDelete,
+      };
+    };
     const labels = issueData.fields.labels || [];
     const linkageOutcome = await fieldEditing.dispatch({type: 'describeLinkage'});
     const linkageData = linkageOutcome.linkage || {mode: '', label: 'Parent', editable: false, fieldId: '', currentLink: null};
@@ -662,8 +685,8 @@ export function createPopupProjectView(options) {
     const showComments = layoutContentBlocks.includes('comments');
     const showTimeTracking = layoutContentBlocks.includes('timeTracking');
     const visibleCommentsTotal = showComments ? commentsTotal : 0;
-    const visibleAttachmentImages = showAttachments ? attachmentViews.images : [];
-    const visibleAttachmentFiles = showAttachments ? attachmentViews.files : [];
+    const visibleAttachmentImages = showAttachments ? attachmentViews.images.map(withDeleteControls) : [];
+    const visibleAttachmentFiles = showAttachments ? attachmentViews.files.map(withDeleteControls) : [];
     const visibleAttachmentsTotal = visibleAttachmentImages.length + visibleAttachmentFiles.length;
     const normalizedChildrenSort = normalizeChildrenSortState(childrenSort);
     const normalizedPullRequestsSort = normalizePullRequestsSortState(pullRequestsSort);

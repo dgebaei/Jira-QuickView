@@ -831,12 +831,14 @@ What you can do:
 - Preview image attachments.
 - See non-image files as compact entries with file type and size when Jira provides them.
 - Open the full attachment in Jira.
+- Delete an attachment: hover it, click the **×**, then confirm. **Esc** or **Cancel** keeps it.
 - Use screenshot evidence during QA, release checks, bug triage, or support work.
 
 Business logic and limitations:
 
 - Images use the visual preview grid. Other file types remain visible and downloadable without pretending they have an image preview.
 - Attachment visibility follows your Jira permissions.
+- The **×** appears on attachments you uploaded when Jira grants **Delete Own Attachments**, and on every attachment when it grants **Delete All Attachments**. If QuickView cannot read those permissions, it offers delete on your own uploads only.
 
 ### 5.10 Pull Requests Block
 

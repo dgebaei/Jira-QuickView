@@ -323,7 +323,7 @@ async function mainAsyncLocal() {
     }));
   }
 
-  const [annotationTemplate, statusChipTemplate] = await Promise.all(['resources/annotation.html', 'resources/status-chip.html']
+  const [annotationTemplate, statusChipTemplate, attachmentDeleteTemplate] = await Promise.all(['resources/annotation.html', 'resources/status-chip.html', 'resources/attachment-delete.html']
     .map(resource => fetch(chrome.runtime.getURL(resource)).then(response => response.text())));
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
   const emptyDescriptionEditState = () => ({
@@ -2622,6 +2622,7 @@ async function mainAsyncLocal() {
   // ── Quick Actions ──────────────────────────────────────────
 
   const {buildPopupDisplayData} = createPopupProjectView({
+    areSameJiraUser,
     attachments: attachmentPresentation,
     buildActiveEditPresentation,
     buildCustomFieldChips,
@@ -2698,7 +2699,7 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
     toast: {show: showToast, hide: hideToast},
-    partials: {statusChip: statusChipTemplate},
+    partials: {statusChip: statusChipTemplate, attachmentDelete: attachmentDeleteTemplate},
   });
   const popupShortcuts = createBrowserPopupShortcuts({
     container: container[0],
@@ -2969,6 +2970,63 @@ async function mainAsyncLocal() {
     if (!this.contains(document.activeElement)) this.focus({preventScroll: true});
   });
 
+  // ── Attachment Deletion ───────────────────────────────────
+  function setAttachmentDeleteState(state) {
+    popupModel.dispatch({type: 'attachmentDeleteChanged', state});
+  }
+
+  async function deleteAttachment(attachmentId) {
+    const popupView = currentPopupState();
+    const attachment = (popupView?.issueData?.fields?.attachment || []).find(item => String(item.id) === attachmentId);
+    if (!attachment || popupView.attachmentDeleteState?.pendingId) return {kind: 'ignored'};
+    const sessionId = currentPopupSessionId();
+    const issueKey = popupView.issueData.key;
+    const filename = attachment.filename || 'the attachment';
+    setAttachmentDeleteState({confirmingId: attachmentId, pendingId: attachmentId});
+    await renderIssuePopup(currentPopupState());
+    let notice = `Deleted ${filename}`;
+    try {
+      await jira.write({method: 'DELETE', path: `${INSTANCE_URL}rest/api/2/attachment/${encodeURIComponent(attachmentId)}`});
+    } catch (error) {
+      const status = getJiraHttpStatus(error);
+      // Gone already: refresh so the popup stops showing it.
+      if (status === 404) notice = `${filename} was already deleted`;
+      else {
+        if (sessionId === currentPopupSessionId()) {
+          setAttachmentDeleteState({});
+          await renderIssuePopup(currentPopupState());
+        }
+        if (status === 403) {
+          showToast(`Jira did not allow deleting ${filename}. You may lack permission to delete attachments.`, {kind: 'error'});
+        } else if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
+          showToast(`Could not delete ${filename}. ${error?.message || 'Please try again.'}`, {kind: 'error'});
+        }
+        return {kind: 'failed'};
+      }
+    }
+    const refreshed = await quickViewIssueData.refreshAfterMutation({
+      issueKey,
+      priorSnapshot: popupView.issueSnapshot,
+      mutation: {kind: 'attachmentChanged'},
+      requirements: {
+        history: !!currentPopupState()?.historyOpen,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
+        pullRequests: showPullRequests,
+        watchers: !!watcherLifecycle.view().open,
+      },
+    }).catch(() => null);
+    if (sessionId !== currentPopupSessionId()) return {kind: 'ignored'};
+    setAttachmentDeleteState({});
+    if (refreshed?.snapshot?.core) {
+      await popupSession.dispatch({type: 'render', reason: 'attachment-deleted', issueSnapshot: refreshed.snapshot});
+      showToast(notice, {kind: 'success'});
+    } else {
+      await renderIssuePopup(currentPopupState());
+      showToast(`${notice}, but the popup could not refresh. Reopen QuickView to see it.`, {kind: 'error'});
+    }
+    return {kind: 'deleted'};
+  }
+
   // ── Clipboard & Copy ──────────────────────────────────────
   async function copyIssueReferenceWithFeedback(reference) {
     const result = await copyIssueReference(reference);
@@ -2992,6 +3050,12 @@ async function mainAsyncLocal() {
   });
 
   async function handlePopupPresentationIntent(intent) {
+    if (intent.type === 'attachment-confirm-delete' || intent.type === 'attachment-cancel-delete') {
+      if (currentPopupState()?.attachmentDeleteState?.pendingId) return {kind: 'ignored', reason: 'delete-pending'};
+      setAttachmentDeleteState(intent.type === 'attachment-confirm-delete' ? {confirmingId: intent.attachmentId} : {});
+      return renderIssuePopup(currentPopupState());
+    }
+    if (intent.type === 'attachment-delete-confirmed') return deleteAttachment(intent.attachmentId);
     if (intent.type === 'connect-gitlab') {
       const sessionId = currentPopupSessionId();
       // Keep the permission request on the original click's user gesture.
@@ -3057,6 +3121,9 @@ async function mainAsyncLocal() {
     }
     if (intent.type === 'escape') {
       if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
+      if (currentPopupState()?.attachmentDeleteState?.confirmingId) {
+        return handlePopupPresentationIntent({type: 'attachment-cancel-delete'});
+      }
       if (currentPopupState()?.historyOpen) return popupSession.dispatch({type: 'close-history'});
       if (linkedIssueLifecycle.view().open) return popupSession.dispatch({type: 'close-linkedIssues'});
       if (currentPopupState()?.descriptionEditState?.open) return cancelDescriptionEdit();
@@ -3895,6 +3962,7 @@ async function mainAsyncLocal() {
       activation: activation || (hoverActivationMode === 'modifier' ? 'modifier' : 'hover'),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
+        attachmentPermissions: true,
         children: true,
         pullRequests: showPullRequests,
         reactions: true,

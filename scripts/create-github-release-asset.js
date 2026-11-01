@@ -178,6 +178,7 @@ function main() {
     'resources/ajax-loader.gif',
     'resources/annotation.html',
     'resources/status-chip.html',
+    'resources/attachment-delete.html',
     'resources/jira-quickview-16.png',
     'resources/jira-quickview-32.png',
     'resources/jira-quickview-48.png',
