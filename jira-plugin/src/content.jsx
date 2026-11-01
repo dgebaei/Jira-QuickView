@@ -18,6 +18,7 @@ import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation}
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {readJiraPageIssueKey} from 'src/jira-page-issue';
 import {describeJiraConnectionFailure, getJiraHttpStatus} from 'src/jira-connection-errors';
 import {
   buildAttachmentPreviewUrls,
@@ -368,7 +369,7 @@ async function mainAsyncLocal() {
     escapeHtml,
     normalizeHistoryAttachmentName,
   });
-  const quickViewIssueData = createQuickViewIssueData({
+  const issueDataSource = createQuickViewIssueData({
     customFields,
     instanceUrl: INSTANCE_URL,
     jira,
@@ -381,32 +382,47 @@ async function mainAsyncLocal() {
       },
     },
   });
+  // Jira's own issue view does not see QuickView's writes: reload it in place.
+  const quickViewIssueData = {
+    ...issueDataSource,
+    async refreshAfterMutation(request = {}) {
+      try {
+        return await issueDataSource.refreshAfterMutation(request);
+      } finally {
+        if (request.issueKey && request.issueKey === readJiraPageIssueKey(location.href, INSTANCE_URL)) {
+          sendMessage({action: 'refreshJiraIssueView', issueId: String(request.priorSnapshot?.core?.id || '')}).catch(() => {});
+        }
+      }
+    },
+  };
+  // Copies an issue that need not be open in QuickView, loading its title when the page lacks it.
+  async function copyIssueReferenceByKey(reference) {
+    try {
+      let summary = reference.summary;
+      const displayedIssue = currentPopupState()?.issueData;
+      if (!summary && displayedIssue?.key === reference.key) summary = displayedIssue.fields?.summary;
+      if (!summary) {
+        const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
+        summary = outcome.snapshot?.core?.summary;
+        if (!summary) throw issueDataError(outcome.failures?.core, 'Could not load issue title');
+      }
+      await copyIssueReferenceWithFeedback({...reference, summary});
+    } catch (error) {
+      if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
+        const reason = getJiraHttpStatus(error) === 404
+          ? `Jira has no issue ${reference.key}, or you cannot view it.`
+          : 'Please try again.';
+        showToast(`Could not copy ${reference.key}. ${reason}`, {kind: 'error'});
+      }
+      throw error;
+    }
+  }
   installJiraInlineCopyButtons({
     document,
     instanceUrl: INSTANCE_URL,
     enabled: config.inlineCopyButtons !== false,
     isAlive: () => Boolean(chrome.runtime?.id),
-    copy: async reference => {
-      try {
-        let summary = reference.summary;
-        const displayedIssue = currentPopupState()?.issueData;
-        if (!summary && displayedIssue?.key === reference.key) summary = displayedIssue.fields?.summary;
-        if (!summary) {
-          const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
-          summary = outcome.snapshot?.core?.summary;
-          if (!summary) throw issueDataError(outcome.failures?.core, 'Could not load issue title');
-        }
-        await copyIssueReferenceWithFeedback({...reference, summary});
-      } catch (error) {
-        if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
-          const reason = getJiraHttpStatus(error) === 404
-            ? `Jira has no issue ${reference.key}, or you cannot view it.`
-            : 'Please try again.';
-          showToast(`Could not copy ${reference.key}. ${reason}`, {kind: 'error'});
-        }
-        throw error;
-      }
-    },
+    copy: copyIssueReferenceByKey,
   });
   const jiraFieldEditing = createJiraFieldEditing({
     instanceUrl: INSTANCE_URL,
@@ -2756,6 +2772,25 @@ async function mainAsyncLocal() {
     announce(message, kind = 'error') {
       if (kind !== 'error' || !notifyJiraConnectionFailure(INSTANCE_URL, message)) showToast(message, {kind});
     },
+    pageIssueKey: () => readJiraPageIssueKey(location.href, INSTANCE_URL),
+    async copyPageIssue(issueKey, plain) {
+      const url = `${INSTANCE_URL}browse/${encodeURIComponent(issueKey)}`;
+      if (!plain) {
+        const summary = String(document.querySelector('#summary-val')?.textContent || '').trim();
+        await copyIssueReferenceByKey({key: issueKey, summary, url}).catch(() => {});
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      showToast('Copied issue URL', {kind: 'success'});
+    },
+    async openPageIssue(issueKey) {
+      if (currentPopupState()?.issueData?.key !== issueKey) {
+        await fetchAndShowPopup(issueKey, 0, 0, 'click', {center: true});
+      }
+      if (currentPopupState()?.issueData?.key !== issueKey) return false;
+      container[0].focus({preventScroll: true});
+      return true;
+    },
   });
   popupShortcuts.install();
   // ── Field Editing ─────────────────────────────────────────
@@ -3883,7 +3918,7 @@ async function mainAsyncLocal() {
     return hoveredElement === activeElement || activeElement.contains(hoveredElement);
   }
 
-  function fetchAndShowPopup(key, pointerX, pointerY, activation = '') {
+  function fetchAndShowPopup(key, pointerX, pointerY, activation = '', {center = false} = {}) {
     const popupView = currentPopupState();
     if (popupView?.key && popupView.key !== key && popupView.descriptionEditState?.open) {
       clearDescriptionStatusTimer();
@@ -3891,11 +3926,12 @@ async function mainAsyncLocal() {
     }
     return popupSession.activate({
       issueKey: key,
-      anchor: {x: pointerX, y: pointerY},
+      anchor: {x: pointerX, y: pointerY, center},
       activation: activation || (hoverActivationMode === 'modifier' ? 'modifier' : 'hover'),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
         children: true,
+        editing: true,
         pullRequests: showPullRequests,
         reactions: true,
         remoteLinks: true,

@@ -8,6 +8,7 @@ import {createPopupSession} from 'src/popup-session';
 import {createPopupQuickActions} from 'src/popup-quick-actions';
 import {createPopupShortcutWorkflow} from 'src/popup-shortcut-workflow';
 import {matchPopupShortcut} from 'src/popup-session/browser-popup-shortcuts';
+import {readJiraPageIssueKey} from 'src/jira-page-issue';
 import {createBrowserPopupRenderer} from 'src/popup-session/browser-popup-renderer';
 import {createBrowserPopupEvents} from 'src/popup-session/browser-popup-events';
 import {createBrowserPopupModel} from 'src/popup-session/browser-popup-model';
@@ -32,6 +33,7 @@ window.JiraQuickViewDeepModules = {
   withEmbeddedContentDomains,
   createPopupShortcutWorkflow,
   matchPopupShortcut,
+  readJiraPageIssueKey,
   createBrowserMessageJiraAdapter,
   createBrowserCommentPresentation,
   createBrowserPopupEvents,

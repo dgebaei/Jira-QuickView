@@ -289,7 +289,8 @@ export function createPopupSession({issueData, fieldEditing, comments, quickActi
     const issueSnapshot = acquisition.snapshot;
     await fieldEditing.attach({sessionId, issueSnapshot, requirements});
     await comments.attach({sessionId, issueSnapshot});
-    await quickActions.attach({sessionId, issueSnapshot});
+    // Quick actions need several sprint and transition lookups; resolve them after opening.
+    Promise.resolve(quickActions.attach({sessionId, issueSnapshot})).catch(() => {});
     await watchers.attach({sessionId, issueSnapshot});
     await linkedIssues.attach({sessionId, issueSnapshot});
     if (!isCurrent(sessionId) || requestId !== activationRequest) {

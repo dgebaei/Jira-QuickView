@@ -17,6 +17,7 @@ export function createPopupQuickActions(deps) {
 
   let requestRevision = 0;
   let state = emptyState();
+  let resolution = Promise.resolve();
 
   function emptyState() {
     return {
@@ -251,7 +252,8 @@ export function createPopupQuickActions(deps) {
       sessionId: String(sessionId || ''),
       status: 'resolving',
     };
-    return resolveForCurrentSnapshot(revision);
+    resolution = resolveForCurrentSnapshot(revision);
+    return resolution;
   }
 
   function detach({sessionId} = {}) {
@@ -283,9 +285,15 @@ export function createPopupQuickActions(deps) {
       }
       const revision = ++requestRevision;
       state = {...state, issueSnapshot: intent.issueSnapshot, status: 'resolving'};
-      return resolveForCurrentSnapshot(revision);
+      resolution = resolveForCurrentSnapshot(revision);
+      return resolution;
     }
     if (intent.type !== 'execute') return {kind: 'ignored', reason: 'unknown-intent'};
+    // Actions resolve after QuickView opens; an action requested sooner waits for them.
+    if (state.status === 'resolving') {
+      await resolution.catch(() => {});
+      if (!state.sessionId || !state.issueSnapshot?.core) return {kind: 'ignored', reason: 'detached'};
+    }
     if (state.loadingKey) return {kind: 'ignored', reason: 'busy'};
     const action = state.actions.find(candidate => candidate.key === intent.actionKey);
     if (!action) return {kind: 'ignored', reason: 'unavailable'};
