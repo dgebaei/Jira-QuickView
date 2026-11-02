@@ -824,12 +824,14 @@
 <li>Preview image attachments.</li>
 <li>See non-image files as compact entries with file type and size when Jira provides them.</li>
 <li>Open the full attachment in Jira.</li>
+<li>Delete an attachment: hover it, click the <strong>×</strong>, then confirm. <strong>Esc</strong> or <strong>Cancel</strong> keeps it.</li>
 <li>Use screenshot evidence during QA, release checks, bug triage, or support work.</li>
 </ul>
 <p>Business logic and limitations:</p>
 <ul>
 <li>Images use the visual preview grid. Other file types remain visible and downloadable without pretending they have an image preview.</li>
 <li>Attachment visibility follows your Jira permissions.</li>
+<li>The <strong>×</strong> appears on attachments you uploaded when Jira grants <strong>Delete Own Attachments</strong>, and on every attachment when it grants <strong>Delete All Attachments</strong>. If QuickView cannot read those permissions, it offers delete on your own uploads only.</li>
 </ul>
 <h3 id="510-pull-requests-block">5.10 Pull Requests Block</h3>
 <p><img src="screenshots/user-guide/pull-requests-grid.png" alt="Compact pull request grid" /></p>
