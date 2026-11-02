@@ -1,0 +1,14 @@
+{{#canDelete}}
+{{#isConfirmingDelete}}
+<div class="_JX_attachment_delete_confirmation" role="group" aria-label="Delete {{filename}}?">
+    <span class="_JX_attachment_delete_question">Delete <strong>{{filename}}</strong>?</span>
+    <span class="_JX_attachment_delete_actions">
+        <button class="_JX_comment_delete_cancel _JX_attachment_delete_cancel" type="button" {{deleteDisabledAttr}}>Cancel</button>
+        <button class="_JX_comment_delete_confirm _JX_attachment_delete_confirm" type="button" data-attachment-id="{{id}}" {{deleteDisabledAttr}}>{{deleteConfirmText}}</button>
+    </span>
+</div>
+{{/isConfirmingDelete}}
+{{^isConfirmingDelete}}
+<button class="_JX_attachment_delete" type="button" data-attachment-id="{{id}}" aria-label="Delete {{filename}}" title="Delete {{filename}}" {{deleteDisabledAttr}}><svg width="10" height="10" viewBox="0 0 10 10" focusable="false" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></button>
+{{/isConfirmingDelete}}
+{{/canDelete}}

@@ -96,6 +96,10 @@ export function createBrowserPopupModel({createDescriptionState, createTimeTrack
       state = {...state, timeTrackingEditState: intent.state};
       return {kind: 'changed', view: state};
     }
+    if (intent.type === 'attachmentDeleteChanged') {
+      state = {...state, attachmentDeleteState: intent.state};
+      return {kind: 'changed', view: state};
+    }
     if (intent.type === 'attachmentUploaded') {
       const uploaded = intent.attachment;
       const attachments = Array.isArray(state.issueData?.fields?.attachment) ? state.issueData.fields.attachment : [];

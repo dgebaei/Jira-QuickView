@@ -448,6 +448,7 @@ function createState(origin) {
           mimeType: 'image/png',
           content: buildAttachmentContentUrl(origin, '900'),
           thumbnail: buildAttachmentThumbnailUrl(origin, '900'),
+          author: {accountId: 'user-casey', displayName: 'Casey Commenter'},
         },
         {
           id: '901',
@@ -455,6 +456,7 @@ function createState(origin) {
           mimeType: 'image/png',
           content: buildAttachmentContentUrl(origin, '901'),
           thumbnail: buildAttachmentThumbnailUrl(origin, '901'),
+          author: {accountId: 'user-me', name: 'me', key: 'me', displayName: 'Morgan Agent'},
         },
         {
           id: '902',
@@ -462,6 +464,7 @@ function createState(origin) {
           mimeType: 'image/png',
           content: buildAttachmentContentUrl(origin, '902'),
           thumbnail: buildAttachmentThumbnailUrl(origin, '902'),
+          author: {accountId: 'user-me', name: 'me', key: 'me', displayName: 'Morgan Agent'},
         },
         {
           id: '903',
@@ -469,6 +472,7 @@ function createState(origin) {
           mimeType: 'image/png',
           content: buildAttachmentContentUrl(origin, '903'),
           thumbnail: buildAttachmentThumbnailUrl(origin, '903'),
+          author: {accountId: 'user-casey', displayName: 'Casey Commenter'},
         },
       ],
       comments: [
@@ -1302,6 +1306,15 @@ async function createMockJiraServer() {
       return;
     }
 
+    if (pathname === '/rest/api/2/mypermissions' && req.method === 'GET') {
+      const readonly = state.scenario === 'readonly' || state.scenario === 'anonymous-readonly';
+      json(res, 200, {permissions: {
+        DELETE_ALL_ATTACHMENTS: {key: 'DELETE_ALL_ATTACHMENTS', havePermission: false},
+        DELETE_OWN_ATTACHMENTS: {key: 'DELETE_OWN_ATTACHMENTS', havePermission: !readonly},
+      }});
+      return;
+    }
+
     if (pathname === '/rest/auth/1/session' && req.method === 'GET') {
       if (state.scenario === 'anonymous-readonly' || state.scenario === 'logged-out' || state.scenario === 'unauthorized') {
         json(res, 401, {errorMessages: ['Not logged in']});
@@ -1602,6 +1615,12 @@ async function createMockJiraServer() {
 
     if (pathname.startsWith('/rest/api/2/attachment/') && req.method === 'DELETE') {
       const attachmentId = pathname.split('/').pop();
+      const known = [...state.issue.attachments, ...state.uploadedAttachments].some(attachment => attachment.id === attachmentId);
+      if (!known) {
+        json(res, 404, {errorMessages: ['The attachment does not exist']});
+        return;
+      }
+      state.issue.attachments = state.issue.attachments.filter(attachment => attachment.id !== attachmentId);
       state.uploadedAttachments = state.uploadedAttachments.filter(attachment => attachment.id !== attachmentId);
       noContent(res);
       return;

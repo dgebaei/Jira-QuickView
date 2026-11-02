@@ -202,6 +202,25 @@ export function createOptionalSectionAcquisition(options = {}) {
     });
   }
 
+  async function loadAttachmentPermissions(issueKey, signal) {
+    return cache.read({
+      family: 'attachmentPermissions',
+      key: issueKey,
+      ttlMs,
+      load: async () => {
+        const response = await jira.read({
+          path: `${instanceUrl}rest/api/2/mypermissions?issueKey=${encodeURIComponent(issueKey)}&permissions=DELETE_ALL_ATTACHMENTS,DELETE_OWN_ATTACHMENTS`,
+          signal,
+        });
+        const permissions = response?.permissions || {};
+        return {
+          deleteAll: permissions.DELETE_ALL_ATTACHMENTS?.havePermission === true,
+          deleteOwn: permissions.DELETE_OWN_ATTACHMENTS?.havePermission === true,
+        };
+      },
+    });
+  }
+
   async function loadViewer(signal) {
     return cache.read({
       family: 'viewer',
@@ -306,5 +325,5 @@ export function createOptionalSectionAcquisition(options = {}) {
     if (mutation.kind === 'issueChanged' && issueId) cache.invalidate('pullRequests', issueId);
   }
 
-  return {invalidateIssue, loadChildren, loadLinkedIssues, loadPullRequests, loadReactions, loadRemoteLinks, loadViewer, loadWatchers};
+  return {invalidateIssue, loadAttachmentPermissions, loadChildren, loadLinkedIssues, loadPullRequests, loadReactions, loadRemoteLinks, loadViewer, loadWatchers};
 }
