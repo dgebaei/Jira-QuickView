@@ -50,7 +50,7 @@ export function matchPopupShortcut(event, {digitsOnly = false} = {}) {
 // in QuickView and a digit pressed while it is open runs that shortcut.
 export function createBrowserPopupShortcuts(deps) {
   const {container, getSession, isBusy, pin, beginFieldEdit, quickAction, copy, openIssue, focusComment, onSaved, announce,
-    pageIssueKey = () => '', openPageIssue, copyPageIssue} = deps;
+    pageIssue = () => null, openPageIssue, openPageIssueInJira, copyPageIssue} = deps;
   const documentRef = container.ownerDocument;
   const workflow = createPopupShortcutWorkflow(deps);
   let dialog = null;
@@ -494,22 +494,27 @@ export function createBrowserPopupShortcuts(deps) {
     invoke(shortcut).catch(error => announce(error.message));
   }
 
-  // On Jira's own issue page a number key opens QuickView on that issue, then runs.
+  // On Jira's own issue page, or a page about one issue such as an open mail, a number
+  // key opens QuickView on that issue, then runs.
   function pageKeydown(event) {
-    const issueKey = pageIssueKey();
-    if (!issueKey || !openPageIssue || event.target?.closest?.('dialog, [role="dialog"], .aui-dialog2, .jira-dialog')) return;
+    const issue = pageIssue();
+    if (!issue || !openPageIssue || event.target?.closest?.('dialog, [role="dialog"], .aui-dialog2, .jira-dialog')) return;
     const shortcut = matchPopupShortcut(event, {digitsOnly: true});
-    // 9 would open the issue Jira already shows. An unfinished edit in QuickView must
-    // not be replaced by the page's issue.
-    if (!shortcut || shortcut.digit === '9' || invoking || isBusy() || workflow.busy()) return;
+    // On Jira, 9 would open the issue Jira already shows. An unfinished edit in QuickView
+    // must not be replaced by the page's issue.
+    if (!shortcut || (shortcut.digit === '9' && issue.onJira) || invoking || isBusy() || workflow.busy()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    // Copying needs no popup.
+    // Copying and opening in Jira need no popup.
     if (shortcut.digit === '8') {
-      copyPageIssue(issueKey, shortcut.alternate).catch(error => announce(error.message || 'Could not copy'));
+      copyPageIssue(issue.key, shortcut.alternate).catch(error => announce(error.message || 'Could not copy'));
       return;
     }
-    openPageIssue(issueKey)
+    if (shortcut.digit === '9') {
+      openPageIssueInJira(issue.key);
+      return;
+    }
+    openPageIssue(issue.key)
       .then(opened => opened && invoke(shortcut))
       .catch(error => announce(error.message));
   }

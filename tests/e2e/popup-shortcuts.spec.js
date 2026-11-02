@@ -551,3 +551,52 @@ test('on Jira\'s own issue page, number keys act on that issue, letters stay Jir
   await expect(title).toContainText(target.primaryIssueKey);
   await page.close();
 });
+
+test('on a mail page, number keys act on the issue in the open message\'s subject without QuickView open; letters stay the page\'s @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Keyboard workflow writes are tested against the mock only.');
+  await servers.jira.setScenario('shortcut-planning');
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {hoverModifierKey: 'none', hoverActivationMode: 'automatic'}, target));
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.allowedPage.origin});
+  await page.goto(`${servers.allowedPage.origin}/mail-reading-pane`);
+  await injectContentScript(extensionApp, page);
+  await page.evaluate(() => {
+    window.pageKeys = [];
+    document.addEventListener('keydown', event => window.pageKeys.push(event.key));
+  });
+  const title = page.locator('#_JX_title_link');
+  // Focus sits on the selected message in the list, as in Outlook.
+  await page.locator('#mail-row').focus();
+
+  await page.keyboard.press('a');
+  await expect.poll(() => page.evaluate(() => window.pageKeys)).toEqual(['a']);
+  await expect(title).toHaveCount(0);
+
+  await page.evaluate(() => navigator.clipboard.writeText('before'));
+  await page.keyboard.press('8');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(target.primaryIssueKey);
+  await page.keyboard.press('Alt+8');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await expect(title).toHaveCount(0);
+
+  // Outside Jira, 9 opens the issue in Jira.
+  const tabPromise = page.context().waitForEvent('page');
+  await page.keyboard.press('9');
+  const tab = await tabPromise;
+  await expect.poll(() => tab.url()).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await tab.close();
+  await page.bringToFront();
+  await expect(title).toHaveCount(0);
+
+  await page.locator('#mail-row').focus();
+  await page.keyboard.press('5');
+  await expect(title).toContainText(target.primaryIssueKey);
+  await expect(page.getByTestId('jira-shortcut-assignee')).toBeFocused();
+  await screenshot(page, 'mail-page-plan');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('jira-shortcut-dialog')).toHaveCount(0);
+  // The page itself saw none of the number keys.
+  expect((await page.evaluate(() => window.pageKeys)).filter(key => /^\d$/.test(key))).toEqual([]);
+  await page.close();
+});

@@ -18,7 +18,7 @@ import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation}
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
-import {readJiraPageIssueKey} from 'src/jira-page-issue';
+import {readJiraPageIssueKey, readPageIssue} from 'src/jira-page-issue';
 import {describeJiraConnectionFailure, getJiraHttpStatus} from 'src/jira-connection-errors';
 import {
   buildAttachmentPreviewUrls,
@@ -2782,7 +2782,11 @@ async function mainAsyncLocal() {
     announce(message, kind = 'error') {
       if (kind !== 'error' || !notifyJiraConnectionFailure(INSTANCE_URL, message)) showToast(message, {kind});
     },
-    pageIssueKey: () => readJiraPageIssueKey(location.href, INSTANCE_URL),
+    pageIssue: () => readPageIssue(location.href, INSTANCE_URL, document, {ignore: container[0]}),
+    openPageIssueInJira(issueKey) {
+      sendMessage({action: 'openTab', url: `${INSTANCE_URL}browse/${encodeURIComponent(issueKey)}`})
+        .catch(error => showToast(error.message || 'Could not open Jira', {kind: 'error'}));
+    },
     async copyPageIssue(issueKey, plain) {
       const url = `${INSTANCE_URL}browse/${encodeURIComponent(issueKey)}`;
       if (!plain) {

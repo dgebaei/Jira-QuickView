@@ -447,3 +447,40 @@ test('digit matching rejects editing, modifiers, IME, repeat and reserved varian
     {digit: '2', alternate: true}, {digit: '4', alternate: true}, {digit: '8', alternate: true}, {digit: '9', alternate: false},
   ]);
 });
+
+test('elsewhere, the page issue is the key in the first visible heading outside lists, menus and QuickView', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const read = window.JiraQuickViewDeepModules.readPageIssue;
+    const root = 'https://jira.example/';
+    const mail = 'https://outlook.example/mail/inbox/id/1';
+    const render = html => {
+      document.body.innerHTML = html;
+      return document;
+    };
+    const quickView = () => document.querySelector('.quickview');
+    return {
+      // An Outlook-like reading pane: the message list repeats keys, the subject names the issue.
+      outlook: read(mail, root, render(`
+        <div role="listbox"><div role="option"><div role="heading">jira - Updates for ABC-1</div></div></div>
+        <h2 style="display:none">Hidden ABC-2</h2>
+        <div role="heading" aria-level="2"><span>jira - Updates for ABC-12: Export fails</span></div>
+        <h1>Issue created</h1><a href="https://jira.example/browse/ABC-13">ABC-13</a>`)),
+      // Gmail lays its conversation out in tables and puts the subject in an h2.
+      gmail: read(mail, root, render('<table><tr><td><h2>[JIRA] (ABC-7) Login breaks</h2></td></tr></table>')),
+      menuOnly: read(mail, root, render('<nav><h2>ABC-3</h2></nav><div role="menu"><h3>ABC-4</h3></div><h1>Inbox</h1>')),
+      ariaHidden: read(mail, root, render('<div aria-hidden="true"><h1>ABC-5</h1></div>')),
+      quickView: read(mail, root, render('<div class="quickview"><h1>ABC-6</h1></div>'), {ignore: quickView()}),
+      lowercase: read(mail, root, render('<h1>abc-8 is not a key</h1>')),
+      jiraIssue: read('https://jira.example/browse/ABC-9', root, render('<h1>ABC-10</h1>')),
+      // Jira binds number keys on its other pages, so headings there never count.
+      jiraBoard: read('https://jira.example/secure/RapidBoard.jspa?rapidView=7', root, render('<h1>ABC-11</h1>')),
+    };
+  });
+  expect(result).toEqual({
+    outlook: {key: 'ABC-12', onJira: false},
+    gmail: {key: 'ABC-7', onJira: false},
+    menuOnly: null, ariaHidden: null, quickView: null, lowercase: null,
+    jiraIssue: {key: 'ABC-9', onJira: true},
+    jiraBoard: null,
+  });
+});

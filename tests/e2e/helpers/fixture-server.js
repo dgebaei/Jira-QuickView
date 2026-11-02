@@ -128,6 +128,16 @@ function defaultRouteContent(origin) {
         <span id="near-token-key" class="marker">JRACLOUD-97846</span><span id="near-token-gap" style="display:inline-block; width: 28px; height: 1.8em;"></span><span>adjacent blank area</span>
       </div>
     `),
+    '/mail-reading-pane': createHtml('Mail - Reading Pane', `
+      <div role="listbox" aria-label="Message list">
+        <div role="option" tabindex="0" id="mail-row"><div role="heading" aria-level="3">jira - Updates for JRACLOUD-11111</div></div>
+      </div>
+      <section aria-label="Reading pane">
+        <div role="heading" aria-level="2" id="mail-subject"><span>jira - Updates for JRACLOUD-97846: Export fails</span></div>
+        <h1>Issue created</h1>
+        <p>Linked: <a href="${origin}/browse/JRACLOUD-22222">JRACLOUD-22222</a></p>
+      </section>
+    `),
     '/attachment-links': createHtml('Attachment Links Fixture', `
       <h1>Attachment Links</h1>
       <div class="card stack">
