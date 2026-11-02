@@ -460,6 +460,84 @@ test('leaves Jira board detail-panel tab links to the selected issue native @moc
   await page.close();
 });
 
+test('opens QuickView on load from a Jira issue URL ending in #quickview, then drops the hash @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Opening from the #quickview hash is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  // Neither hover nor click activation is needed: the hash alone opens it.
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: false,
+    hoverActivationMode: 'off',
+    domains: [target.instanceUrl],
+  }));
+
+  const page = await extensionApp.context.newPage();
+  const issueUrl = `${target.instanceUrl}/browse/${target.primaryIssueKey}?filter=-1`;
+  await page.goto(`${issueUrl}#quickview`);
+  await injectContentScript(extensionApp, page);
+
+  await expect(page.locator('#_JX_title_link')).toContainText(target.primaryIssueKey);
+  await expect(page.locator('._JX_container')).toHaveClass(/container-pinned/);
+  expect(page.url()).toBe(issueUrl);
+  // Nothing was pointed at, so the popup sits in the middle of the viewport;
+  // one taller than the viewport keeps to its top margin.
+  const viewport = page.viewportSize();
+  await expect.poll(async () => {
+    const box = await page.locator('._JX_container').boundingBox();
+    const offCenterX = Math.abs(box.x + box.width / 2 - viewport.width / 2);
+    const offCenterY = box.height < viewport.height - 16
+      ? Math.abs(box.y + box.height / 2 - viewport.height / 2)
+      : Math.abs(box.y - 8);
+    return {offCenterX: Math.round(offCenterX), offCenterY: Math.round(offCenterY)};
+  }).toEqual({offCenterX: 0, offCenterY: 0});
+  if (betaScreenshotDir) {
+    await page.screenshot({path: path.join(betaScreenshotDir, 'popup-open-from-quickview-hash.png')});
+  }
+
+  // The hash is gone, so a reload shows the plain issue page.
+  await page.reload();
+  await injectContentScript(extensionApp, page);
+  await expect.poll(async () => page.locator('._JX_container').count()).toBe(1);
+  await page.waitForTimeout(500);
+  await expect(page.locator('#_JX_title_link')).toHaveCount(0);
+  expect(page.url()).toBe(issueUrl);
+  await page.close();
+});
+
+test('ignores #quickview outside the Jira instance and any other hash on Jira @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Opening from the #quickview hash is deterministic in mocked mode only.');
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target, {
+    openQuickViewOnClick: false,
+    hoverActivationMode: 'off',
+    domains: [servers.allowedPage.origin, target.instanceUrl],
+  }));
+
+  // A Jira-shaped issue path with the exact hash, but on another origin.
+  const otherPage = await extensionApp.context.newPage();
+  await otherPage.goto(`${servers.allowedPage.origin}/`);
+  await otherPage.evaluate(issueKey => {
+    history.replaceState(null, '', `/browse/${issueKey}#quickview`);
+  }, target.primaryIssueKey);
+  await injectContentScript(extensionApp, otherPage);
+  await expect.poll(async () => otherPage.locator('._JX_container').count()).toBe(1);
+
+  // The Jira instance's own issue page, with a hash that only starts with "quickview".
+  const jiraPage = await extensionApp.context.newPage();
+  await jiraPage.goto(`${target.instanceUrl}/browse/${target.primaryIssueKey}#quickview-later`);
+  await injectContentScript(extensionApp, jiraPage);
+  await expect.poll(async () => jiraPage.locator('._JX_container').count()).toBe(1);
+
+  await jiraPage.waitForTimeout(500);
+  await expect(otherPage.locator('._JX_container')).toBeEmpty();
+  await expect(jiraPage.locator('._JX_container')).toBeEmpty();
+  expect(new URL(otherPage.url()).hash).toBe('#quickview');
+  expect(new URL(jiraPage.url()).hash).toBe('#quickview-later');
+  await otherPage.close();
+  await jiraPage.close();
+});
+
 test('shows the Children block above pull requests and sorts it from the column headers @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Child table ordering and sorting are deterministic in mocked mode only.');

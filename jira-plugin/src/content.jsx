@@ -215,6 +215,11 @@ async function checkLiveJiraReachability(instanceUrl) {
   }
 }
 
+// The issue key in a Jira issue path: /browse/KEY or /issues/KEY.
+function getIssueKeyFromJiraPath(pathname) {
+  return String(pathname || '').match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)?.[1]?.toUpperCase() || '';
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main Content Script
 // ═══════════════════════════════════════════════════════════════
@@ -4011,14 +4016,14 @@ async function mainAsyncLocal() {
     });
   }
 
-  function triggerPopupForKey(key, pointerX, pointerY, immediate, activation = '') {
+  function triggerPopupForKey(key, pointerX, pointerY, immediate, activation = '', anchorOptions = {}) {
     clearTimeout(hoverDelayTimeout);
     lastHoveredKey = key;
     if (immediate) {
-      fetchAndShowPopup(key, pointerX, pointerY, activation);
+      fetchAndShowPopup(key, pointerX, pointerY, activation, anchorOptions);
     } else {
       hoverDelayTimeout = setTimeout(function () {
-        fetchAndShowPopup(key, pointerX, pointerY, activation);
+        fetchAndShowPopup(key, pointerX, pointerY, activation, anchorOptions);
       }, 250);
     }
   }
@@ -4044,9 +4049,8 @@ async function mainAsyncLocal() {
       return null;
     }
     if (!['http:', 'https:'].includes(linkUrl.protocol) || linkUrl.origin !== jiraOrigin) return null;
-    const keyMatch = linkUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i);
-    if (!keyMatch) return null;
-    const key = keyMatch[1].toUpperCase();
+    const key = getIssueKeyFromJiraPath(linkUrl.pathname);
+    if (!key) return null;
     const linkText = String(link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
     if (/^(view issue|add comment|comment|cancel|edit|assign)$/.test(linkText)) return null;
     // The issue Jira is showing: the page's own issue, or the one open in a
@@ -4054,8 +4058,7 @@ async function mainAsyncLocal() {
     // still opens QuickView; with a query or anchor it is one of Jira's tabs or
     // actions, so it stays native.
     const currentKey = currentUrl.origin === jiraOrigin
-      ? (currentUrl.pathname.match(/\/(?:browse|issues)\/([A-Z][A-Z0-9]{1,14}-\d+)(?:\/|$)/i)?.[1]
-        || currentUrl.searchParams.get('selectedIssue'))
+      ? (getIssueKeyFromJiraPath(currentUrl.pathname) || currentUrl.searchParams.get('selectedIssue'))
       : null;
     if (currentKey?.toUpperCase() === key && (linkUrl.search || linkUrl.hash)) return null;
     // Jira's project issue navigator uses these links to open its native
@@ -4085,6 +4088,26 @@ async function mainAsyncLocal() {
       triggerPopupForKey(clickedIssue.key, pointerX, pointerY, true, 'click');
     }, true);
   }
+
+  // A link to <jira>/browse/KEY#quickview opens QuickView over that issue page
+  // straight away, pinned as if its key had been clicked, in the middle of the viewport.
+  // The hash is then dropped so a reload or back navigation does not reopen it.
+  function openQuickViewFromLocationHash() {
+    if (window.location.hash !== '#quickview') return;
+    let jiraOrigin;
+    try {
+      jiraOrigin = new URL(INSTANCE_URL).origin;
+    } catch (error) {
+      return;
+    }
+    if (window.location.origin !== jiraOrigin) return;
+    const key = getIssueKeyFromJiraPath(window.location.pathname);
+    if (!key) return;
+    triggerPopupForKey(key, window.scrollX + (window.innerWidth / 2), window.scrollY + (window.innerHeight / 2), true, 'click', {center: true});
+    history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}`);
+  }
+
+  openQuickViewFromLocationHash();
 
   if (openAttachmentPreviews) {
     document.addEventListener('click', function (e) {
