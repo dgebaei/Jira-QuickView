@@ -18,6 +18,7 @@ import config, {buildTooltipLayoutFromDisplayFields, resolveQuickViewActivation}
 import {DEFAULT_THEME_MODE, syncDocumentTheme} from 'src/theme';
 import {copyIssueReference} from 'src/issue-reference-copy';
 import {installJiraInlineCopyButtons} from 'src/jira-inline-copy';
+import {readJiraPageIssueKey} from 'src/jira-page-issue';
 import {describeJiraConnectionFailure, getJiraHttpStatus} from 'src/jira-connection-errors';
 import {
   buildAttachmentPreviewUrls,
@@ -328,7 +329,7 @@ async function mainAsyncLocal() {
     }));
   }
 
-  const [annotationTemplate, statusChipTemplate] = await Promise.all(['resources/annotation.html', 'resources/status-chip.html']
+  const [annotationTemplate, statusChipTemplate, attachmentDeleteTemplate] = await Promise.all(['resources/annotation.html', 'resources/status-chip.html', 'resources/attachment-delete.html']
     .map(resource => fetch(chrome.runtime.getURL(resource)).then(response => response.text())));
   const loaderGifUrl = chrome.runtime.getURL('resources/ajax-loader.gif');
   const emptyDescriptionEditState = () => ({
@@ -373,7 +374,7 @@ async function mainAsyncLocal() {
     escapeHtml,
     normalizeHistoryAttachmentName,
   });
-  const quickViewIssueData = createQuickViewIssueData({
+  const issueDataSource = createQuickViewIssueData({
     customFields,
     instanceUrl: INSTANCE_URL,
     jira,
@@ -386,32 +387,47 @@ async function mainAsyncLocal() {
       },
     },
   });
+  // Jira's own issue view does not see QuickView's writes: reload it in place.
+  const quickViewIssueData = {
+    ...issueDataSource,
+    async refreshAfterMutation(request = {}) {
+      try {
+        return await issueDataSource.refreshAfterMutation(request);
+      } finally {
+        if (request.issueKey && request.issueKey === readJiraPageIssueKey(location.href, INSTANCE_URL)) {
+          sendMessage({action: 'refreshJiraIssueView', issueId: String(request.priorSnapshot?.core?.id || '')}).catch(() => {});
+        }
+      }
+    },
+  };
+  // Copies an issue that need not be open in QuickView, loading its title when the page lacks it.
+  async function copyIssueReferenceByKey(reference) {
+    try {
+      let summary = reference.summary;
+      const displayedIssue = currentPopupState()?.issueData;
+      if (!summary && displayedIssue?.key === reference.key) summary = displayedIssue.fields?.summary;
+      if (!summary) {
+        const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
+        summary = outcome.snapshot?.core?.summary;
+        if (!summary) throw issueDataError(outcome.failures?.core, 'Could not load issue title');
+      }
+      await copyIssueReferenceWithFeedback({...reference, summary});
+    } catch (error) {
+      if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
+        const reason = getJiraHttpStatus(error) === 404
+          ? `Jira has no issue ${reference.key}, or you cannot view it.`
+          : 'Please try again.';
+        showToast(`Could not copy ${reference.key}. ${reason}`, {kind: 'error'});
+      }
+      throw error;
+    }
+  }
   installJiraInlineCopyButtons({
     document,
     instanceUrl: INSTANCE_URL,
     enabled: config.inlineCopyButtons !== false,
     isAlive: () => Boolean(chrome.runtime?.id),
-    copy: async reference => {
-      try {
-        let summary = reference.summary;
-        const displayedIssue = currentPopupState()?.issueData;
-        if (!summary && displayedIssue?.key === reference.key) summary = displayedIssue.fields?.summary;
-        if (!summary) {
-          const outcome = await quickViewIssueData.openIssue({issueKey: reference.key, requirements: {core: 'summary'}});
-          summary = outcome.snapshot?.core?.summary;
-          if (!summary) throw issueDataError(outcome.failures?.core, 'Could not load issue title');
-        }
-        await copyIssueReferenceWithFeedback({...reference, summary});
-      } catch (error) {
-        if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
-          const reason = getJiraHttpStatus(error) === 404
-            ? `Jira has no issue ${reference.key}, or you cannot view it.`
-            : 'Please try again.';
-          showToast(`Could not copy ${reference.key}. ${reason}`, {kind: 'error'});
-        }
-        throw error;
-      }
-    },
+    copy: copyIssueReferenceByKey,
   });
   const jiraFieldEditing = createJiraFieldEditing({
     instanceUrl: INSTANCE_URL,
@@ -2627,6 +2643,7 @@ async function mainAsyncLocal() {
   // ── Quick Actions ──────────────────────────────────────────
 
   const {buildPopupDisplayData} = createPopupProjectView({
+    areSameJiraUser,
     attachments: attachmentPresentation,
     buildActiveEditPresentation,
     buildCustomFieldChips,
@@ -2703,7 +2720,7 @@ async function mainAsyncLocal() {
     projectState: buildPopupDisplayData,
     template: annotationTemplate,
     toast: {show: showToast, hide: hideToast},
-    partials: {statusChip: statusChipTemplate},
+    partials: {statusChip: statusChipTemplate, attachmentDelete: attachmentDeleteTemplate},
   });
   const popupShortcuts = createBrowserPopupShortcuts({
     container: container[0],
@@ -2760,6 +2777,25 @@ async function mainAsyncLocal() {
     },
     announce(message, kind = 'error') {
       if (kind !== 'error' || !notifyJiraConnectionFailure(INSTANCE_URL, message)) showToast(message, {kind});
+    },
+    pageIssueKey: () => readJiraPageIssueKey(location.href, INSTANCE_URL),
+    async copyPageIssue(issueKey, plain) {
+      const url = `${INSTANCE_URL}browse/${encodeURIComponent(issueKey)}`;
+      if (!plain) {
+        const summary = String(document.querySelector('#summary-val')?.textContent || '').trim();
+        await copyIssueReferenceByKey({key: issueKey, summary, url}).catch(() => {});
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      showToast('Copied issue URL', {kind: 'success'});
+    },
+    async openPageIssue(issueKey) {
+      if (currentPopupState()?.issueData?.key !== issueKey) {
+        await fetchAndShowPopup(issueKey, 0, 0, 'click', {center: true});
+      }
+      if (currentPopupState()?.issueData?.key !== issueKey) return false;
+      container[0].focus({preventScroll: true});
+      return true;
     },
   });
   popupShortcuts.install();
@@ -2974,6 +3010,63 @@ async function mainAsyncLocal() {
     if (!this.contains(document.activeElement)) this.focus({preventScroll: true});
   });
 
+  // ── Attachment Deletion ───────────────────────────────────
+  function setAttachmentDeleteState(state) {
+    popupModel.dispatch({type: 'attachmentDeleteChanged', state});
+  }
+
+  async function deleteAttachment(attachmentId) {
+    const popupView = currentPopupState();
+    const attachment = (popupView?.issueData?.fields?.attachment || []).find(item => String(item.id) === attachmentId);
+    if (!attachment || popupView.attachmentDeleteState?.pendingId) return {kind: 'ignored'};
+    const sessionId = currentPopupSessionId();
+    const issueKey = popupView.issueData.key;
+    const filename = attachment.filename || 'the attachment';
+    setAttachmentDeleteState({confirmingId: attachmentId, pendingId: attachmentId});
+    await renderIssuePopup(currentPopupState());
+    let notice = `Deleted ${filename}`;
+    try {
+      await jira.write({method: 'DELETE', path: `${INSTANCE_URL}rest/api/2/attachment/${encodeURIComponent(attachmentId)}`});
+    } catch (error) {
+      const status = getJiraHttpStatus(error);
+      // Gone already: refresh so the popup stops showing it.
+      if (status === 404) notice = `${filename} was already deleted`;
+      else {
+        if (sessionId === currentPopupSessionId()) {
+          setAttachmentDeleteState({});
+          await renderIssuePopup(currentPopupState());
+        }
+        if (status === 403) {
+          showToast(`Jira did not allow deleting ${filename}. You may lack permission to delete attachments.`, {kind: 'error'});
+        } else if (!notifyJiraConnectionFailure(INSTANCE_URL, error)) {
+          showToast(`Could not delete ${filename}. ${error?.message || 'Please try again.'}`, {kind: 'error'});
+        }
+        return {kind: 'failed'};
+      }
+    }
+    const refreshed = await quickViewIssueData.refreshAfterMutation({
+      issueKey,
+      priorSnapshot: popupView.issueSnapshot,
+      mutation: {kind: 'attachmentChanged'},
+      requirements: {
+        history: !!currentPopupState()?.historyOpen,
+        linkedIssues: !!linkedIssueLifecycle.view().open,
+        pullRequests: showPullRequests,
+        watchers: !!watcherLifecycle.view().open,
+      },
+    }).catch(() => null);
+    if (sessionId !== currentPopupSessionId()) return {kind: 'ignored'};
+    setAttachmentDeleteState({});
+    if (refreshed?.snapshot?.core) {
+      await popupSession.dispatch({type: 'render', reason: 'attachment-deleted', issueSnapshot: refreshed.snapshot});
+      showToast(notice, {kind: 'success'});
+    } else {
+      await renderIssuePopup(currentPopupState());
+      showToast(`${notice}, but the popup could not refresh. Reopen QuickView to see it.`, {kind: 'error'});
+    }
+    return {kind: 'deleted'};
+  }
+
   // ── Clipboard & Copy ──────────────────────────────────────
   async function copyIssueReferenceWithFeedback(reference) {
     const result = await copyIssueReference(reference);
@@ -2997,6 +3090,12 @@ async function mainAsyncLocal() {
   });
 
   async function handlePopupPresentationIntent(intent) {
+    if (intent.type === 'attachment-confirm-delete' || intent.type === 'attachment-cancel-delete') {
+      if (currentPopupState()?.attachmentDeleteState?.pendingId) return {kind: 'ignored', reason: 'delete-pending'};
+      setAttachmentDeleteState(intent.type === 'attachment-confirm-delete' ? {confirmingId: intent.attachmentId} : {});
+      return renderIssuePopup(currentPopupState());
+    }
+    if (intent.type === 'attachment-delete-confirmed') return deleteAttachment(intent.attachmentId);
     if (intent.type === 'connect-gitlab') {
       const sessionId = currentPopupSessionId();
       // Keep the permission request on the original click's user gesture.
@@ -3062,6 +3161,9 @@ async function mainAsyncLocal() {
     }
     if (intent.type === 'escape') {
       if (popupShell.view().previewOpen) return popupShell.dispatch({type: 'close-preview'});
+      if (currentPopupState()?.attachmentDeleteState?.confirmingId) {
+        return handlePopupPresentationIntent({type: 'attachment-cancel-delete'});
+      }
       if (currentPopupState()?.historyOpen) return popupSession.dispatch({type: 'close-history'});
       if (linkedIssueLifecycle.view().open) return popupSession.dispatch({type: 'close-linkedIssues'});
       if (currentPopupState()?.descriptionEditState?.open) return cancelDescriptionEdit();
@@ -3888,7 +3990,7 @@ async function mainAsyncLocal() {
     return hoveredElement === activeElement || activeElement.contains(hoveredElement);
   }
 
-  function fetchAndShowPopup(key, pointerX, pointerY, activation = '', anchorOptions = {}) {
+  function fetchAndShowPopup(key, pointerX, pointerY, activation = '', {center = false} = {}) {
     const popupView = currentPopupState();
     if (popupView?.key && popupView.key !== key && popupView.descriptionEditState?.open) {
       clearDescriptionStatusTimer();
@@ -3896,11 +3998,13 @@ async function mainAsyncLocal() {
     }
     return popupSession.activate({
       issueKey: key,
-      anchor: {x: pointerX, y: pointerY, ...anchorOptions},
+      anchor: {x: pointerX, y: pointerY, center},
       activation: activation || (hoverActivationMode === 'modifier' ? 'modifier' : 'hover'),
       preferences: {commentSortOrder: commentSortOrderPreference},
       requirements: {
+        attachmentPermissions: true,
         children: true,
+        editing: true,
         pullRequests: showPullRequests,
         reactions: true,
         remoteLinks: true,

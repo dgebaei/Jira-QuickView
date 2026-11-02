@@ -387,6 +387,39 @@ test('A reassigns, S changes the sprint, C focuses comments, and Ctrl/Cmd+C copi
   });
 });
 
+test('on Jira pages only digits match, so Jira keeps its own letter shortcuts and Ctrl+C', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const match = event => window.JiraQuickViewDeepModules.matchPopupShortcut({target: document.body, ...event}, {digitsOnly: true});
+    return [
+      match({key: 'a', code: 'KeyA'}), match({key: 's', code: 'KeyS'}), match({key: 'c', code: 'KeyC'}),
+      match({key: 'c', code: 'KeyC', ctrlKey: true}), match({key: '5', code: 'Digit5'}), match({key: '¡', code: 'Digit1', altKey: true}),
+    ];
+  });
+  expect(result).toEqual([null, null, null, null, {digit: '5', alternate: false}, {digit: '1', alternate: true}]);
+});
+
+test('the Jira page issue is the issue view or navigator issue on the configured instance, not a board selection', async ({page}) => {
+  const result = await page.evaluate(() => {
+    const read = window.JiraQuickViewDeepModules.readJiraPageIssueKey;
+    const root = 'https://jira.example/';
+    return {
+      browse: read('https://jira.example/browse/ABC-12', root),
+      navigator: read('https://jira.example/browse/ABC-12?jql=project%3DABC', root),
+      projectNavigator: read('https://jira.example/projects/ABC/issues/abc-12?filter=allopenissues', root),
+      contextPath: read('https://jira.example/jira/browse/ABC-12', 'https://jira.example/jira/'),
+      outsideContextPath: read('https://jira.example/browse/ABC-12', 'https://jira.example/jira/'),
+      board: read('https://jira.example/secure/RapidBoard.jspa?rapidView=7&selectedIssue=ABC-12', root),
+      search: read('https://jira.example/issues/?jql=project%3DABC', root),
+      otherHost: read('https://example.com/browse/ABC-12', root),
+      invalid: read('not a url', root),
+    };
+  });
+  expect(result).toEqual({
+    browse: 'ABC-12', navigator: 'ABC-12', projectNavigator: 'ABC-12', contextPath: 'ABC-12',
+    outsideContextPath: '', board: '', search: '', otherHost: '', invalid: '',
+  });
+});
+
 test('digit matching rejects editing, modifiers, IME, repeat and reserved variants; supports macOS Option digits', async ({page}) => {
   const result = await page.evaluate(() => {
     const match = window.JiraQuickViewDeepModules.matchPopupShortcut;

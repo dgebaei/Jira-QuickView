@@ -320,6 +320,11 @@ export function createQuickViewIssueData(options = {}) {
 
     const coreRequirement = requirements.core === 'summary' ? 'summary' : 'full';
     const includeHistory = requirements.history === true;
+    // Load what the popup's edit controls ask for alongside the issue, so its first render need not wait.
+    if (requirements.editing === true) {
+      fieldFacts.loadFieldContext({issueKey: normalizedIssueKey, fieldId: 'status', includeTransitions: true, signal}).catch(() => {});
+      searchAcquisition.search({purpose: 'label', query: '', signal}).catch(() => {});
+    }
     if (freshness === 'refresh') {
       cache.invalidate(coreRequirement === 'summary' ? 'summary' : 'core', normalizedIssueKey);
       if (includeHistory) {
@@ -344,6 +349,7 @@ export function createQuickViewIssueData(options = {}) {
     }
 
     const sections = {
+      attachmentPermissions: unavailableSection({data: null}),
       children: unavailableSection({items: [], jql: ''}),
       history: unavailableSection({data: null}),
       linkedIssues: unavailableSection({detailsByKey: {}, items: [], linkTypes: []}),
@@ -362,6 +368,9 @@ export function createQuickViewIssueData(options = {}) {
     if (requirements.remoteLinks === true) plans.push({name: 'remoteLinks', load: () => optionalSections.loadRemoteLinks(normalizedIssueKey, signal)});
     if (requirements.watchers === true) plans.push({name: 'watchers', load: () => optionalSections.loadWatchers(normalizedIssueKey, signal)});
     if (requirements.viewer === true) plans.push({name: 'viewer', load: () => optionalSections.loadViewer(signal)});
+    if (requirements.attachmentPermissions === true) {
+      plans.push({name: 'attachmentPermissions', load: () => optionalSections.loadAttachmentPermissions(normalizedIssueKey, signal)});
+    }
     if (requirements.reactions === true) {
       const commentIds = (core?.fields?.comment?.comments || []).map(comment => comment?.id).filter(Boolean);
       plans.push({name: 'reactions', load: () => optionalSections.loadReactions(commentIds, signal)});
@@ -438,6 +447,8 @@ export function createQuickViewIssueData(options = {}) {
           supported: result.value.supported !== false,
           failure: null,
         };
+      } else if (result.name === 'attachmentPermissions') {
+        sections.attachmentPermissions = dataSection(result.value);
       } else if (result.name === 'viewer') {
         viewer = {status: result.value?.id ? 'ready' : 'empty', user: copyValue(result.value), failure: null};
       }

@@ -895,6 +895,29 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     return SEND_RESPONSE_IS_ASYNC;
   }
 
+  if (request.action === 'refreshJiraIssueView') {
+    if (!hasTabId(sender.tab)) {
+      sendResponse({error: 'No tab to refresh'});
+      return false;
+    }
+    // Runs in the page: Jira Server/Data Center's issue view reloads itself on this event.
+    executeScript({
+      target: {tabId: sender.tab.id, frameIds: [sender.frameId]},
+      world: 'MAIN',
+      args: [String(request.issueId || '')],
+      func: issueId => {
+        const jira = window.JIRA;
+        const id = jira?.Issue?.getIssueId?.() || issueId;
+        if (typeof jira?.trigger !== 'function' || !jira.Events?.REFRESH_ISSUE_PAGE || !id) return false;
+        jira.trigger(jira.Events.REFRESH_ISSUE_PAGE, [id]);
+        return true;
+      },
+    })
+      .then(results => sendResponse({result: !!results?.[0]?.result}))
+      .catch(error => sendResponse({error: error.message}));
+    return SEND_RESPONSE_IS_ASYNC;
+  }
+
   if (request.action === 'requestGitLabAccess' || request.action === 'getGitLabPullRequest') {
     const mr = parseGitLabMergeRequestUrl(request.url);
     if (!mr) {

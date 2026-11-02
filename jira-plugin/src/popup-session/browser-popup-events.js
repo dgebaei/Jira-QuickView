@@ -62,8 +62,18 @@ const PRESENTATION_EVENTS = [
     }),
   },
   {
+    selector: '._JX_attachment_delete',
+    intent: element => ({type: 'attachment-confirm-delete', attachmentId: element.getAttribute('data-attachment-id') || ''}),
+  },
+  {selector: '._JX_attachment_delete_cancel', intent: () => ({type: 'attachment-cancel-delete'})},
+  {
+    selector: '._JX_attachment_delete_confirm',
+    intent: element => ({type: 'attachment-delete-confirmed', attachmentId: element.getAttribute('data-attachment-id') || ''}),
+  },
+  {
     selector: '._JX_thumb',
-    intent: (element, event) => typeof event.target?.closest === 'function' && event.target.closest('img._JX_previewable')
+    intent: (element, event) => typeof event.target?.closest === 'function' &&
+      event.target.closest('img._JX_previewable, ._JX_attachment_delete, ._JX_attachment_delete_confirmation')
       ? null
       : {type: 'open-preview', source: element.getAttribute('data-preview-src') || element.getAttribute('data-url') || ''},
   },

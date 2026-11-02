@@ -47,7 +47,7 @@ export function createBrowserPopupModel({createDescriptionState, createTimeTrack
         pullRequests: snapshotView.pullRequests,
         pointerX: Number(frame.anchor?.x) || 0,
         pointerY: Number(frame.anchor?.y) || 0,
-        centered: frame.anchor?.center === true,
+        centered: !!frame.anchor?.center,
         commentReactionState: snapshotView.commentReactionState,
         descriptionEditState: createDescriptionState(issueData),
         timeTrackingEditState: createTimeTrackingState(issueData),
@@ -95,6 +95,10 @@ export function createBrowserPopupModel({createDescriptionState, createTimeTrack
     }
     if (intent.type === 'timeTrackingChanged') {
       state = {...state, timeTrackingEditState: intent.state};
+      return {kind: 'changed', view: state};
+    }
+    if (intent.type === 'attachmentDeleteChanged') {
+      state = {...state, attachmentDeleteState: intent.state};
       return {kind: 'changed', view: state};
     }
     if (intent.type === 'attachmentUploaded') {
