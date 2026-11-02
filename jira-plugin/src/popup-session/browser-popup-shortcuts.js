@@ -21,18 +21,20 @@ export const POPUP_SHORTCUT_GROUPS = [
   ],
 ];
 
-export function matchPopupShortcut(event) {
+// digitsOnly: on Jira's own pages, where Jira binds letters (a, c, m…) itself.
+export function matchPopupShortcut(event, {digitsOnly = false} = {}) {
   if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 ||
     event.getModifierState?.('AltGraph')) return null;
   if (event.target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]')) return null;
   const key = String(event.key || '');
   const letter = /^[a-z]$/i.test(key) ? key.toLowerCase() : /^Key[A-Z]$/.test(event.code || '') ? event.code.slice(3).toLowerCase() : '';
   // Ctrl/Cmd+C copies the issue link, unless text is selected: then it stays the browser's copy.
-  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && letter === 'c') {
+  if (!digitsOnly && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && letter === 'c') {
     const selection = event.target?.ownerDocument?.getSelection?.();
     return selection && !selection.isCollapsed && String(selection).trim() ? null : {digit: '8', alternate: false};
   }
   if (event.ctrlKey || event.metaKey || event.shiftKey) return null;
+  if (digitsOnly && letter) return null;
   if (!event.altKey && letter === 'a') return {digit: '1', alternate: false};
   if (!event.altKey && letter === 's') return {digit: '2', alternate: false};
   if (!event.altKey && letter === 'c') return {digit: '7', alternate: false};
@@ -47,12 +49,14 @@ export function matchPopupShortcut(event) {
 // The help is a non-modal popover anchored to the toolbar button, so focus stays
 // in QuickView and a digit pressed while it is open runs that shortcut.
 export function createBrowserPopupShortcuts(deps) {
-  const {container, getSession, isBusy, pin, beginFieldEdit, quickAction, copy, openIssue, focusComment, onSaved, announce} = deps;
+  const {container, getSession, isBusy, pin, beginFieldEdit, quickAction, copy, openIssue, focusComment, onSaved, announce,
+    pageIssueKey = () => '', openPageIssue, copyPageIssue} = deps;
   const documentRef = container.ownerDocument;
   const workflow = createPopupShortcutWorkflow(deps);
   let dialog = null;
   let help = null;
   let helpObserver = null;
+  let dialogObserver = null;
   let form = null;
   let status = null;
   let results = null;
@@ -99,6 +103,32 @@ export function createBrowserPopupShortcuts(deps) {
     anchorBelowToolbar(help);
   }
 
+  // Background renders replace the toolbar and move QuickView (a centred one re-centres
+  // as it loads); keep a panel under the keyboard button. A page may transition every
+  // element, so QuickView can land frames after its style changes: follow it until it does.
+  function followToolbar(onChange) {
+    const view = documentRef.defaultView;
+    let frame = 0;
+    const follow = () => {
+      onChange();
+      frame = container.getAnimations().length ? view.requestAnimationFrame(follow) : 0;
+    };
+    const observer = new MutationObserver(() => {
+      onChange();
+      if (!frame) frame = view.requestAnimationFrame(follow);
+    });
+    observer.observe(container, {childList: true, subtree: true, attributes: true, attributeFilter: ['style']});
+    // QuickView may still be sliding into place as the panel opens.
+    frame = view.requestAnimationFrame(follow);
+    return {
+      disconnect() {
+        observer.disconnect();
+        view.cancelAnimationFrame(frame);
+        frame = 0;
+      },
+    };
+  }
+
   function closeHelp() {
     if (!help) return;
     helpObserver?.disconnect();
@@ -132,18 +162,16 @@ export function createBrowserPopupShortcuts(deps) {
         element('td', alternate || '—', row);
       });
     });
-    element('p', 'Works while QuickView has focus, outside text fields. Sprint planning and resolve confirm first; Alt+1, Alt+2 and Alt+4 apply at once. Ctrl+C copies the link only when no text is selected. Alt is Option and Ctrl is ⌘ on macOS.', help);
+    element('p', 'Works while QuickView has focus, outside text fields; on a Jira issue page, number keys also work from the page. Sprint planning and resolve confirm first; Alt+1, Alt+2 and Alt+4 apply at once. Ctrl+C copies the link only when no text is selected. Alt is Option and Ctrl is ⌘ on macOS.', help);
     // Clicks inside must not reach the page-level outside-click dismissal.
     help.addEventListener('click', event => event.stopPropagation());
     help.showPopover();
     positionHelp();
     helpToggle()?.setAttribute('aria-expanded', 'true');
-    // Background renders replace the toolbar; keep the new button's state and the anchor.
-    helpObserver = new MutationObserver(() => {
+    helpObserver = followToolbar(() => {
       helpToggle()?.setAttribute('aria-expanded', 'true');
       positionHelp();
     });
-    helpObserver.observe(container, {childList: true, subtree: true});
   }
 
   function close(force = false) {
@@ -153,6 +181,8 @@ export function createBrowserPopupShortcuts(deps) {
     invoking = false;
     workflow.reset();
     if (dialog) {
+      dialogObserver?.disconnect();
+      dialogObserver = null;
       dialog.close();
       dialog.remove();
       dialog = null;
@@ -194,6 +224,7 @@ export function createBrowserPopupShortcuts(deps) {
     });
     dialog.showModal();
     anchorBelowToolbar(dialog, {grows: true});
+    dialogObserver = followToolbar(() => anchorBelowToolbar(dialog, {grows: true}));
   }
 
   function button(text, parent, handler, attributes = {}) {
@@ -451,12 +482,36 @@ export function createBrowserPopupShortcuts(deps) {
       closeHelp();
       return;
     }
-    if (!container.contains(documentRef.activeElement) || !container.contains(event.target) || !getSession()?.issueSnapshot?.core) return;
+    if (!container.contains(documentRef.activeElement) || !container.contains(event.target)) {
+      pageKeydown(event);
+      return;
+    }
+    if (!getSession()?.issueSnapshot?.core) return;
     const shortcut = matchPopupShortcut(event);
     if (!shortcut) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     invoke(shortcut).catch(error => announce(error.message));
+  }
+
+  // On Jira's own issue page a number key opens QuickView on that issue, then runs.
+  function pageKeydown(event) {
+    const issueKey = pageIssueKey();
+    if (!issueKey || !openPageIssue || event.target?.closest?.('dialog, [role="dialog"], .aui-dialog2, .jira-dialog')) return;
+    const shortcut = matchPopupShortcut(event, {digitsOnly: true});
+    // 9 would open the issue Jira already shows. An unfinished edit in QuickView must
+    // not be replaced by the page's issue.
+    if (!shortcut || shortcut.digit === '9' || invoking || isBusy() || workflow.busy()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // Copying needs no popup.
+    if (shortcut.digit === '8') {
+      copyPageIssue(issueKey, shortcut.alternate).catch(error => announce(error.message || 'Could not copy'));
+      return;
+    }
+    openPageIssue(issueKey)
+      .then(opened => opened && invoke(shortcut))
+      .catch(error => announce(error.message));
   }
 
   function click(event) {

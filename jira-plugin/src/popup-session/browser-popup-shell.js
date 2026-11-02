@@ -76,6 +76,13 @@ export function createBrowserPopupShell({
     const pointerY = Number(anchor.y) || 0;
     const width = container.outerWidth() || 0;
     const height = container.outerHeight() || 0;
+    // Opened from the keyboard there is no pointer to follow: centre in the window.
+    if (anchor.center) {
+      return clamp(
+        Math.round(viewport.scrollX + (viewport.innerWidth - width) / 2),
+        Math.round(viewport.scrollY + (viewport.innerHeight - height) / 2),
+      );
+    }
     const viewportRight = viewport.scrollX + viewport.innerWidth - 8;
     const viewportBottom = viewport.scrollY + viewport.innerHeight - 8;
     let left = pointerX + 20;

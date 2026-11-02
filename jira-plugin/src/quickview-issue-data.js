@@ -320,6 +320,11 @@ export function createQuickViewIssueData(options = {}) {
 
     const coreRequirement = requirements.core === 'summary' ? 'summary' : 'full';
     const includeHistory = requirements.history === true;
+    // Load what the popup's edit controls ask for alongside the issue, so its first render need not wait.
+    if (requirements.editing === true) {
+      fieldFacts.loadFieldContext({issueKey: normalizedIssueKey, fieldId: 'status', includeTransitions: true, signal}).catch(() => {});
+      searchAcquisition.search({purpose: 'label', query: '', signal}).catch(() => {});
+    }
     if (freshness === 'refresh') {
       cache.invalidate(coreRequirement === 'summary' ? 'summary' : 'core', normalizedIssueKey);
       if (includeHistory) {

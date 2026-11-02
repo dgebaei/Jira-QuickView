@@ -469,3 +469,85 @@ test('Ctrl+Enter in the new comment field saves the comment @mock-only', async (
   await expect(comment).toHaveValue('');
   await page.close();
 });
+
+test('on Jira\'s own issue page, number keys act on that issue, letters stay Jira\'s, and Jira\'s view refreshes after a save @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'Keyboard workflow writes are tested against the mock only.');
+  await servers.jira.setScenario('shortcut-planning');
+  await configureExtension(optionsPage, buildExtensionConfig(servers, {domains: [servers.jira.origin], hoverModifierKey: 'none', hoverActivationMode: 'automatic'}, target));
+  const page = await extensionApp.context.newPage();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {origin: servers.jira.origin});
+  // Jira Server/Data Center's issue view API, which QuickView asks to reload the issue in place.
+  await page.addInitScript(() => {
+    window.jiraRefreshes = [];
+    window.JIRA = {Events: {REFRESH_ISSUE_PAGE: 'refreshIssuePage'}, Issue: {getIssueId: () => '10001'}, trigger: (event, args) => window.jiraRefreshes.push([event, args])};
+  });
+  await page.goto(`${servers.jira.origin}/browse/${target.primaryIssueKey}`);
+  await injectContentScript(extensionApp, page);
+  await expect(page.getByRole('button', {name: `Copy ${target.primaryIssueKey} issue link`})).toBeVisible();
+  const title = page.locator('#_JX_title_link');
+  const dialog = page.getByTestId('jira-shortcut-dialog');
+
+  await page.keyboard.press('a');
+  await page.keyboard.press('c');
+  await expect(title).toHaveCount(0);
+  // Copying and opening in Jira need no popup.
+  await page.evaluate(() => navigator.clipboard.writeText('before'));
+  await page.keyboard.press('8');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(target.primaryIssueKey);
+  await page.keyboard.press('Alt+8');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${target.instanceUrl}/browse/${target.primaryIssueKey}`);
+  await page.keyboard.press('9');
+  await expect(title).toHaveCount(0);
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.id = 'host-input';
+    document.querySelector('main').append(input);
+    input.focus();
+  });
+  await page.keyboard.type('5');
+  await expect(page.locator('#host-input')).toHaveValue('5');
+  await expect(title).toHaveCount(0);
+
+  // Some Jira themes give every element a transition, so QuickView lands frames after its style
+  // changes, here while the panel is already opening.
+  await page.addStyleTag({content: '._JX_container { transition: left 300ms linear, top 300ms linear !important; }'});
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('5');
+  await expect(title).toContainText(target.primaryIssueKey);
+  const popup = page.getByTestId('jira-popup-root');
+  await expect(popup).toHaveClass(/container-pinned/);
+  const search = page.getByTestId('jira-shortcut-assignee');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('Alex Reviewer');
+  // Opened from the keyboard, there is no pointer to follow: QuickView sits in the middle of the window.
+  await page.waitForTimeout(400);
+  const box = await popup.boundingBox();
+  const viewport = page.viewportSize();
+  expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+  // The panel stays under the keyboard button when QuickView moves, e.g. re-centring as it loads.
+  const toggle = page.getByTestId('jira-popup-shortcuts-help');
+  const panelOffset = async () => {
+    const [panel, button] = [await dialog.boundingBox(), await toggle.boundingBox()];
+    return [Math.round(panel.x + panel.width - button.x - button.width), Math.round(panel.y - button.y - button.height)];
+  };
+  await expect.poll(panelOffset).toEqual([0, 6]);
+  await popup.evaluate(node => { node.style.left = `${parseFloat(node.style.left) - 120}px`; node.style.top = `${parseFloat(node.style.top) + 40}px`; });
+  await page.waitForTimeout(400);
+  await expect.poll(panelOffset).toEqual([0, 6]);
+  await popup.evaluate(node => { node.style.left = `${parseFloat(node.style.left) + 120}px`; node.style.top = `${parseFloat(node.style.top) - 40}px`; });
+  await screenshot(page, 'jira-page-plan');
+  const requestPromise = page.context().waitForEvent('request', request => request.method() === 'PUT' && request.url() === `${target.instanceUrl}/rest/api/2/issue/${target.primaryIssueKey}`);
+  await search.press('Enter');
+  expect((await requestPromise).postDataJSON()).toEqual({fields: {assignee: {accountId: 'user-alex'}, customfield_10020: 42}});
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.jiraRefreshes)).toEqual([['refreshIssuePage', ['10001']]]);
+
+  // With QuickView already on this issue, a key pressed on the page reuses it.
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('7');
+  await expect(page.locator('._JX_comment_input')).toBeFocused();
+  await expect(title).toContainText(target.primaryIssueKey);
+  await page.close();
+});
