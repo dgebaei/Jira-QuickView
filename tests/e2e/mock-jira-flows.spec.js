@@ -2325,3 +2325,21 @@ test('uploads a pasted image into the comment composer in mocked mode @mock-only
 
   await page.close();
 });
+
+test('a Jira Server thumbnail image in a comment previews the full attachment, not its thumbnail @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: false});
+  test.skip(target.mode !== 'mock', 'The thumbnail markup comes from the mock.');
+  await servers.jira.setScenario('thumbnail-comment-image');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+  const {page} = await openPopup(extensionApp, servers, target);
+
+  // The rendered comment links the attachment around an <img> of its thumbnail, with no alt.
+  const thumbnail = page.locator('._JX_comments a[file-preview-id="903"] img._JX_previewable');
+  await expect(thumbnail).toBeVisible();
+  await thumbnail.click();
+  const popup = popupModel(page);
+  await expect(popup.previewOverlay).toHaveClass(/is-open/);
+  // standalone-graph.png is 2560px wide; the thumbnail placeholder is 100px.
+  await expect.poll(() => popup.previewImage.evaluate(image => image.naturalWidth)).toBe(2560);
+  await page.close();
+});

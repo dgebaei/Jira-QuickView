@@ -1013,7 +1013,11 @@ async function mainAsyncLocal() {
 
     const imageNodes = Array.from(temp.querySelectorAll('img[src]'));
     await Promise.all(imageNodes.map(async img => {
-      const altText = normalizeHistoryAttachmentName(img.getAttribute('alt') || '');
+      // Jira Server renders !file.png|thumbnail! as a link to the attachment around an <img>
+      // of its thumbnail, with no alt: the file name is only on the link.
+      const link = img.closest('a[href]');
+      const altText = normalizeHistoryAttachmentName(img.getAttribute('alt')
+        || link?.getAttribute('file-preview-title') || link?.getAttribute('title') || '');
       const linkedAttachment = altText && attachmentLookup?.get(altText)
         ? attachmentLookup.get(altText)
         : null;

@@ -862,6 +862,13 @@ function createState(origin) {
   };
 }
 
+// Jira Server renders !file.png|thumbnail! as a link to the attachment around an <img>
+// of its thumbnail, with no alt text: the file name is only on the link.
+function renderedCommentBody(origin, state, comment) {
+  if (state.scenario !== 'thumbnail-comment-image' || comment.id !== '5001') return comment.renderedBody;
+  return `${comment.renderedBody}<p><span class="image-wrap"><a id="903_thumb" href="${origin}/secure/attachment/903/903_standalone-graph.png" title="standalone-graph.png" file-preview-type="image" file-preview-id="903" file-preview-title="standalone-graph.png"><img src="${origin}/secure/thumbnail/903/_thumb_903.png" style="border: 0px solid black" role="presentation"/></a></span></p>`;
+}
+
 function buildIssueResponse(origin, state, options = {}) {
   const issue = state.issue;
   const names = {
@@ -909,7 +916,7 @@ function buildIssueResponse(origin, state, options = {}) {
     renderedFields: {
       description: issueDescriptionHtml(origin, state),
       comment: {
-        comments: issue.comments.map(comment => ({id: comment.id, body: comment.renderedBody})),
+        comments: issue.comments.map(comment => ({id: comment.id, body: renderedCommentBody(origin, state, comment)})),
       },
     },
   };
@@ -1158,6 +1165,16 @@ async function createMockJiraServer() {
 
     if (pathname === `/jira/browse/${state.issue.key}` && req.method === 'GET') {
       html(res, 200, buildDataCenterIssuePage(state));
+      return;
+    }
+
+    // Jira Server's own attachment and thumbnail links. The thumbnail is the small
+    // placeholder, so a preview that shows it instead of the attachment stands out.
+    if (/^\/secure\/(?:attachment|thumbnail)\/\d+\//.test(pathname) && req.method === 'GET') {
+      const [, , kind, attachmentId] = pathname.split('/');
+      const asset = kind === 'attachment' ? readMockAsset(ATTACHMENT_FIXTURE_BY_ID[attachmentId] || '') : null;
+      res.writeHead(200, {'access-control-allow-origin': '*', 'content-type': 'image/png'});
+      res.end(asset?.buffer || PNG_BUFFER);
       return;
     }
 
