@@ -99,6 +99,7 @@
       <li><a href="#5-using-the-popup-every-day">5. Using the Popup Every Day overview</a></li>
       <li><a href="#51-where-the-popup-appears">5.1 Where the Popup Appears</a></li>
       <li><a href="#511-copy-issue-links-inside-jira">5.1.1 Copy Issue Links Inside Jira</a></li>
+      <li><a href="#512-open-quickview-from-a-link">5.1.2 Open QuickView from a Link</a></li>
       <li><a href="#52-header-reporter-assignee-summary-and-actions">5.2 Header: Reporter, Assignee, Summary, and Actions</a></li>
       <li><a href="#53-keyboard-shortcuts">5.3 Keyboard Shortcuts</a></li>
       <li>
@@ -153,6 +154,14 @@
 
 <p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
 <p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
+<h3 id="whats-new-in-303">What's new in 3.0.3</h3>
+<ul>
+<li>Delete an attachment from the popup: hover it, click the <strong>×</strong>, and confirm. The <strong>×</strong> follows Jira's <strong>Delete Own Attachments</strong> and <strong>Delete All Attachments</strong> permissions. See <a href="#59-attachments-block">5.9 Attachments Block</a>.</li>
+<li>On Jira's own issue page, and on allowed pages about one issue (such as a Jira notification email open in Outlook or Gmail), the number keys act on that issue without opening QuickView first. Letter shortcuts stay with the page. See <a href="#53-keyboard-shortcuts">5.3 Keyboard Shortcuts</a>.</li>
+<li>A Jira issue link ending in <code>#quickview</code> opens the issue in Jira with QuickView already open, centered in the window. See <a href="#512-open-quickview-from-a-link">5.1.2 Open QuickView from a Link</a>.</li>
+<li>QuickView opens sooner: sprints, transitions, and fix versions load after the popup is shown, and a shortcut pressed before they are ready waits for them.</li>
+<li>Fix: on Jira Server, clicking a comment or description thumbnail previews the full image instead of an enlarged thumbnail.</li>
+</ul>
 <h3 id="whats-new-in-30">What's new in 3.0</h3>
 <p>Version 3.0 combines opt-in Jira image attachment previews, popup-scoped keyboard triage, a pull request grid with titles and source → target branches plus optional GitLab signals, compact field chips, a roomier header, and redesigned Options and documentation. No new Chrome permissions are required.</p>
 <p>Attachment previews are off by default; enable <strong>Options → Appearance → Preview Jira image attachments in QuickView</strong>. The keyboard button in the popup header, or <strong>Alt+0</strong> while QuickView has focus, drops down the shortcut list. The Quick actions menu was removed; its actions are on the shortcuts. GitLab details need a working browser login and granted access to the linked host; unavailable signals are unknown, not proof that a merge is ready. Remembered quick-close defaults stay local to this browser and are not exported or shared by Team Sync.</p>
@@ -575,6 +584,9 @@
 <p>The action is always available beside the key on issue details. In search results, boards, and backlogs, hover or focus a result to reveal it without adding permanent visual clutter.</p>
 <p>Copying uses the same behavior as the popup header: applications that accept rich clipboard content receive a linked <code>[KEY] Summary</code> label, while the plain-text clipboard contains the canonical Jira issue URL. Jira QuickView follows dynamically loaded Jira content and avoids adding duplicate actions during in-app navigation.</p>
 <p>If the copy action is missing, confirm that <code>Show copy buttons beside Jira issues</code> is enabled and the page is allowed (or belongs to your configured Jira instance), save Options, and reload the tab.</p>
+<h4 id="512-open-quickview-from-a-link">5.1.2 Open QuickView from a Link</h4>
+<p>Add <code>#quickview</code> to the end of a Jira issue URL, such as <code>https://jira.example.com/browse/ABC-123#quickview</code>, to make a link that opens the issue in Jira with QuickView already open on top of it. When the Jira page loads, QuickView opens pinned and centered in the window, whatever your hover and click settings. Links to Jira's issue navigator (<code>/issues/ABC-123#quickview</code>) work too.</p>
+<p>The link has to point at the Jira instance configured in Options. QuickView then removes <code>#quickview</code> from the address, so reloading the page or going back does not open the popup again. Without the extension, the link simply opens the issue in Jira.</p>
 <h3 id="52-header-reporter-assignee-summary-and-actions">5.2 Header: Reporter, Assignee, Summary, and Actions</h3>
 <p><img src="screenshots/marketing-hidpi-light/popup-actions.png" alt="Popup header with the keyboard shortcut list" /></p>
 <p>The header is the top part of the popup. It keeps the most common actions close together.</p>
