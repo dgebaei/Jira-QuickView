@@ -27,6 +27,14 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Number shortcuts for assignment, sprint planning, resolve/close, status, comments, and copying, with a shortcut list under the keyboard button
 - Copy rich issue links beside Jira references in Jira and on allowed pages
 
+## What's new in 3.0.3
+
+- Delete attachments from the popup: hover an attachment, click the **×**, and confirm. The **×** follows Jira's delete-attachment permissions.
+- Number shortcuts work on Jira's own issue page, and on allowed pages about one issue such as a Jira notification email, without opening QuickView first. Letter shortcuts stay with the page.
+- A Jira issue link ending in `#quickview` opens the issue in Jira with QuickView already open, centered in the window.
+- QuickView opens sooner: sprints, transitions, and fix versions load after the popup is shown.
+- Fix: on Jira Server, comment and description thumbnails preview the full image.
+
 ## What's new in 3.0
 
 - Preview Jira image attachment links without leaving allowed pages. Enable **Options → Appearance → Preview Jira image attachments in QuickView**; it is off by default. Non-images and failed previews fall back to Jira.
