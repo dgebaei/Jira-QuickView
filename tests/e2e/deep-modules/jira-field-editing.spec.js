@@ -540,7 +540,7 @@ test('fix version editing owns multi-selection, filtering, keyboard selection, a
 
     const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
     const filtered = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'v10'});
-    const selected = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const selected = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter', shiftKey: true});
     const writesBeforeSave = jira.getRequests().filter(request => request.operation === 'write').length;
     const saved = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter', ctrlKey: true});
     const write = jira.getRequests().find(request => request.operation === 'write');
@@ -570,6 +570,133 @@ test('fix version editing owns multi-selection, filtering, keyboard selection, a
     saved: {kind: 'saved', notice: 'Fix versions updated'},
     writeBody: {fields: {fixVersions: [{id: '1'}, {id: '10'}]}},
   });
+});
+
+test('a committed multi-select choice saves at once and closes the editor', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'fixVersions', name: 'Fix Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {fixVersions: {name: 'Fix Version/s', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}]}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
+    const committed = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '10', commit: true});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      committed: {kind: committed.kind, notice: committed.notice, edit: fields.view().edit},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    committed: {kind: 'saved', notice: 'Fix versions updated', edit: null},
+    writeBody: {fields: {fixVersions: [{id: '1'}, {id: '10'}]}},
+  });
+});
+
+test('Enter commits a multi-select choice, while Shift+Enter keeps picking', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'fixVersions', name: 'Fix Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {fixVersions: {name: 'Fix Version/s', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: []}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
+    await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'v1'});
+    const kept = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter', shiftKey: true});
+    const writesAfterShiftEnter = jira.getRequests().filter(request => request.operation === 'write').length;
+    await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'v10'});
+    const committed = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {
+      kept: {kind: kept.kind, selectedOptionIds: kept.view.edit?.selectedOptionIds},
+      writesAfterShiftEnter,
+      committed: {kind: committed.kind, edit: fields.view().edit},
+      writeBody: write?.body || null,
+    };
+  });
+
+  expect(result).toEqual({
+    kept: {kind: 'changed', selectedOptionIds: ['1']},
+    writesAfterShiftEnter: 0,
+    committed: {kind: 'saved', edit: null},
+    writeBody: {fields: {fixVersions: [{id: '1'}, {id: '10'}]}},
+  });
+});
+
+test('a committed multi-select choice that restores the original value closes without writing', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'fixVersions', name: 'Fix Version/s'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {fixVersions: {name: 'Fix Version/s', operations: ['set']}}}},
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/project/ABC/versions'), result: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}, {id: '10', name: 'v10'}]}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', fixVersions: [{id: '1', name: 'v1'}]}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'fixVersions'});
+    await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '1'});
+    const committed = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '1', commit: true});
+    return {
+      kind: committed.kind,
+      edit: fields.view().edit,
+      writes: jira.getRequests().filter(request => request.operation === 'write').length,
+    };
+  });
+
+  expect(result).toEqual({kind: 'cancelled', edit: null, writes: 0});
+});
+
+test('a committed single-select choice saves at once and closes the editor', async ({page}) => {
+  const result = await page.evaluate(async () => {
+    const {createJiraFieldEditing, createMockJiraAdapter, createQuickViewIssueData} = window.JiraQuickViewDeepModules;
+    const jira = createMockJiraAdapter({scripts: [
+      {operation: 'read', match: request => request.path.endsWith('/rest/api/2/field'), result: [{id: 'issuetype', name: 'Issue Type'}]},
+      {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {issuetype: {
+        name: 'Issue Type',
+        operations: ['set'],
+        allowedValues: [{id: '1', name: 'Bug', subtask: false}, {id: '2', name: 'Task', subtask: false}],
+      }}}},
+      {operation: 'write', method: 'PUT', result: {}},
+      {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', issuetype: {id: '2', name: 'Task', subtask: false}}}},
+    ]});
+    const issueData = createQuickViewIssueData({jira, instanceUrl: 'https://jira.example/'});
+    const fields = createJiraFieldEditing({jira, issueData, instanceUrl: 'https://jira.example/'});
+    fields.attach({
+      sessionId: 'popup-1',
+      issueSnapshot: {issueKey: 'ABC-1', core: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', issuetype: {id: '1', name: 'Bug', subtask: false}}}, sections: {}},
+    });
+    const begun = await fields.dispatch({type: 'begin', fieldId: 'issuetype'});
+    const committed = await fields.dispatch({type: 'selectOption', editId: begun.editId, optionId: '2', commit: true});
+    const write = jira.getRequests().find(request => request.operation === 'write');
+    return {kind: committed.kind, edit: fields.view().edit, writeBody: write?.body || null};
+  });
+
+  expect(result).toEqual({kind: 'saved', edit: null, writeBody: {fields: {issuetype: {id: '2'}}}});
 });
 
 test('version choices list unreleased versions oldest first, and only the five latest released versions', async ({page}) => {
@@ -1141,7 +1268,7 @@ test('Labels editing owns suggestions, multi-selection, keyboard toggling, paylo
     });
     const begun = await fields.dispatch({type: 'begin', fieldId: 'labels'});
     const searched = await fields.dispatch({type: 'inputChanged', editId: begun.editId, value: 'release'});
-    const toggled = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter'});
+    const toggled = await fields.dispatch({type: 'key', editId: begun.editId, key: 'Enter', shiftKey: true});
     const saved = await fields.dispatch({type: 'save', editId: begun.editId});
     const write = jira.getRequests().find(request => request.operation === 'write');
     return {

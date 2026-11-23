@@ -61,7 +61,8 @@ async function setSelectedOptionIds(locator, selectedIds) {
     const isSelected = await option.evaluate(node => node.classList.contains('is-selected'));
     const shouldBeSelected = expectedIds.has(optionId);
     if (isSelected !== shouldBeSelected) {
-      await option.click();
+      // Shift keeps the picker open; a plain click would save after the first toggle.
+      await option.click({modifiers: ['Shift']});
     }
   }
 }
@@ -167,7 +168,6 @@ test('uses the Parent label and Epic-only candidates with Jira Data Center Epic 
     request.method() === 'PUT' && request.url().includes(`/rest/api/2/issue/${target.primaryIssueKey}`)
   ));
   await nextParent.click();
-  await popup.editInput('parentLink').press('Enter');
   const updateRequest = await updateRequestPromise;
   await expect.poll(async () => updateRequest.postDataJSON()).toEqual({
     fields: {customfield_10014: 'JRACLOUD-98123'},
@@ -431,7 +431,6 @@ test('prefers Jira internal assignee results when public user endpoints miss a c
   await popup.editInput('assignee').fill('Morgan');
   await expect(morganOption).toBeVisible();
   await morganOption.click();
-  await page.keyboard.press('Enter');
   await expect(page.locator('._JX_title_assignee_slot [title="Assignee: Morgan Agent"]')).toHaveCount(1);
 
   await page.close();
@@ -567,7 +566,6 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     }
   }
   await page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${nextSprintOptionId}"]`).click();
-  await popup.editInput('sprint').press('Enter');
   await expect(popup.root).toContainText(/Sprint/i);
   await popup.editButton('sprint').click();
   sprintOptions = popup.editOptions('sprint');
@@ -578,10 +576,12 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     const originalSprintOption = page.locator(`._JX_edit_option[data-field-key="sprint"][data-option-id="${currentSprintOptionId}"]`).first();
     await expect(originalSprintOption).toBeVisible();
     const isOriginalSprintSelected = await originalSprintOption.evaluate(node => node.classList.contains('is-selected'));
-    if (!isOriginalSprintSelected) {
+    if (isOriginalSprintSelected) {
+      await page.keyboard.press('Escape');
+    } else {
       await originalSprintOption.click();
     }
-    await popup.editInput('sprint').press('Enter');
+    await expect(popup.editPopover('sprint')).toHaveCount(0);
   }
 
   const affectsEditButton = popup.editButton('versions');
@@ -600,7 +600,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
       }
     }
     await page.locator(`._JX_edit_option[data-field-key="versions"][data-option-id="${nextVersionOptionId}"]`).click();
-    await popup.editSave('versions').click();
+    await expect(popup.editPopover('versions')).toHaveCount(0);
     await expect(popup.root).toContainText(/Affects versions updated|version/i);
     await affectsEditButton.click();
     versionOptions = popup.editOptions('versions');
@@ -625,7 +625,7 @@ test('updates sprint and version fields through edit popovers', async ({extensio
     }
   }
   await page.locator(`._JX_edit_option[data-field-key="fixVersions"][data-option-id="${nextFixVersionOptionId}"]`).click();
-  await popup.editSave('fixVersions').click();
+  await expect(popup.editPopover('fixVersions')).toHaveCount(0);
   await expect(popup.root).toContainText(/Fix version/i);
   await popup.editButton('fixVersions').click();
   fixVersionOptions = popup.editOptions('fixVersions');
@@ -656,7 +656,8 @@ test('autosaves dropdown field edits when focus leaves the popover @mock-only', 
     const optionId = await option.getAttribute('data-option-id');
     if (optionId && optionId !== currentSprintId) {
       chosenSprint = (await option.locator('._JX_edit_option_label').textContent()).trim();
-      await option.click();
+      // Shift keeps the editor open, so leaving the popover is what saves it.
+      await option.click({modifiers: ['Shift']});
       break;
     }
   }
@@ -673,7 +674,7 @@ test('autosaves dropdown field edits when focus leaves the popover @mock-only', 
     const option = fixVersionOptions.nth(index);
     const optionId = await option.getAttribute('data-option-id');
     if (optionId && !originalFixIds.includes(optionId)) {
-      await option.click();
+      await option.click({modifiers: ['Shift']});
       break;
     }
   }
@@ -784,6 +785,54 @@ test('shows no avatar on the Unassigned assignee option @mock-only', async ({ext
   await page.close();
 });
 
+test('clicking a fix version saves it and closes the picker, while Shift+click keeps picking @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
+  test.skip(target.mode !== 'mock', 'Commit-on-select payload coverage is deterministic in mocked mode only.');
+
+  await servers.jira.setScenario('editable');
+  await configureExtension(optionsPage, baseConfig(servers, target));
+
+  const {page} = await openPopup(extensionApp, servers, target);
+  const popup = popupModel(page);
+  const fixVersionWrites = [];
+  page.context().on('request', request => {
+    if (request.method() === 'PUT' && request.url().includes('/rest/api/2/issue/') && request.postDataJSON()?.fields?.fixVersions) {
+      fixVersionWrites.push(request.postDataJSON().fields.fixVersions.map(value => value.id));
+    }
+  });
+
+  await popup.editButton('fixVersions').click();
+  const fixVersionOptions = popup.editOptions('fixVersions');
+  await waitForOptions(fixVersionOptions, 2);
+  await expect(page.getByTestId('jira-popup-edit-multi-hint-fixVersions')).toHaveText('Shift+click picks several');
+  const originalIds = await getSelectedOptionIds(fixVersionOptions);
+  const unselected = page.locator('._JX_edit_option[data-field-key="fixVersions"]:not(.is-selected)');
+  const firstPickId = String(await unselected.first().getAttribute('data-option-id'));
+  const firstPickLabel = (await unselected.first().locator('._JX_edit_option_label').textContent()).trim();
+
+  await unselected.first().click({modifiers: ['Shift']});
+  await expect(page.locator(`._JX_edit_option[data-field-key="fixVersions"][data-option-id="${firstPickId}"]`)).toHaveClass(/is-selected/);
+  await expect(popup.editPopover('fixVersions')).toBeVisible();
+  expect(fixVersionWrites).toEqual([]);
+  if (themeScreenshotDir) {
+    await page.mouse.move(0, 0);
+    await popup.editPopover('fixVersions').screenshot({path: path.join(themeScreenshotDir, 'popup-version-dropdown-multi-hint.png')});
+  }
+
+  await popup.editButton('fixVersions').click();
+  await expect(popup.editPopover('fixVersions')).toHaveCount(0);
+  expect(fixVersionWrites).toEqual([]);
+
+  await popup.editButton('fixVersions').click();
+  await waitForOptions(popup.editOptions('fixVersions'), 2);
+  await page.locator(`._JX_edit_option[data-field-key="fixVersions"][data-option-id="${firstPickId}"]`).click();
+  await expect(popup.editPopover('fixVersions')).toHaveCount(0);
+  await expect(popup.field('fixVersions')).toContainText(firstPickLabel);
+  expect(fixVersionWrites).toEqual([[...originalIds, firstPickId]]);
+
+  await page.close();
+});
+
 test('removes a selected fix version directly from its chip @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Fix version removal coverage is deterministic in mocked mode only.');
@@ -883,7 +932,6 @@ test('clears Sprint with a null Jira field value @mock-only', async ({extensionA
   await popup.editButton('sprint').click();
   await waitForOptions(popup.editOptions('sprint'), 1);
   await page.locator('._JX_edit_option[data-field-key="sprint"][data-option-id=""]').click();
-  await popup.editInput('sprint').press('Enter');
 
   await expect.poll(() => sprintUpdatePayloads.length).toBe(1);
   expect(sprintUpdatePayloads[0].fields.customfield_10020).toBeNull();

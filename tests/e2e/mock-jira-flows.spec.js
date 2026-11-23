@@ -923,7 +923,6 @@ test('clears a selected single-value custom field @mock-only', async ({extension
   const clearOption = popup.editOptions('customfield_22222').filter({hasText: 'Clear Customer Tier'});
   await expect(clearOption).toBeVisible();
   await clearOption.click();
-  await popup.editInput('customfield_22222').press('Enter');
 
   await expect.poll(() => customFieldUpdatePayloads.length).toBe(1);
   expect(customFieldUpdatePayloads[0].fields.customfield_22222).toBeNull();
@@ -1182,7 +1181,6 @@ test('supports editing non-custom Jira fields added through popup layout configu
   const doneOption = popup.editOptions('resolution').filter({hasText: 'Done'}).first();
   await expect(doneOption).toBeVisible();
   await doneOption.click();
-  await popup.editInput('resolution').press('Enter');
 
   await expect(page.getByTestId('jira-toast')).toContainText('Resolution updated');
   await expect(popup.root).toContainText('Resolution: Done');
@@ -1704,13 +1702,11 @@ test('supports assign-to-me and inline edits against mocked Jira APIs', async ({
 
     await page.locator('._JX_field_chip_edit[data-field-key="issuetype"]').click();
     await page.locator('._JX_edit_option[data-field-key="issuetype"][data-option-id="2"]').click();
-    await page.locator('._JX_edit_input[data-field-key="issuetype"]').press('Enter');
     await expect(page.getByTestId('jira-toast')).toContainText('Issue type set to Task');
     await expect(popup).toContainText('Task');
 
     await page.locator('._JX_field_chip_edit[data-field-key="priority"]').click();
     await page.locator('._JX_edit_option[data-field-key="priority"][data-option-id="1"]').click();
-    await page.locator('._JX_edit_input[data-field-key="priority"]').press('Enter');
     await expect(page.getByTestId('jira-toast')).toContainText('Priority set to Highest');
     await expect(popup).toContainText('Highest');
 
@@ -1718,7 +1714,6 @@ test('supports assign-to-me and inline edits against mocked Jira APIs', async ({
     const labelInput = page.locator('._JX_edit_input[data-field-key="labels"]');
     await labelInput.fill('release-candidate');
     await labelInput.press('Enter');
-    await page.locator('._JX_edit_save[data-field-key="labels"]').click();
     await expect(page.getByTestId('jira-toast')).toContainText('Labels updated');
     await expect(popup).toContainText('release-candidate');
 
@@ -1735,7 +1730,7 @@ test('supports assign-to-me and inline edits against mocked Jira APIs', async ({
   await page.close();
 });
 
-test('toggles the top filtered multi-select option with Enter in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
+test('saves the top filtered multi-select option with Enter in mocked mode @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: process.env.MOCK === 'false'});
   test.skip(target.mode !== 'mock', 'Multi-select keyboard coverage is deterministic in mocked mode only.');
 
@@ -1750,9 +1745,7 @@ test('toggles the top filtered multi-select option with Enter in mocked mode @mo
   await labelInput.fill('release-candidate');
   await expect(page.locator('._JX_edit_option[data-field-key="labels"]').first()).toBeVisible();
   await labelInput.press('Enter');
-  const saveLabels = page.locator('._JX_edit_save[data-field-key="labels"]');
-  await expect(saveLabels).toBeEnabled();
-  await saveLabels.click();
+  await expect(page.locator('._JX_edit_popover[data-field-key="labels"]')).toHaveCount(0);
 
   await expect(page.getByTestId('jira-toast')).toContainText('Labels updated');
   await expect(popup.root).toContainText('release-candidate');

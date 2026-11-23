@@ -2868,10 +2868,10 @@ async function mainAsyncLocal() {
     dispatchJiraFieldEditing({type, editId: fieldView.editId}).catch(() => {});
   }
 
-  function selectFieldEditOption(optionId) {
+  function selectFieldEditOption(optionId, {commit = false} = {}) {
     const fieldView = jiraFieldEditing.view().edit;
     if (fieldView && fieldView.options?.some(option => option.id === String(optionId || ''))) {
-      dispatchJiraFieldEditing({type: 'selectOption', editId: fieldView.editId, optionId}).catch(() => {});
+      dispatchJiraFieldEditing({type: 'selectOption', editId: fieldView.editId, optionId, commit}).catch(() => {});
     }
   }
 
@@ -3225,7 +3225,10 @@ async function mainAsyncLocal() {
     }
     e.preventDefault();
     e.stopPropagation();
-    selectFieldEditOption(e.currentTarget.getAttribute('data-option-id'));
+    // A plain click saves the pick and closes the list; Shift, Ctrl or Cmd keeps it open to pick several.
+    selectFieldEditOption(e.currentTarget.getAttribute('data-option-id'), {
+      commit: !(e.shiftKey || e.ctrlKey || e.metaKey),
+    });
   });
 
   $(document.body).on('click', '._JX_edit_selected_remove', function (e) {
@@ -3278,6 +3281,7 @@ async function mainAsyncLocal() {
       key: e.key,
       ctrlKey: e.ctrlKey,
       metaKey: e.metaKey,
+      shiftKey: e.shiftKey,
     }).catch(() => {});
   });
 
