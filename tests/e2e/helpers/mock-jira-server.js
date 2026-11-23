@@ -1713,7 +1713,10 @@ async function createMockJiraServer() {
         state.issue.versions = fields.versions.map(entry => ({id: String(entry.id), name: entry.id === '302' ? '2026.05' : '2026.03'}));
       }
       if (Array.isArray(fields.fixVersions)) {
-        state.issue.fixVersions = fields.fixVersions.map(entry => ({id: String(entry.id), name: entry.id === '402' ? '2026.06' : '2026.04'}));
+        state.issue.fixVersions = fields.fixVersions.map(entry => ({
+          id: String(entry.id),
+          name: PROJECT_VERSIONS.find(version => version.id === String(entry.id))?.name || (entry.id === '402' ? '2026.06' : '2026.04'),
+        }));
       }
       (body?.update?.fixVersions || []).forEach(operation => {
         const version = PROJECT_VERSIONS.find(item => item.id === String(operation.add?.id || ''));

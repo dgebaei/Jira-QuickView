@@ -69,6 +69,7 @@
         </div>{{/showDropdown}}
         {{#showActionButtons}}
         <div class="_JX_edit_actions">
+            {{#isMultiSelect}}<span class="_JX_edit_multi_hint" data-testid="jira-popup-edit-multi-hint-{{fieldKey}}">Shift+click picks several</span>{{/isMultiSelect}}
             <button class="_JX_edit_discard" data-testid="jira-popup-edit-discard-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#discardDisabled}}disabled{{/discardDisabled}}>Discard</button>
             <button class="_JX_edit_save" data-testid="jira-popup-edit-save-{{fieldKey}}" type="button" data-field-key="{{fieldKey}}" {{#saveDisabled}}disabled{{/saveDisabled}}>Save</button>
         </div>

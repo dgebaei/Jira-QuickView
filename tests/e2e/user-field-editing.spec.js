@@ -35,13 +35,10 @@ async function selectUserOptionAndSubmit(popup, fieldKey, optionText) {
   const editPopover = popup.locator(`._JX_edit_popover[data-field-key="${fieldKey}"]`);
   await waitForOptions(options);
   await expect(matchingOption).toHaveCount(1);
-  await matchingOption.click();
-
-  const input = popup.locator(`._JX_edit_input[data-field-key="${fieldKey}"]`);
-  await expect(input).toHaveValue(optionText);
-  await expect(matchingOption).toHaveClass(/is-selected/);
   await expect(editPopover).not.toContainText('Searching');
-  await input.press('Enter');
+  // Clicking a choice saves it and closes the editor.
+  await matchingOption.click();
+  await expect(editPopover).toHaveCount(0);
 }
 
 test('renders user-type custom field and allows editing via user search', async ({extensionApp, optionsPage, servers}) => {

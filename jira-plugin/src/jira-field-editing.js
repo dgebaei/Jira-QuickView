@@ -1561,7 +1561,9 @@ export function createJiraFieldEditing(options = {}) {
         selectionEnd: inputValue.length,
         status: 'editing',
       };
-      return outcome('changed');
+      if (!intent.commit) return outcome('changed');
+      // A pick that lands back on the stored values leaves nothing to write, so it just closes.
+      return edit.hasChanges ? save(intent) : cancel(intent);
     }
     edit = {
       ...edit,
@@ -1575,7 +1577,7 @@ export function createJiraFieldEditing(options = {}) {
       selectionEnd: selectedOption.label.length,
       status: 'editing',
     };
-    if (edit.editorType === 'transition-select') {
+    if (intent.commit || edit.editorType === 'transition-select') {
       return save({...intent, type: 'save'});
     }
     return outcome('changed');
@@ -1891,15 +1893,12 @@ export function createJiraFieldEditing(options = {}) {
         if (edit?.selectionMode === 'multi') {
           if (intent.ctrlKey || intent.metaKey) return save(intent);
           const optionId = edit?.highlightedOptionId || visibleSelectableOptions()[0]?.id;
-          return optionId ? selectOption({...intent, optionId}) : outcome('ignored');
+          // Shift+Enter keeps the list open for picking several values.
+          return optionId ? selectOption({...intent, optionId, commit: !intent.shiftKey}) : outcome('ignored');
         }
         if (edit?.selectionMode !== 'text') {
           const optionId = edit?.selectedOptionId || edit?.highlightedOptionId || visibleSelectableOptions()[0]?.id;
-          const selected = await selectOption({...intent, optionId: edit?.highlightedOptionId || optionId});
-          if (edit?.editorType !== 'transition-select' && selected.kind === 'changed') {
-            return save(intent);
-          }
-          return selected;
+          return selectOption({...intent, optionId: edit?.highlightedOptionId || optionId, commit: true});
         }
         return save(intent);
       }

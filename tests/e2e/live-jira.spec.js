@@ -152,7 +152,6 @@ test('updates issue priority on an allowed live Jira issue and restores it @live
   expect(targetOptionId).toBeTruthy();
 
   await page.locator(`._JX_edit_option[data-field-key="priority"][data-option-id="${targetOptionId}"]`).click();
-  await page.locator('._JX_edit_input[data-field-key="priority"]').press('Enter');
   await expect(popup).toContainText(/Priority set to/i);
   await expect.poll(async () => String((await getLiveIssue(issueKey, config))?.fields?.priority?.id || ''), {timeout: 10000}).toBe(String(targetOptionId));
 
@@ -228,7 +227,6 @@ test('adds and removes a temporary label on an allowed live Jira issue @live', a
   await labelInput.fill(labelQuery);
   await expect(page.locator(`._JX_edit_option[data-field-key="labels"][data-option-id="${tempLabel}"]`).first()).toBeVisible();
   await page.locator(`._JX_edit_option[data-field-key="labels"][data-option-id="${tempLabel}"]`).first().click();
-  await page.locator('._JX_edit_save[data-field-key="labels"]').click();
   await expect(popup).toContainText(/Labels updated/i);
   await expect.poll(async () => (await getLiveIssue(issueKey, config))?.fields?.labels || [], {timeout: 10000}).toContain(tempLabel);
 
