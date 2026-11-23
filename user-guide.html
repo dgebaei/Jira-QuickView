@@ -154,6 +154,10 @@
 
 <p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
 <p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
+<h3 id="whats-new-in-304">What's new in 3.0.4</h3>
+<ul>
+<li>Picking a value in a field dropdown (sprint, fix version, affects version, labels, priority, assignee, custom select fields) saves it at once and closes the dropdown, whether you click it or press <code>Enter</code>. In a multi-value dropdown, <code>Shift+click</code> (also <code>Ctrl+click</code> or <code>⌘+click</code>) and <code>Shift+Enter</code> keep it open to pick several values; the hint beside <strong>Save</strong> says so. Removing a value with its <strong>×</strong> still waits for <strong>Save</strong>, so you can swap one version for another in a single save. See <a href="#55-row-2-epic-parent-sprint-affects-version-and-fix-version">5.5 Row 2</a>.</li>
+</ul>
 <h3 id="whats-new-in-303">What's new in 3.0.3</h3>
 <ul>
 <li>Delete an attachment from the popup: hover it, click the <strong>×</strong>, and confirm. The <strong>×</strong> follows Jira's <strong>Delete Own Attachments</strong> and <strong>Delete All Attachments</strong> permissions. See <a href="#59-attachments-block">5.9 Attachments Block</a>.</li>
@@ -567,14 +571,14 @@
 <p>When <code>Show copy buttons beside Jira issues</code> is enabled, Jira QuickView adds copy actions inside Jira and beside recognized Jira links and plain issue IDs on allowed pages.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Issue details</th>
 <th>Search results</th>
 <th>Board cards</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><img src="screenshots/user-guide/jira-inline-copy-cloud-detail.png" alt="Copy action on Jira issue details" /></td>
 <td><img src="screenshots/user-guide/jira-inline-copy-search-results.png" alt="Copy action in Jira search results" /></td>
 <td><img src="screenshots/user-guide/jira-inline-copy-board.png" alt="Copy action on a Jira board card" /></td>
@@ -611,59 +615,59 @@
 <p>The keyboard button in the header, or <code>Alt+0</code>, drops down the shortcut list. Press a listed key while it is open to run that shortcut, or <code>Esc</code> to close the list. Shortcuts work while QuickView has keyboard focus, not while you are typing in an input, editor, or comment. They do not act on the mail client or other page behind QuickView. <code>Alt</code> is <code>Option</code> and <code>Ctrl</code> is <code>⌘</code> on macOS; some operating-system shortcuts may take precedence. <code>Ctrl+C</code> copies the issue link only when no text is selected, so copying selected text works as usual.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Key</th>
 <th>Action</th>
 <th>Alt + key</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><code>1</code> or <code>A</code></td>
 <td>Open assignee search</td>
 <td>Assign to me</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>2</code> or <code>S</code></td>
 <td>Open the sprint picker</td>
 <td>Move to the current sprint</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>3</code></td>
 <td>Open the status picker</td>
 <td>Resolve / close, with saved defaults and confirmation</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>4</code></td>
 <td>Open the fix version picker</td>
 <td>Add the next unreleased fix version</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>5</code></td>
 <td>Current sprint + reassign</td>
 <td>Current sprint + assign to me</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>6</code></td>
 <td>Next sprint + reassign</td>
 <td>Next sprint + assign to me</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>7</code> or <code>C</code></td>
 <td>Focus the new-comment composer</td>
 <td>—</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>8</code> or <code>Ctrl+C</code></td>
 <td>Copy formatted issue reference</td>
 <td>Copy plain issue URL</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>9</code></td>
 <td>Open issue in Jira</td>
 <td>—</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>0</code></td>
 <td>—</td>
 <td>Show keyboard shortcuts</td>
@@ -778,7 +782,7 @@
 <li>Parent editing depends on the hierarchy model Jira exposes for the issue.</li>
 <li>Sprint values can come from Jira Agile fields that vary by company and project.</li>
 <li>Version chips are most linkable when there is exactly one version.</li>
-<li>Picker and multi-value edits save when you click elsewhere in QuickView or outside it. <code>Escape</code> cancels; <code>Enter</code> accepts the highlighted single-value option, and <code>Ctrl+Enter</code> or <code>Command+Enter</code> saves multi-value changes.</li>
+<li>Clicking a value in a picker, or pressing <code>Enter</code> on the highlighted one, saves it and closes the picker. In multi-value pickers, <code>Shift+click</code> (or <code>Ctrl</code>/<code>⌘+click</code>) and <code>Shift+Enter</code> add or remove a value and keep the picker open; those changes, and values removed with their <strong>×</strong>, save with <strong>Save</strong>, <code>Ctrl+Enter</code> or <code>⌘+Enter</code>, or when you click elsewhere in QuickView or outside it. <code>Escape</code> cancels.</li>
 <li>Fix Version and Affects Version choices list unreleased versions first, followed by the five most recent released versions.</li>
 <li>These fields can be moved to other rows in the layout editor if your team wants a different visual priority.</li>
 </ul>
