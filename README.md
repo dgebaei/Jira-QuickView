@@ -27,6 +27,10 @@ Open a Jira notification email in Gmail or Outlook, click the issue link, and tr
 - Number shortcuts for assignment, sprint planning, resolve/close, status, comments, and copying, with a shortcut list under the keyboard button
 - Copy rich issue links beside Jira references in Jira and on allowed pages
 
+## What's new in 3.0.4
+
+- Picking a value in a field dropdown (sprint, fix version, affects version, labels, priority, assignee and the rest) saves it at once and closes the dropdown. **Shift+click** or **Shift+Enter** keeps a multi-value dropdown open to pick several values.
+
 ## What's new in 3.0.3
 
 - Delete attachments from the popup: hover an attachment, click the **×**, and confirm. The **×** follows Jira's delete-attachment permissions.

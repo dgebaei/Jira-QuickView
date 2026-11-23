@@ -12,6 +12,10 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
+### What's new in 3.0.4
+
+- Picking a value in a field dropdown (sprint, fix version, affects version, labels, priority, assignee, custom select fields) saves it at once and closes the dropdown, whether you click it or press `Enter`. In a multi-value dropdown, `Shift+click` (also `Ctrl+click` or `⌘+click`) and `Shift+Enter` keep it open to pick several values; the hint beside **Save** says so. Removing a value with its **×** still waits for **Save**, so you can swap one version for another in a single save. See [5.5 Row 2](#55-row-2-epic-parent-sprint-affects-version-and-fix-version).
+
 ### What's new in 3.0.3
 
 - Delete an attachment from the popup: hover it, click the **×**, and confirm. The **×** follows Jira's **Delete Own Attachments** and **Delete All Attachments** permissions. See [5.9 Attachments Block](#59-attachments-block).
@@ -780,7 +784,7 @@ Business logic and limitations:
 - Parent editing depends on the hierarchy model Jira exposes for the issue.
 - Sprint values can come from Jira Agile fields that vary by company and project.
 - Version chips are most linkable when there is exactly one version.
-- Picker and multi-value edits save when you click elsewhere in QuickView or outside it. `Escape` cancels; `Enter` accepts the highlighted single-value option, and `Ctrl+Enter` or `Command+Enter` saves multi-value changes.
+- Clicking a value in a picker, or pressing `Enter` on the highlighted one, saves it and closes the picker. In multi-value pickers, `Shift+click` (or `Ctrl`/`⌘+click`) and `Shift+Enter` add or remove a value and keep the picker open; those changes, and values removed with their **×**, save with **Save**, `Ctrl+Enter` or `⌘+Enter`, or when you click elsewhere in QuickView or outside it. `Escape` cancels.
 - Fix Version and Affects Version choices list unreleased versions first, followed by the five most recent released versions.
 - These fields can be moved to other rows in the layout editor if your team wants a different visual priority.
 
