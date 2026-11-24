@@ -12,6 +12,12 @@ Jira QuickView lets you work with Jira issues directly from the web pages where 
 
 The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.
 
+### What's new in 3.0.5
+
+- After you save a new comment with **Save** or `Ctrl+Enter`, focus returns to QuickView, so the next number shortcut works without clicking the popup first. See [5.3 Keyboard Shortcuts](#53-keyboard-shortcuts).
+- Fix: setting the **Account** (Tempo) field from the popup no longer fails with `HTTP 400`. See [5.6 Row 3](#56-row-3-environment-labels-and-custom-fields).
+- When Jira rejects a change, the error shows Jira's reason, such as `HTTP 400 - Account id 'null' is invalid`, instead of a bare `HTTP 400`.
+
 ### What's new in 3.0.4
 
 - Picking a value in a field dropdown (sprint, fix version, affects version, labels, priority, assignee, custom select fields) saves it at once and closes the dropdown, whether you click it or press `Enter`. In a multi-value dropdown, `Shift+click` (also `Ctrl+click` or `⌘+click`) and `Shift+Enter` keep it open to pick several values; the hint beside **Save** says so. Removing a value with its **×** still waits for **Save**, so you can swap one version for another in a single save. See [5.5 Row 2](#55-row-2-epic-parent-sprint-affects-version-and-fix-version).
