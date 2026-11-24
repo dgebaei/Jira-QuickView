@@ -1603,7 +1603,7 @@ test('Tempo account custom fields own search, clearing, and payload fallback ord
       {operation: 'read', match: request => request.path.endsWith('/editmeta'), result: {fields: {customfield_77777: {...field, operations: ['set']}}}},
       {operation: 'read', match: request => request.path.includes('/tempo-accounts/1/account/search'), result: {accounts: [account]}},
       {operation: 'read', match: request => request.path.includes('/tempo-accounts/1/account/search'), result: {accounts: [account]}},
-      {operation: 'write', method: 'PUT', error: 'object id unsupported'},
+      {operation: 'write', method: 'PUT', error: "HTTP 400 - Account id 'null' is invalid"},
       {operation: 'write', method: 'PUT', result: {}},
       {operation: 'read', result: {id: '1', key: 'ABC-1', fields: {summary: 'Issue', project: {id: '10000'}, customfield_77777: account}}},
     ]});
@@ -1628,9 +1628,11 @@ test('Tempo account custom fields own search, clearing, and payload fallback ord
     begun: {kind: 'changed', editorType: 'tempo-account-search', labels: ['Clear Account', 'Acme delivery']},
     searched: {kind: 'changed', labels: ['Clear Account', 'Acme delivery']},
     saved: {kind: 'saved', notice: 'Account set to Acme delivery'},
+    // Tempo Accounts on Jira DC accepts only the bare id string; every object
+    // or numeric shape fails with "Account id 'null' is invalid".
     writeBodies: [
+      {fields: {customfield_77777: '42'}},
       {fields: {customfield_77777: {id: 42}}},
-      {fields: {customfield_77777: 42}},
     ],
   });
 });
