@@ -154,6 +154,12 @@
 
 <p>Jira QuickView lets you work with Jira issues directly from the web pages where issue keys appear. Instead of opening Jira in a separate tab for every notification, pull request, document, or checklist, you can open QuickView from an issue link—or optionally hover a recognized key—to inspect, update, comment on, and triage the issue.</p>
 <p>The screenshots in this guide are examples. Your popup can look different depending on your Jira project, your permissions, your workflow, and the layout you choose in the Options page.</p>
+<h3 id="whats-new-in-305">What's new in 3.0.5</h3>
+<ul>
+<li>After you save a new comment with <strong>Save</strong> or <code>Ctrl+Enter</code>, focus returns to QuickView, so the next number shortcut works without clicking the popup first. See <a href="#53-keyboard-shortcuts">5.3 Keyboard Shortcuts</a>.</li>
+<li>Fix: setting the <strong>Account</strong> (Tempo) field from the popup no longer fails with <code>HTTP 400</code>. See <a href="#56-row-3-environment-labels-and-custom-fields">5.6 Row 3</a>.</li>
+<li>When Jira rejects a change, the error shows Jira's reason, such as <code>HTTP 400 - Account id 'null' is invalid</code>, instead of a bare <code>HTTP 400</code>.</li>
+</ul>
 <h3 id="whats-new-in-304">What's new in 3.0.4</h3>
 <ul>
 <li>Picking a value in a field dropdown (sprint, fix version, affects version, labels, priority, assignee, custom select fields) saves it at once and closes the dropdown, whether you click it or press <code>Enter</code>. In a multi-value dropdown, <code>Shift+click</code> (also <code>Ctrl+click</code> or <code>⌘+click</code>) and <code>Shift+Enter</code> keep it open to pick several values; the hint beside <strong>Save</strong> says so. Removing a value with its <strong>×</strong> still waits for <strong>Save</strong>, so you can swap one version for another in a single save. See <a href="#55-row-2-epic-parent-sprint-affects-version-and-fix-version">5.5 Row 2</a>.</li>
