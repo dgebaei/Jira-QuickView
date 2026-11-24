@@ -1740,7 +1740,11 @@ export function createJiraFieldEditing(options = {}) {
           const accountId = Number.isFinite(numericId) ? numericId : selected.id;
           const accountKey = String(selected.rawValue?.key || '').trim();
           notice = `${fieldName} set to ${selected.label}`;
+          // Tempo Accounts on Jira DC accepts only the bare id string; object and
+          // numeric shapes come back 400 "Account id 'null' is invalid". The other
+          // shapes stay as fallbacks for Tempo versions that read them.
           writeCandidates = [
+            {identifier: 'tempo-id-plain-string', body: {fields: {[fieldId]: String(selected.id)}}},
             {identifier: 'tempo-id-object', body: {fields: {[fieldId]: {id: accountId}}}},
             {identifier: 'tempo-id-value', body: {fields: {[fieldId]: accountId}}},
             {identifier: 'tempo-id-string', body: {fields: {[fieldId]: {id: String(selected.id)}}}},

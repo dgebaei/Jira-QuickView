@@ -476,5 +476,5 @@ test('startup smoke logs a failure when the popup issue payload fetch fails', as
 
   await flushUntil(() => harness.errorLogs.some(entry => String(entry[0]).includes('smoke test failed for JRACLOUD-404')));
 
-  expect(harness.errorLogs.some(entry => String(entry[0]).includes('HTTP 500 - Internal Server Error'))).toBe(true);
+  expect(harness.errorLogs.some(entry => String(entry[0]).includes('HTTP 500 - Internal Server Error: Missing issue'))).toBe(true);
 });

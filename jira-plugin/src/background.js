@@ -346,6 +346,28 @@ async function showActionFeedback(tabId, message) {
   }
 }
 
+// Jira puts the reason for a 4xx in the body (errorMessages / errors); over
+// HTTP/2 the status text is empty, so without this the user sees "HTTP 400 -".
+async function readJiraErrorDetail(response) {
+  try {
+    const raw = await response.text();
+    if (!raw) return '';
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (ex) {
+      return '';
+    }
+    const messages = [
+      ...(Array.isArray(parsed?.errorMessages) ? parsed.errorMessages : []),
+      ...Object.values(parsed?.errors && typeof parsed.errors === 'object' ? parsed.errors : {}),
+    ].map(message => String(message || '').trim()).filter(Boolean);
+    return messages.join('; ').slice(0, 300);
+  } catch (error) {
+    return '';
+  }
+}
+
 async function fetchWithPolicy(url, init = {}, {credentials = 'include'} = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -357,7 +379,9 @@ async function fetchWithPolicy(url, init = {}, {credentials = 'include'} = {}) {
       signal: controller.signal
     });
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+      const detail = await readJiraErrorDetail(response);
+      const reason = [response.statusText, detail].filter(Boolean).join(': ');
+      throw new Error(`HTTP ${response.status} - ${reason}`.trim());
     }
     return response;
   } catch (error) {
