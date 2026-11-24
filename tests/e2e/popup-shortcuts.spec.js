@@ -470,6 +470,30 @@ test('Ctrl+Enter in the new comment field saves the comment @mock-only', async (
   await page.close();
 });
 
+test('saving a new comment hands focus back to QuickView so the next shortcut works @mock-only', async ({extensionApp, optionsPage, servers}) => {
+  const {page, popup, dialog} = await openPopup({extensionApp, optionsPage, servers});
+  const comment = page.locator('._JX_comment_input');
+  for (const [text, save] of [
+    ['Saved with Ctrl+Enter', () => comment.press('Control+Enter')],
+    ['Saved with the button', () => page.locator('._JX_comment_save').click()],
+  ]) {
+    await popup.focus();
+    await page.keyboard.press('7');
+    await expect(comment).toBeFocused();
+    await comment.fill(text);
+    await save();
+    await expect(page.locator('._JX_comment').last()).toContainText(text);
+    await expect(comment).toHaveValue('');
+    await expect(popup, text).toBeFocused();
+    await screenshot(page, `comment-saved-focus-${text.includes('Ctrl') ? 'keyboard' : 'button'}`);
+    await page.keyboard.press('5');
+    await expect(dialog, text).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
+  await page.close();
+});
+
 test('on Jira\'s own issue page, number keys act on that issue, letters stay Jira\'s, and Jira\'s view refreshes after a save @mock-only', async ({extensionApp, optionsPage, servers}) => {
   const target = requireJiraTestTarget(test, servers, {requireAuth: false});
   test.skip(target.mode !== 'mock', 'Keyboard workflow writes are tested against the mock only.');
