@@ -1684,6 +1684,9 @@ async function mainAsyncLocal() {
       value: commentDraftText,
       selection: capturedCompose.selection,
     }).catch(() => {});
+    // The input is disabled while saving, which drops focus to <body> and out of
+    // reach of the popup shortcuts; hand it back to the popup once the save lands.
+    const popupHadFocus = container[0].contains(document.activeElement);
     const pendingSave = commentLifecycle.dispatch({
       type: 'saveNewComment',
       requirements: {history: !!currentPopupState()?.historyOpen},
@@ -1694,6 +1697,7 @@ async function mainAsyncLocal() {
     const isSameIssueStillVisible = currentPopupState()?.issueData?.key === commentIssueKey &&
       outcome.sessionId === currentPopupSessionId();
     if (outcome.kind === 'mutationCommitted' && isSameIssueStillVisible) {
+      if (popupHadFocus) await commentLifecycle.dispatch({type: 'composeFocusChanged', focused: false}).catch(() => {});
       await popupSession.dispatch({
         type: 'render',
         reason: 'comment-save-complete',
@@ -1702,6 +1706,9 @@ async function mainAsyncLocal() {
       });
       if (outcome.failure) {
         showToast(outcome.notice, {kind: 'error'});
+      }
+      if (popupHadFocus && !container[0].contains(document.activeElement)) {
+        container[0].focus({preventScroll: true});
       }
       return;
     }
